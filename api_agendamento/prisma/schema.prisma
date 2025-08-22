@@ -1,0 +1,251 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum TipoUsuario {
+  CLIENTE
+  ADMIN_MASTER
+  ADMIN_ATENDENTE
+  ADMIN_PROFESSORES
+}
+
+enum StatusAgendamento {
+  CONFIRMADO
+  CANCELADO
+  FINALIZADO
+  TRANSFERIDO
+}
+
+enum TipoCamera {
+  COM_CAMERA
+  SEM_CAMERA
+}
+
+enum DiaSemana {
+  DOMINGO
+  SEGUNDA
+  TERCA
+  QUARTA
+  QUINTA
+  SEXTA
+  SABADO
+}
+
+enum Turno {
+  DIA
+  NOITE
+}
+
+model Usuario {
+  id                String      @id @default(uuid())
+  nome              String
+  email             String      @unique
+  celular           String?
+  senha             String
+  cpf               String?
+  nascimento        DateTime?
+  tipo              TipoUsuario
+  verificado        Boolean     @default(false)
+  codigoEmail       String?
+  codigoRecuperacao String?
+  expiraEm          DateTime?
+
+  agendamentos                        Agendamento[]                        @relation("AgendamentoFeitoPor")
+  agendamentosPermanentes             AgendamentoPermanente[]
+  participaDeAgendamentos             Agendamento[]                        @relation("JogadoresNoAgendamento")
+  agendamentosChurrasqueira           AgendamentoChurrasqueira[]           @relation("UsuarioAgendamentoChurrasqueira")
+  agendamentosPermanenteChurrasqueira AgendamentoPermanenteChurrasqueira[] @relation("UsuarioAgendamentoPermanenteChurrasqueira")
+
+  agendamentosCancelados                          Agendamento[]                        @relation("AgendamentoCanceladoPor")
+  agendamentosTransferidos                        Agendamento[]                        @relation("AgendamentoTransferidoPor")
+  agendamentosPermanentesCancelados               AgendamentoPermanente[]              @relation("AgendamentoPermanenteCanceladoPor")
+  agendamentosPermanentesTransferidos             AgendamentoPermanente[]              @relation("AgendamentoPermanenteTransferidoPor")
+  agendamentosChurrasqueiraCancelados             AgendamentoChurrasqueira[]           @relation("AgendamentoChurrasqueiraCanceladoPor")
+  agendamentosChurrasqueiraTransferidos           AgendamentoChurrasqueira[]           @relation("AgendamentoChurrasqueiraTransferidoPor")
+  agendamentosPermanenteChurrasqueiraCancelados   AgendamentoPermanenteChurrasqueira[] @relation("AgendamentoPermanenteChurrasqueiraCanceladoPor")
+  agendamentosPermanenteChurrasqueiraTransferidos AgendamentoPermanenteChurrasqueira[] @relation("AgendamentoPermanenteChurrasqueiraTransferidoPor")
+
+  bloqueiosFeitos BloqueioQuadra[] @relation("UsuarioBloqueios")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Esporte {
+  id     String  @id @default(uuid())
+  nome   String  @unique
+  imagem String?
+
+  quadraEsportes          QuadraEsporte[]
+  agendamentos            Agendamento[]
+  agendamentosPermanentes AgendamentoPermanente[]
+}
+
+model Quadra {
+  id         String     @id @default(uuid())
+  nome       String
+  numero     Int
+  tipoCamera TipoCamera
+  imagem     String?
+
+  quadraEsportes          QuadraEsporte[]
+  agendamentos            Agendamento[]
+  agendamentosPermanentes AgendamentoPermanente[]
+
+  bloqueios  BloqueioQuadra[]  @relation("QuadrasNoBloqueio")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model QuadraEsporte {
+  quadraId  String
+  esporteId String
+
+  quadra  Quadra  @relation(fields: [quadraId], references: [id])
+  esporte Esporte @relation(fields: [esporteId], references: [id])
+
+  @@id([quadraId, esporteId])
+}
+
+model Churrasqueira {
+  id         String  @id @default(uuid())
+  nome       String
+  numero     Int
+  imagem     String?
+  observacao String?
+
+  agendamentos            AgendamentoChurrasqueira[]
+  agendamentosPermanentes AgendamentoPermanenteChurrasqueira[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Agendamento {
+  id      String   @id @default(uuid())
+  data    DateTime
+  horario String
+
+  usuario   Usuario @relation("AgendamentoFeitoPor", fields: [usuarioId], references: [id])
+  usuarioId String
+
+  quadra   Quadra @relation(fields: [quadraId], references: [id])
+  quadraId String
+
+  esporte   Esporte @relation(fields: [esporteId], references: [id])
+  esporteId String
+
+  jogadores Usuario[] @relation("JogadoresNoAgendamento")
+
+  obs String?
+
+  status StatusAgendamento @default(CONFIRMADO)
+
+  canceladoPor   Usuario? @relation("AgendamentoCanceladoPor", fields: [canceladoPorId], references: [id])
+  canceladoPorId String?
+
+  transferidoPor   Usuario? @relation("AgendamentoTransferidoPor", fields: [transferidoPorId], references: [id])
+  transferidoPorId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AgendamentoPermanente {
+  id        String    @id @default(uuid())
+  diaSemana DiaSemana
+  horario   String
+
+  quadra   Quadra @relation(fields: [quadraId], references: [id])
+  quadraId String
+
+  usuario   Usuario @relation(fields: [usuarioId], references: [id])
+  usuarioId String
+
+  esporte   Esporte @relation(fields: [esporteId], references: [id])
+  esporteId String
+
+  dataInicio DateTime?
+
+  status StatusAgendamento @default(CONFIRMADO)
+
+  canceladoPor   Usuario? @relation("AgendamentoPermanenteCanceladoPor", fields: [canceladoPorId], references: [id])
+  canceladoPorId String?
+
+  transferidoPor   Usuario? @relation("AgendamentoPermanenteTransferidoPor", fields: [transferidoPorId], references: [id])
+  transferidoPorId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AgendamentoChurrasqueira {
+  id        String    @id @default(uuid())
+  diaSemana DiaSemana
+  turno     Turno
+
+  churrasqueira   Churrasqueira @relation(fields: [churrasqueiraId], references: [id])
+  churrasqueiraId String
+
+  usuario   Usuario @relation("UsuarioAgendamentoChurrasqueira", fields: [usuarioId], references: [id])
+  usuarioId String
+
+  status StatusAgendamento @default(CONFIRMADO)
+
+  canceladoPor   Usuario? @relation("AgendamentoChurrasqueiraCanceladoPor", fields: [canceladoPorId], references: [id])
+  canceladoPorId String?
+
+  transferidoPor   Usuario? @relation("AgendamentoChurrasqueiraTransferidoPor", fields: [transferidoPorId], references: [id])
+  transferidoPorId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AgendamentoPermanenteChurrasqueira {
+  id         String    @id @default(uuid())
+  diaSemana  DiaSemana
+  turno      Turno
+  dataInicio DateTime?
+
+  churrasqueira   Churrasqueira @relation(fields: [churrasqueiraId], references: [id])
+  churrasqueiraId String
+
+  usuario   Usuario @relation("UsuarioAgendamentoPermanenteChurrasqueira", fields: [usuarioId], references: [id])
+  usuarioId String
+
+  status StatusAgendamento @default(CONFIRMADO)
+
+  canceladoPor   Usuario? @relation("AgendamentoPermanenteChurrasqueiraCanceladoPor", fields: [canceladoPorId], references: [id])
+  canceladoPorId String?
+
+  transferidoPor   Usuario? @relation("AgendamentoPermanenteChurrasqueiraTransferidoPor", fields: [transferidoPorId], references: [id])
+  transferidoPorId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Nova model para bloquear quadras por dia e horário
+model BloqueioQuadra {
+  id           String   @id @default(uuid())
+  dataBloqueio DateTime
+
+  inicioBloqueio String  // ex: "09:00"
+  fimBloqueio    String  // ex: "22:00"
+
+  quadras        Quadra[]       @relation("QuadrasNoBloqueio")
+
+  bloqueadoPor   Usuario @relation("UsuarioBloqueios", fields: [bloqueadoPorId], references: [id])
+  bloqueadoPorId String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+

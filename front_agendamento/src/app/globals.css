@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+@theme {
+  --color-orange-50:  #FFF6EF;
+  --color-orange-100: #FDECDD;
+  --color-orange-200: #F8D6BB;
+  --color-orange-300: #F2BF98;
+  --color-orange-400: #ECA776;
+  --color-orange-500: #E49152;
+  --color-orange-600: #DE7E30; /* seu laranja */
+  --color-orange-700: #BE6927;
+  --color-orange-800: #99541F;
+  --color-orange-900: #7A4218;
+
+  /* alias opcional “brand” */
+  --color-brand-600: var(--color-orange-600);
+}
+
+:root{
+  --app-bg: #f5f5f5;          /* fundo geral do app */
+  --footer-base: 64px;
+  --footer-safe: calc(var(--footer-base) + env(safe-area-inset-bottom));
+}
+
+/* opcional: garante que o body herda o mesmo fundo */
+html, body { background: var(--app-bg); }
+
