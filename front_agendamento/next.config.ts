@@ -1,19 +1,18 @@
 import type { NextConfig } from "next";
 
-const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:3001";
-
 const nextConfig: NextConfig = {
-  // Destrava o deploy mesmo com erros de lint/type
   eslint: { ignoreDuringBuilds: true },
-  typescript: { ignoreBuildErrors: true },
-
-  // Proxy: /api -> seu backend na Render
+  images: {
+    remotePatterns: [
+      { protocol: "https", hostname: "*.r2.dev" },
+      { protocol: "https", hostname: "*.cloudflarestorage.com" },
+    ],
+  },
   async rewrites() {
+    const base = (process.env.RENDER_API_URL || "").replace(/\/$/, "");
+    const prefix = process.env.API_BASE_PATH || ""; // defina '/api' OU '' nas variáveis da Vercel
     return [
-      {
-        source: "/api/:path*",
-        destination: `${BACKEND_URL}/:path*`,
-      },
+      { source: "/api/:path*", destination: `${base}${prefix}/:path*` },
     ];
   },
 };
