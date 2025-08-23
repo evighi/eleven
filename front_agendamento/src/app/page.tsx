@@ -188,10 +188,11 @@ export default function Home() {
                       src={a.logoUrl}
                       alt={a.quadraNome}
                       className="w-full h-full object-contain select-none"
-                      onError={(ev) =>
-                        ((ev.currentTarget as HTMLImageElement).src =
-                          "/quadra.png")
-                      }
+                      onError={(ev) => {
+                        const img = ev.currentTarget as HTMLImageElement;
+                        img.onerror = null;            // evita loop
+                        img.src = "/quadra.png";       // ou "/icons/quadra.png" se preferir
+                      }}
                     />
                   </div>
 
