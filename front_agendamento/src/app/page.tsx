@@ -9,6 +9,9 @@ import { isoLocalDate } from "@/utils/date";
 import { useAuthStore } from "@/context/AuthStore";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import Spinner from "@/components/Spinner";
+// remova as versões locais de API_URL/toAbsolute e importe:
+import { API_URL, toAbsolute } from "@/utils/urls";
+
 
 type StatusAgendamento = "CONFIRMADO" | "FINALIZADO" | "CANCELADO" | "TRANSFERIDO";
 
@@ -56,7 +59,6 @@ export default function Home() {
   const [agendamentos, setAgendamentos] = useState<AgendamentoCard[]>([]);
   const [carregando, setCarregando] = useState(false);
 
-  const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
   const hojeISO = useMemo(() => isoLocalDate(), []);
 
   useEffect(() => {
