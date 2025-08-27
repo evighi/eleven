@@ -1,6 +1,7 @@
+/* eslint-disable @next/next/no-img-element */
 'use client';
 
-import { useEffect, useState, ChangeEvent, FormEvent } from "react";
+import { useEffect, useState, ChangeEvent, FormEvent, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 
 interface Churrasqueira {
@@ -14,6 +15,7 @@ interface Churrasqueira {
 export default function EditarChurrasqueira() {
   const router = useRouter();
   const { id } = useParams();
+  const churrasId = Array.isArray(id) ? id[0] : id;
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
 
   const [nome, setNome] = useState("");
@@ -23,18 +25,22 @@ export default function EditarChurrasqueira() {
   const [novaImagem, setNovaImagem] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const resolveImg = (v?: string | null) => {
+  const resolveImg = useCallback((v?: string | null) => {
     if (!v) return "/quadra.png";
     if (/^https?:\/\//i.test(v)) return v;
     return `${API_URL}/uploads/churrasqueiras/${v}`;
-  };
+  }, [API_URL]);
 
   useEffect(() => {
     async function fetchChurrasqueira() {
       try {
-        const res = await fetch(`${API_URL}/churrasqueiras/${id}`, {
+        const res = await fetch(`${API_URL}/churrasqueiras/${churrasId}`, {
           credentials: "include",
         });
+        if (res.status === 401) {
+          router.push("/login");
+          return;
+        }
         if (!res.ok) throw new Error("Erro ao buscar churrasqueira");
 
         const data: Churrasqueira = await res.json();
@@ -48,8 +54,8 @@ export default function EditarChurrasqueira() {
       }
     }
 
-    if (id) fetchChurrasqueira();
-  }, [id, API_URL]);
+    if (churrasId) fetchChurrasqueira();
+  }, [churrasId, resolveImg, API_URL, router]);
 
   function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
     if (e.target.files?.length) {
@@ -64,7 +70,7 @@ export default function EditarChurrasqueira() {
     try {
       // Sem nova imagem → PUT JSON simples
       if (!novaImagem) {
-        const resp = await fetch(`${API_URL}/churrasqueiras/${id}`, {
+        const resp = await fetch(`${API_URL}/churrasqueiras/${churrasId}`, {
           method: "PUT",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
@@ -75,7 +81,7 @@ export default function EditarChurrasqueira() {
           }),
         });
         const data = await resp.json().catch(() => ({}));
-        if (!resp.ok) throw new Error(data?.erro || "Falha ao atualizar.");
+        if (!resp.ok) throw new Error((data as { erro?: string })?.erro || "Falha ao atualizar.");
 
         alert("Churrasqueira atualizada com sucesso!");
         router.push("/adminMaster/churrasqueiras/editarChurrasqueiras");
@@ -98,7 +104,10 @@ export default function EditarChurrasqueira() {
       });
 
       if (signed.ok) {
-        const { uploadUrl, publicUrl } = await signed.json();
+        const { uploadUrl, publicUrl } = (await signed.json()) as {
+          uploadUrl: string;
+          publicUrl: string;
+        };
 
         // sobe a imagem pro R2
         const put = await fetch(uploadUrl, {
@@ -112,7 +121,7 @@ export default function EditarChurrasqueira() {
         }
 
         // atualiza dados + imagemUrl via JSON
-        const resp = await fetch(`${API_URL}/churrasqueiras/${id}`, {
+        const resp = await fetch(`${API_URL}/churrasqueiras/${churrasId}`, {
           method: "PUT",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
@@ -125,7 +134,7 @@ export default function EditarChurrasqueira() {
         });
 
         const data = await resp.json().catch(() => ({}));
-        if (!resp.ok) throw new Error(data?.erro || "Falha ao atualizar.");
+        if (!resp.ok) throw new Error((data as { erro?: string })?.erro || "Falha ao atualizar.");
 
         alert("Churrasqueira atualizada com sucesso!");
         router.push("/adminMaster/churrasqueiras/editarChurrasqueiras");
@@ -139,7 +148,7 @@ export default function EditarChurrasqueira() {
       formData.append("observacao", observacao);
       formData.append("imagem", novaImagem);
 
-      const legacy = await fetch(`${API_URL}/churrasqueiras/${id}`, {
+      const legacy = await fetch(`${API_URL}/churrasqueiras/${churrasId}`, {
         method: "PUT",
         body: formData,
         credentials: "include",
@@ -147,13 +156,14 @@ export default function EditarChurrasqueira() {
 
       const data = await legacy.json().catch(() => ({}));
       if (!legacy.ok) {
-        throw new Error(data?.erro || "Falha ao atualizar (legado).");
+        throw new Error((data as { erro?: string })?.erro || "Falha ao atualizar (legado).");
       }
 
       alert("Churrasqueira atualizada com sucesso!");
       router.push("/adminMaster/churrasqueiras/editarChurrasqueiras");
-    } catch (error: any) {
-      alert(error?.message || "Erro ao conectar com o servidor.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Erro ao conectar com o servidor.";
+      alert(message);
     } finally {
       setLoading(false);
     }

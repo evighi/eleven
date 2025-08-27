@@ -9,32 +9,42 @@ export function useLoadUser() {
   const { logaUsuario, deslogaUsuario, setCarregandoUser, hasHydrated } = useAuthStore();
 
   useEffect(() => {
-    // aguarda hidratar o Zustand; evita piscar/redirect prematuro
     if (!hasHydrated) return;
 
     let cancelado = false;
-    async function fetchUser() {
+    (async () => {
       setCarregandoUser(true);
       try {
         const base = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
-        const { data } = await axios.get(`${base}/usuarios/me`, { withCredentials: true });
+
+        // Se o endpoint /usuarios/me NÃO retorna o token,
+        // usamos Omit para tipar só o que vem da API e depois adicionamos token: ""
+        type ApiMeResponse = Omit<UsuarioLogadoItf, "token">;
+
+        const { data } = await axios.get<ApiMeResponse>(`${base}/usuarios/me`, {
+          withCredentials: true,
+        });
+
         if (cancelado) return;
         const usuario: UsuarioLogadoItf = { ...data, token: "" };
-        logaUsuario(usuario);               // 1) seta usuário
-      } catch (err: any) {
+        logaUsuario(usuario);
+      } catch (err: unknown) {
         if (cancelado) return;
-        const status = err?.response?.status;
-        // Só derruba sessão se token inválido/expirado
-        if (status === 401 || status === 403) {
-          deslogaUsuario();
-        }
-        // Em outros erros (rede/5xx), mantém usuário persistido (se houver)
-      } finally {
-        if (!cancelado) setCarregandoUser(false); // 2) só então tira o loading
-      }
-    }
 
-    fetchUser();
-    return () => { cancelado = true; };
+        if (axios.isAxiosError(err)) {
+          const status = err.response?.status;
+          if (status === 401 || status === 403) {
+            deslogaUsuario();
+          }
+        }
+        // demais erros (rede/5xx): mantém usuário persistido
+      } finally {
+        if (!cancelado) setCarregandoUser(false);
+      }
+    })();
+
+    return () => {
+      cancelado = true;
+    };
   }, [logaUsuario, deslogaUsuario, setCarregandoUser, hasHydrated]);
 }

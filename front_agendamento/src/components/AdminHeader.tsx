@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { Menu, ChevronLeft, ChevronRight } from "lucide-react";
 import { useRef, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/context/AuthStore";
 import { useLoadUser } from "@/hooks/useLoadUser";
-import AdminSideMenu from "../components/AdminSideMenu";
+import AdminSideMenu from "@/components/AdminSideMenu";
 
 export default function AdminHeader() {
   useLoadUser();
@@ -24,8 +25,6 @@ export default function AdminHeader() {
   if (!usuario || usuario.tipo !== "ADMIN_MASTER") {
     return <div className="flex justify-center items-center h-screen">Carregando...</div>;
   }
-
-  const primeiroNome = usuario.nome.split(" ")[0] || "Usuário";
 
   const opcoes = [
     { nome: "Perfil de Usuários", url: "/adminMaster/usuarios", imagem: "/icons/perfis.png" },
@@ -48,8 +47,15 @@ export default function AdminHeader() {
 
       {/* HEADER */}
       <header className="bg-gray-300 text-gray-800 p-4 flex items-center justify-between shadow">
-        <Link href="/adminMaster">
-          <img src="/logoeleven(2).png" alt="Logo" className="h-15 w-auto cursor-pointer" />
+        <Link href="/adminMaster" aria-label="Ir para o painel Admin Master" className="flex items-center">
+          <Image
+            src="/logoeleven(2).png"
+            alt="Logo da Eleven"
+            width={160}
+            height={48}
+            priority
+            className="w-auto h-12"
+          />
         </Link>
 
         <div className="flex items-center gap-4">
@@ -68,6 +74,7 @@ export default function AdminHeader() {
         <button
           onClick={() => scroll("left")}
           className="absolute left-2 z-10 bg-white p-2 rounded-full shadow-md hover:bg-gray-100 transition hidden sm:flex"
+          aria-label="Rolar para a esquerda"
         >
           <ChevronLeft size={20} />
         </button>
@@ -84,7 +91,13 @@ export default function AdminHeader() {
               className="flex flex-col items-center min-w-[80px] text-gray-700 hover:text-orange-600 transition snap-start"
             >
               <div className="w-14 h-14 flex items-center justify-center bg-white rounded-full shadow-md">
-                <img src={imagem} alt={nome} className="w-8 h-8" />
+                <Image
+                  src={imagem}
+                  alt={nome}
+                  width={32}
+                  height={32}
+                  className="w-8 h-8"
+                />
               </div>
               <span className="text-xs mt-2 text-center">{nome}</span>
             </Link>
@@ -94,6 +107,7 @@ export default function AdminHeader() {
         <button
           onClick={() => scroll("right")}
           className="absolute right-2 z-10 bg-white p-2 rounded-full shadow-md hover:bg-gray-100 transition hidden sm:flex"
+          aria-label="Rolar para a direita"
         >
           <ChevronRight size={20} />
         </button>

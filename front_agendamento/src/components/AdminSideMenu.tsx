@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import { useAuthStore } from "@/context/AuthStore";
 import { useLoadUser } from "@/hooks/useLoadUser";
 import { useLogout } from "@/hooks/useLogout";
+import AppImage from "@/components/AppImage";
 
 type Props = { open: boolean; onClose: () => void };
 
@@ -92,7 +93,7 @@ export default function AdminSideMenu({ open, onClose }: Props) {
 
             {/* ⇩ novo botão para ir ao perfil do cliente */}
             <Item
-              href="/" // ajuste se a rota do perfil do cliente for diferente
+              href="/"
               label="Ir para o perfil do cliente"
               icon="/icons/sair.png"
               onClose={onClose}
@@ -137,7 +138,14 @@ function Item({
       onClick={onClose}
       className="flex items-center gap-3 rounded-xl bg-gray-100 hover:bg-gray-200 transition px-3 py-3"
     >
-      <img src={icon} alt={label} className="w-5 h-5 object-contain" />
+      <AppImage
+        src={icon}
+        alt={label}
+        width={20}
+        height={20}
+        className="w-5 h-5 object-contain"
+        priority={false}
+      />
       <span className="text-[14px] font-medium text-gray-800">{label}</span>
     </Link>
   );
@@ -158,7 +166,14 @@ function ItemButton({
       onClick={onClick}
       className="w-full text-left flex items-center gap-3 rounded-xl bg-gray-100 hover:bg-gray-200 transition px-3 py-3 cursor-pointer"
     >
-      <img src={icon} alt={label} className="w-5 h-5 object-contain" />
+      <AppImage
+        src={icon}
+        alt={label}
+        width={20}
+        height={20}
+        className="w-5 h-5 object-contain"
+        priority={false}
+      />
       <span className="text-[14px] font-medium text-gray-800">{label}</span>
     </button>
   );

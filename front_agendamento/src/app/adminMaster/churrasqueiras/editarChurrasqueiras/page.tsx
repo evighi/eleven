@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 'use client';
 
 import { useEffect, useState } from "react";
@@ -21,10 +22,20 @@ export default function EditarChurrasqueiras() {
   };
 
   useEffect(() => {
-    fetch(`${API_URL}/churrasqueiras`, { credentials: "include" })
-      .then((res) => res.json())
-      .then((data) => setChurrasqueiras(data))
-      .catch(() => alert("Erro ao carregar churrasqueiras"));
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/churrasqueiras`, { credentials: "include" });
+        if (res.status === 401) {
+          window.location.href = "/login";
+          return;
+        }
+        if (!res.ok) throw new Error("Falha ao carregar churrasqueiras");
+        const data: Churrasqueira[] = await res.json();
+        setChurrasqueiras(data);
+      } catch {
+        alert("Erro ao carregar churrasqueiras");
+      }
+    })();
   }, [API_URL]);
 
   return (

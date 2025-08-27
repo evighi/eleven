@@ -1,7 +1,6 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
-import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useAuthStore } from "@/context/AuthStore";
 
 /** Helpers de data/hora em America/Sao_Paulo */
@@ -27,11 +26,95 @@ const hourStrSP = (d = new Date()) => {
   return `${String(clamped).padStart(2, "0")}:00`;
 };
 
+/* ================== TIPAGENS ================== */
+type TipoReserva = "comum" | "permanente";
+type Turno = "DIA" | "NOITE";
+type TipoLocal = "quadra" | "churrasqueira";
+
+interface UsuarioRef {
+  id?: string;
+  nome?: string;
+  email?: string;
+}
+
+interface DisponQuadra {
+  quadraId: string;
+  nome: string;
+  numero: number;
+  disponivel: boolean;
+  bloqueada?: boolean;
+  usuario?: UsuarioRef;
+  tipoReserva?: TipoReserva;
+  agendamentoId?: string;
+  id?: string;
+  tipoLocal?: TipoLocal;
+}
+
+interface ChurrasTurno {
+  turno: Turno;
+  disponivel: boolean;
+  usuario?: UsuarioRef;
+  tipoReserva?: TipoReserva;
+  agendamentoId?: string;
+  id?: string;
+}
+
+interface ChurrasqueiraDisp {
+  churrasqueiraId: string;
+  nome: string;
+  numero: number;
+  disponibilidade: ChurrasTurno[];
+  /* Campos opcionais para manter a compatibilidade com o uso atual no JSX */
+  disponivel?: boolean;
+  tipoReserva?: TipoReserva;
+}
+
+interface DisponibilidadeGeral {
+  quadras: Record<string, DisponQuadra[]>;
+  churrasqueiras: ChurrasqueiraDisp[];
+}
+
+interface DetalheItemMin {
+  agendamentoId?: string;
+  id?: string;
+  tipoLocal?: TipoLocal;
+  tipoReserva?: TipoReserva;
+}
+
+interface DetalheExtra {
+  horario?: string;
+  turno?: Turno;
+  esporte?: string;
+}
+
+interface JogadorRef {
+  nome: string;
+}
+
+interface AgendamentoSelecionado {
+  dia: string;
+  horario?: string | null;
+  turno?: Turno | null;
+  usuario: string | UsuarioRef | "—";
+  jogadores: JogadorRef[];
+  esporte?: string | null;
+  tipoReserva: TipoReserva;
+  agendamentoId: string;
+  tipoLocal: TipoLocal;
+}
+
+interface UsuarioLista {
+  id: string;
+  nome: string;
+  email?: string;
+}
+/* ============================================= */
+
 export default function AdminHome() {
   const [data, setData] = useState("");
   const [horario, setHorario] = useState("");
-  const [disponibilidade, setDisponibilidade] = useState<any>(null);
-  const [agendamentoSelecionado, setAgendamentoSelecionado] = useState<any>(null);
+  const [disponibilidade, setDisponibilidade] = useState<DisponibilidadeGeral | null>(null);
+  const [agendamentoSelecionado, setAgendamentoSelecionado] = useState<AgendamentoSelecionado | null>(null);
 
   const [confirmarCancelamento, setConfirmarCancelamento] = useState(false);
   const [loadingCancelamento, setLoadingCancelamento] = useState(false);
@@ -40,14 +123,14 @@ export default function AdminHome() {
   // Transferência
   const [abrirModalTransferencia, setAbrirModalTransferencia] = useState(false);
   const [buscaUsuario, setBuscaUsuario] = useState("");
-  const [usuariosFiltrados, setUsuariosFiltrados] = useState<any[]>([]);
-  const [usuarioSelecionado, setUsuarioSelecionado] = useState<any>(null);
+  const [usuariosFiltrados, setUsuariosFiltrados] = useState<UsuarioLista[]>([]);
+  const [usuarioSelecionado, setUsuarioSelecionado] = useState<UsuarioLista | null>(null);
   const [carregandoUsuarios, setCarregandoUsuarios] = useState(false);
 
   // ➕ Adicionar jogadores
   const [abrirModalJogadores, setAbrirModalJogadores] = useState(false);
   const [buscaJogador, setBuscaJogador] = useState("");
-  const [usuariosParaJogadores, setUsuariosParaJogadores] = useState<any[]>([]);
+  const [usuariosParaJogadores, setUsuariosParaJogadores] = useState<UsuarioLista[]>([]);
   const [jogadoresSelecionadosIds, setJogadoresSelecionadosIds] = useState<string[]>([]);
   const [convidadoNome, setConvidadoNome] = useState("");
   const [convidadosPendentes, setConvidadosPendentes] = useState<string[]>([]);
@@ -55,17 +138,17 @@ export default function AdminHome() {
   const [addingPlayers, setAddingPlayers] = useState(false);
 
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
-  const { usuario, carregandoUser } = useAuthStore();
+  const { usuario } = useAuthStore();
 
   const isAllowed =
     !!usuario &&
-    ["ADMIN_MASTER", "ADMIN_PROFESSORES"].includes(usuario.tipo);
+    ["ADMIN_MASTER", "ADMIN_PROFESSORES"].includes((usuario as { tipo?: string }).tipo || "");
 
-  const buscarDisponibilidade = async () => {
+  const buscarDisponibilidade = useCallback(async () => {
     if (!isAllowed) return;
     if (!data || !horario) return;
     try {
-      const res = await axios.get(`${API_URL}/disponibilidadeGeral/geral`, {
+      const res = await axios.get<DisponibilidadeGeral>(`${API_URL}/disponibilidadeGeral/geral`, {
         params: { data, horario },
         withCredentials: true,
       });
@@ -73,7 +156,7 @@ export default function AdminHome() {
     } catch (error) {
       console.error(error);
     }
-  };
+  }, [API_URL, data, horario, isAllowed]);
 
   // 🔧 Inicializa data/horário usando America/Sao_Paulo (sem UTC)
   useEffect(() => {
@@ -83,14 +166,14 @@ export default function AdminHome() {
 
   useEffect(() => {
     buscarDisponibilidade();
-  }, [data, horario]);
+  }, [buscarDisponibilidade]);
 
   // Detalhes
-  const abrirDetalhes = async (item: any, extra: any) => {
+  const abrirDetalhes = async (item: DetalheItemMin, extra?: DetalheExtra) => {
     const agendamentoId = item.agendamentoId || item.id;
     if (!agendamentoId || !item.tipoReserva) return;
 
-    const tipoLocal = item.tipoLocal || "quadra";
+    const tipoLocal: TipoLocal = item.tipoLocal || "quadra";
 
     let rota = "";
     if (tipoLocal === "churrasqueira") {
@@ -112,12 +195,12 @@ export default function AdminHome() {
         dia: data,
         horario: extra?.horario || null,
         turno: extra?.turno || null,
-        usuario: res.data.usuario || "—",
-        jogadores: res.data.jogadores || [],
-        esporte: extra?.esporte || res.data.esporte?.nome || null,
-        tipoReserva: item.tipoReserva, // "comum" | "permanente"
+        usuario: (res.data as { usuario?: string | UsuarioRef })?.usuario || "—",
+        jogadores: (res.data as { jogadores?: JogadorRef[] })?.jogadores || [],
+        esporte: extra?.esporte || (res.data as { esporte?: { nome?: string } })?.esporte?.nome || null,
+        tipoReserva: item.tipoReserva,
         agendamentoId,
-        tipoLocal, // "quadra" | "churrasqueira"
+        tipoLocal,
       });
     } catch (error) {
       console.error("Erro ao buscar detalhes:", error);
@@ -159,30 +242,33 @@ export default function AdminHome() {
   };
 
   // Buscar usuários (transferência)
-  const buscarUsuarios = async (termo: string) => {
-    if (termo.trim().length === 0) {
-      setUsuariosFiltrados([]);
-      return;
-    }
-    setCarregandoUsuarios(true);
-    try {
-      const res = await axios.get(`${API_URL}/clientes`, {
-        params: { nome: buscaUsuario },
-        withCredentials: true,
-      });
-      setUsuariosFiltrados(res.data);
-    } catch (error) {
-      console.error("Erro ao buscar usuários:", error);
-      setUsuariosFiltrados([]);
-    } finally {
-      setCarregandoUsuarios(false);
-    }
-  };
+  const buscarUsuarios = useCallback(
+    async (termo: string) => {
+      if (termo.trim().length === 0) {
+        setUsuariosFiltrados([]);
+        return;
+      }
+      setCarregandoUsuarios(true);
+      try {
+        const res = await axios.get<UsuarioLista[]>(`${API_URL}/clientes`, {
+          params: { nome: buscaUsuario },
+          withCredentials: true,
+        });
+        setUsuariosFiltrados(res.data);
+      } catch (error) {
+        console.error("Erro ao buscar usuários:", error);
+        setUsuariosFiltrados([]);
+      } finally {
+        setCarregandoUsuarios(false);
+      }
+    },
+    [API_URL, buscaUsuario]
+  );
 
   useEffect(() => {
     const t = setTimeout(() => buscarUsuarios(buscaUsuario), 300);
     return () => clearTimeout(t);
-  }, [buscaUsuario]);
+  }, [buscaUsuario, buscarUsuarios]);
 
   const abrirModalTransferir = () => {
     setBuscaUsuario("");
@@ -228,50 +314,49 @@ export default function AdminHome() {
     setAbrirModalJogadores(true);
   };
 
-
-  const buscarUsuariosParaJogadores = async (termo: string) => {
-    if (termo.trim().length < 2) {
-      setUsuariosParaJogadores([]);
-      return;
-    }
-    setCarregandoJogadores(true);
-    try {
-      const res = await axios.get(`${API_URL}/clientes`, {
-        params: { nome: termo },
-        withCredentials: true,
-      });
-      setUsuariosParaJogadores(res.data || []);
-    } catch (e) {
-      console.error(e);
-      setUsuariosParaJogadores([]);
-    } finally {
-      setCarregandoJogadores(false);
-    }
-  };
+  const buscarUsuariosParaJogadores = useCallback(
+    async (termo: string) => {
+      if (termo.trim().length < 2) {
+        setUsuariosParaJogadores([]);
+        return;
+      }
+      setCarregandoJogadores(true);
+      try {
+        const res = await axios.get<UsuarioLista[]>(`${API_URL}/clientes`, {
+          params: { nome: termo },
+          withCredentials: true,
+        });
+        setUsuariosParaJogadores(res.data || []);
+      } catch (e) {
+        console.error(e);
+        setUsuariosParaJogadores([]);
+      } finally {
+        setCarregandoJogadores(false);
+      }
+    },
+    [API_URL]
+  );
 
   useEffect(() => {
     const t = setTimeout(() => buscarUsuariosParaJogadores(buscaJogador), 300);
     return () => clearTimeout(t);
-  }, [buscaJogador]);
-
+  }, [buscaJogador, buscarUsuariosParaJogadores]);
 
   const alternarSelecionado = (id: string) => {
-    setJogadoresSelecionadosIds(prev =>
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-    );
+    setJogadoresSelecionadosIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
   const adicionarConvidado = () => {
     const nome = convidadoNome.trim();
     if (!nome) return;
     if (!convidadosPendentes.includes(nome)) {
-      setConvidadosPendentes(prev => [...prev, nome]);
+      setConvidadosPendentes((prev) => [...prev, nome]);
     }
     setConvidadoNome("");
   };
 
   const removerConvidado = (nome: string) => {
-    setConvidadosPendentes(prev => prev.filter(n => n !== nome));
+    setConvidadosPendentes((prev) => prev.filter((n) => n !== nome));
   };
 
   const confirmarAdicionarJogadores = async () => {
@@ -280,7 +365,6 @@ export default function AdminHome() {
     try {
       setAddingPlayers(true);
 
-      // ⚠️ agora bate na rota PATCH /agendamentos/:id/jogadores
       await axios.patch(
         `${API_URL}/agendamentos/${agendamentoSelecionado.agendamentoId}/jogadores`,
         {
@@ -292,20 +376,12 @@ export default function AdminHome() {
 
       alert("Jogadores adicionados com sucesso!");
 
-      // Limpa e fecha
       setJogadoresSelecionadosIds([]);
       setConvidadosPendentes([]);
       setConvidadoNome("");
       setAbrirModalJogadores(false);
 
-      // Atualiza tela
       buscarDisponibilidade();
-
-      // (opcional) recarregar os detalhes do agendamento exibido:
-      // try {
-      //   const det = await axios.get(`${API_URL}/agendamentos/${agendamentoSelecionado.agendamentoId}`, { withCredentials: true });
-      //   setAgendamentoSelecionado(prev => prev ? { ...prev, jogadores: det.data.jogadores ?? [] } : prev);
-      // } catch {}
     } catch (e) {
       console.error(e);
       alert("Erro ao adicionar jogadores.");
@@ -361,18 +437,17 @@ export default function AdminHome() {
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4">
-                {disponibilidade.quadras[esporte].map((q: any) => (
+                {disponibilidade.quadras[esporte].map((q: DisponQuadra) => (
                   <div
                     key={q.quadraId}
-                    onClick={() =>
-                      !q.disponivel && abrirDetalhes(q, { horario, esporte })
-                    }
-                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${q.bloqueada
-                      ? "border-2 border-red-500 bg-red-50"
-                      : q.disponivel
+                    onClick={() => !q.disponivel && abrirDetalhes(q, { horario, esporte })}
+                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${
+                      q.bloqueada
+                        ? "border-2 border-red-500 bg-red-50"
+                        : q.disponivel
                         ? "border-2 border-green-500 bg-green-50"
                         : "border-2 border-gray-500 bg-gray-50"
-                      }`}
+                    }`}
                   >
                     <p className="font-medium">{q.nome}</p>
                     <p className="text-xs text-gray-700">Quadra {q.numero}</p>
@@ -399,17 +474,18 @@ export default function AdminHome() {
             {/* Dia */}
             <h3 className="text-sm font-semibold mb-2 text-gray-800">Dia</h3>
             <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4 mb-6">
-              {disponibilidade.churrasqueiras.map((c: any) => {
-                const diaInfo = c.disponibilidade.find((t: any) => t.turno === "DIA");
+              {disponibilidade.churrasqueiras.map((c: ChurrasqueiraDisp) => {
+                const diaInfo = c.disponibilidade.find((t) => t.turno === "DIA");
                 return (
                   <div
                     key={c.churrasqueiraId + "-dia"}
                     onClick={() =>
                       !diaInfo?.disponivel &&
-                      abrirDetalhes({ ...diaInfo, tipoLocal: "churrasqueira" }, { turno: "DIA" })
+                      abrirDetalhes({ ...(diaInfo as DetalheItemMin), tipoLocal: "churrasqueira" }, { turno: "DIA" })
                     }
-                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${diaInfo?.disponivel ? "border-2 border-green-500 bg-green-50" : "border-2 border-red-500 bg-red-50"
-                      }`}
+                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${
+                      diaInfo?.disponivel ? "border-2 border-green-500 bg-green-50" : "border-2 border-red-500 bg-red-50"
+                    }`}
                   >
                     <p className="font-medium">{c.nome}</p>
                     <p className="text-xs text-gray-700">Quadra {c.numero}</p>
@@ -427,17 +503,18 @@ export default function AdminHome() {
             {/* Noite */}
             <h3 className="text-sm font-semibold mb-2 text-gray-800">Noite</h3>
             <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4">
-              {disponibilidade.churrasqueiras.map((c: any) => {
-                const noiteInfo = c.disponibilidade.find((t: any) => t.turno === "NOITE");
+              {disponibilidade.churrasqueiras.map((c: ChurrasqueiraDisp) => {
+                const noiteInfo = c.disponibilidade.find((t) => t.turno === "NOITE");
                 return (
                   <div
                     key={c.churrasqueiraId + "-noite"}
                     onClick={() =>
                       !noiteInfo?.disponivel &&
-                      abrirDetalhes({ ...noiteInfo, tipoLocal: "churrasqueira" }, { turno: "NOITE" })
+                      abrirDetalhes({ ...(noiteInfo as DetalheItemMin), tipoLocal: "churrasqueira" }, { turno: "NOITE" })
                     }
-                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${noiteInfo?.disponivel ? "border-2 border-green-500 bg-green-50" : "border-2 border-red-500 bg-red-50"
-                      }`}
+                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${
+                      noiteInfo?.disponivel ? "border-2 border-green-500 bg-green-50" : "border-2 border-red-500 bg-red-50"
+                    }`}
                   >
                     <p className="font-medium">{c.nome}</p>
                     <p className="text-xs text-gray-700">Quadra {c.numero}</p>
@@ -463,7 +540,7 @@ export default function AdminHome() {
             <p><strong>Dia:</strong> {agendamentoSelecionado.dia}</p>
             {agendamentoSelecionado.horario && (<p><strong>Horário:</strong> {agendamentoSelecionado.horario}</p>)}
             {agendamentoSelecionado.turno && (<p><strong>Turno:</strong> {agendamentoSelecionado.turno}</p>)}
-            <p><strong>Usuário:</strong> {agendamentoSelecionado.usuario}</p>
+            <p><strong>Usuário:</strong> {agendamentoSelecionado.usuario as string}</p>
             {agendamentoSelecionado.esporte && (<p><strong>Esporte:</strong> {agendamentoSelecionado.esporte}</p>)}
             <p><strong>Tipo:</strong> {agendamentoSelecionado.tipoReserva}</p>
 
@@ -484,7 +561,7 @@ export default function AdminHome() {
 
                   <ul className="list-disc list-inside text-sm text-gray-700 mt-2">
                     {agendamentoSelecionado.jogadores.length > 0 ? (
-                      agendamentoSelecionado.jogadores.map((j: any, idx: number) => (
+                      agendamentoSelecionado.jogadores.map((j, idx) => (
                         <li key={idx}>{j.nome}</li>
                       ))
                     ) : (
@@ -493,7 +570,6 @@ export default function AdminHome() {
                   </ul>
                 </div>
               )}
-
 
             {/* Transferir (somente comum/quadra) */}
             {agendamentoSelecionado.tipoReserva === "comum" &&
@@ -573,8 +649,9 @@ export default function AdminHome() {
               {usuariosFiltrados.map((user) => (
                 <li
                   key={user.id}
-                  className={`p-2 cursor-pointer hover:bg-blue-100 ${usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
-                    }`}
+                  className={`p-2 cursor-pointer hover:bg-blue-100 ${
+                    usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
+                  }`}
                   onClick={() => setUsuarioSelecionado(user)}
                 >
                   {user.nome} ({user.email})
@@ -626,8 +703,9 @@ export default function AdminHome() {
                 return (
                   <li
                     key={u.id}
-                    className={`p-2 cursor-pointer flex items-center justify-between hover:bg-orange-50 ${ativo ? "bg-orange-100" : ""
-                      }`}
+                    className={`p-2 cursor-pointer flex items-center justify-between hover:bg-orange-50 ${
+                      ativo ? "bg-orange-100" : ""
+                    }`}
                     onClick={() => alternarSelecionado(u.id)}
                   >
                     <span>
@@ -706,8 +784,7 @@ export default function AdminHome() {
               <button
                 onClick={confirmarAdicionarJogadores}
                 disabled={
-                  addingPlayers ||
-                  (jogadoresSelecionadosIds.length === 0 && convidadosPendentes.length === 0)
+                  addingPlayers || (jogadoresSelecionadosIds.length === 0 && convidadosPendentes.length === 0)
                 }
                 className="px-4 py-2 rounded bg-orange-600 text-white hover:bg-orange-700 disabled:bg-orange-300"
               >

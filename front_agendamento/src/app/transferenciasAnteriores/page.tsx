@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import axios from "axios";
+import Image from "next/image";
 
-import { useAuthStore } from "@/context/AuthStore";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import Spinner from "@/components/Spinner";
 import { isoLocalDate } from "@/utils/date";
@@ -36,7 +36,23 @@ type Card = {
   paraQuem?: string; // nome completo de quem recebeu
 };
 
-/** Img com fallback único (evita loop em caso de 404) */
+/** Junta base + path sem barras duplicadas */
+function joinUrl(base: string, path: string) {
+  const b = base.replace(/\/+$/, "");
+  const p = String(path || "").replace(/^\/+/, "");
+  return `${b}/${p}`;
+}
+
+/** Deixa passar absoluto (https:, data:, blob:) e prefixa API_URL no resto */
+function toAbs(API_URL: string, u?: string | null) {
+  if (!u) return "";
+  const v = u.trim();
+  if (/^(https?:|data:|blob:)/i.test(v)) return v;     // R2 ou data/blob
+  if (v.startsWith("/")) return joinUrl(API_URL, v);   // /uploads/...
+  return joinUrl(API_URL, v);                          // "uploads/..." etc
+}
+
+/** Img segura com fallback usando next/image */
 function SafeImg({
   src,
   alt,
@@ -58,9 +74,11 @@ function SafeImg({
   }, [src]);
 
   return (
-    <img
-      src={imgSrc}
+    <Image
+      src={imgSrc || FALLBACK}
       alt={alt}
+      fill
+      sizes="160px"
       className={className}
       onError={() => {
         if (tried.current) return;
@@ -69,13 +87,6 @@ function SafeImg({
       }}
     />
   );
-}
-
-/** Junta base + path sem barras duplicadas */
-function joinUrl(base: string, path: string) {
-  const b = base.replace(/\/+$/, "");
-  const p = String(path || "").replace(/^\/+/, "");
-  return `${b}/${p}`;
 }
 
 export default function TransferenciasAnterioresPage() {
@@ -88,7 +99,6 @@ export default function TransferenciasAnterioresPage() {
   ]);
 
   const router = useRouter();
-  const { usuario } = useAuthStore();
 
   const [itens, setItens] = useState<Card[]>([]);
   const [carregando, setCarregando] = useState(false);
@@ -97,65 +107,65 @@ export default function TransferenciasAnterioresPage() {
   const UPLOADS_PREFIX =
     (process.env.NEXT_PUBLIC_UPLOADS_PREFIX || "/uploads/quadras").trim();
 
-  const hojeISO = useMemo(() => isoLocalDate(new Date(), "America/Sao_Paulo"), []);
+  const hojeISO = useMemo(
+    () => isoLocalDate(new Date(), "America/Sao_Paulo"),
+    []
+  );
 
   // Helpers
-  const paraDDMM = (iso?: string) => {
+  const paraDDMM = useCallback((iso?: string) => {
     const s = (iso || hojeISO).slice(0, 10);
     const [, m, d] = s.split("-");
     return `${d}/${m}`;
-  };
-
-  /** Deixa passar absoluto (https:, data:, blob:) e prefixa API_URL no resto */
-  function toAbs(API_URL: string, u?: string | null) {
-    if (!u) return "";
-    const v = u.trim();
-    if (/^(https?:|data:|blob:)/i.test(v)) return v;     // R2 ou data/blob
-    if (v.startsWith("/")) return joinUrl(API_URL, v);   // /uploads/...
-    return joinUrl(API_URL, v);                          // "uploads/..." etc
-  }
+  }, [hojeISO]);
 
   /** Resolve a melhor URL possível para a imagem da quadra (R2 ou legado) */
-  function resolveImg(raw: TransferidoAPI, API_URL: string, UPLOADS_PREFIX: string) {
-    const candidates = [
-      raw.quadraLogoUrl,     // back novo já pode mandar absoluto
-      raw.quadraImagem,      // legado: nome do arquivo
-    ].filter((v): v is string => !!v && v.trim().length > 0);
+  const resolveImg = useCallback(
+    (raw: TransferidoAPI) => {
+      const candidates = [
+        raw.quadraLogoUrl, // back novo já pode mandar absoluto
+        raw.quadraImagem,  // legado: nome do arquivo
+      ].filter((v): v is string => !!v && v.trim().length > 0);
 
-    for (const c of candidates) {
-      const v = c.trim();
+      for (const c of candidates) {
+        const v = c.trim();
 
-      // 1) absoluto
-      if (/^(https?:|data:|blob:)/i.test(v)) return v;
+        // 1) absoluto
+        if (/^(https?:|data:|blob:)/i.test(v)) return v;
 
-      // 2) veio com /uploads/... relativo
-      if (v.startsWith("/uploads/") || v.includes("/uploads/")) {
+        // 2) veio com /uploads/... relativo
+        if (v.startsWith("/uploads/") || v.includes("/uploads/")) {
+          return toAbs(API_URL, v);
+        }
+
+        // 3) apenas nome do arquivo (ex: "1752877664044.PNG")
+        if (/^[\w.\-]+$/.test(v)) {
+          const prefix = (UPLOADS_PREFIX || "/uploads/quadras").trim();
+          return toAbs(API_URL, joinUrl(prefix, v));
+        }
+
+        // 4) qualquer outro relativo
         return toAbs(API_URL, v);
       }
 
-      // 3) apenas nome do arquivo (ex: "1752877664044.PNG")
-      if (/^[\w.\-]+$/.test(v)) {
-        const prefix = (UPLOADS_PREFIX || "/uploads/quadras").trim();
-        return toAbs(API_URL, joinUrl(prefix, v));
-      }
+      return "/quadra.png";
+    },
+    [API_URL, UPLOADS_PREFIX]
+  );
 
-      // 4) qualquer outro relativo
-      return toAbs(API_URL, v);
-    }
-
-    return "/quadra.png";
-  }
-
-  const normalizar = (raw: TransferidoAPI): Card => ({
-    id: raw.id,
-    logoUrl: resolveImg(raw, API_URL, UPLOADS_PREFIX),
-    quadraNome: raw.quadraNome || "Quadra",
-    numero: raw.quadraNumero != null ? String(raw.quadraNumero) : undefined,
-    esporte: raw.esporteNome || "",
-    dia: paraDDMM(raw.data),
-    hora: raw.horario,
-    paraQuem: raw.transferidoPara?.nome || undefined,
-  });
+  const normalizar = useCallback(
+    (raw: TransferidoAPI): Card => ({
+      id: raw.id,
+      logoUrl: resolveImg(raw),
+      quadraNome: raw.quadraNome || "Quadra",
+      numero: raw.quadraNumero != null ? String(raw.quadraNumero) : undefined,
+      esporte: raw.esporteNome || "",
+      dia: paraDDMM(raw.data),
+      hora: raw.horario,
+      paraQuem: raw.transferidoPara?.nome || undefined,
+    }),
+    [resolveImg, paraDDMM]
+  );
 
   useEffect(() => {
     if (isChecking) return;
@@ -185,7 +195,7 @@ export default function TransferenciasAnterioresPage() {
       }
     };
     fetch();
-  }, [API_URL, isChecking]);
+  }, [API_URL, isChecking, normalizar]);
 
   // ⏳ Enquanto verifica cookie/usuário
   if (isChecking) {
@@ -244,11 +254,11 @@ export default function TransferenciasAnterioresPage() {
                 className="rounded-xl bg-[#f3f3f3] px-3 py-2.5 shadow-sm"
               >
                 <div className="flex items-center gap-3">
-                  <div className="shrink-0 w-28 h-12 sm:w-36 sm:h-14 md:w-40 md:h-16 flex items-center justify-center overflow-hidden">
+                  <div className="relative shrink-0 w-28 h-12 sm:w-36 sm:h-14 md:w-40 md:h-16 overflow-hidden">
                     <SafeImg
                       src={a.logoUrl}
                       alt={a.quadraNome}
-                      className="w-full h-full object-contain select-none"
+                      className="object-contain select-none"
                     />
                   </div>
                   <div className="min-w-0 flex-1">

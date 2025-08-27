@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from "react";
+import AppImage from "@/components/AppImage";
 
 interface Esporte {
   id: string;
@@ -55,11 +56,13 @@ export default function ExcluirEsportes() {
             key={esporte.id}
             className="border rounded-xl p-4 shadow hover:shadow-lg transition bg-white flex flex-col items-center relative"
           >
-            <img
-              src={esporte.imagem ?? "/esporte.png"}
+            <AppImage
+              src={esporte.imagem || "/esporte.png"}
               alt={esporte.nome}
+              width={128}
+              height={128}
               className="w-32 h-32 object-cover mb-2 rounded"
-              onError={(e) => ((e.currentTarget as HTMLImageElement).src = "/esporte.png")}
+              fallbackSrc="/esporte.png"
             />
 
             <span className="text-lg font-semibold mb-2">{esporte.nome}</span>

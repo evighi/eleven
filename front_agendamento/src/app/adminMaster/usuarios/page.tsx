@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import axios from 'axios'
 
 interface Usuario {
@@ -22,48 +22,50 @@ export default function UsuariosAdmin() {
   const [usuarioSelecionado, setUsuarioSelecionado] = useState<Usuario | null>(null)
   const [novoTipo, setNovoTipo] = useState('')
 
-  const carregarUsuarios = async () => {
+  const API_URL = process.env.NEXT_PUBLIC_URL_API || 'http://localhost:3001'
+
+  const carregarUsuarios = useCallback(async () => {
     try {
-      const res = await axios.get('http://localhost:3001/usuariosAdmin', {
+      const res = await axios.get(`${API_URL}/usuariosAdmin`, {
         params: {
           nome: busca || undefined,
-          tipo: filtroTipo || undefined
+          tipo: filtroTipo || undefined,
         },
-        withCredentials: true
+        withCredentials: true,
       })
-      setUsuarios(res.data)
+      setUsuarios(res.data || [])
     } catch (err) {
       console.error(err)
     }
-  }
+  }, [API_URL, busca, filtroTipo])
 
   useEffect(() => {
     const delay = setTimeout(() => {
-      carregarUsuarios()
+      void carregarUsuarios()
     }, 300)
     return () => clearTimeout(delay)
-  }, [busca, filtroTipo])
+  }, [carregarUsuarios])
 
   const salvarTipo = async () => {
     if (!usuarioSelecionado) return
     try {
       await axios.put(
-        `http://localhost:3001/usuariosAdmin/${usuarioSelecionado.id}/tipo`,
+        `${API_URL}/usuariosAdmin/${usuarioSelecionado.id}/tipo`,
         { tipo: novoTipo },
         { withCredentials: true }
       )
-      alert("Tipo atualizado com sucesso!")
+      alert('Tipo atualizado com sucesso!')
       setUsuarioSelecionado(null)
-      carregarUsuarios()
+      void carregarUsuarios()
     } catch (err) {
       console.error(err)
-      alert("Erro ao atualizar tipo")
+      alert('Erro ao atualizar tipo')
     }
   }
 
   const formatarData = (data: string | null) => {
-    if (!data) return "-"
-    const [ano, mes, dia] = data.split("T")[0].split("-")
+    if (!data) return '-'
+    const [ano, mes, dia] = data.split('T')[0].split('-')
     return `${dia}/${mes}/${ano}`
   }
 
@@ -93,8 +95,10 @@ export default function UsuariosAdmin() {
             className="p-2 border rounded cursor-pointer w-full"
           >
             <option value="">Todos os tipos</option>
-            {tipos.map(t => (
-              <option key={t} value={t}>{t}</option>
+            {tipos.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
             ))}
           </select>
         </div>
@@ -122,11 +126,21 @@ export default function UsuariosAdmin() {
             {usuarioSelecionado?.id === u.id && (
               <div className="p-4 border-t bg-gray-50">
                 <h2 className="font-bold mb-2">Editar Usuário</h2>
-                <p><strong>Nome:</strong> {usuarioSelecionado.nome}</p>
-                <p><strong>Email:</strong> {usuarioSelecionado.email}</p>
-                <p><strong>Celular:</strong> {usuarioSelecionado.celular}</p>
-                <p><strong>Data de Nascimento:</strong> {formatarData(usuarioSelecionado.nascimento)}</p>
-                <p><strong>CPF:</strong> {usuarioSelecionado.cpf || "-"}</p>
+                <p>
+                  <strong>Nome:</strong> {usuarioSelecionado.nome}
+                </p>
+                <p>
+                  <strong>Email:</strong> {usuarioSelecionado.email}
+                </p>
+                <p>
+                  <strong>Celular:</strong> {usuarioSelecionado.celular}
+                </p>
+                <p>
+                  <strong>Data de Nascimento:</strong> {formatarData(usuarioSelecionado.nascimento)}
+                </p>
+                <p>
+                  <strong>CPF:</strong> {usuarioSelecionado.cpf || '-'}
+                </p>
 
                 <label className="block mt-3 mb-1 font-medium">Tipo de Usuário</label>
                 <select
@@ -134,16 +148,15 @@ export default function UsuariosAdmin() {
                   value={novoTipo}
                   onChange={(e) => setNovoTipo(e.target.value)}
                 >
-                  {tipos.map(t => (
-                    <option key={t} value={t}>{t}</option>
+                  {tipos.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
                   ))}
                 </select>
 
                 <div className="flex gap-2">
-                  <button
-                    onClick={salvarTipo}
-                    className="bg-green-600 text-white px-4 py-2 rounded cursor-pointer"
-                  >
+                  <button onClick={salvarTipo} className="bg-green-600 text-white px-4 py-2 rounded cursor-pointer">
                     Salvar
                   </button>
                   <button

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
 import { format, parseISO } from "date-fns";
@@ -14,39 +14,57 @@ type QuadraDisponivel = {
   conflitoPermanente?: boolean;
 };
 
-const diasEnum = ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"];
+type Esporte = {
+  id: string;
+  nome: string;
+};
+
+type UsuarioBusca = {
+  id: string;
+  nome: string;
+  email?: string | null;
+};
+
+type ProximasDatasResp = {
+  proximasDatasDisponiveis: string[];
+  dataUltimoConflito: string | null;
+};
+
+const diasEnum = ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"] as const;
 const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
 
 export default function CadastrarPermanente() {
   const router = useRouter();
 
-  const [diaSemana, setDiaSemana] = useState("");
-  const [esporteId, setEsporteId] = useState("");
-  const [quadraId, setQuadraId] = useState("");
-  const [horario, setHorario] = useState("");
+  const [diaSemana, setDiaSemana] = useState<string>("");
+  const [esporteId, setEsporteId] = useState<string>("");
+  const [quadraId, setQuadraId] = useState<string>("");
+  const [horario, setHorario] = useState<string>("");
 
   // Dono do permanente
-  const [usuarioId, setUsuarioId] = useState("");
-  const [busca, setBusca] = useState("");
-  const [usuariosEncontrados, setUsuariosEncontrados] = useState<any[]>([]);
-  const [carregandoUsuarios, setCarregandoUsuarios] = useState(false);
-  const [listaAberta, setListaAberta] = useState(false); // 👈 controla a visibilidade da lista
+  const [usuarioId, setUsuarioId] = useState<string>("");
+  const [busca, setBusca] = useState<string>("");
+  const [usuariosEncontrados, setUsuariosEncontrados] = useState<UsuarioBusca[]>([]);
+  const [carregandoUsuarios, setCarregandoUsuarios] = useState<boolean>(false);
+  const [listaAberta, setListaAberta] = useState<boolean>(false);
 
   // Datas e disponibilidade
   const [dataInicio, setDataInicio] = useState<string>("");
-  const [esportes, setEsportes] = useState<any[]>([]);
+  const [esportes, setEsportes] = useState<Esporte[]>([]);
   const [quadras, setQuadras] = useState<QuadraDisponivel[]>([]);
-  const [existeAgendamentoComum, setExisteAgendamentoComum] = useState(false);
+  const [existeAgendamentoComum, setExisteAgendamentoComum] = useState<boolean>(false);
   const [dataUltimoConflito, setDataUltimoConflito] = useState<string | null>(null);
   const [proximasDatasDisponiveis, setProximasDatasDisponiveis] = useState<string[]>([]);
 
   // Esportes
+  // Esportes
   useEffect(() => {
     axios
-      .get(`${API_URL}/esportes`, { withCredentials: true })
+      .get<Esporte[]>(`${API_URL}/esportes`, { withCredentials: true })
       .then((res) => setEsportes(res.data))
       .catch(console.error);
   }, []);
+
 
   // Disponibilidade
   useEffect(() => {
@@ -60,14 +78,14 @@ export default function CadastrarPermanente() {
     }
 
     axios
-      .get(`${API_URL}/disponibilidade`, {
+      .get<QuadraDisponivel[]>(`${API_URL}/disponibilidade`, {
         params: { diaSemana, horario, esporteId },
         withCredentials: true,
       })
       .then((res) => {
         setQuadras(res.data);
         const existeConflitoComum = res.data.some(
-          (q: QuadraDisponivel) => !q.disponivel && q.conflitoComum && !q.conflitoPermanente
+          (q) => !q.disponivel && q.conflitoComum && !q.conflitoPermanente
         );
         setExisteAgendamentoComum(existeConflitoComum);
         setDataInicio("");
@@ -105,7 +123,7 @@ export default function CadastrarPermanente() {
     }
 
     axios
-      .get(`${API_URL}/proximaDataPermanenteDisponivel`, {
+      .get<ProximasDatasResp>(`${API_URL}/proximaDataPermanenteDisponivel`, {
         params: { diaSemana, horario, quadraId },
         withCredentials: true,
       })
@@ -140,7 +158,7 @@ export default function CadastrarPermanente() {
 
       setCarregandoUsuarios(true);
       try {
-        const res = await axios.get(`${API_URL}/clientes`, {
+        const res = await axios.get<UsuarioBusca[]>(`${API_URL}/clientes`, {
           params: { nome: termo },
           withCredentials: true,
         });
@@ -159,7 +177,7 @@ export default function CadastrarPermanente() {
     };
   }, [busca, listaAberta]);
 
-  const handleSubmit = async (e: any) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     if (!usuarioId) {
@@ -293,7 +311,7 @@ export default function CadastrarPermanente() {
             onChange={(e) => {
               setBusca(e.target.value);
               setUsuarioId("");
-              setListaAberta(true); // abre lista quando digita
+              setListaAberta(true);
             }}
             onFocus={() => setListaAberta(true)}
             placeholder="Buscar por nome ou e-mail"
@@ -309,12 +327,12 @@ export default function CadastrarPermanente() {
                 <li
                   key={u.id}
                   className="px-3 py-2 hover:bg-orange-50 cursor-pointer"
-                  onMouseDown={(e) => e.preventDefault()} // evita blur antes do click
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={() => {
                     setUsuarioId(u.id);
                     setBusca(u.nome);
                     setUsuariosEncontrados([]);
-                    setListaAberta(false); // 👈 fecha a lista ao selecionar
+                    setListaAberta(false);
                   }}
                 >
                   <div className="font-medium text-gray-800">{u.nome}</div>
@@ -349,9 +367,8 @@ export default function CadastrarPermanente() {
                   <button
                     key={dataStr}
                     type="button"
-                    className={`py-2 px-3 border rounded ${
-                      dataInicio === dataStr ? "bg-orange-500 text-white" : "bg-white"
-                    }`}
+                    className={`py-2 px-3 border rounded ${dataInicio === dataStr ? "bg-orange-500 text-white" : "bg-white"
+                      }`}
                     onClick={() => setDataInicio(dataStr)}
                   >
                     {dataFormatada}

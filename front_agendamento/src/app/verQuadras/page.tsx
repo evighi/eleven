@@ -1,21 +1,20 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import axios from "axios";
 import { isoLocalDate } from "@/utils/date";
 
-import { useAuthStore } from "@/context/AuthStore";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import Spinner from "@/components/Spinner";
 
 type AgendamentoAPI = {
   id: string;
-  horario: string;       // "HH:mm"
-  data?: string;         // "YYYY-MM-DD"
-  nome?: string;         // esporte (payload antigo)
-  local?: string;        // "Quadra X - Nº Y" (payload antigo)
+  horario: string;
+  data?: string;
+  nome?: string;
+  local?: string;
   logoUrl?: string;
   quadraNome?: string;
   quadraNumero?: number | string | null;
@@ -30,12 +29,11 @@ type AgendamentoCard = {
   quadraNome: string;
   numero?: string;
   esporte: string;
-  dia: string;   // "dd/MM"
-  hora: string;  // "HH:mm"
+  dia: string;
+  hora: string;
 };
 
 export default function VerQuadrasPage() {
-  // 🔒 Proteção (mesmo conjunto da Home)
   const { isChecking } = useRequireAuth([
     "CLIENTE",
     "ADMIN_MASTER",
@@ -44,7 +42,6 @@ export default function VerQuadrasPage() {
   ]);
 
   const router = useRouter();
-  const { usuario } = useAuthStore(); // (não usado diretamente, mas ok manter)
 
   const [agendamentos, setAgendamentos] = useState<AgendamentoCard[]>([]);
   const [carregando, setCarregando] = useState(false);
@@ -52,45 +49,53 @@ export default function VerQuadrasPage() {
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
   const hojeISO = useMemo(() => isoLocalDate(new Date(), "America/Sao_Paulo"), []);
 
+  const paraDDMM = useCallback(
+    (iso?: string) => {
+      const s = iso || hojeISO;
+      const [, m, d] = s.split("-");
+      return `${d}/${m}`;
+    },
+    [hojeISO]
+  );
 
-  // helpers iguais aos da home
-  const paraDDMM = (iso?: string) => {
-    const s = iso || hojeISO;
-    const [, m, d] = s.split("-");
-    return `${d}/${m}`;
-  };
-
-  const extrairNumeroDoLocal = (local?: string) => {
+  const extrairNumeroDoLocal = useCallback((local?: string) => {
     if (!local) return undefined;
     const m = local.match(/N[ºo]\s*(\d+)/i);
     return m?.[1];
-  };
+  }, []);
 
-  const toAbsolute = (u?: string) => {
-    if (!u) return "/quadra.png";
-    if (/^https?:\/\//i.test(u)) return u;                // já é absoluta (R2/Cloudflare)
-    return `${API_URL}${u.startsWith("/") ? "" : "/"}${u}`; // monta relativa do back/legado
-  };
+  const toAbsolute = useCallback(
+    (u?: string) => {
+      if (!u) return "/quadra.png";
+      if (/^https?:\/\//i.test(u)) return u;
+      return `${API_URL}${u.startsWith("/") ? "" : "/"}${u}`;
+    },
+    [API_URL]
+  );
 
+  const getNumero = useCallback(
+    (raw: AgendamentoAPI) => {
+      const n = raw.quadraNumero ?? extrairNumeroDoLocal(raw.local) ?? "";
+      return String(n || "") || undefined;
+    },
+    [extrairNumeroDoLocal]
+  );
 
-  const getNumero = (raw: AgendamentoAPI) => {
-    const n = raw.quadraNumero ?? extrairNumeroDoLocal(raw.local) ?? "";
-    return String(n || "") || undefined;
-  };
-
-  const normalizar = (raw: AgendamentoAPI): AgendamentoCard => ({
-    id: raw.id,
-    logoUrl: toAbsolute(raw.quadraLogoUrl ?? raw.logoUrl),
-    quadraNome: raw.quadraNome || (raw.local?.split(" - Nº")[0] ?? "Quadra"),
-    numero: getNumero(raw),
-    esporte: raw.esporteNome ?? raw.nome ?? "",
-    dia: paraDDMM(raw.data),
-    hora: raw.horario,
-  });
-
+  const normalizar = useCallback(
+    (raw: AgendamentoAPI): AgendamentoCard => ({
+      id: raw.id,
+      logoUrl: toAbsolute(raw.quadraLogoUrl ?? raw.logoUrl),
+      quadraNome: raw.quadraNome || (raw.local?.split(" - Nº")[0] ?? "Quadra"),
+      numero: getNumero(raw),
+      esporte: raw.esporteNome ?? raw.nome ?? "",
+      dia: paraDDMM(raw.data),
+      hora: raw.horario,
+    }),
+    [toAbsolute, getNumero, paraDDMM]
+  );
 
   useEffect(() => {
-    if (isChecking) return; // ⛔ não buscar enquanto verifica autenticação
+    if (isChecking) return;
 
     const fetchAgendamentos = async () => {
       setCarregando(true);
@@ -100,8 +105,7 @@ export default function VerQuadrasPage() {
           { withCredentials: true, params: { data: hojeISO } }
         );
 
-        // ⬇️ apenas CONFIRMADOS
-        const confirmados = (res.data || []).filter(a => a.status === "CONFIRMADO");
+        const confirmados = (res.data || []).filter((a) => a.status === "CONFIRMADO");
         setAgendamentos(confirmados.map(normalizar));
       } catch (e) {
         console.error(e);
@@ -110,10 +114,10 @@ export default function VerQuadrasPage() {
         setCarregando(false);
       }
     };
-    fetchAgendamentos();
-  }, [API_URL, hojeISO, isChecking]);
 
-  // ⏳ Enquanto verifica cookie/usuário
+    fetchAgendamentos();
+  }, [API_URL, hojeISO, isChecking, normalizar]);
+
   if (isChecking) {
     return (
       <main className="min-h-screen grid place-items-center bg-[#f5f5f5]">

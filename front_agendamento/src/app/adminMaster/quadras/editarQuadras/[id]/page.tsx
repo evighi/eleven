@@ -2,6 +2,7 @@
 
 import { useEffect, useState, ChangeEvent, FormEvent } from "react";
 import { useRouter, useParams } from "next/navigation";
+import AppImage from "@/components/AppImage";
 
 interface Esporte { id: string; nome: string; }
 type TipoCamera = "COM_CAMERA" | "SEM_CAMERA";
@@ -28,8 +29,6 @@ export default function EditarQuadra() {
   const [esportesSelecionados, setEsportesSelecionados] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [carregando, setCarregando] = useState(true);
-
-  const resolveImg = (img?: string | null) => img || "/quadra.png";
 
   useEffect(() => {
     async function fetchData() {
@@ -88,15 +87,16 @@ export default function EditarQuadra() {
 
       if (res.status === 401) return router.push("/login");
       if (!res.ok) {
-        const erro = await res.json().catch(() => ({}));
+        const erro = await res.json().catch(() => ({} as { erro?: string }));
         alert(`Erro: ${erro?.erro || "Falha ao atualizar quadra"}`);
         return;
       }
 
       alert("Quadra atualizada com sucesso!");
       router.push("/adminMaster/quadras");
-    } catch (err: any) {
-      alert(err?.message || "Erro inesperado ao atualizar");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Erro inesperado ao atualizar";
+      alert(msg);
     } finally {
       setLoading(false);
     }
@@ -163,11 +163,14 @@ export default function EditarQuadra() {
         </div>
 
         <div className="flex items-center gap-3">
-          <img
-            src={resolveImg(quadra.imagem)}
+          <AppImage
+            src={quadra.imagem || undefined}
+            legacyDir="quadras"
             alt={quadra.nome}
+            width={80}
+            height={80}
             className="w-20 h-20 object-cover rounded"
-            onError={(e) => ((e.currentTarget as HTMLImageElement).src = "/quadra.png")}
+            fallbackSrc="/quadra.png"
           />
           <span className="text-sm text-gray-500">Imagem atual</span>
         </div>

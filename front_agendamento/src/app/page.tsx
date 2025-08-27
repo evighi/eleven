@@ -1,17 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import axios from "axios";
 import { isoLocalDate } from "@/utils/date";
 
 import { useAuthStore } from "@/context/AuthStore";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import Spinner from "@/components/Spinner";
-// remova as versões locais de API_URL/toAbsolute e importe:
 import { API_URL, toAbsolute } from "@/utils/urls";
-
 
 type StatusAgendamento = "CONFIRMADO" | "FINALIZADO" | "CANCELADO" | "TRANSFERIDO";
 
@@ -28,7 +27,7 @@ type AgendamentoAPI = {
   // novo (backend já retorna)
   quadraNome?: string;
   quadraNumero?: number | string | null;
-  quadraLogoUrl?: string; // <- ABSOLUTA quando vier do R2
+  quadraLogoUrl?: string; // ABSOLUTA quando vier do R2
   esporteNome?: string;
   status?: StatusAgendamento;
 };
@@ -42,6 +41,41 @@ type AgendamentoCard = {
   dia: string;
   hora: string;
 };
+
+/** <Image> com fallback e sem exigir domains (loader + unoptimized) */
+function SmartImage({
+  src,
+  alt,
+  className,
+  width = 320,
+  height = 128,
+}: {
+  src?: string | null;
+  alt: string;
+  className?: string;
+  width?: number;
+  height?: number;
+}) {
+  const FALLBACK = "/quadra.png";
+  const [imgSrc, setImgSrc] = useState<string>(src && src.trim() ? src : FALLBACK);
+
+  useEffect(() => {
+    setImgSrc(src && src.trim() ? src : FALLBACK);
+  }, [src]);
+
+  return (
+    <Image
+      src={imgSrc}
+      alt={alt}
+      loader={({ src }) => src}
+      unoptimized
+      width={width}
+      height={height}
+      className={className}
+      onError={() => setImgSrc(FALLBACK)}
+    />
+  );
+}
 
 export default function Home() {
   // 🔒 Proteção por perfil
@@ -65,41 +99,37 @@ export default function Home() {
     if (usuario?.nome) setNomeUsuario(usuario.nome.split(" ")[0]);
   }, [usuario?.nome]);
 
-  const paraDDMM = (iso?: string) => {
-    const s = iso || hojeISO;
-    const [, m, d] = s.split("-");
-    return `${d}/${m}`;
-  };
+  const normalizar = useCallback(
+    (raw: AgendamentoAPI): AgendamentoCard => {
+      const logo = raw.quadraLogoUrl ?? raw.logoUrl ?? "/quadra.png";
+      const quadraNome = raw.quadraNome || (raw.local?.split(" - Nº")[0] ?? "Quadra");
 
-  const extrairNumeroDoLocal = (local?: string) => {
-    if (!local) return undefined;
-    const m = local.match(/N[ºo]\s*(\d+)/i);
-    return m?.[1] || undefined;
-  };
+      // numero da quadra (novo ou extraído do "local" legado)
+      let numero = "";
+      if (raw.quadraNumero != null && raw.quadraNumero !== "") {
+        numero = String(raw.quadraNumero);
+      } else if (raw.local) {
+        const m = raw.local.match(/N[ºo]\s*(\d+)/i);
+        if (m?.[1]) numero = m[1];
+      }
 
-  // Garante URL correta pra imagem (R2 ou legado)
-  const toAbsolute = (url?: string) => {
-    if (!url) return "/quadra.png";
-    return /^https?:\/\//i.test(url) ? url : `${API_URL}${url}`;
-  };
+      // dia no formato DD/MM (usa hoje se não vier data)
+      const s = raw.data || hojeISO;
+      const [, m, d] = s.split("-");
+      const diaFmt = `${d}/${m}`;
 
-  const normalizar = (raw: AgendamentoAPI): AgendamentoCard => {
-    const logo = raw.quadraLogoUrl ?? raw.logoUrl ?? "/quadra.png";
-    const quadraNome =
-      raw.quadraNome || (raw.local?.split(" - Nº")[0] ?? "Quadra");
-
-    return {
-      id: raw.id,
-      logoUrl: toAbsolute(logo),
-      quadraNome,
-      numero: String(
-        raw.quadraNumero ?? extrairNumeroDoLocal(raw.local) ?? ""
-      ),
-      esporte: raw.esporteNome ?? raw.nome ?? "",
-      dia: paraDDMM(raw.data),
-      hora: raw.horario,
-    };
-  };
+      return {
+        id: raw.id,
+        logoUrl: toAbsolute(logo) || "/quadra.png",
+        quadraNome,
+        numero,
+        esporte: raw.esporteNome ?? raw.nome ?? "",
+        dia: diaFmt,
+        hora: raw.horario,
+      };
+    },
+    [hojeISO]
+  );
 
   useEffect(() => {
     if (isChecking) return;
@@ -107,16 +137,11 @@ export default function Home() {
     const fetchAgendamentos = async () => {
       setCarregando(true);
       try {
-        const res = await axios.get<AgendamentoAPI[]>(
-          `${API_URL}/agendamentos/me`,
-          {
-            withCredentials: true,
-            params: { data: hojeISO },
-          }
-        );
-        const confirmados = (res.data || []).filter(
-          (a) => a.status === "CONFIRMADO"
-        );
+        const res = await axios.get<AgendamentoAPI[]>(`${API_URL}/agendamentos/me`, {
+          withCredentials: true,
+          params: { data: hojeISO },
+        });
+        const confirmados = (res.data || []).filter((a) => a.status === "CONFIRMADO");
         setAgendamentos(confirmados.map(normalizar));
       } catch {
         setAgendamentos([]);
@@ -126,7 +151,7 @@ export default function Home() {
     };
 
     fetchAgendamentos();
-  }, [API_URL, hojeISO, isChecking]);
+  }, [hojeISO, isChecking, normalizar]);
 
   // Loading global enquanto checa cookie/usuário
   if (isChecking) {
@@ -160,9 +185,7 @@ export default function Home() {
         <div className="mx-auto max-w-md md:max-w-lg lg:max-w-xl">
           {/* Cartão Suas quadras */}
           <div className="-mt-3 bg-white rounded-2xl shadow-md p-4 sm:p-5 md:p-6">
-            <h2 className="text-[13px] sm:text-sm font-semibold text-gray-500 mb-3">
-              Suas quadras
-            </h2>
+            <h2 className="text-[13px] sm:text-sm font-semibold text-gray-500 mb-3">Suas quadras</h2>
 
             {carregando && (
               <div className="flex items-center gap-2 text-sm text-gray-500">
@@ -171,9 +194,7 @@ export default function Home() {
             )}
 
             {!carregando && agendamentos.length === 0 && (
-              <p className="text-sm text-gray-500">
-                Você não tem agendamentos hoje.
-              </p>
+              <p className="text-sm text-gray-500">Você não tem agendamentos hoje.</p>
             )}
 
             <div className="space-y-3">
@@ -184,15 +205,12 @@ export default function Home() {
                 >
                   {/* Logo */}
                   <div className="shrink-0 w-28 h-12 sm:w-36 sm:h-14 md:w-40 md:h-16 flex items-center justify-center overflow-hidden">
-                    <img
+                    <SmartImage
                       src={a.logoUrl}
                       alt={a.quadraNome}
+                      width={320}
+                      height={128}
                       className="w-full h-full object-contain select-none"
-                      onError={(ev) => {
-                        const img = ev.currentTarget as HTMLImageElement;
-                        img.onerror = null;            // evita loop
-                        img.src = "/quadra.png";       // ou "/icons/quadra.png" se preferir
-                      }}
                     />
                   </div>
 
@@ -201,16 +219,12 @@ export default function Home() {
                     <p className="text-[13px] sm:text-[15px] font-semibold text-gray-800 truncate">
                       {a.quadraNome}
                     </p>
-                    <p className="text-[12px] sm:text-[13px] text-gray-600 leading-tight">
-                      {a.esporte}
-                    </p>
+                    <p className="text-[12px] sm:text-[13px] text-gray-600 leading-tight">{a.esporte}</p>
                     <p className="text-[12px] sm:text-[13px] text-gray-500">
                       Dia {a.dia} às {a.hora}
                     </p>
                     {a.numero && (
-                      <p className="text-[11px] sm:text-[12px] text-gray-500">
-                        Quadra {a.numero}
-                      </p>
+                      <p className="text-[11px] sm:text-[12px] text-gray-500">Quadra {a.numero}</p>
                     )}
                   </div>
                 </div>
@@ -229,19 +243,20 @@ export default function Home() {
           <div className="mt-4 md:mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Marcar */}
             <div className="rounded-2xl bg-white shadow-md p-3 md:p-4">
-              <h3 className="text-[13px] sm:text-sm font-semibold text-gray-500 mb-2">
-                Marque a sua quadra
-              </h3>
+              <h3 className="text-[13px] sm:text-sm font-semibold text-gray-500 mb-2">Marque a sua quadra</h3>
               <button
                 onClick={() => router.push("/agendarQuadra")}
                 className="w-full rounded-xl bg-[#f3f3f3] px-3 sm:px-4 py-3 flex items-center justify-between hover:bg-[#ececec] transition"
               >
                 <div className="flex items-center gap-3 sm:gap-4">
                   <div className="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center">
-                    <img
+                    <Image
                       src="/marcar.png"
                       alt=""
+                      width={40}
+                      height={40}
                       className="w-9 h-9 sm:w-10 sm:h-10 opacity-70"
+                      priority
                     />
                   </div>
                   <div className="w-px h-10 sm:h-12 bg-gray-300" />
@@ -254,19 +269,20 @@ export default function Home() {
 
             {/* Transferir */}
             <div className="rounded-2xl bg-white shadow-md p-3 md:p-4">
-              <h3 className="text-[13px] sm:text-sm font-semibold text-gray-500 mb-2">
-                Transfira a sua quadra
-              </h3>
+              <h3 className="text-[13px] sm:text-sm font-semibold text-gray-500 mb-2">Transfira a sua quadra</h3>
               <button
                 onClick={() => router.push("/transferirQuadra")}
                 className="w-full rounded-xl bg-[#f3f3f3] px-3 sm:px-4 py-3 flex items-center justify-between hover:bg-[#ececec] transition"
               >
                 <div className="flex items-center gap-3 sm:gap-4">
                   <div className="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center">
-                    <img
+                    <Image
                       src="/icons/transferencia.png"
                       alt=""
+                      width={40}
+                      height={40}
                       className="w-9 h-9 sm:w-10 sm:h-10 opacity-70"
+                      priority
                     />
                   </div>
                   <div className="w-px h-10 sm:h-12 bg-gray-300" />

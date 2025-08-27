@@ -2,6 +2,7 @@
 
 import axios from "axios";
 import { useRef, useState } from "react";
+import AppImage from "@/components/AppImage";
 
 const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
 
@@ -33,26 +34,26 @@ export default function FormularioCadastroEsportes() {
 
     try {
       setEnviando(true);
-      const { status, data } = await axios.post(
-        `${API_URL}/esportes`,
-        formData,
-        {
-          withCredentials: true,
-          headers: { "Content-Type": "multipart/form-data" },
-        }
-      );
+      const { status, data } = await axios.post(`${API_URL}/esportes`, formData, {
+        withCredentials: true,
+        headers: { "Content-Type": "multipart/form-data" },
+      });
 
       if (status === 201 || status === 200) {
-        // data.imagem agora é uma URL ABSOLUTA do R2
         setMensagem("Esporte cadastrado com sucesso!");
         setNome("");
         handleFile(null);
         if (fileInputRef.current) fileInputRef.current.value = "";
       } else {
-        setMensagem(data?.erro || "Erro ao cadastrar.");
+        setMensagem((data as { erro?: string })?.erro || "Erro ao cadastrar.");
       }
-    } catch (err: any) {
-      setMensagem(err?.response?.data?.erro || "Erro ao conectar com o servidor.");
+    } catch (err: unknown) {
+      const msg = axios.isAxiosError(err)
+        ? err.response?.data?.erro || err.message
+        : err instanceof Error
+        ? err.message
+        : "Erro ao conectar com o servidor.";
+      setMensagem(msg);
     } finally {
       setEnviando(false);
     }
@@ -81,12 +82,16 @@ export default function FormularioCadastroEsportes() {
           className="w-full border rounded px-3 py-2"
           required
         />
+
         {preview && (
-          <div className="mt-2">
-            <img
+          <div className="mt-2 relative h-40 w-full rounded border overflow-hidden">
+            <AppImage
               src={preview}
               alt="Pré-visualização"
-              className="max-h-40 rounded border"
+              fill
+              className="object-contain"
+              // opcional, mas garante que não tente otimizar blob:
+              forceUnoptimized
             />
           </div>
         )}
@@ -102,9 +107,7 @@ export default function FormularioCadastroEsportes() {
         {enviando ? "Enviando..." : "Cadastrar esporte"}
       </button>
 
-      {mensagem && (
-        <p className="text-sm text-center text-gray-700 mt-2">{mensagem}</p>
-      )}
+      {mensagem && <p className="text-sm text-center text-gray-700 mt-2">{mensagem}</p>}
     </form>
   );
 }

@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import axios from "axios";
-import { useAuthStore } from "@/context/AuthStore";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import Spinner from "@/components/Spinner";
 
@@ -18,12 +17,31 @@ type Cliente = {
   tipo?: string | null;
 };
 
+// Helper para mensagens de erro sem usar "any"
+function toApiMsg(err: unknown): string {
+  if (typeof err === "object" && err && "response" in err) {
+    const resp = (err as { response?: unknown }).response;
+    if (typeof resp === "object" && resp) {
+      const d = (resp as { data?: unknown; statusText?: unknown }).data;
+      const statusText = (resp as { data?: unknown; statusText?: unknown }).statusText;
+
+      if (typeof d === "object" && d) {
+        const erro = (d as { erro?: unknown }).erro;
+        const message = (d as { message?: unknown }).message;
+        if (typeof erro === "string" && erro.trim()) return erro;
+        if (typeof message === "string" && message.trim()) return message;
+      }
+      if (typeof statusText === "string" && statusText.trim()) return statusText;
+    }
+  }
+  if (err instanceof Error && err.message) return err.message;
+  return "Ocorreu um erro. Tente novamente.";
+}
+
 export default function EditarInformacoesPage() {
-  // 🔒 apenas exigir que esteja logado (qualquer tipo)
   const { isChecking } = useRequireAuth();
   const router = useRouter();
 
-  const { usuario } = useAuthStore();
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
 
   const [me, setMe] = useState<Me | null>(null);
@@ -35,21 +53,18 @@ export default function EditarInformacoesPage() {
 
   const [carregandoPerfil, setCarregandoPerfil] = useState(true);
 
-  // Carrega /usuarios/me e tenta enriquecer com /clientes?nome=
   useEffect(() => {
-    if (isChecking) return; // só busca depois da verificação de auth
+    if (isChecking) return;
 
     const load = async () => {
       setCarregandoPerfil(true);
       setMsg("");
       try {
-        // 1) Quem sou eu?
         const rMe = await axios.get<Me>(`${API_URL}/usuarios/me`, {
           withCredentials: true,
         });
         setMe(rMe.data);
 
-        // 2) Tenta achar o registro completo em /clientes
         try {
           const rCli = await axios.get<Cliente[]>(
             `${API_URL}/clientes`,
@@ -61,13 +76,12 @@ export default function EditarInformacoesPage() {
           setDados(completo);
           setCelular(completo.celular || "");
         } catch {
-          // se /clientes não retornar, segue com o mínimo
           setDados({ id: rMe.data.id, nome: rMe.data.nome, tipo: rMe.data.tipo } as Cliente);
           setCelular("");
         }
-      } catch (e: any) {
+      } catch (e: unknown) {
         console.error(e);
-        setMsg("Não foi possível carregar seus dados.");
+        setMsg(toApiMsg(e));
       } finally {
         setCarregandoPerfil(false);
       }
@@ -84,7 +98,7 @@ export default function EditarInformacoesPage() {
     return `${d}/${m}/${y}`;
   };
 
-  const celularValido = celular.trim().length >= 10; // regra simples
+  const celularValido = celular.trim().length >= 10;
   const houveMudanca = celular.trim() !== (dados?.celular || "");
 
   const salvar = async () => {
@@ -100,20 +114,14 @@ export default function EditarInformacoesPage() {
       setDados(r.data);
       setCelular(r.data.celular || "");
       setMsg("Celular atualizado com sucesso!");
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
-      const apiMsg =
-        e?.response?.data?.erro ||
-        e?.response?.statusText ||
-        e?.message ||
-        "Erro ao atualizar celular.";
-      setMsg(String(apiMsg));
+      setMsg(toApiMsg(e));
     } finally {
       setSalvando(false);
     }
   };
 
-  // 🔄 enquanto verifica autenticação (cookie/usuário)
   if (isChecking) {
     return (
       <main className="min-h-screen grid place-items-center bg-[#f5f5f5]">
@@ -126,7 +134,6 @@ export default function EditarInformacoesPage() {
 
   return (
     <main className="min-h-screen bg-[#f5f5f5]">
-      {/* Header com botão de voltar (padrão das outras telas) */}
       <header className="bg-gradient-to-b from-orange-600 to-orange-600 text-white px-4 py-5">
         <div className="max-w-sm mx-auto flex items-center gap-3">
           <button
@@ -140,7 +147,6 @@ export default function EditarInformacoesPage() {
         </div>
       </header>
 
-      {/* Cartão branco */}
       <section className="px-4 py-4">
         <div className="mx-auto max-w-sm bg-white rounded-2xl shadow-md p-4 space-y-3">
           {msg && (
@@ -155,14 +161,12 @@ export default function EditarInformacoesPage() {
             </div>
           )}
 
-          {/* Loader interno enquanto busca os dados do perfil */}
           {carregandoPerfil ? (
             <div className="py-10 flex items-center justify-center text-gray-600">
               <Spinner /> <span className="ml-2 text-sm">Carregando perfil…</span>
             </div>
           ) : (
             <>
-              {/* Nome */}
               <Campo label="Nome completo">
                 <input
                   type="text"
@@ -173,7 +177,6 @@ export default function EditarInformacoesPage() {
                 />
               </Campo>
 
-              {/* Data de nascimento */}
               <Campo label="Data de nascimento">
                 <input
                   type="text"
@@ -184,7 +187,6 @@ export default function EditarInformacoesPage() {
                 />
               </Campo>
 
-              {/* CPF */}
               <Campo label="CPF">
                 <input
                   type="text"
@@ -195,7 +197,6 @@ export default function EditarInformacoesPage() {
                 />
               </Campo>
 
-              {/* Email */}
               <Campo label="E-mail">
                 <input
                   type="email"
@@ -206,7 +207,6 @@ export default function EditarInformacoesPage() {
                 />
               </Campo>
 
-              {/* Celular — ÚNICO editável */}
               <Campo label="Celular">
                 <input
                   type="tel"
@@ -243,7 +243,7 @@ export default function EditarInformacoesPage() {
   );
 }
 
-function Campo({ label, children }: { label: string; children: React.ReactNode }) {
+function Campo({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
       <label className="block text-[13px] font-semibold text-gray-600 mb-1">

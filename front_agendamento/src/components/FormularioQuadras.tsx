@@ -1,17 +1,18 @@
 "use client";
 import { useEffect, useState } from "react";
-import axios from "axios";
 import { useRouter } from "next/navigation";
 
 type TipoCamera = "COM_CAMERA" | "SEM_CAMERA";
+type Esporte = { id: string; nome: string };
+type ErrorResponse = { erro?: string | { message?: string }[] };
 
 export default function FormularioCadastroQuadras() {
   const router = useRouter();
 
   const [nome, setNome] = useState("");
-  const [numero, setNumero] = useState("");
+  const [numero, setNumero] = useState(""); // backend parseia p/ int
   const [imagem, setImagem] = useState<File | null>(null);
-  const [esportes, setEsportes] = useState<{ id: string; nome: string }[]>([]);
+  const [esportes, setEsportes] = useState<Esporte[]>([]);
   const [esportesSelecionados, setEsportesSelecionados] = useState<string[]>([]);
   const [tipoCamera, setTipoCamera] = useState<TipoCamera>("SEM_CAMERA");
   const [mensagem, setMensagem] = useState("");
@@ -25,7 +26,7 @@ export default function FormularioCadastroQuadras() {
         const res = await fetch(`${API_URL}/esportes`, { credentials: "include" });
         if (res.status === 401) return router.push("/login");
         if (!res.ok) throw new Error("Falha ao carregar esportes");
-        const data = await res.json();
+        const data: Esporte[] = await res.json();
         setEsportes(data);
       } catch (error) {
         console.error("Erro ao buscar esportes:", error);
@@ -35,8 +36,16 @@ export default function FormularioCadastroQuadras() {
     buscarEsportes();
   }, [API_URL, router]);
 
-  // dentro do handleSubmit
-  const handleSubmit = async (e: React.FormEvent) => {
+  function handleNumero(e: React.ChangeEvent<HTMLInputElement>) {
+    setNumero(e.target.value);
+  }
+
+  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null;
+    setImagem(file);
+  }
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setMensagem("");
 
@@ -49,10 +58,10 @@ export default function FormularioCadastroQuadras() {
     try {
       const formData = new FormData();
       formData.append("nome", nome);
-      formData.append("numero", numero);           // como string, o backend faz parseInt
+      formData.append("numero", numero); // string -> backend faz parseInt
       formData.append("tipoCamera", tipoCamera);
       formData.append("esporteIds", JSON.stringify(esportesSelecionados));
-      formData.append("imagem", imagem);           // <- campo que o backend lê
+      formData.append("imagem", imagem);
 
       const res = await fetch(`${API_URL}/quadras`, {
         method: "POST",
@@ -66,10 +75,10 @@ export default function FormularioCadastroQuadras() {
       }
 
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
+        const data = (await res.json().catch(() => null)) as ErrorResponse | null;
         const msg = Array.isArray(data?.erro)
-          ? data.erro.map((e: any) => e.message).join(", ")
-          : data?.erro || "Erro ao cadastrar.";
+          ? data!.erro.map((e) => (typeof e?.message === "string" ? e.message : String(e))).join(", ")
+          : (typeof data?.erro === "string" ? data.erro : "Erro ao cadastrar.");
         setMensagem(`Erro ao cadastrar: ${msg}`);
         return;
       }
@@ -80,12 +89,13 @@ export default function FormularioCadastroQuadras() {
       setImagem(null);
       setEsportesSelecionados([]);
       setTipoCamera("SEM_CAMERA");
-    } catch (err: any) {
-      setMensagem(err?.message || "Erro ao conectar com o servidor.");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Erro ao conectar com o servidor.";
+      setMensagem(msg);
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4 max-w-md mx-auto mt-8">
@@ -105,7 +115,7 @@ export default function FormularioCadastroQuadras() {
         <input
           type="number"
           value={numero}
-          onChange={(e) => setNumero(e.target.value)}
+          onChange={handleNumero}
           className="w-full border rounded px-3 py-2"
           required
         />
@@ -116,7 +126,7 @@ export default function FormularioCadastroQuadras() {
         <input
           type="file"
           accept="image/*"
-          onChange={(e) => setImagem(e.target.files?.[0] || null)}
+          onChange={handleFile}
           className="w-full border rounded px-3 py-2"
           required
         />
@@ -179,8 +189,9 @@ export default function FormularioCadastroQuadras() {
       <button
         type="submit"
         disabled={loading}
-        className={`bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 ${loading ? "opacity-50 cursor-not-allowed" : ""
-          }`}
+        className={`bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 ${
+          loading ? "opacity-50 cursor-not-allowed" : ""
+        }`}
       >
         {loading ? "Cadastrando..." : "Cadastrar quadra"}
       </button>

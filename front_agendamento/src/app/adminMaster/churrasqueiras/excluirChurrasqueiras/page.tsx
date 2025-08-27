@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from "react";
+import AppImage from "@/components/AppImage";
 
 interface Churrasqueira {
   id: string;
@@ -41,7 +42,6 @@ export default function ExcluirChurrasqueiras() {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        // Mensagens amigáveis para casos comuns
         const msg =
           data?.erro ||
           (res.status === 400
@@ -71,12 +71,15 @@ export default function ExcluirChurrasqueiras() {
           >
             <span className="text-lg font-semibold mb-2 text-center">{ch.nome}</span>
 
-            <img
-              src={resolveImg(ch.imagem)}
-              alt={`Imagem da churrasqueira ${ch.nome}`}
-              className="w-full h-40 object-cover rounded mb-2"
-              onError={(ev) => ((ev.currentTarget as HTMLImageElement).src = "/quadra.png")}
-            />
+            <div className="relative w-full h-40 rounded mb-2 overflow-hidden">
+              <AppImage
+                src={resolveImg(ch.imagem)}
+                alt={`Imagem da churrasqueira ${ch.nome}`}
+                fill
+                className="object-cover"
+                sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+              />
+            </div>
 
             <span className="text-sm text-gray-700 mb-1">Número: {ch.numero ?? "N/A"}</span>
             <span className="text-sm text-gray-600 mb-4 text-center">

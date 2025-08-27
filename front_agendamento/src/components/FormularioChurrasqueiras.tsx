@@ -75,7 +75,7 @@ export default function FormularioCadastroChurrasqueira() {
 
         const data = await resp.json().catch(() => ({}));
         if (!resp.ok) {
-          throw new Error(data?.erro || "Erro ao criar churrasqueira (R2).");
+          throw new Error((data as { erro?: string })?.erro || "Erro ao criar churrasqueira (R2).");
         }
 
         setMensagem("Churrasqueira cadastrada com sucesso!");
@@ -101,7 +101,7 @@ export default function FormularioCadastroChurrasqueira() {
 
       const data = await legacy.json().catch(() => ({}));
       if (!legacy.ok) {
-        throw new Error(data?.erro || "Erro ao cadastrar (legado).");
+        throw new Error((data as { erro?: string })?.erro || "Erro ao cadastrar (legado).");
       }
 
       setMensagem("Churrasqueira cadastrada com sucesso!");
@@ -109,8 +109,9 @@ export default function FormularioCadastroChurrasqueira() {
       setNumero("");
       setObservacao("");
       setImagem(null);
-    } catch (err: any) {
-      setMensagem(err?.message || "Erro ao conectar com o servidor.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Erro ao conectar com o servidor.";
+      setMensagem(msg);
     } finally {
       setEnviando(false);
     }

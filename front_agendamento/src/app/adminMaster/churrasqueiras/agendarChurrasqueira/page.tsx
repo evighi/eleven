@@ -2,16 +2,15 @@
 
 import { useEffect, useState } from 'react'
 import axios from 'axios'
+import AppImage from "@/components/AppImage";
 
 interface Churrasqueira {
   churrasqueiraId: string
   nome: string
   numero: number
-  // campos de imagem opcionais (back pode mandar qualquer um deles)
   imagem?: string | null
   imagemUrl?: string | null
   logoUrl?: string | null
-  // se o back retornar um booleano disponivel, mantemos compatível
   disponivel?: boolean
 }
 
@@ -32,36 +31,29 @@ export default function AgendamentoChurrasqueiraComum() {
   const [usuarioSelecionado, setUsuarioSelecionado] = useState<Usuario | null>(null)
 
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
-
   const diasEnum = ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"]
 
-  // helper de imagem: usa URL absoluta se já vier; se vier só nome do arquivo, monta
   const toImgUrl = (c: Churrasqueira) => {
     const v = c.imagemUrl ?? c.logoUrl ?? c.imagem ?? ''
     if (!v) return '/churrasqueira.png'
     if (/^https?:\/\//i.test(v)) return v
-    // relativo começando em /uploads -> prefixa API_URL
     if (v.startsWith('/uploads/')) return `${API_URL}${v}`
-    // apenas nome de arquivo -> assume pasta antiga
     return `${API_URL}/uploads/churrasqueiras/${v}`
   }
 
-  // Buscar disponibilidade
   useEffect(() => {
     const buscar = async () => {
       if (!diaSemana || !turno) {
         setChurrasqueirasDisponiveis([])
         return
       }
-
       try {
         const res = await axios.get(`${API_URL}/disponibilidadeChurrasqueiras`, {
           params: { diaSemana, turno },
           withCredentials: true,
         })
-
         const lista: Churrasqueira[] = Array.isArray(res.data) ? res.data : []
-        const disponiveis = lista.filter((c) => c.disponivel !== false) // se não vier o campo, considera disponível
+        const disponiveis = lista.filter((c) => c.disponivel !== false)
         setChurrasqueirasDisponiveis(disponiveis)
         setMensagem(disponiveis.length === 0 ? 'Nenhuma churrasqueira disponível.' : '')
       } catch (err) {
@@ -69,11 +61,9 @@ export default function AgendamentoChurrasqueiraComum() {
         setMensagem('Erro ao verificar disponibilidade.')
       }
     }
-
     buscar()
   }, [diaSemana, turno, API_URL])
 
-  // Buscar usuários
   useEffect(() => {
     const buscar = async () => {
       if (buscaUsuario.trim().length < 2) {
@@ -90,7 +80,6 @@ export default function AgendamentoChurrasqueiraComum() {
         console.error(err)
       }
     }
-
     const delay = setTimeout(buscar, 300)
     return () => clearTimeout(delay)
   }, [buscaUsuario, API_URL])
@@ -100,16 +89,13 @@ export default function AgendamentoChurrasqueiraComum() {
       setMensagem('Selecione uma churrasqueira e um usuário.')
       return
     }
-
     try {
       await axios.post(`${API_URL}/agendamentosChurrasqueiras`, {
         diaSemana,
         turno,
         churrasqueiraId: churrasqueiraSelecionada,
         usuarioId: usuarioSelecionado.id
-      }, {
-        withCredentials: true,
-      })
+      }, { withCredentials: true })
       setMensagem('✅ Agendamento realizado com sucesso!')
       setChurrasqueiraSelecionada('')
       setUsuarioSelecionado(null)
@@ -186,17 +172,18 @@ export default function AgendamentoChurrasqueiraComum() {
                 <button
                   key={c.churrasqueiraId}
                   type="button"
-                  className={`p-2 rounded border text-left bg-gray-50 hover:bg-gray-100 transition ${
-                    isActive ? 'ring-2 ring-green-600 bg-green-50' : ''
-                  }`}
+                  className={`p-2 rounded border text-left bg-gray-50 hover:bg-gray-100 transition ${isActive ? 'ring-2 ring-green-600 bg-green-50' : ''}`}
                   onClick={() => setChurrasqueiraSelecionada(String(c.churrasqueiraId))}
                 >
-                  <div className="w-full aspect-[4/3] rounded overflow-hidden bg-white border mb-2 grid place-items-center">
-                    <img
+                  <div className="relative w-full aspect-[4/3] rounded overflow-hidden bg-white border mb-2">
+                    <AppImage
                       src={img}
                       alt={c.nome}
-                      className="w-full h-full object-cover"
-                      onError={(e) => ((e.currentTarget as HTMLImageElement).src = '/churrasqueira.png')}
+                      fill
+                      className="object-cover"
+                      sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                      fallbackSrc="/churrasqueira.png"
+                      priority={false}
                     />
                   </div>
                   <div className="text-sm">

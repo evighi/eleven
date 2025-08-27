@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import AppImage from "@/components/AppImage";
 
 interface Esporte { nome: string; }
 
@@ -63,8 +64,8 @@ export default function ExcluirQuadras() {
         credentials: "include",
       });
 
-      let data: any = {};
-      try { data = await res.json(); } catch {}
+      let dataJson: unknown = null;
+      try { dataJson = await res.json(); } catch {}
 
       if (res.status === 401) {
         router.push("/login");
@@ -72,7 +73,8 @@ export default function ExcluirQuadras() {
       }
 
       if (!res.ok) {
-        alert(`Erro: ${data?.erro || "Não foi possível excluir a quadra."}`);
+        const errMsg = (dataJson as { erro?: string } | null)?.erro;
+        alert(`Erro: ${errMsg || "Não foi possível excluir a quadra."}`);
       } else {
         setQuadras((prev) => prev.filter((q) => q.id !== id));
       }
@@ -98,12 +100,15 @@ export default function ExcluirQuadras() {
           >
             <span className="text-lg font-semibold mb-1">{quadra.nome}</span>
 
-            <img
-              src={resolveImg(quadra.imagem)}
-              alt={`Imagem da quadra ${quadra.nome}`}
-              className="w-full h-40 object-cover rounded mb-2"
-              onError={(e) => ((e.currentTarget as HTMLImageElement).src = "/quadra.png")}
-            />
+            <div className="relative w-full h-40 rounded mb-2 overflow-hidden">
+              <AppImage
+                src={resolveImg(quadra.imagem)}
+                alt={`Imagem da quadra ${quadra.nome}`}
+                fill
+                className="object-cover"
+                sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+              />
+            </div>
 
             <span className="text-sm text-gray-500 mb-2">{prettyTipo(quadra.tipoCamera)}</span>
 
