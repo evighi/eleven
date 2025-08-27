@@ -34,29 +34,29 @@ O CPF é solicitado exclusivamente para:
 O CPF não será compartilhado com terceiros sem o consentimento do usuário, salvo em cumprimento de obrigações legais.
 Os dados pessoais fornecidos pelos usuários serão utilizados para fins de cobranças de quadras (realizadas através de boletos bancários, links de pagamentos, pix, etc…) e cadastro de sociedade quando solicitado pelo usuário.
 
-5. Condições de Uso e Reserva das Quadras
-5.1. Agendamento
+4. Condições de Uso e Reserva das Quadras
+4.1. Agendamento
 - O usuário poderá reservar quadras disponíveis por meio do app, informando data, horário, modalidade esportiva e jogadores.
 - A reserva só será confirmada após a finalização do processo e, se aplicável, o pagamento.
 - A cobrança sobre o agendamento será feita para o usuário que realizou a reserva.
 - As reservas estarão sujeitas a reagendamentos e a cancelamentos a qualquer momento, devido a manutenção, torneios, eventos etc.; o usuário responsável por realizar a reserva será devidamente avisado.
 
-5.2. Cancelamento e Reagendamento
+4.2. Cancelamento e Reagendamento
 - Cancelamentos com até 12 horas de antecedência não sofrerão taxas ou multas, conforme política da empresa.
 - Cancelamentos fora do prazo estarão sujeitos à cobrança com o valor integral do esporte marcado.
 - Os reagendamentos estarão sujeitos à disponibilidade e às regras da administração.
 
-5.3. Pontualidade e Uso da Quadra
+4.3. Pontualidade e Uso da Quadra
 - O tempo reservado é fixo e começa a contar no horário agendado, independentemente da chegada do usuário.
 - É proibido utilizar a quadra fora do horário reservado.
 - O usuário deve zelar pelas instalações e equipamentos.
 - O clube não se responsabiliza por itens pessoais esquecidos ou perdidos dentro das quadras e do clube.
 
-5.4. Responsabilidades
+4.4. Responsabilidades
 - Danos causados às quadras, equipamentos ou terceiros durante o uso serão de responsabilidade do usuário da reserva, podendo estar sujeito a taxas administrativas.
 - A administração reserva-se o direito de suspender usuários que desrespeitarem as regras ou causarem transtornos.
 
-6. Compartilhamento de Dados
+5. Compartilhamento de Dados
 Os dados pessoais poderão ser compartilhados com:
 - Prestadores de serviço contratados pelo aplicativo
 - Autoridades legais ou judiciais, quando exigido
@@ -65,16 +65,16 @@ Os dados pessoais poderão ser compartilhados com:
 - Equipe de atendimento e administração das quadras
 - Terceiros autorizados, mediante consentimento
 
-7. Segurança das Informações
+6. Segurança das Informações
 Adotamos medidas técnicas e administrativas de segurança para proteger os dados pessoais contra acesso não autorizado, destruição, perda, alteração, comunicação ou qualquer forma de tratamento inadequado ou ilícito.
 
-8. Responsabilidades do Usuário
+7. Responsabilidades do Usuário
 O usuário se compromete a:
 - Fornecer informações verdadeiras, completas e atualizadas
 - Manter em sigilo suas credenciais de acesso
 - Não utilizar o aplicativo para fins ilegais ou proibidos por estes termos
 
-9. Direitos do Titular dos Dados
+8. Direitos do Titular dos Dados
 Nos termos da LGPD, o usuário pode, a qualquer momento:
 - Solicitar a confirmação da existência de tratamento
 - Acessar seus dados
@@ -82,11 +82,13 @@ Nos termos da LGPD, o usuário pode, a qualquer momento:
 - Solicitar a anonimização, bloqueio ou eliminação de dados desnecessários
 - Revogar o consentimento
 
-10. Alterações nos Termos
+9. Alterações nos Termos
 Estes Termos e Condições podem ser atualizados periodicamente. A versão mais recente estará sempre disponível no aplicativo. Recomendamos que o usuário revise este documento regularmente.
 
-11. Exclusão de dados e conta
-A conta, assim como as informações pessoais do usuário, pode ser excluída pelo clube a qualquer momento, sem aviso prévio.
+10. Exclusão de dados e conta
+Os dados cadastrais podem ser excluidos a qualquer momento pelo usuário, assim que for solicitado na gerência/administração do clube.
+
+A conta, assim como as informações pessoais do usuário podem ser excluídos pela gerencia/administração do clube a qualquer momento, sem aviso prévio.
 
 11. Contato
 Em caso de dúvidas, solicitações ou reclamações, entre em contato: elevensportsoficial11@gmail.com

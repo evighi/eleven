@@ -15,28 +15,27 @@ type Inputs = {
 };
 
 export default function Login() {
-  const { register, handleSubmit } = useForm<Inputs>();
+  const { register, handleSubmit, formState: { isSubmitting } } = useForm<Inputs>();
   const { logaUsuario } = useAuthStore();
   const router = useRouter();
 
   async function verificaLogin(data: Inputs) {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_URL_API}/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({
-        email: data.email,
-        senha: data.senha,
-      }),
-    });
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_URL_API}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email: data.email, senha: data.senha }),
+      });
 
-    if (response.ok) {
+      if (!response.ok) {
+        toast.error("Erro... Login ou senha incorretos");
+        return;
+      }
+
       const dados: Omit<UsuarioLogadoItf, "token"> = await response.json();
 
-      logaUsuario({
-        ...dados,
-        token: "",
-      });
+      logaUsuario({ ...dados, token: "" });
 
       switch (dados.tipo) {
         case "CLIENTE":
@@ -54,8 +53,8 @@ export default function Login() {
         default:
           router.push("/");
       }
-    } else {
-      toast.error("Erro... Login ou senha incorretos");
+    } catch {
+      toast.error("Não foi possível fazer login. Tente novamente.");
     }
   }
 
@@ -85,7 +84,8 @@ export default function Login() {
               id="email"
               {...register("email")}
               required
-              className="w-full px-4 py-2 rounded-md bg-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-500"
+              disabled={isSubmitting}
+              className="w-full px-4 py-2 rounded-md bg-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-500 disabled:opacity-60 disabled:cursor-not-allowed"
               placeholder="Insira o seu e-mail"
             />
           </div>
@@ -99,7 +99,8 @@ export default function Login() {
               id="senha"
               {...register("senha")}
               required
-              className="w-full px-4 py-2 rounded-md bg-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-500"
+              disabled={isSubmitting}
+              className="w-full px-4 py-2 rounded-md bg-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-500 disabled:opacity-60 disabled:cursor-not-allowed"
               placeholder="Insira a sua senha"
             />
           </div>
@@ -121,9 +122,11 @@ export default function Login() {
 
           <button
             type="submit"
-            className="w-full bg-orange-600 hover:bg-orange-700 text-white py-2 rounded-md font-semibold cursor-pointer transition duration-200"
+            disabled={isSubmitting}
+            aria-busy={isSubmitting}
+            className="w-full bg-orange-600 hover:bg-orange-700 text-white py-2 rounded-md font-semibold cursor-pointer transition duration-200 disabled:opacity-70 disabled:cursor-not-allowed"
           >
-            Entrar
+            {isSubmitting ? "Entrando..." : "Entrar"}
           </button>
         </form>
       </div>
