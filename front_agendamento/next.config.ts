@@ -3,11 +3,10 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   eslint: { ignoreDuringBuilds: true },
   images: {
+    unoptimized: true, // ⬅️ desliga o /_next/image
     remotePatterns: [
-      // R2/Cloudflare (já estavam)
       { protocol: "https", hostname: "*.r2.dev" },
       { protocol: "https", hostname: "*.cloudflarestorage.com" },
-      // DEV: uploads servidos pelo backend local
       { protocol: "http", hostname: "localhost", port: "3001" },
     ],
   },
