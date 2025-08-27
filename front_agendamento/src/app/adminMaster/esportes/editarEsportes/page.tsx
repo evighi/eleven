@@ -1,12 +1,13 @@
-'use client'
+'use client';
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import AppImage from "@/components/AppImage";
 
 interface Esporte {
   id: string;
   nome: string;
-  imagem: string | null; // agora já é URL absoluta (ou null)
+  imagem: string | null; // URL absoluta (ou null)
 }
 
 export default function EditarEsportes() {
@@ -31,11 +32,13 @@ export default function EditarEsportes() {
             href={`/adminMaster/esportes/editarEsportes/${esporte.id}`}
             className="border rounded-xl p-4 shadow hover:shadow-lg transition cursor-pointer flex flex-col items-center bg-white"
           >
-            <img
-              src={esporte.imagem ?? "/esporte.png"}
+            <AppImage
+              src={esporte.imagem || "/esporte.png"}
               alt={esporte.nome}
+              width={128}
+              height={128}
               className="w-32 h-32 object-cover mb-2 rounded"
-              onError={(e) => ((e.currentTarget as HTMLImageElement).src = "/esporte.png")}
+              fallbackSrc="/esporte.png"
             />
             <span className="text-lg font-semibold">{esporte.nome}</span>
           </Link>

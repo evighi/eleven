@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, ChangeEvent, FormEvent } from "react";
 import { useRouter, useParams } from "next/navigation";
+import AppImage from "@/components/AppImage";
 
 interface Esporte {
   id: string;
@@ -71,7 +72,7 @@ export default function EditarEsporte() {
       }
 
       alert("Esporte atualizado com sucesso!");
-      router.push("/adminMaster/esportes/editarEsportes"); // volta para a lista correta
+      router.push("/adminMaster/esportes/editarEsportes");
     } catch {
       alert("Erro inesperado ao atualizar esporte");
     } finally {
@@ -100,11 +101,13 @@ export default function EditarEsporte() {
 
         <div>
           <label className="block font-medium mb-1">Imagem atual</label>
-          <img
-            src={imagemAtual ?? "/esporte.png"}
+          <AppImage
+            src={imagemAtual || "/esporte.png"}
             alt="Imagem atual"
+            width={128}
+            height={128}
             className="w-32 h-32 object-cover rounded border"
-            onError={(e) => ((e.currentTarget as HTMLImageElement).src = "/esporte.png")}
+            fallbackSrc="/esporte.png"
           />
         </div>
 
@@ -116,7 +119,14 @@ export default function EditarEsporte() {
           {preview && (
             <div className="mt-2">
               <span className="text-sm text-gray-600">Pré-visualização:</span>
-              <img src={preview} alt="Prévia" className="w-32 h-32 object-cover rounded border mt-1" />
+              <AppImage
+                src={preview}
+                alt="Prévia"
+                width={128}
+                height={128}
+                className="w-32 h-32 object-cover rounded border mt-1"
+                // AppImage já lida com blob:/data: e faz bypass de otimização
+              />
             </div>
           )}
         </div>

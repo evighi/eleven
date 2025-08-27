@@ -6,8 +6,24 @@ import { useEffect, useMemo, useState } from "react";
 import { useAuthStore } from "@/context/AuthStore";
 import { useLoadUser } from "@/hooks/useLoadUser";
 import { useLogout } from "@/hooks/useLogout";
+import AppImage from "@/components/AppImage";
 
 type Props = { open: boolean; onClose: () => void };
+
+// util seguro para ler possíveis chaves de “perfil” do usuário
+function readUserRole(u: unknown): string {
+  if (!u || typeof u !== "object") return "";
+  const obj = u as Record<string, unknown>;
+  const raw = obj.tipo ?? obj.usuarioLogadoTipo ?? obj.perfil;
+  return typeof raw === "string" ? raw : "";
+}
+
+// util seguro para pegar primeiro nome
+function readFirstName(u: unknown): string | null {
+  if (!u || typeof u !== "object") return null;
+  const n = (u as Record<string, unknown>).nome;
+  return typeof n === "string" ? n.split(" ")[0] : null;
+}
 
 export default function SideMenu({ open, onClose }: Props) {
   const { usuario } = useAuthStore();
@@ -16,20 +32,15 @@ export default function SideMenu({ open, onClose }: Props) {
 
   const [nomeUsuario, setNomeUsuario] = useState("Usuário");
   useEffect(() => {
-    if (usuario?.nome) setNomeUsuario(usuario.nome.split(" ")[0]);
-  }, [usuario?.nome]);
-
-  // ⇩ identifica ADMIN_MASTER com tolerância a diferentes chaves
-  const isAdminMaster = useMemo(() => {
-    const raw =
-      (usuario as any)?.tipo ??
-      (usuario as any)?.usuarioLogadoTipo ??
-      (usuario as any)?.perfil ??
-      "";
-    return String(raw).toUpperCase() === "ADMIN_MASTER";
+    const first = readFirstName(usuario);
+    if (first) setNomeUsuario(first);
   }, [usuario]);
 
-  // Subtítulo amigável no header do menu
+  // identifica ADMIN_MASTER tolerando diferentes chaves (tipo / usuarioLogadoTipo / perfil)
+  const isAdminMaster = useMemo(() => {
+    return readUserRole(usuario).toUpperCase() === "ADMIN_MASTER";
+  }, [usuario]);
+
   const roleLabel = isAdminMaster ? "Administrador" : "Atleta";
 
   // ESC para fechar
@@ -66,8 +77,9 @@ export default function SideMenu({ open, onClose }: Props) {
     <>
       {/* Overlay */}
       <div
-        className={`fixed inset-0 z-50 bg-black/40 transition-opacity ${open ? "opacity-100" : "opacity-0 pointer-events-none"
-          }`}
+        className={`fixed inset-0 z-50 bg-black/40 transition-opacity ${
+          open ? "opacity-100" : "opacity-0 pointer-events-none"
+        }`}
         onClick={onClose}
         aria-hidden
       />
@@ -112,10 +124,10 @@ export default function SideMenu({ open, onClose }: Props) {
             <Item href="/reservasAnteriores" label="Ver reservas anteriores" icon="/icons/verreservasanter.png" onClose={onClose} />
             <Item href="/transferenciasAnteriores" label="Ver transferências anteriores" icon="/icons/vertransferenciasanter.png" onClose={onClose} />
 
-            {/* ⇩ item exclusivo do ADMIN_MASTER */}
+            {/* item exclusivo do ADMIN_MASTER */}
             {isAdminMaster && (
               <Item
-                href="/adminMaster" // ← troque para a rota do seu painel/admin, se for diferente
+                href="/adminMaster"
                 label="Ir para o perfil do administrador"
                 icon="/icons/sair.png"
                 onClose={onClose}
@@ -173,7 +185,14 @@ function Item({
       onClick={onClose}
       className="flex items-center gap-3 rounded-xl bg-gray-100 hover:bg-gray-200 transition px-3 py-3"
     >
-      <img src={icon} alt={label} className="w-5 h-5 object-contain" />
+      <AppImage
+        src={icon}
+        alt={label}
+        width={20}
+        height={20}
+        className="w-5 h-5 object-contain"
+        priority={false}
+      />
       <span className="text-[14px] font-medium text-gray-800">{label}</span>
     </Link>
   );
@@ -194,7 +213,14 @@ function ItemButton({
       onClick={onClick}
       className="w-full text-left flex items-center gap-3 rounded-xl bg-gray-100 hover:bg-gray-200 transition px-3 py-3 cursor-pointer"
     >
-      <img src={icon} alt={label} className="w-5 h-5 object-contain" />
+      <AppImage
+        src={icon}
+        alt={label}
+        width={20}
+        height={20}
+        className="w-5 h-5 object-contain"
+        priority={false}
+      />
       <span className="text-[14px] font-medium text-gray-800">{label}</span>
     </button>
   );

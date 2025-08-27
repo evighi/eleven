@@ -2,14 +2,31 @@
 
 import { useEffect, useState } from "react";
 import axios from "axios";
-import { useAuthStore } from "@/context/AuthStore";
+
+type Quadra = {
+  id: string;
+  nome: string;
+  numero: number;
+};
+
+type UsuarioResumo = {
+  id?: string;
+  nome: string;
+};
+
+type Bloqueio = {
+  id: string;
+  dataBloqueio: string; // ISO "YYYY-MM-DD"
+  bloqueadoPor: UsuarioResumo;
+  quadras: Quadra[];
+};
 
 export default function DesbloqueioQuadrasPage() {
-  const { usuario } = useAuthStore();
+  const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
 
-  const [bloqueios, setBloqueios] = useState<any[]>([]);
+  const [bloqueios, setBloqueios] = useState<Bloqueio[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
-  const [bloqueioSelecionado, setBloqueioSelecionado] = useState<any | null>(null);
+  const [bloqueioSelecionado, setBloqueioSelecionado] = useState<Bloqueio | null>(null);
   const [confirmarDesbloqueio, setConfirmarDesbloqueio] = useState<boolean>(false);
 
   // Carregar lista de bloqueios
@@ -17,8 +34,8 @@ export default function DesbloqueioQuadrasPage() {
     const fetchBloqueios = async () => {
       setLoading(true);
       try {
-        const res = await axios.get("http://localhost:3001/bloqueios", {
-          withCredentials: true,  // envia cookie de autenticação
+        const res = await axios.get<Bloqueio[]>(`${API_URL}/bloqueios`, {
+          withCredentials: true, // envia cookie de autenticação
         });
         setBloqueios(res.data);
       } catch (error) {
@@ -29,27 +46,25 @@ export default function DesbloqueioQuadrasPage() {
     };
 
     fetchBloqueios();
-  }, []);
+  }, [API_URL]);
 
   // Função para confirmar o desbloqueio
   const confirmarDesbloqueioHandler = async () => {
     if (!bloqueioSelecionado) return;
 
     try {
-      await axios.delete(`http://localhost:3001/bloqueios/${bloqueioSelecionado.id}`, {
+      await axios.delete(`${API_URL}/bloqueios/${bloqueioSelecionado.id}`, {
         withCredentials: true, // envia cookie
       });
       alert("Quadras desbloqueadas com sucesso!");
-      setBloqueios(bloqueios.filter((b) => b.id !== bloqueioSelecionado.id));
+      setBloqueios((prev) => prev.filter((b) => b.id !== bloqueioSelecionado.id));
       setConfirmarDesbloqueio(false);
+      setBloqueioSelecionado(null);
     } catch (error) {
       console.error("Erro ao desbloquear quadras:", error);
       alert("Erro ao desbloquear quadras.");
     }
   };
-
-  // Se quiser, você pode mostrar o nome do usuário logado em algum lugar, ex:
-  // <p>Usuário logado: {usuario?.nome}</p>
 
   return (
     <div className="space-y-8">
@@ -67,12 +82,17 @@ export default function DesbloqueioQuadrasPage() {
               <div className="space-y-4">
                 {bloqueios.map((bloqueio) => (
                   <div key={bloqueio.id} className="bg-white p-4 rounded-lg shadow">
-                    <h2 className="text-lg font-semibold text-orange-700">{`Bloqueio de ${bloqueio.bloqueadoPor.nome}`}</h2>
-                    <p>Data do Bloqueio: {new Date(bloqueio.dataBloqueio).toLocaleDateString()}</p>
+                    <h2 className="text-lg font-semibold text-orange-700">
+                      {`Bloqueio de ${bloqueio.bloqueadoPor.nome}`}
+                    </h2>
+                    <p>
+                      Data do Bloqueio:{" "}
+                      {new Date(bloqueio.dataBloqueio).toLocaleDateString()}
+                    </p>
                     <div>
                       <p>Quadras: </p>
                       <ul>
-                        {bloqueio.quadras.map((quadra: any) => (
+                        {bloqueio.quadras.map((quadra) => (
                           <li key={quadra.id}>
                             {quadra.nome} - Quadra {quadra.numero}
                           </li>

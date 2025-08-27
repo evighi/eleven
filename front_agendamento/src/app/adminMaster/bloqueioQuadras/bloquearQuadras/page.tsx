@@ -13,11 +13,12 @@ type QuadraDTO = {
 
 export default function BloqueioQuadrasPage() {
   const { usuario } = useAuthStore();
+  const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
 
   // Filtros / Formulário
-  const [data, setData] = useState<string>("");  // Data do bloqueio
+  const [data, setData] = useState<string>("");      // Data do bloqueio
   const [inicio, setInicio] = useState<string>("");  // Início do bloqueio
-  const [fim, setFim] = useState<string>("");  // Fim do bloqueio
+  const [fim, setFim] = useState<string>("");        // Fim do bloqueio
 
   // Quadras
   const [quadras, setQuadras] = useState<QuadraDTO[]>([]);
@@ -28,17 +29,20 @@ export default function BloqueioQuadrasPage() {
   const [enviando, setEnviando] = useState<boolean>(false);
 
   // Opções de horários (07:00 — 23:00)
-  const opcoesHora = useMemo(() => Array.from({ length: 17 }, (_, i) => `${String(7 + i).padStart(2, "0")}:00`), []);
+  const opcoesHora = useMemo(
+    () => Array.from({ length: 17 }, (_, i) => `${String(7 + i).padStart(2, "0")}:00`),
+    []
+  );
 
   // Carregar quadras (com esportes) ao entrar
   useEffect(() => {
     const fetchQuadras = async () => {
       setLoadingQuadras(true);
       try {
-        const res = await axios.get<QuadraDTO[]>("http://localhost:3001/quadras", {
-          withCredentials: true,
-        });
-        setQuadras(res.data);
+        const res = await fetch(`${API_URL}/quadras`, { credentials: "include" });
+        if (!res.ok) throw new Error("Falha ao carregar quadras");
+        const data: QuadraDTO[] = await res.json();
+        setQuadras(data);
       } catch (error) {
         console.error("Erro ao buscar quadras:", error);
       } finally {
@@ -46,7 +50,7 @@ export default function BloqueioQuadrasPage() {
       }
     };
     fetchQuadras();
-  }, []);
+  }, [API_URL]);
 
   // Agrupar quadras por esporte
   const quadrasPorEsporte = useMemo(() => {
@@ -99,24 +103,27 @@ export default function BloqueioQuadrasPage() {
     setEnviando(true);
     try {
       await axios.post(
-        "http://localhost:3001/bloqueios",
+        `${API_URL}/bloqueios`,
         {
           quadraIds: quadrasSelecionadas,
-          dataBloqueio: data,  // "YYYY-MM-DD"
+          dataBloqueio: data,     // "YYYY-MM-DD"
           inicioBloqueio: inicio,
           fimBloqueio: fim,
-          bloqueadoPorId: usuario?.id, // pega direto do usuário logado
+          bloqueadoPorId: usuario?.id,
         },
-        {
-          withCredentials: true,
-        }
+        { withCredentials: true }
       );
 
       alert("Quadras bloqueadas com sucesso!");
       setQuadrasSelecionadas([]);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
-      const msg = e?.response?.data?.erro || e?.response?.data?.error || "Erro ao criar bloqueio.";
+      // mesma lógica de mensagem, mas sem `any`
+      let msg = "Erro ao criar bloqueio.";
+      if (axios.isAxiosError(e)) {
+        const d = e.response?.data as { erro?: string; error?: string } | undefined;
+        msg = d?.erro || d?.error || msg;
+      }
       alert(msg);
     } finally {
       setEnviando(false);
@@ -180,9 +187,6 @@ export default function BloqueioQuadrasPage() {
             ))}
           </select>
         </div>
-
-        {/* Removido campo 'Bloqueado por (usuário)' */}
-
       </div>
 
       {/* Seleção de quadras */}

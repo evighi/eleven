@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -22,7 +23,7 @@ export default function Login() {
     const response = await fetch(`${process.env.NEXT_PUBLIC_URL_API}/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include", // <-- MUITO IMPORTANTE
+      credentials: "include",
       body: JSON.stringify({
         email: data.email,
         senha: data.senha,
@@ -34,7 +35,7 @@ export default function Login() {
 
       logaUsuario({
         ...dados,
-        token: "", // ou exclua este campo da interface para evitar confusão
+        token: "",
       });
 
       switch (dados.tipo) {
@@ -58,13 +59,19 @@ export default function Login() {
     }
   }
 
-
   return (
     <main className="flex items-center justify-center min-h-screen bg-gray-100">
       <div className="w-full max-w-sm p-6 rounded-md text-center">
         {/* Logo */}
         <div className="mb-6">
-          <img src="/logoEleven(2).png" alt="Eleven Sports" className="mx-auto h-30    " />
+          <Image
+            src="/logoEleven(2).png"
+            alt="Eleven Sports"
+            width={240}
+            height={80}
+            className="mx-auto"
+            priority
+          />
         </div>
 
         {/* Formulário */}

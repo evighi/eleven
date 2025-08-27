@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useMemo } from "react";
 import { useAuthStore } from "@/context/AuthStore";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
@@ -120,11 +121,13 @@ function Tile({
     >
       <div className="flex items-center gap-3 sm:gap-4">
         <div className="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center">
-          <img
+          <Image
             src={iconSrc}
             alt={iconAlt}
+            width={40}
+            height={40}
             className="w-9 h-9 sm:w-10 sm:h-10 object-contain opacity-80"
-            onError={(e) => ((e.currentTarget as HTMLImageElement).style.opacity = "0.3")}
+            priority={false}
           />
         </div>
         <div className="w-px h-10 sm:h-12 bg-gray-300" />

@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import Link from "next/link";
 import Spinner from "@/components/Spinner";
 
@@ -13,14 +14,25 @@ const inputBase =
 const inputCode =
   "w-12 h-12 text-center text-lg font-semibold border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500";
 
+// ===== Tipos =====
 type Inputs = {
-  nome: string;
+  firstName: string;
+  lastName: string;
   cpf: string;
   nascimento: string;
   email: string;
   celular: string;
   senha: string;
   confirmarSenha: string;
+};
+
+type BackendPayload = {
+  nome: string;
+  cpf: string;
+  nascimento: string;
+  email: string;
+  celular: string;
+  senha: string;
 };
 
 export default function Cadastro() {
@@ -32,7 +44,8 @@ export default function Cadastro() {
     watch,
   } = useForm<Inputs>({
     defaultValues: {
-      nome: "",
+      firstName: "",
+      lastName: "",
       cpf: "",
       nascimento: "",
       email: "",
@@ -43,17 +56,18 @@ export default function Cadastro() {
   });
 
   const senhaValue = watch("senha");
-
   const router = useRouter();
+
   const [emailParaVerificar, setEmailParaVerificar] = useState("");
   const [codigo, setCodigo] = useState<string[]>(Array(6).fill(""));
   const [carregando, setCarregando] = useState(false);
-  const dadosClienteRef = useRef<Omit<Inputs, "confirmarSenha"> | null>(null);
+
+  const dadosClienteRef = useRef<BackendPayload | null>(null);
 
   // Termos
   const [showTerms, setShowTerms] = useState(false);
-  const [termsCanBeAccepted, setTermsCanBeAccepted] = useState(false); // vira true só após rolar até o fim no modal
-  const [acceptedTerms, setAcceptedTerms] = useState(false);           // checkbox marcado
+  const [termsCanBeAccepted, setTermsCanBeAccepted] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   const handleCodeChange = (index: number, value: string) => {
     if (!/^[0-9]?$/.test(value)) return;
@@ -65,9 +79,15 @@ export default function Cadastro() {
   };
 
   const validaSenhaFront = useCallback(() => {
-    // regra nova: mínimo 6 e pelo menos 1 maiúscula
+    // regra: mínimo 6 e pelo menos 1 maiúscula
     return /^(?=.*[A-Z]).{6,}$/.test(senhaValue || "");
   }, [senhaValue]);
+
+  function juntarNomeCompleto(firstName: string, lastName: string) {
+    return `${(firstName || "").trim()} ${(lastName || "").trim()}`
+      .replace(/\s+/g, " ")
+      .trim();
+  }
 
   async function cadastraCliente(data: Inputs) {
     if (!acceptedTerms) {
@@ -83,10 +103,23 @@ export default function Cadastro() {
       return;
     }
 
+    const nomeCompleto = juntarNomeCompleto(data.firstName, data.lastName);
+    if (!nomeCompleto) {
+      toast.error("Informe nome e sobrenome.");
+      return;
+    }
+
+    const dadosParaEnvio: BackendPayload = {
+      nome: nomeCompleto,
+      cpf: data.cpf,
+      nascimento: data.nascimento,
+      email: data.email,
+      celular: data.celular,
+      senha: data.senha,
+    };
+
     setCarregando(true);
     try {
-      const { confirmarSenha, ...dadosParaEnvio } = data;
-
       const res = await fetch(`${process.env.NEXT_PUBLIC_URL_API}/clientes/registrar`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -144,7 +177,14 @@ export default function Cadastro() {
       <div className="mx-auto w-full max-w-sm">
         {/* Topo com logo + título */}
         <div className="text-center">
-          <img src="/logoEleven.png" alt="Eleven Sports" className="mx-auto h-40 object-contain" />
+          <Image
+            src="/logoEleven.png"
+            alt="Eleven Sports"
+            width={320}
+            height={160}
+            className="mx-auto h-40 w-auto object-contain"
+            priority
+          />
           <h1 className="mt-3 text-2xl font-bold text-orange-600">
             {emailParaVerificar ? "Validar e-mail" : "Criar cadastro"}
           </h1>
@@ -154,20 +194,25 @@ export default function Cadastro() {
         <div className="mt-4 rounded-2xl bg-white p-4 shadow-[0_8px_24px_rgba(0,0,0,0.08)]">
           {!emailParaVerificar ? (
             <form onSubmit={handleSubmit(cadastraCliente)} className="space-y-3">
-              <Campo label="Nome completo">
-                <input
-                  className={inputBase}
-                  placeholder="Insira o nome do usuário"
-                  {...register("nome", { required: true })}
-                />
-              </Campo>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Campo label="Nome">
+                  <input
+                    className={inputBase}
+                    placeholder="Seu nome"
+                    {...register("firstName", { required: true })}
+                  />
+                </Campo>
+                <Campo label="Sobrenome">
+                  <input
+                    className={inputBase}
+                    placeholder="Seu sobrenome"
+                    {...register("lastName", { required: true })}
+                  />
+                </Campo>
+              </div>
 
               <Campo label="Data de nascimento">
-                <input
-                  type="date"
-                  className={inputBase}
-                  {...register("nascimento", { required: true })}
-                />
+                <input type="date" className={inputBase} {...register("nascimento", { required: true })} />
               </Campo>
 
               <Campo label="CPF">
@@ -176,10 +221,7 @@ export default function Cadastro() {
                   placeholder="Insira o seu CPF"
                   {...register("cpf", {
                     required: "CPF é obrigatório",
-                    pattern: {
-                      value: /^\d{11}$/,
-                      message: "CPF deve conter exatamente 11 números",
-                    },
+                    pattern: { value: /^\d{11}$/, message: "CPF deve conter exatamente 11 números" },
                   })}
                 />
                 {errors.cpf && (
@@ -204,7 +246,7 @@ export default function Cadastro() {
                 />
               </Campo>
 
-              {/* Campos extras (senha) */}
+              {/* Senhas */}
               <Campo label="Senha">
                 <input
                   className={inputBase}
@@ -263,9 +305,7 @@ export default function Cadastro() {
                   </span>
                 </label>
                 {!termsCanBeAccepted && (
-                  <p className="text-[12px] text-gray-500">
-                    Leia os termos para habilitar o avanço.
-                  </p>
+                  <p className="text-[12px] text-gray-500">Leia os termos para habilitar o avanço.</p>
                 )}
               </div>
 
@@ -336,7 +376,7 @@ export default function Cadastro() {
         <TermsModal
           onClose={() => setShowTerms(false)}
           onAccept={() => {
-            setTermsCanBeAccepted(true);   // só habilita o checkbox quando o usuário rolou até o fim
+            setTermsCanBeAccepted(true);
             setShowTerms(false);
           }}
         />
@@ -386,7 +426,7 @@ function TermsModal({
   const onScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
-    const reached = el.scrollTop + el.clientHeight >= el.scrollHeight - 8; // tolerância
+    const reached = el.scrollTop + el.clientHeight >= el.scrollHeight - 8;
     setAtBottom(reached);
   };
 

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import axios from "axios";
 
@@ -35,27 +36,38 @@ type Card = {
   hora: string;
 };
 
-/** Img com fallback único (evita loop em caso de 404) */
-function SafeImg({ src, alt, className }: { src?: string; alt: string; className?: string }) {
+/** <Image> com fallback e sem exigir domains (loader + unoptimized) */
+function SmartImage({
+  src,
+  alt,
+  className,
+  width = 320,
+  height = 128,
+}: {
+  src?: string;
+  alt: string;
+  className?: string;
+  width?: number;
+  height?: number;
+}) {
   const FALLBACK = "/quadra.png";
-  const tried = useRef(false);
-  const [imgSrc, setImgSrc] = useState(src && src.trim() ? src : FALLBACK);
+  const initial = src && src.trim() ? src : FALLBACK;
+  const [imgSrc, setImgSrc] = useState(initial);
 
   useEffect(() => {
     setImgSrc(src && src.trim() ? src : FALLBACK);
-    tried.current = false;
   }, [src]);
 
   return (
-    <img
+    <Image
       src={imgSrc}
       alt={alt}
+      loader={({ src }) => src}
+      unoptimized
+      width={width}
+      height={height}
       className={className}
-      onError={() => {
-        if (tried.current) return;
-        tried.current = true;
-        setImgSrc(FALLBACK);
-      }}
+      onError={() => setImgSrc(FALLBACK)}
     />
   );
 }
@@ -68,9 +80,12 @@ function joinUrl(base: string, path: string) {
 }
 
 export default function HistoricoAgendamentos() {
-  // 🔒 Proteção (mesmo conjunto da sua Home)
-  const { isChecking } = useRequireAuth(["CLIENTE", "ADMIN_MASTER", "ADMIN_ATENDENTE", "ADMIN_PROFESSORES"]);
-
+  const { isChecking } = useRequireAuth([
+    "CLIENTE",
+    "ADMIN_MASTER",
+    "ADMIN_ATENDENTE",
+    "ADMIN_PROFESSORES",
+  ]);
   const router = useRouter();
   const { usuario } = useAuthStore();
 
@@ -78,78 +93,86 @@ export default function HistoricoAgendamentos() {
   const [carregando, setCarregando] = useState(false);
 
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
-  const UPLOADS_PREFIX = (process.env.NEXT_PUBLIC_UPLOADS_PREFIX || "/uploads/quadras").trim();
-
   const hojeISO = useMemo(() => isoLocalDate(new Date(), "America/Sao_Paulo"), []);
 
-  const paraDDMM = (iso?: string) => {
-    const s = (iso || hojeISO).slice(0, 10);
-    const [, m, d] = s.split("-");
-    return `${d}/${m}`;
-  };
+  const paraDDMM = useCallback(
+    (iso?: string) => {
+      const s = (iso || hojeISO).slice(0, 10);
+      const [, m, d] = s.split("-");
+      return `${d}/${m}`;
+    },
+    [hojeISO]
+  );
 
-  const extrairNumeroDoLocal = (local?: string) => {
+  const extrairNumeroDoLocal = useCallback((local?: string) => {
     if (!local) return undefined;
     const m = local.match(/N[ºo]\s*(\d+)/i);
     return m?.[1] || undefined;
-  };
+  }, []);
 
-  const toAbs = (API_URL: string, u?: string | null) => {
-    if (!u) return "";
-    if (/^(https?:|data:|blob:)/i.test(u)) return u; // R2, data:, blob:
-    if (u.startsWith("/")) return joinUrl(API_URL, u); // /uploads/...
-    return joinUrl(API_URL, u); // "uploads/..." ou outro relativo
-  };
+  const resolveQuadraImg = useCallback(
+    (raw: AgendamentoAPI) => {
+      const toAbs = (u?: string | null) => {
+        if (!u) return "";
+        if (/^(https?:|data:|blob:)/i.test(u)) return u;
+        if (u.startsWith("/")) return joinUrl(API_URL, u);
+        return joinUrl(API_URL, u);
+      };
 
-  /** Resolve a melhor URL possível para a imagem da quadra */
-  const resolveQuadraImg = (raw: AgendamentoAPI) => {
-    const candidates = [
-      raw.quadraLogoUrl,               // back novo já pode mandar pronto
-      raw.logoUrl,                     // compat velho
-      raw.quadra?.imagem ?? undefined, // legado: nome do arquivo
-    ].filter((v): v is string => !!v && v.trim().length > 0);
+      const candidates = [
+        raw.quadraLogoUrl,
+        raw.logoUrl,
+        raw.quadra?.imagem ?? undefined,
+      ].filter((v): v is string => !!v && v.trim().length > 0);
 
-    for (const c of candidates) {
-      const v = c.trim();
+      for (const c of candidates) {
+        const v = c.trim();
 
-      // 1) já é absoluto (R2/externo)
-      if (/^(https?:|data:|blob:)/i.test(v)) return v;
+        // absoluto (R2/externo)
+        if (/^(https?:|data:|blob:)/i.test(v)) return v;
 
-      // 2) veio com /uploads/... (relativo) -> prefixa API_URL
-      if (v.startsWith("/uploads/") || v.includes("/uploads/"))
-        return toAbs(API_URL, v);
+        // relativo com /uploads/
+        if (v.startsWith("/uploads/") || v.includes("/uploads/")) return toAbs(v);
 
-      // 3) veio só o NOME do arquivo (legado: "quadra1.png")
-      if (/^[\w.\-]+$/.test(v)) {
-        const prefix = (process.env.NEXT_PUBLIC_UPLOADS_PREFIX || "/uploads/quadras").trim();
-        return toAbs(API_URL, joinUrl(prefix, v));
+        // apenas nome do arquivo
+        if (/^[\w.\-]+$/.test(v)) {
+          const prefix = (process.env.NEXT_PUBLIC_UPLOADS_PREFIX || "/uploads/quadras").trim();
+          return toAbs(joinUrl(prefix, v));
+        }
+
+        // outro relativo
+        return toAbs(v);
       }
 
-      // 4) qualquer outro relativo
-      return toAbs(API_URL, v);
-    }
+      return "/quadra.png";
+    },
+    [API_URL]
+  );
 
-    return "/quadra.png";
-  };
+  const normalizar = useCallback(
+    (raw: AgendamentoAPI): Card => {
+      const esporte = raw.esporteNome || raw.esporte?.nome || raw.nome || "";
+      const quadraNome =
+        raw.quadraNome || raw.quadra?.nome || (raw.local?.split(" - Nº")[0] ?? "Quadra");
+      const numero =
+        String(
+          raw.quadraNumero ?? raw.quadra?.numero ?? extrairNumeroDoLocal(raw.local) ?? ""
+        ) || undefined;
 
-  const normalizar = (raw: AgendamentoAPI): Card => {
-    const esporte = raw.esporteNome || raw.esporte?.nome || raw.nome || "";
-    const quadraNome = raw.quadraNome || raw.quadra?.nome || (raw.local?.split(" - Nº")[0] ?? "Quadra");
-    const numero =
-      String(raw.quadraNumero ?? raw.quadra?.numero ?? extrairNumeroDoLocal(raw.local) ?? "") || undefined;
+      const logoUrl = resolveQuadraImg(raw);
 
-    const logoUrl = resolveQuadraImg(raw);
-
-    return {
-      id: raw.id,
-      logoUrl,
-      quadraNome,
-      numero,
-      esporte,
-      dia: paraDDMM(raw.data),
-      hora: raw.horario,
-    };
-  };
+      return {
+        id: raw.id,
+        logoUrl,
+        quadraNome,
+        numero,
+        esporte,
+        dia: paraDDMM(raw.data),
+        hora: raw.horario,
+      };
+    },
+    [resolveQuadraImg, extrairNumeroDoLocal, paraDDMM]
+  );
 
   useEffect(() => {
     if (isChecking) return;
@@ -158,15 +181,14 @@ export default function HistoricoAgendamentos() {
     const fetch = async () => {
       setCarregando(true);
       try {
-        // pega todos do usuário e filtra FINALIZADO
-        const { data } = await axios.get<AgendamentoAPI[]>(
-          `${API_URL}/agendamentos`,
-          { withCredentials: true, params: { usuarioId: usuario.id } }
-        );
+        const { data } = await axios.get<AgendamentoAPI[]>(`${API_URL}/agendamentos`, {
+          withCredentials: true,
+          params: { usuarioId: usuario.id },
+        });
 
-        const finalizados = (data || []).filter(a => a.status === "FINALIZADO");
+        const finalizados = (data || []).filter((a) => a.status === "FINALIZADO");
 
-        // ordena por data+horário DESC
+        // ordena data+hora DESC
         finalizados.sort((a, b) => {
           const da = (a.data ?? "").slice(0, 10);
           const db = (b.data ?? "").slice(0, 10);
@@ -183,9 +205,8 @@ export default function HistoricoAgendamentos() {
       }
     };
     fetch();
-  }, [API_URL, usuario?.id, hojeISO, isChecking]);
+  }, [API_URL, usuario?.id, hojeISO, isChecking, normalizar]);
 
-  // ⏳ Enquanto verifica cookie/usuário
   if (isChecking) {
     return (
       <main className="min-h-screen grid place-items-center bg-[#f5f5f5]">
@@ -209,17 +230,13 @@ export default function HistoricoAgendamentos() {
           >
             <span className="inline-block rotate-180 text-xl cursor-pointer">➜</span>
           </button>
-          <h1 className="text-2xl font-extrabold drop-shadow-sm">
-            Reservas anteriores
-          </h1>
+          <h1 className="text-2xl font-extrabold drop-shadow-sm">Reservas anteriores</h1>
         </div>
       </header>
 
       <section className="px-0 py-0">
         <div className="max-w-sm mx-auto bg-white rounded-2xl shadow-md p-4">
-          <h2 className="text-[13px] font-semibold text-gray-600 mb-3">
-            Jogos anteriores:
-          </h2>
+          <h2 className="text-[13px] font-semibold text-gray-600 mb-3">Jogos anteriores:</h2>
 
           {carregando && (
             <div className="flex items-center gap-2 text-gray-600">
@@ -239,14 +256,26 @@ export default function HistoricoAgendamentos() {
                 className="flex items-center gap-3 rounded-xl bg-[#f3f3f3] px-3 py-2.5 shadow-sm"
               >
                 <div className="shrink-0 w-28 h-12 sm:w-36 sm:h-14 md:w-40 md:h-16 flex items-center justify-center overflow-hidden">
-                  <SafeImg src={a.logoUrl} alt={a.quadraNome} className="w-full h-full object-contain select-none" />
+                  <SmartImage
+                    src={a.logoUrl}
+                    alt={a.quadraNome}
+                    width={320}
+                    height={128}
+                    className="w-full h-full object-contain select-none"
+                  />
                 </div>
 
                 <div className="min-w-0 flex-1">
-                  <p className="text-[13px] font-semibold text-gray-800 truncate">{a.quadraNome}</p>
+                  <p className="text-[13px] font-semibold text-gray-800 truncate">
+                    {a.quadraNome}
+                  </p>
                   <p className="text-[12px] text-gray-600 leading-tight">{a.esporte}</p>
-                  <p className="text-[12px] text-gray-500">Dia {a.dia} às {a.hora}</p>
-                  {!!a.numero && <p className="text-[11px] text-gray-500">Quadra {a.numero}</p>}
+                  <p className="text-[12px] text-gray-500">
+                    Dia {a.dia} às {a.hora}
+                  </p>
+                  {!!a.numero && (
+                    <p className="text-[11px] text-gray-500">Quadra {a.numero}</p>
+                  )}
                 </div>
               </div>
             ))}

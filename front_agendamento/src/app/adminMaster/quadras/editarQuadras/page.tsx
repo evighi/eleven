@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import AppImage from "@/components/AppImage";
 
 interface Quadra {
   id: string;
@@ -16,12 +17,6 @@ export default function EditarQuadras() {
   const [quadras, setQuadras] = useState<Quadra[]>([]);
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
 
-  const resolveImg = (img?: string | null) => {
-    if (!img) return "/quadra.png";
-    if (/^https?:\/\//i.test(img)) return img;              // já é URL absoluta (R2)
-    return `${API_URL}/uploads/quadras/${img}`;             // legado
-  };
-
   useEffect(() => {
     const carregar = async () => {
       try {
@@ -31,14 +26,15 @@ export default function EditarQuadras() {
           return;
         }
         if (!res.ok) throw new Error("Falha ao carregar quadras");
-        const data = await res.json();
+        const data: Quadra[] = await res.json();
         setQuadras(data);
       } catch {
         alert("Erro ao carregar quadras");
       }
     };
     carregar();
-  }, [API_URL]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // API_URL é constante; evitar dependência desnecessária
 
   return (
     <div className="p-8">
@@ -50,11 +46,14 @@ export default function EditarQuadras() {
             href={`/adminMaster/quadras/editarQuadras/${quadra.id}`}
             className="border rounded-xl p-4 shadow hover:shadow-lg transition cursor-pointer flex flex-col items-center bg-white"
           >
-            <img
-              src={resolveImg(quadra.imagem)}
+            <AppImage
+              src={quadra.imagem || undefined}
+              legacyDir="quadras"
               alt={quadra.nome}
+              width={128}
+              height={128}
               className="w-32 h-32 object-cover mb-2 rounded"
-              onError={(e) => ((e.currentTarget as HTMLImageElement).src = "/quadra.png")}
+              fallbackSrc="/quadra.png"
             />
             <span className="text-lg font-semibold">{quadra.nome}</span>
             <span className="text-sm text-gray-500">

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import axios from 'axios'
+import Image from 'next/image'
 
 interface Churrasqueira {
   churrasqueiraId: string
@@ -40,6 +41,19 @@ export default function AgendamentoChurrasqueiraPermanente() {
     if (/^https?:\/\//i.test(v)) return v
     if (v.startsWith('/uploads/')) return `${API_URL}${v}`
     return `${API_URL}/uploads/churrasqueiras/${v}`
+  }
+
+  // helper p/ saber se o Next pode otimizar essa URL
+  const canOptimize = (url: string) => {
+    try {
+      const u = new URL(url)
+      return (
+        u.protocol === 'https:' &&
+        (u.hostname.endsWith('r2.dev') || u.hostname.endsWith('cloudflarestorage.com'))
+      )
+    } catch {
+      return false
+    }
   }
 
   // Buscar disponibilidade
@@ -179,17 +193,22 @@ export default function AgendamentoChurrasqueiraPermanente() {
                 <button
                   key={c.churrasqueiraId}
                   type="button"
-                  className={`p-2 rounded border text-left bg-gray-50 hover:bg-gray-100 transition ${
-                    isActive ? 'ring-2 ring-green-600 bg-green-50' : ''
-                  }`}
+                  className={`p-2 rounded border text-left bg-gray-50 hover:bg-gray-100 transition ${isActive ? 'ring-2 ring-green-600 bg-green-50' : ''
+                    }`}
                   onClick={() => setChurrasqueiraSelecionada(String(c.churrasqueiraId))}
                 >
-                  <div className="w-full aspect-[4/3] rounded overflow-hidden bg-white border mb-2 grid place-items-center">
-                    <img
+                  {/* container para <Image fill /> */}
+                  <div className="relative w-full aspect-[4/3] rounded overflow-hidden bg-white border mb-2">
+                    <Image
                       src={img}
                       alt={c.nome}
-                      className="w-full h-full object-cover"
-                      onError={(e) => ((e.currentTarget as HTMLImageElement).src = '/churrasqueira.png')}
+                      fill
+                      sizes="(max-width: 640px) 50vw, 33vw"
+                      className="object-cover"
+                      unoptimized={!canOptimize(img)}
+                      onError={(e) => {
+                        e.currentTarget.src = '/churrasqueira.png'
+                      }}
                     />
                   </div>
                   <div className="text-sm">
@@ -200,6 +219,7 @@ export default function AgendamentoChurrasqueiraPermanente() {
               )
             })}
           </div>
+
 
           <button
             className="mt-4 bg-orange-600 text-white px-4 py-2 rounded disabled:opacity-60"

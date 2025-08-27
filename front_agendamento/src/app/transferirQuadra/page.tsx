@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import axios from "axios";
 
 import { useAuthStore } from "@/context/AuthStore";
@@ -46,24 +47,38 @@ function joinUrl(base: string, path: string) {
   return `${b}/${p}`;
 }
 
-function SafeImg({ src, alt, className }: { src?: string | null; alt: string; className?: string }) {
+/** <Image> com fallback e sem exigir domains (loader + unoptimized) */
+function SmartImage({
+  src,
+  alt,
+  className,
+  width = 320,
+  height = 128,
+}: {
+  src?: string | null;
+  alt: string;
+  className?: string;
+  width?: number;
+  height?: number;
+}) {
   const FALLBACK = "/quadra.png";
-  const tried = useRef(false);
-  const [imgSrc, setImgSrc] = useState(src && String(src).trim() ? String(src) : FALLBACK);
+  const initial = src && String(src).trim().length ? String(src) : FALLBACK;
+  const [imgSrc, setImgSrc] = useState(initial);
+
   useEffect(() => {
-    setImgSrc(src && String(src).trim() ? String(src) : FALLBACK);
-    tried.current = false;
+    setImgSrc(src && String(src).trim().length ? String(src) : FALLBACK);
   }, [src]);
+
   return (
-    <img
+    <Image
       src={imgSrc}
       alt={alt}
+      loader={({ src }) => src}
+      unoptimized
+      width={width}
+      height={height}
       className={className}
-      onError={() => {
-        if (tried.current) return;
-        tried.current = true;
-        setImgSrc(FALLBACK);
-      }}
+      onError={() => setImgSrc(FALLBACK)}
     />
   );
 }
@@ -101,48 +116,66 @@ export default function TransferirQuadraPage() {
   const UPLOADS_PREFIX = (process.env.NEXT_PUBLIC_UPLOADS_PREFIX || "/uploads/quadras").trim();
   const hojeISO = useMemo(() => isoLocalDate(new Date(), "America/Sao_Paulo"), []);
 
-  const paraDDMM = (iso?: string) => {
+  const paraDDMM = useCallback((iso?: string) => {
     const s = (iso || hojeISO).slice(0, 10);
     const [, m, d] = s.split("-");
     return `${d}/${m}`;
-  };
+  }, [hojeISO]);
+
   const extrairNumeroDoLocal = (local?: string) => {
     if (!local) return undefined;
     const m = local.match(/N[ºo]\s*(\d+)/i);
     return m?.[1] || undefined;
   };
 
-  const resolveQuadraImg = (raw: AgendamentoAPI) => {
-    const candidates = [raw.quadraLogoUrl, raw.logoUrl, raw.quadra?.imagem ?? undefined].filter(
-      (v): v is string => !!v && v.trim().length > 0
-    );
-    for (const c of candidates) {
-      const v = c.trim();
-      if (/^https?:\/\//i.test(v)) return v;
-      if (v.startsWith("/uploads/") || v.includes("/uploads/")) return joinUrl(API_URL, v);
-      if (/^[\w.\-]+$/.test(v)) return joinUrl(API_URL, joinUrl(UPLOADS_PREFIX, v));
-      return joinUrl(API_URL, v);
-    }
-    return "/quadra.png";
-  };
+  /** Normaliza item para card (inclui resolver imagem) */
+  const normalizar = useCallback(
+    (raw: AgendamentoAPI): CardAgendamento => {
+      // resolve imagem (R2 absoluto / uploads relativo / nome de arquivo)
+      const candidates = [
+        raw.quadraLogoUrl,
+        raw.logoUrl,
+        raw.quadra?.imagem ?? undefined,
+      ].filter((v): v is string => !!v && v.trim().length > 0);
 
-  const normalizar = (raw: AgendamentoAPI): CardAgendamento => {
-    const esporte = raw.esporteNome || raw.esporte?.nome || raw.nome || "";
-    const quadraNome = raw.quadraNome || raw.quadra?.nome || (raw.local?.split(" - Nº")[0] ?? "Quadra");
-    const numero =
-      String(raw.quadraNumero ?? raw.quadra?.numero ?? extrairNumeroDoLocal(raw.local) ?? "") || undefined;
-    const logoUrl = resolveQuadraImg(raw);
-    return {
-      id: raw.id,
-      rawId: raw.id,
-      logoUrl,
-      quadraNome,
-      numero,
-      esporte,
-      dia: paraDDMM(raw.data),
-      hora: raw.horario,
-    };
-  };
+      let logoUrl = "/quadra.png";
+      for (const c of candidates) {
+        const v = c.trim();
+        if (/^https?:\/\//i.test(v)) {
+          logoUrl = v;
+          break;
+        }
+        if (v.startsWith("/uploads/") || v.includes("/uploads/")) {
+          logoUrl = joinUrl(API_URL, v);
+          break;
+        }
+        if (/^[\w.\-]+$/.test(v)) {
+          logoUrl = joinUrl(API_URL, joinUrl(UPLOADS_PREFIX, v));
+          break;
+        }
+        logoUrl = joinUrl(API_URL, v);
+        break;
+      }
+
+      const esporte = raw.esporteNome || raw.esporte?.nome || raw.nome || "";
+      const quadraNome = raw.quadraNome || raw.quadra?.nome || (raw.local?.split(" - Nº")[0] ?? "Quadra");
+      const numero =
+        String(raw.quadraNumero ?? raw.quadra?.numero ?? extrairNumeroDoLocal(raw.local) ?? "") ||
+        undefined;
+
+      return {
+        id: raw.id,
+        rawId: raw.id,
+        logoUrl,
+        quadraNome,
+        numero,
+        esporte,
+        dia: paraDDMM(raw.data),
+        hora: raw.horario,
+      };
+    },
+    [API_URL, UPLOADS_PREFIX, paraDDMM]
+  );
 
   /* === Carrega CONFIRMADOS futuros do usuário === */
   useEffect(() => {
@@ -159,12 +192,14 @@ export default function TransferirQuadraPage() {
         const confirmadosFuturos = (data || [])
           .filter((a) => a.status === "CONFIRMADO")
           .filter((a) => (a.data ?? "").slice(0, 10) >= hoje);
+
         confirmadosFuturos.sort((a, b) => {
           const da = (a.data ?? "").slice(0, 10);
           const db = (b.data ?? "").slice(0, 10);
           if (da !== db) return da.localeCompare(db);
           return (a.horario || "").localeCompare(b.horario || "");
         });
+
         setLista(confirmadosFuturos.map(normalizar));
       } catch (e) {
         console.error(e);
@@ -174,7 +209,7 @@ export default function TransferirQuadraPage() {
       }
     };
     fetch();
-  }, [API_URL, usuario?.id, hojeISO, isChecking]);
+  }, [API_URL, usuario?.id, hojeISO, isChecking, normalizar]);
 
   /* === Autocomplete === */
   useEffect(() => {
@@ -299,7 +334,7 @@ export default function TransferirQuadraPage() {
         <div className="mt-1 relative">
           <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none opacity-60">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <path d="M21 21l-4.3-4.3M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15z" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+              <path d="M21 21l-4.3-4.3M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
             </svg>
           </div>
           <input
@@ -355,9 +390,8 @@ export default function TransferirQuadraPage() {
                           setBusca("");
                           setActiveIndex(-1);
                         }}
-                        className={`w-full px-3 py-2 flex items-center gap-3 text-left transition ${
-                          isActive ? "bg-orange-50" : "bg-white"
-                        } hover:bg-orange-50`}
+                        className={`w-full px-3 py-2 flex items-center gap-3 text-left transition ${isActive ? "bg-orange-50" : "bg-white"
+                          } hover:bg-orange-50`}
                       >
                         <div className="flex items-center justify-center w-9 h-9 rounded-full bg-orange-100 text-orange-700 text-xs font-bold">
                           {u.nome.split(" ").slice(0, 2).map((s) => s[0]).join("").toUpperCase()}
@@ -424,7 +458,11 @@ export default function TransferirQuadraPage() {
                   <div key={a.id} className="rounded-xl bg-[#f3f3f3] pt-3 pb-2 px-3 shadow-sm">
                     <div className="flex items-center gap-3">
                       <div className="shrink-0 w-28 h-12 sm:w-36 sm:h-14 md:w-40 md:h-16 flex items-center justify-center overflow-hidden">
-                        <SafeImg src={a.logoUrl} alt={a.quadraNome} className="w-full h-full object-contain select-none" />
+                        <SmartImage
+                          src={a.logoUrl}
+                          alt={a.quadraNome}
+                          className="w-full h-full object-contain select-none"
+                        />
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-[13px] font-semibold text-gray-800 truncate">{a.quadraNome}</p>
@@ -459,7 +497,11 @@ export default function TransferirQuadraPage() {
                 <div className="rounded-xl bg-gray-50 p-2">
                   <div className="flex items-center gap-5">
                     <div className="shrink-0 w-28 h-12 sm:w-36 sm:h-14 md:w-40 md:h-16 flex items-center justify-center overflow-hidden">
-                      <SafeImg src={selecionado.logoUrl} alt={selecionado.quadraNome} className="w-full h-full object-contain select-none" />
+                      <SmartImage
+                        src={selecionado.logoUrl}
+                        alt={selecionado.quadraNome}
+                        className="w-full h-full object-contain select-none"
+                      />
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-[13px] font-semibold text-gray-800 truncate">{selecionado.quadraNome}</p>
@@ -476,9 +518,8 @@ export default function TransferirQuadraPage() {
                 <button
                   disabled={!podeTransferir}
                   onClick={realizarTransferencia}
-                  className={`mx-auto flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-white text-sm font-semibold shadow-md cursor-pointer ${
-                    podeTransferir ? "bg-orange-600 hover:bg-orange-700" : "bg-orange-400/60 cursor-not-allowed"
-                  }`}
+                  className={`mx-auto flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-white text-sm font-semibold shadow-md cursor-pointer ${podeTransferir ? "bg-orange-600 hover:bg-orange-700" : "bg-orange-400/60 cursor-not-allowed"
+                    }`}
                 >
                   {enviando && <Spinner size="w-4 h-4" />}
                   <span>{enviando ? "Enviando..." : "Realizar Transferência"}</span>
@@ -491,7 +532,14 @@ export default function TransferirQuadraPage() {
           {step === 3 && (
             <div className="flex flex-col items-center text-center py-8">
               <div className="w-56 h-56 mb-4">
-                <img src="/icons/realizada.png" alt="" className="w-full h-full object-contain" />
+                <Image
+                  src="/icons/realizada.png"
+                  alt=""
+                  width={224}
+                  height={224}
+                  className="w-full h-full object-contain"
+                  priority
+                />
               </div>
               <h2 className="text-xl font-extrabold text-orange-600 mb-4">Tranferência Realizada!</h2>
               <button

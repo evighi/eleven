@@ -1,18 +1,28 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback, type PropsWithChildren } from "react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/context/AuthStore";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import Spinner from "@/components/Spinner";
 import { isoLocalDate } from "@/utils/date";
+import AppImage from "@/components/AppImage";
+
 
 /* =========================================================
    Tipos
 ========================================================= */
 type EsporteAPI = { id: string | number; nome: string; imagem?: string | null; logoUrl?: string | null };
-type QuadraAPI = { id?: string; quadraId?: string; nome: string; numero: number; logoUrl?: string | null; imagem?: string | null; arquivo?: string | null };
+type QuadraAPI = {
+  id?: string;
+  quadraId?: string;
+  nome: string;
+  numero: number;
+  logoUrl?: string | null;
+  imagem?: string | null;
+  arquivo?: string | null;
+};
 type Disponibilidade = { quadraId: string; nome: string; numero: number; disponivel?: boolean };
 
 type Esporte = { id: string; nome: string; logoUrl?: string };
@@ -26,7 +36,7 @@ type Player = {
   kind: PlayerKind;
   value: string;
   userId?: string;
-  // campos antigos (não usados mais, mas mantidos para compatibilidade)
+  // campos antigos (mantidos para compat)
   open?: boolean;
   search?: string;
   loading?: boolean;
@@ -35,13 +45,25 @@ type Player = {
 
 type UsuarioBusca = { id: string; nome: string; email?: string | null };
 
+type ReservaPayloadBase = {
+  data: string;
+  horario: string;
+  esporteId: string;
+  quadraId: string;
+  tipoReserva: "COMUM";
+};
+type ReservaPayloadExtra = {
+  jogadoresIds?: string[];
+  convidadosNomes?: string[];
+};
+
 /* =========================================================
    Constantes e helpers
 ========================================================= */
 const HORARIOS = [
   "08:00", "09:00", "10:00", "11:00", "12:00", "13:00",
   "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00", "23:00",
-];
+] as const;
 
 function diasProximos(qtd = 7) {
   const out: { iso: string; d: number; mes: string; wd: string }[] = [];
@@ -52,14 +74,8 @@ function diasProximos(qtd = 7) {
   for (let i = 0; i < qtd; i++) {
     const dt = new Date(base);
     dt.setDate(base.getDate() + i);
-    // Pega o dia LOCAL (do dispositivo) — ou passe "America/Sao_Paulo"
     const iso = isoLocalDate(dt);
-    out.push({
-      iso,
-      d: dt.getDate(),
-      mes: meses[dt.getMonth()],
-      wd: wd[dt.getDay()],
-    });
+    out.push({ iso, d: dt.getDate(), mes: meses[dt.getMonth()], wd: wd[dt.getDay()] });
   }
   return out;
 }
@@ -71,11 +87,15 @@ function formatarDia(iso: string) {
 }
 
 function cryptoRandom() {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    // @ts-ignore
-    return crypto.randomUUID();
+  if (typeof crypto !== "undefined") {
+    const c = crypto as { randomUUID?: () => string };
+    if (typeof c.randomUUID === "function") return c.randomUUID();
   }
   return Math.random().toString(36).slice(2);
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
 }
 
 /* =========================================================
@@ -118,12 +138,10 @@ function UserPicker({
   const [results, setResults] = useState<UsuarioBusca[]>([]);
   const wrapRef = useRef<HTMLDivElement | null>(null);
 
-  // sincroniza valor externo
   useEffect(() => {
     setTerm(value || "");
   }, [value]);
 
-  // fecha ao clicar fora
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
       if (!wrapRef.current) return;
@@ -133,7 +151,6 @@ function UserPicker({
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
 
-  // busca com debounce usando APENAS o input principal
   useEffect(() => {
     if (!open || term.trim().length < 2) {
       setResults([]);
@@ -149,7 +166,7 @@ function UserPicker({
           withCredentials: true,
         });
         if (!cancel) {
-          const lista = (res.data || []).filter(u => !excludeIds.includes(u.id));
+          const lista = (res.data || []).filter((u) => !excludeIds.includes(u.id));
           setResults(lista);
         }
       } catch {
@@ -159,12 +176,14 @@ function UserPicker({
       }
     }, 300);
 
-    return () => { cancel = true; clearTimeout(t); };
+    return () => {
+      cancel = true;
+      clearTimeout(t);
+    };
   }, [open, term, apiUrl, excludeIds]);
 
   return (
     <div ref={wrapRef} className="relative">
-      {/* ÚNICO input */}
       <div className="flex items-center gap-2">
         <input
           value={term}
@@ -248,48 +267,50 @@ export default function AgendarQuadraCliente() {
   const { isChecking } = useRequireAuth(["CLIENTE", "ADMIN_MASTER"]);
   const { usuario } = useAuthStore();
 
-  // helpers URL
-  // helpers URL
-  const toAbs = (u?: string | null) => {
-    if (!u) return "";
-    // deixa passar URLs absolutas (R2), data: e blob:
-    if (/^(https?:|data:|blob:)/i.test(u)) return u;
-    // caminhos relativos do seu servidor
-    if (u.startsWith("/")) return `${API_URL}${u}`;
-    // fallback p/ algo tipo "uploads/..." (se vier assim)
-    return `${API_URL}/${u}`;
-  };
+  // helpers URL (memoizada p/ não quebrar deps)
+  const toAbs = useCallback(
+    (u?: string | null) => {
+      if (!u) return "";
+      if (/^(https?:|data:|blob:)/i.test(u)) return u; // absolutas
+      if (u.startsWith("/")) return `${API_URL}${u}`; // relativo do servidor
+      return `${API_URL}/${u}`; // fallback (legado "uploads/...")
+    },
+    [API_URL]
+  );
 
-  // ESPORTES: aceita logoUrl, imagem já absoluta (R2) ou legado "arquivo.png"
-  const buildEsporteLogo = (e: EsporteAPI) => {
-    const candidate = e.logoUrl || e.imagem || "";
-    // se vier só o NOME do arquivo (sem "/"), trata como legado
-    const normalized =
-      candidate &&
-        !/^(https?:|data:|blob:)/i.test(candidate) &&
-        !candidate.startsWith("/") &&
-        !candidate.includes("/")
-        ? `/uploads/esportes/${candidate}`
-        : candidate;
+  // ESPORTES
+  const buildEsporteLogo = useCallback(
+    (e: EsporteAPI) => {
+      const candidate = e.logoUrl || e.imagem || "";
+      const normalized =
+        candidate &&
+          !/^(https?:|data:|blob:)/i.test(candidate) &&
+          !candidate.startsWith("/") &&
+          !candidate.includes("/")
+          ? `/uploads/esportes/${candidate}`
+          : candidate;
 
-    return toAbs(normalized) || "/icons/ball.png";
-  };
+      return toAbs(normalized) || "/icons/ball.png";
+    },
+    [toAbs]
+  );
 
-  // QUADRAS: já estava quase ok; só alinhei a checagem com a de cima
-  const buildQuadraLogo = (q: Partial<QuadraAPI>) => {
-    const candidate = q.logoUrl || q.imagem || q.arquivo || "";
-    // se vier só o NOME (sem "/"), trata como legado
-    const normalized =
-      candidate &&
-        !/^(https?:|data:|blob:)/i.test(String(candidate)) &&
-        !String(candidate).startsWith("/") &&
-        !String(candidate).includes("/")
-        ? `/uploads/quadras/${candidate}`
-        : String(candidate);
+  // QUADRAS
+  const buildQuadraLogo = useCallback(
+    (q: Partial<QuadraAPI>) => {
+      const candidate = q.logoUrl || q.imagem || q.arquivo || "";
+      const normalized =
+        candidate &&
+          !/^(https?:|data:|blob:)/i.test(String(candidate)) &&
+          !String(candidate).startsWith("/") &&
+          !String(candidate).includes("/")
+          ? `/uploads/quadras/${candidate}`
+          : String(candidate);
 
-    return toAbs(normalized);
-  };
-
+      return toAbs(normalized);
+    },
+    [toAbs]
+  );
 
   // wizard
   const [step, setStep] = useState<Step>(1);
@@ -315,7 +336,7 @@ export default function AgendarQuadraCliente() {
 
   // ======== JOGADORES ========
   const [players, setPlayers] = useState<Player[]>([]);
-  const inputRefs = useRef<Record<string, HTMLInputElement | null>>({}); // usado apenas para convidados
+  const inputRefs = useRef<Record<string, HTMLInputElement | null>>({}); // convidados
 
   // inicia players com dono + um campo "com cadastro"
   useEffect(() => {
@@ -350,22 +371,27 @@ export default function AgendarQuadraCliente() {
       const el = inputRefs.current[id];
       if (el) {
         el.focus();
-        try { el.setSelectionRange(caret, caret); } catch { /* noop */ }
+        try {
+          el.setSelectionRange(caret, caret);
+        } catch {
+          /* noop */
+        }
       }
     }, 0);
   };
 
   // ===== Vôlei selecionado? =====
   const isVoleiSelected = useMemo(() => {
-    const nome = (esportes.find(e => String(e.id) === String(esporteId))?.nome || "").toLowerCase();
+    const nome = (esportes.find((e) => String(e.id) === String(esporteId))?.nome || "").toLowerCase();
     return nome.includes("vôlei") || nome.includes("volei");
   }, [esportes, esporteId]);
 
   // validação mínima (2 jogadores)
-  const jogadoresValidos = players.filter((p) =>
-    (p.kind === "owner" && p.value.trim() !== "") ||
-    (p.kind === "registered" && !!p.userId) ||
-    (p.kind === "guest" && p.value.trim() !== "")
+  const jogadoresValidos = players.filter(
+    (p) =>
+      (p.kind === "owner" && p.value.trim() !== "") ||
+      (p.kind === "registered" && !!p.userId) ||
+      (p.kind === "guest" && p.value.trim() !== "")
   );
   const podeReservar = jogadoresValidos.length >= 2;
 
@@ -390,7 +416,7 @@ export default function AgendarQuadraCliente() {
       }
     };
     loadEsportes();
-  }, [API_URL, isChecking]);
+  }, [isChecking, buildEsporteLogo, API_URL]);
 
   // 2) Logos das quadras
   useEffect(() => {
@@ -400,7 +426,7 @@ export default function AgendarQuadraCliente() {
         const { data } = await axios.get<QuadraAPI[]>(`${API_URL}/quadras`, { withCredentials: true });
         const map: Record<string, string> = {};
         (data || []).forEach((q) => {
-          const id = String((q as any).id || (q as any).quadraId || "");
+          const id = String(q.id ?? q.quadraId ?? "");
           if (!id) return;
           const logo = buildQuadraLogo(q);
           if (logo) map[id] = logo;
@@ -411,7 +437,7 @@ export default function AgendarQuadraCliente() {
       }
     };
     loadQuadras();
-  }, [API_URL, isChecking]);
+  }, [isChecking, buildQuadraLogo, API_URL]);
 
   // 3) Mapa de horários
   useEffect(() => {
@@ -452,7 +478,9 @@ export default function AgendarQuadraCliente() {
       }
     };
     fetchHorarios();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [API_URL, esporteId, diaISO, isChecking]);
 
   // 4) Lista de quadras disponíveis
@@ -472,7 +500,7 @@ export default function AgendarQuadraCliente() {
           .filter((q) => q.disponivel !== false)
           .map((q) => {
             const id = String(q.quadraId);
-            return { quadraId: id, nome: q.nome, numero: q.numero, logoUrl: quadraLogos[id] || "" } as QuadraDisponivel;
+            return { quadraId: id, nome: q.nome, numero: q.numero, logoUrl: quadraLogos[id] || "" };
           });
         setQuadras(disponiveis);
         if (disponiveis.length === 0) setMsg("Nenhuma quadra disponível neste horário.");
@@ -489,36 +517,53 @@ export default function AgendarQuadraCliente() {
   /* ========= Navegação ========= */
   const confirmarEsporte = () => {
     if (!esporteId) return setMsg("Selecione um esporte.");
-    setMsg(""); setStep(2);
+    setMsg("");
+    setStep(2);
   };
   const confirmarDia = () => {
     if (!diaISO) return setMsg("Selecione um dia.");
-    setMsg(""); setStep(3);
+    setMsg("");
+    setStep(3);
   };
   const confirmarHorario = () => {
     if (!horario) return setMsg("Selecione um horário.");
-    setMsg(""); setStep(4);
+    setMsg("");
+    setStep(4);
   };
   const avancarQuadra = () => {
     if (!quadraId) return setMsg("Selecione uma quadra.");
-    setMsg(""); setStep(isVoleiSelected ? 6 : 5);
+    setMsg("");
+    setStep(isVoleiSelected ? 6 : 5);
   };
   const confirmarJogadores = () => {
     if (!podeReservar) return setMsg("Informe pelo menos 2 jogadores.");
-    setMsg(""); setStep(6);
+    setMsg("");
+    setStep(6);
   };
 
-  function toErrorMessage(err: any): string {
-    const data = err?.response?.data;
-    if (data?.erro && typeof data.erro === "string") return data.erro;
-    if (Array.isArray(data?.issues)) {
-      const msgs = data.issues.map((i: any) => String(i?.message || "Campo inválido")).filter(Boolean);
+  function toErrorMessage(err: unknown): string {
+    const maybeAxios = err as { response?: { data?: unknown; statusText?: string }; message?: string };
+    const data = maybeAxios.response?.data;
+
+    if (isRecord(data) && typeof data.erro === "string") return data.erro;
+
+    if (isRecord(data) && Array.isArray((data as Record<string, unknown>).issues)) {
+      const items = (data as Record<string, unknown>).issues as unknown[];
+      const msgs = items
+        .map((i) => (isRecord(i) && typeof i.message === "string" ? i.message : null))
+        .filter((s): s is string => !!s);
       if (msgs.length) return msgs.join(" • ");
     }
-    if (data?.message && typeof data.message === "string") return data.message;
-    if (err?.response?.statusText) return String(err.response.statusText);
-    if (typeof err?.message === "string") return err.message;
-    try { return JSON.stringify(data ?? err); } catch { return "Não foi possível processar a solicitação."; }
+
+    if (isRecord(data) && typeof data.message === "string") return data.message;
+    if (maybeAxios.response?.statusText) return String(maybeAxios.response.statusText);
+    if (typeof maybeAxios.message === "string") return maybeAxios.message;
+
+    try {
+      return JSON.stringify(data ?? err);
+    } catch {
+      return "Não foi possível processar a solicitação.";
+    }
   }
 
   const realizarReserva = async () => {
@@ -530,7 +575,8 @@ export default function AgendarQuadraCliente() {
       return;
     }
 
-    const payload: any = { data: diaISO, horario, esporteId, quadraId, tipoReserva: "COMUM" };
+    const base: ReservaPayloadBase = { data: diaISO, horario, esporteId, quadraId, tipoReserva: "COMUM" };
+    const extra: ReservaPayloadExtra = {};
 
     if (precisaJogadores) {
       const jogadoresIds = players
@@ -539,16 +585,19 @@ export default function AgendarQuadraCliente() {
       const convidadosNomes = players
         .filter((p) => p.kind === "guest" && p.value.trim() !== "")
         .map((p) => p.value.trim());
-      payload.jogadoresIds = jogadoresIds;
-      payload.convidadosNomes = convidadosNomes;
+
+      if (jogadoresIds.length) extra.jogadoresIds = jogadoresIds;
+      if (convidadosNomes.length) extra.convidadosNomes = convidadosNomes;
     }
+
+    const payload: ReservaPayloadBase & ReservaPayloadExtra = { ...base, ...extra };
 
     setLoading(true);
     setMsg("");
     try {
       await axios.post(`${API_URL}/agendamentos`, payload, { withCredentials: true });
       setStep(7);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
       setMsg(toErrorMessage(e));
     } finally {
@@ -557,7 +606,7 @@ export default function AgendarQuadraCliente() {
   };
 
   const goBack = () => {
-    if (step > 1) setStep((prev: Step) => ((prev - 1) as Step));
+    if (step > 1) setStep((prev: Step) => (prev - 1) as Step);
     else router.back();
   };
 
@@ -573,10 +622,15 @@ export default function AgendarQuadraCliente() {
   }
 
   /* ========= UI helpers ========= */
-  const Card = ({ children, className = "" }: any) => (
+  const Card = ({ children, className = "" }: PropsWithChildren<{ className?: string }>) => (
     <div className={`bg-white rounded-2xl shadow-md p-4 ${className}`}>{children}</div>
   );
-  const Btn = ({ children, onClick, disabled = false, className = "" }: any) => (
+  const Btn = ({
+    children,
+    onClick,
+    disabled = false,
+    className = "",
+  }: PropsWithChildren<{ onClick: () => void; disabled?: boolean; className?: string }>) => (
     <button
       onClick={onClick}
       disabled={disabled}
@@ -636,12 +690,13 @@ export default function AgendarQuadraCliente() {
                       `}
                       onClick={() => setEsporteId(String(e.id))}
                     >
-                      <div className="mx-auto mb-2 w-9 h-9 rounded-full bg-gray-200 overflow-hidden flex items-center justify-center">
-                        <img
+                      <div className="mx-auto mb-2 w-9 h-9 rounded-full bg-gray-200 overflow-hidden relative flex items-center justify-center">
+                        <AppImage
                           src={e.logoUrl || "/icons/ball.png"}
-                          className="w-7 h-7 object-contain"
                           alt={e.nome}
-                          onError={(ev) => ((ev.currentTarget as HTMLImageElement).src = "/icons/ball.png")}
+                          fill
+                          className="object-contain"
+                          fallbackSrc="/icons/ball.png"
                         />
                       </div>
                       {e.nome}
@@ -649,7 +704,9 @@ export default function AgendarQuadraCliente() {
                   );
                 })}
               </div>
-              <Btn className="mt-4 cursor-pointer" onClick={confirmarEsporte}>Confirmar</Btn>
+              <Btn className="mt-4 cursor-pointer" onClick={confirmarEsporte}>
+                Confirmar
+              </Btn>
             </Card>
           )}
 
@@ -675,7 +732,9 @@ export default function AgendarQuadraCliente() {
                   );
                 })}
               </div>
-              <Btn className="mt-4 cursor-pointer" onClick={confirmarDia}>Avançar</Btn>
+              <Btn className="mt-4 cursor-pointer" onClick={confirmarDia}>
+                Avançar
+              </Btn>
             </Card>
           )}
 
@@ -707,7 +766,9 @@ export default function AgendarQuadraCliente() {
                   );
                 })}
               </div>
-              <Btn className="mt-4 cursor-pointer" onClick={confirmarHorario} disabled={!horario}>Confirmar</Btn>
+              <Btn className="mt-4 cursor-pointer" onClick={confirmarHorario} disabled={!horario}>
+                Confirmar
+              </Btn>
             </Card>
           )}
 
@@ -738,17 +799,15 @@ export default function AgendarQuadraCliente() {
               ${ativo ? "bg-orange-50 border-orange-500" : "bg-gray-50 border-gray-200 hover:border-gray-300"}
             `}
                     >
-                      {/* IMAGEM ACIMA (sem borda/sem fundo) */}
-                      <div className="w-full h-15 md:h-32 overflow-hidden flex items-center justify-center mb-2">
-                        <img
-                          src={src}
+                      <div className="relative w-full h-15 md:h-32 overflow-hidden flex items-center justify-center mb-2">
+                        <AppImage
+                          src={src || "/quadra.png"}
                           alt={q.nome}
-                          className="h-full w-auto max-w-full object-contain"
-                          onError={(ev) => ((ev.currentTarget as HTMLImageElement).src = "/quadra.png")}
+                          fill
+                          className="object-contain"
+                          fallbackSrc="/quadra.png"
                         />
                       </div>
-
-                      {/* INFOS CENTRALIZADAS */}
                       <p className="text-[13px] font-semibold text-gray-800 truncate">{q.nome}</p>
                       <p className="text-[12px] text-gray-500">Quadra {q.numero}</p>
                     </button>
@@ -756,10 +815,11 @@ export default function AgendarQuadraCliente() {
                 })}
               </div>
 
-              <Btn className="mt-4 cursor-pointer" onClick={avancarQuadra}>Avançar</Btn>
+              <Btn className="mt-4 cursor-pointer" onClick={avancarQuadra}>
+                Avançar
+              </Btn>
             </Card>
           )}
-
 
           {/* STEP 5 - Jogadores (não é vôlei) */}
           {step === 5 && !isVoleiSelected && (
@@ -772,7 +832,6 @@ export default function AgendarQuadraCliente() {
               <div className="space-y-3">
                 {players.map((p) => (
                   <div key={p.id}>
-                    {/* DONO */}
                     {p.kind === "owner" && (
                       <input
                         type="text"
@@ -783,7 +842,6 @@ export default function AgendarQuadraCliente() {
                       />
                     )}
 
-                    {/* REGISTRADO – com UserPicker */}
                     {p.kind === "registered" && (
                       <div className="flex items-start gap-2">
                         <div className="flex-1">
@@ -799,7 +857,6 @@ export default function AgendarQuadraCliente() {
                       </div>
                     )}
 
-                    {/* CONVIDADO */}
                     {p.kind === "guest" && (
                       <div className="flex items-center gap-2">
                         <input
@@ -808,7 +865,9 @@ export default function AgendarQuadraCliente() {
                           onChange={(e) => handleGuestChange(p.id, e)}
                           placeholder="Jogador convidado (sem cadastro)"
                           className="w-full rounded-md border px-3 py-2 text-sm bg-white"
-                          ref={(el) => { inputRefs.current[p.id] = el; }}
+                          ref={(el) => {
+                            inputRefs.current[p.id] = el;
+                          }}
                         />
                         <button
                           type="button"
@@ -863,22 +922,21 @@ export default function AgendarQuadraCliente() {
               <Resumo label="Escolha o Horário:" valor={horario} onChange={() => setStep(3)} />
               <Resumo
                 label="Escolha o Esporte:"
-                valor={esportes.find(e => String(e.id) === String(esporteId))?.nome || ""}
+                valor={esportes.find((e) => String(e.id) === String(esporteId))?.nome || ""}
                 onChange={() => setStep(1)}
               />
               <Resumo
                 label="Escolha a Quadra:"
-                valor={`${quadras.find(q => String(q.quadraId) === String(quadraId))?.nome || ""} - Quadra ${quadras.find(q => String(q.quadraId) === String(quadraId))?.numero || ""}`}
+                valor={`${quadras.find((q) => String(q.quadraId) === String(quadraId))?.nome || ""
+                  } - Quadra ${quadras.find((q) => String(q.quadraId) === String(quadraId))?.numero || ""}`}
                 onChange={() => setStep(4)}
               />
               <Resumo
                 label="Jogadores:"
-                valor={
-                  players
-                    .filter(p => (p.kind !== "registered" ? (p.value ?? "").trim() !== "" : !!p.userId))
-                    .map(p => p.value.trim())
-                    .join(", ")
-                }
+                valor={players
+                  .filter((p) => (p.kind !== "registered" ? (p.value ?? "").trim() !== "" : !!p.userId))
+                  .map((p) => p.value.trim())
+                  .join(", ")}
                 onChange={() => setStep(5)}
               />
 
@@ -891,8 +949,14 @@ export default function AgendarQuadraCliente() {
           {/* STEP 7 - Sucesso */}
           {step === 7 && (
             <Card className="flex flex-col items-center text-center py-10">
-              <div className="w-60 h-60 mb-4">
-                <img src="/icons/realizada.png" alt="" className="w-full h-full object-contain" />
+              <div className="relative w-60 h-60 mb-4">
+                <AppImage
+                  src="/icons/realizada.png"
+                  alt=""
+                  fill
+                  className="object-contain"
+                  priority
+                />
               </div>
               <h2 className="text-xl font-extrabold text-orange-600 mb-3">Reserva Realizada!</h2>
               <Btn onClick={() => router.push("/")}>Voltar à página inicial</Btn>

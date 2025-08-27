@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import axios from "axios";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
+import Spinner from "@/components/Spinner";
 
 export default function RecuperarSenha() {
   const [etapa, setEtapa] = useState<1 | 2>(1);
@@ -11,28 +13,10 @@ export default function RecuperarSenha() {
   const [novaSenha, setNovaSenha] = useState("");
   const [confirmarSenha, setConfirmarSenha] = useState("");
   const [mensagem, setMensagem] = useState("");
-  const [carregando, setCarregando] = useState(false); // Estado de carregamento
+  const [carregando, setCarregando] = useState(false);
 
   const router = useRouter();
-
-  // Spinner igual do Cadastro.tsx
-  const Spinner = () => (
-    <svg className="animate-spin h-5 w-5 text-white" viewBox="0 0 24 24">
-      <circle
-        className="opacity-25"
-        cx="12"
-        cy="12"
-        r="10"
-        stroke="currentColor"
-        strokeWidth="4"
-      />
-      <path
-        className="opacity-75"
-        fill="currentColor"
-        d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
-      />
-    </svg>
-  );
+  const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
 
   const handleEnviarEmail = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,10 +24,14 @@ export default function RecuperarSenha() {
     setMensagem("");
 
     try {
-      await axios.post("http://localhost:3001/recuperacao/esqueci-senha", { email });
+      await axios.post(
+        `${API_URL}/recuperacao/esqueci-senha`,
+        { email },
+        { withCredentials: true }
+      );
       setMensagem("Código enviado para seu e-mail.");
       setEtapa(2);
-    } catch (error) {
+    } catch {
       setMensagem("Erro ao enviar e-mail. Verifique o endereço.");
     } finally {
       setCarregando(false);
@@ -62,20 +50,16 @@ export default function RecuperarSenha() {
     setCarregando(true);
 
     try {
-      await axios.post("http://localhost:3001/recuperacao/redefinir-senha-codigo", {
-        email,
-        codigo,
-        novaSenha,
-        confirmarSenha,
-      });
+      await axios.post(
+        `${API_URL}/recuperacao/redefinir-senha-codigo`,
+        { email, codigo, novaSenha, confirmarSenha },
+        { withCredentials: true }
+      );
       setMensagem("Senha redefinida com sucesso!");
-      // Redireciona para login após 2 segundos
-      setTimeout(() => {
-        router.push("/login");
-      }, 2000);
-    } catch (error: any) {
-      if (error.response?.data?.message) {
-        setMensagem(error.response.data.message);
+      setTimeout(() => router.push("/login"), 2000);
+    } catch (err: unknown) {
+      if (axios.isAxiosError(err) && err.response?.data?.message) {
+        setMensagem(String(err.response.data.message));
       } else {
         setMensagem("Erro ao redefinir senha. Verifique os dados.");
       }
@@ -88,7 +72,14 @@ export default function RecuperarSenha() {
     <div className="flex items-center justify-center min-h-screen bg-gray-100 px-4">
       <div className="bg-white rounded-xl shadow-lg p-8 w-full max-w-md">
         <div className="text-center mb-6">
-          <img src="/logoeleven.png" alt="Logo" className="h-50 mx-auto" />
+          <Image
+            src="/logoeleven.png"
+            alt="Logo"
+            width={160}
+            height={160}
+            priority
+            className="mx-auto h-40 w-auto"
+          />
           <h2 className="text-2xl font-bold text-orange-600 mt-2">Recuperar senha</h2>
         </div>
 
