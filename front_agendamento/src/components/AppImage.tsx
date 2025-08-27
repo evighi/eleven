@@ -1,3 +1,4 @@
+// src/components/AppImage.tsx
 "use client";
 
 import Image, { ImageLoaderProps } from "next/image";
@@ -6,19 +7,32 @@ import { useMemo, useState } from "react";
 type AppImageProps = {
   src?: string | null;
   alt: string;
-  /** Use width/height OU fill (nunca os dois) */
   width?: number;
   height?: number;
   fill?: boolean;
   className?: string;
-  /** Para arquivos legados (nome do arquivo vindo da API) */
-  legacyDir?: string; // ex.: "quadras" | "churrasqueiras"
-  fallbackSrc?: string; // default: "/quadra.png"
+  legacyDir?: string;
+  fallbackSrc?: string;
   sizes?: string;
   priority?: boolean;
-  /** Força não otimizar (útil enquanto ajustamos domains) */
   forceUnoptimized?: boolean;
 };
+
+function normalizeR2PublicUrl(u: string) {
+  try {
+    const url = new URL(u);
+    const host = url.hostname.toLowerCase();
+    const isR2 =
+      host.endsWith(".r2.dev") || host.endsWith(".cloudflarestorage.com");
+    if (isR2) {
+      // remove o nome do bucket no início do path, se vier
+      url.pathname = url.pathname.replace(/^\/eleven-uploads\/?/, "/");
+    }
+    return url.toString();
+  } catch {
+    return u;
+  }
+}
 
 export default function AppImage({
   src,
@@ -37,23 +51,29 @@ export default function AppImage({
 
   const resolvedSrc = useMemo(() => {
     if (!src) return fallbackSrc;
-    if (/^data:|^blob:/i.test(src)) return src;     // data/blob
-    if (/^https?:\/\//i.test(src)) return src;      // URL absoluta (R2 etc.)
-    if (src.startsWith("/")) return src;            // /public
-    // legado: veio só o nome do arquivo
+
+    // data/blob → usa como veio
+    if (/^data:|^blob:/i.test(src)) return src;
+
+    // absoluta → normaliza R2
+    if (/^https?:\/\//i.test(src)) return normalizeR2PublicUrl(src);
+
+    // /public
+    if (src.startsWith("/")) return src;
+
+    // legado: só o nome do arquivo → monta URL do backend
     const dir = legacyDir ? `/${legacyDir.replace(/^\/|\/$/g, "")}` : "";
     return `${API_URL}/uploads${dir}/${src}`;
   }, [src, API_URL, legacyDir, fallbackSrc]);
 
   const [broken, setBroken] = useState(false);
 
-  // Se for http: ou um host fora dos que já configuramos, bypass da otimização
   const needsBypass = useMemo(() => {
     try {
       const u = new URL(resolvedSrc);
       const host = u.hostname.toLowerCase();
-      const isR2 = /\.r2\.dev$/.test(host) || /cloudflarestorage\.com$/.test(host);
-      return u.protocol === "http:" || !isR2;
+      const isR2 = host.endsWith(".r2.dev") || host.endsWith("cloudflarestorage.com");
+      return u.protocol === "http:" || !isR2; // força unoptimized para hosts não-R2 ou http
     } catch {
       return false;
     }

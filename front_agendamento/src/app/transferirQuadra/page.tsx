@@ -9,6 +9,7 @@ import { useAuthStore } from "@/context/AuthStore";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import Spinner from "@/components/Spinner";
 import { isoLocalDate } from "@/utils/date";
+import AppImage from "@/components/AppImage";
 
 /* ========= Tipos ========= */
 type AgendamentoAPI = {
@@ -39,49 +40,6 @@ type CardAgendamento = {
 };
 
 type UsuarioBusca = { id: string; nome: string; email: string };
-
-/* ========= Utils ========= */
-function joinUrl(base: string, path: string) {
-  const b = base.replace(/\/+$/, "");
-  const p = path.replace(/^\/+/, "");
-  return `${b}/${p}`;
-}
-
-/** <Image> com fallback e sem exigir domains (loader + unoptimized) */
-function SmartImage({
-  src,
-  alt,
-  className,
-  width = 320,
-  height = 128,
-}: {
-  src?: string | null;
-  alt: string;
-  className?: string;
-  width?: number;
-  height?: number;
-}) {
-  const FALLBACK = "/quadra.png";
-  const initial = src && String(src).trim().length ? String(src) : FALLBACK;
-  const [imgSrc, setImgSrc] = useState(initial);
-
-  useEffect(() => {
-    setImgSrc(src && String(src).trim().length ? String(src) : FALLBACK);
-  }, [src]);
-
-  return (
-    <Image
-      src={imgSrc}
-      alt={alt}
-      loader={({ src }) => src}
-      unoptimized
-      width={width}
-      height={height}
-      className={className}
-      onError={() => setImgSrc(FALLBACK)}
-    />
-  );
-}
 
 /* ========= Página ========= */
 export default function TransferirQuadraPage() {
@@ -128,37 +86,15 @@ export default function TransferirQuadraPage() {
     return m?.[1] || undefined;
   };
 
-  /** Normaliza item para card (inclui resolver imagem) */
+  /** Normaliza item para card (deixa a AppImage resolver a URL) */
   const normalizar = useCallback(
     (raw: AgendamentoAPI): CardAgendamento => {
-      // resolve imagem (R2 absoluto / uploads relativo / nome de arquivo)
-      const candidates = [
-        raw.quadraLogoUrl,
-        raw.logoUrl,
-        raw.quadra?.imagem ?? undefined,
-      ].filter((v): v is string => !!v && v.trim().length > 0);
-
-      let logoUrl = "/quadra.png";
-      for (const c of candidates) {
-        const v = c.trim();
-        if (/^https?:\/\//i.test(v)) {
-          logoUrl = v;
-          break;
-        }
-        if (v.startsWith("/uploads/") || v.includes("/uploads/")) {
-          logoUrl = joinUrl(API_URL, v);
-          break;
-        }
-        if (/^[\w.\-]+$/.test(v)) {
-          logoUrl = joinUrl(API_URL, joinUrl(UPLOADS_PREFIX, v));
-          break;
-        }
-        logoUrl = joinUrl(API_URL, v);
-        break;
-      }
+      const logoUrl =
+        (raw.quadraLogoUrl || raw.logoUrl || raw.quadra?.imagem || "/quadra.png");
 
       const esporte = raw.esporteNome || raw.esporte?.nome || raw.nome || "";
-      const quadraNome = raw.quadraNome || raw.quadra?.nome || (raw.local?.split(" - Nº")[0] ?? "Quadra");
+      const quadraNome =
+        raw.quadraNome || raw.quadra?.nome || (raw.local?.split(" - Nº")[0] ?? "Quadra");
       const numero =
         String(raw.quadraNumero ?? raw.quadra?.numero ?? extrairNumeroDoLocal(raw.local) ?? "") ||
         undefined;
@@ -174,7 +110,7 @@ export default function TransferirQuadraPage() {
         hora: raw.horario,
       };
     },
-    [API_URL, UPLOADS_PREFIX, paraDDMM]
+    [paraDDMM]
   );
 
   /* === Carrega CONFIRMADOS futuros do usuário === */
@@ -458,10 +394,15 @@ export default function TransferirQuadraPage() {
                   <div key={a.id} className="rounded-xl bg-[#f3f3f3] pt-3 pb-2 px-3 shadow-sm">
                     <div className="flex items-center gap-3">
                       <div className="shrink-0 w-28 h-12 sm:w-36 sm:h-14 md:w-40 md:h-16 flex items-center justify-center overflow-hidden">
-                        <SmartImage
+                        <AppImage
                           src={a.logoUrl}
                           alt={a.quadraNome}
+                          width={320}
+                          height={128}
                           className="w-full h-full object-contain select-none"
+                          legacyDir="quadras"
+                          fallbackSrc="/quadra.png"
+                          forceUnoptimized
                         />
                       </div>
                       <div className="min-w-0 flex-1">
@@ -497,10 +438,15 @@ export default function TransferirQuadraPage() {
                 <div className="rounded-xl bg-gray-50 p-2">
                   <div className="flex items-center gap-5">
                     <div className="shrink-0 w-28 h-12 sm:w-36 sm:h-14 md:w-40 md:h-16 flex items-center justify-center overflow-hidden">
-                      <SmartImage
+                      <AppImage
                         src={selecionado.logoUrl}
                         alt={selecionado.quadraNome}
+                        width={320}
+                        height={128}
                         className="w-full h-full object-contain select-none"
+                        legacyDir="quadras"
+                        fallbackSrc="/quadra.png"
+                        forceUnoptimized
                       />
                     </div>
                     <div className="min-w-0 flex-1">

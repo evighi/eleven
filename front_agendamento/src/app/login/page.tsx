@@ -65,7 +65,7 @@ export default function Login() {
         {/* Logo */}
         <div className="mb-6">
           <Image
-            src="/logoEleven(2).png"
+            src="/logoelevenhor.png"
             alt="Eleven Sports"
             width={240}
             height={80}

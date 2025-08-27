@@ -49,7 +49,7 @@ export default function AdminHeader() {
       <header className="bg-gray-300 text-gray-800 p-4 flex items-center justify-between shadow">
         <Link href="/adminMaster" aria-label="Ir para o painel Admin Master" className="flex items-center">
           <Image
-            src="/logoeleven(2).png"
+            src="/logoelevenhor.png"
             alt="Logo da Eleven"
             width={160}
             height={48}
