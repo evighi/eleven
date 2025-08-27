@@ -9,6 +9,7 @@ import { useAuthStore } from "@/context/AuthStore";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import Spinner from "@/components/Spinner";
 import { isoLocalDate } from "@/utils/date";
+import AppImage from "@/components/AppImage";
 
 type AgendamentoAPI = {
   id: string;
@@ -35,42 +36,6 @@ type Card = {
   dia: string;
   hora: string;
 };
-
-/** <Image> com fallback e sem exigir domains (loader + unoptimized) */
-function SmartImage({
-  src,
-  alt,
-  className,
-  width = 320,
-  height = 128,
-}: {
-  src?: string;
-  alt: string;
-  className?: string;
-  width?: number;
-  height?: number;
-}) {
-  const FALLBACK = "/quadra.png";
-  const initial = src && src.trim() ? src : FALLBACK;
-  const [imgSrc, setImgSrc] = useState(initial);
-
-  useEffect(() => {
-    setImgSrc(src && src.trim() ? src : FALLBACK);
-  }, [src]);
-
-  return (
-    <Image
-      src={imgSrc}
-      alt={alt}
-      loader={({ src }) => src}
-      unoptimized
-      width={width}
-      height={height}
-      className={className}
-      onError={() => setImgSrc(FALLBACK)}
-    />
-  );
-}
 
 /** junta base + path sem barras duplicadas */
 function joinUrl(base: string, path: string) {
@@ -256,15 +221,16 @@ export default function HistoricoAgendamentos() {
                 className="flex items-center gap-3 rounded-xl bg-[#f3f3f3] px-3 py-2.5 shadow-sm"
               >
                 <div className="shrink-0 w-28 h-12 sm:w-36 sm:h-14 md:w-40 md:h-16 flex items-center justify-center overflow-hidden">
-                  <SmartImage
+                  <AppImage
                     src={a.logoUrl}
                     alt={a.quadraNome}
                     width={320}
                     height={128}
                     className="w-full h-full object-contain select-none"
+                    fallbackSrc="/quadra.png"
+                    legacyDir="quadras"
                   />
                 </div>
-
                 <div className="min-w-0 flex-1">
                   <p className="text-[13px] font-semibold text-gray-800 truncate">
                     {a.quadraNome}
