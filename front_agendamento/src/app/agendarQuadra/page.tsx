@@ -6,8 +6,8 @@ import {
   useRef,
   useState,
   useCallback,
-  type PropsWithChildren,
   memo,
+  type PropsWithChildren,
 } from "react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
@@ -282,33 +282,33 @@ function UserPicker({
 }
 
 /* =========================================================
-   GuestField: input de convidado isolado
+   GuestFieldInline (convidados sem cadastro)
+   - Mantém estado local para não re-renderizar o pai a cada tecla
+   - Comita debounced para o array "players" (ou no blur)
+   - Evita perder foco/fechar teclado
 ========================================================= */
-const GuestField = memo(function GuestField({
+const GuestFieldInline = memo(function GuestFieldInline({
   id,
-  initialValue,
+  value,
   onCommit,
   onRemove,
 }: {
   id: string;
-  initialValue: string;
+  value: string;
   onCommit: (val: string) => void;
   onRemove: () => void;
 }) {
-  const [val, setVal] = useState(initialValue);
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const timerRef = useRef<number | null>(null);
+  const [local, setLocal] = useState(value ?? "");
+  const timer = useRef<number | null>(null);
 
-  useEffect(() => {
-    setVal(initialValue ?? "");
-  }, [initialValue]);
+  useEffect(() => setLocal(value ?? ""), [value]);
 
-  const scheduleCommit = useCallback(
+  const debouncedCommit = useCallback(
     (next: string) => {
-      if (timerRef.current) window.clearTimeout(timerRef.current);
-      timerRef.current = window.setTimeout(() => {
+      if (timer.current) window.clearTimeout(timer.current);
+      timer.current = window.setTimeout(() => {
         onCommit(next);
-        timerRef.current = null;
+        timer.current = null;
       }, 120);
     },
     [onCommit]
@@ -317,27 +317,25 @@ const GuestField = memo(function GuestField({
   return (
     <div className="flex items-center gap-2">
       <input
+        key={id} // ajuda a manter o nó estável
         type="text"
-        value={val}
+        value={local}
         onChange={(e) => {
           const next = e.target.value;
-          setVal(next);
-          scheduleCommit(next);
+          setLocal(next);        // atualiza só local (não perde foco)
+          debouncedCommit(next); // comita para o pai após pequena pausa
         }}
-        onBlur={() => onCommit(val)}
+        onBlur={() => onCommit(local)} // garante commit ao sair
         autoComplete="off"
         autoCorrect="off"
         spellCheck={false}
         inputMode="text"
         placeholder="Jogador convidado (sem cadastro)"
         className="w-full rounded-md border px-3 py-2 text-sm bg-white"
-        ref={inputRef}
-        onMouseDownCapture={(e) => e.stopPropagation()}
-        onKeyDownCapture={(e) => e.stopPropagation()}
       />
       <button
         type="button"
-        onMouseDown={(e) => e.preventDefault()}
+        onMouseDown={(e) => e.preventDefault()} // evita blur antes do onClick
         onClick={onRemove}
         className="px-2 py-1 rounded bg-gray-200 hover:bg-gray-300 text-xs"
         title="Remover"
@@ -941,9 +939,9 @@ export default function AgendarQuadraCliente() {
                     )}
 
                     {p.kind === "guest" && (
-                      <GuestField
+                      <GuestFieldInline
                         id={p.id}
-                        initialValue={p.value}
+                        value={p.value}
                         onCommit={(next) => updatePlayer(p.id, { value: next })}
                         onRemove={() => removePlayer(p.id)}
                       />
@@ -996,8 +994,9 @@ export default function AgendarQuadraCliente() {
               />
               <Resumo
                 label="Escolha a Quadra:"
-                valor={`${quadras.find((q) => String(q.quadraId) === String(quadraId))?.nome || ""
-                  } - Quadra ${quadras.find((q) => String(q.quadraId) === String(quadraId))?.numero || ""}`}
+                valor={`${
+                  quadras.find((q) => String(q.quadraId) === String(quadraId))?.nome || ""
+                } - Quadra ${quadras.find((q) => String(q.quadraId) === String(quadraId))?.numero || ""}`}
                 onChange={() => setStep(4)}
               />
               <Resumo
