@@ -6,33 +6,48 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import Spinner from "@/components/Spinner";
 
+type MsgTipo = "ok" | "erro";
+
 export default function RecuperarSenha() {
   const [etapa, setEtapa] = useState<1 | 2>(1);
   const [email, setEmail] = useState("");
   const [codigo, setCodigo] = useState("");
   const [novaSenha, setNovaSenha] = useState("");
   const [confirmarSenha, setConfirmarSenha] = useState("");
+
   const [mensagem, setMensagem] = useState("");
+  const [msgTipo, setMsgTipo] = useState<MsgTipo>("ok");
   const [carregando, setCarregando] = useState(false);
 
   const router = useRouter();
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
 
+  const setMsg = (texto: string, tipo: MsgTipo = "ok") => {
+    setMensagem(texto);
+    setMsgTipo(tipo);
+  };
+
   const handleEnviarEmail = async (e: React.FormEvent) => {
     e.preventDefault();
     setCarregando(true);
-    setMensagem("");
+    setMsg("");
 
     try {
-      await axios.post(
+      const { data } = await axios.post(
         `${API_URL}/recuperacao/esqueci-senha`,
-        { email },
+        { email: email.trim() },
         { withCredentials: true }
       );
-      setMensagem("Código enviado para seu e-mail.");
+
+      // Mostra a mensagem vinda do back (ex.: “Se o e-mail existir, enviamos o código…” ou “Código enviado…”)
+      setMsg((data?.message as string) || "Código enviado para seu e-mail.");
       setEtapa(2);
-    } catch {
-      setMensagem("Erro ao enviar e-mail. Verifique o endereço.");
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response?.data?.message) {
+        setMsg(String(err.response.data.message), "erro");
+      } else {
+        setMsg("Erro ao enviar e-mail. Tente novamente.", "erro");
+      }
     } finally {
       setCarregando(false);
     }
@@ -40,28 +55,35 @@ export default function RecuperarSenha() {
 
   const handleResetarSenha = async (e: React.FormEvent) => {
     e.preventDefault();
-    setMensagem("");
+    setMsg("");
 
     if (novaSenha !== confirmarSenha) {
-      setMensagem("As senhas não coincidem.");
+      setMsg("As senhas não coincidem.", "erro");
       return;
     }
 
     setCarregando(true);
 
     try {
-      await axios.post(
+      const { data } = await axios.post(
         `${API_URL}/recuperacao/redefinir-senha-codigo`,
-        { email, codigo, novaSenha, confirmarSenha },
+        {
+          email: email.trim(),
+          codigo: codigo.trim(),
+          novaSenha,
+          confirmarSenha,
+        },
         { withCredentials: true }
       );
-      setMensagem("Senha redefinida com sucesso!");
-      setTimeout(() => router.push("/login"), 2000);
-    } catch (err: unknown) {
+
+      setMsg((data?.message as string) || "Senha redefinida com sucesso!");
+      // pequeno delay pra usuário ler a mensagem
+      setTimeout(() => router.push("/login"), 1800);
+    } catch (err) {
       if (axios.isAxiosError(err) && err.response?.data?.message) {
-        setMensagem(String(err.response.data.message));
+        setMsg(String(err.response.data.message), "erro");
       } else {
-        setMensagem("Erro ao redefinir senha. Verifique os dados.");
+        setMsg("Erro ao redefinir senha. Verifique os dados e tente novamente.", "erro");
       }
     } finally {
       setCarregando(false);
@@ -73,7 +95,7 @@ export default function RecuperarSenha() {
       <div className="bg-white rounded-xl shadow-lg p-8 w-full max-w-md">
         <div className="text-center mb-6">
           <Image
-            src="/logoeleven.png"
+            src="/logoelevenhor.png"
             alt="Logo"
             width={160}
             height={160}
@@ -94,12 +116,12 @@ export default function RecuperarSenha() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="w-full px-4 py-2 rounded-md shadow-sm bg-gray-200  focus:outline-none focus:ring-2 focus:ring-orange-500"
+              className="w-full px-4 py-2 rounded-md shadow-sm bg-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-500"
             />
             <button
               type="submit"
-              disabled={carregando}
-              className="w-full bg-orange-600 flex justify-center items-center gap-2 text-white font-semibold py-2 rounded-md shadow hover:bg-orange-700 transition"
+              disabled={carregando || !email.trim()}
+              className="w-full bg-orange-600 flex justify-center items-center gap-2 text-white font-semibold py-2 rounded-md shadow hover:bg-orange-700 transition disabled:opacity-70"
             >
               {carregando ? (
                 <>
@@ -127,7 +149,7 @@ export default function RecuperarSenha() {
             />
             <input
               type="password"
-              placeholder="Nova senha"
+              placeholder="Nova senha (mín. 8 caracteres)"
               value={novaSenha}
               onChange={(e) => setNovaSenha(e.target.value)}
               required
@@ -143,8 +165,8 @@ export default function RecuperarSenha() {
             />
             <button
               type="submit"
-              disabled={carregando}
-              className="w-full bg-orange-600 flex justify-center items-center gap-2 text-white font-semibold py-2 rounded-md shadow hover:bg-orange-700 transition"
+              disabled={carregando || !codigo.trim() || !novaSenha || !confirmarSenha}
+              className="w-full bg-orange-600 flex justify-center items-center gap-2 text-white font-semibold py-2 rounded-md shadow hover:bg-orange-700 transition disabled:opacity-70"
             >
               {carregando ? (
                 <>
@@ -157,8 +179,14 @@ export default function RecuperarSenha() {
           </form>
         )}
 
-        {mensagem && (
-          <p className="text-center text-sm text-red-600 mt-4">{mensagem}</p>
+        {!!mensagem && (
+          <p
+            className={`text-center text-sm mt-4 ${
+              msgTipo === "ok" ? "text-emerald-700" : "text-red-600"
+            }`}
+          >
+            {mensagem}
+          </p>
         )}
       </div>
     </div>
