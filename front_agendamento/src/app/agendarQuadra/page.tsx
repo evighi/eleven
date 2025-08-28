@@ -1,6 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useCallback, type PropsWithChildren } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+  type PropsWithChildren,
+  memo,
+} from "react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/context/AuthStore";
@@ -8,7 +16,6 @@ import { useRequireAuth } from "@/hooks/useRequireAuth";
 import Spinner from "@/components/Spinner";
 import { isoLocalDate } from "@/utils/date";
 import AppImage from "@/components/AppImage";
-
 
 /* =========================================================
    Tipos
@@ -275,6 +282,73 @@ function UserPicker({
 }
 
 /* =========================================================
+   GuestField: input de convidado isolado
+========================================================= */
+const GuestField = memo(function GuestField({
+  id,
+  initialValue,
+  onCommit,
+  onRemove,
+}: {
+  id: string;
+  initialValue: string;
+  onCommit: (val: string) => void;
+  onRemove: () => void;
+}) {
+  const [val, setVal] = useState(initialValue);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const timerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    setVal(initialValue ?? "");
+  }, [initialValue]);
+
+  const scheduleCommit = useCallback(
+    (next: string) => {
+      if (timerRef.current) window.clearTimeout(timerRef.current);
+      timerRef.current = window.setTimeout(() => {
+        onCommit(next);
+        timerRef.current = null;
+      }, 120);
+    },
+    [onCommit]
+  );
+
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        type="text"
+        value={val}
+        onChange={(e) => {
+          const next = e.target.value;
+          setVal(next);
+          scheduleCommit(next);
+        }}
+        onBlur={() => onCommit(val)}
+        autoComplete="off"
+        autoCorrect="off"
+        spellCheck={false}
+        inputMode="text"
+        placeholder="Jogador convidado (sem cadastro)"
+        className="w-full rounded-md border px-3 py-2 text-sm bg-white"
+        ref={inputRef}
+        onMouseDownCapture={(e) => e.stopPropagation()}
+        onKeyDownCapture={(e) => e.stopPropagation()}
+      />
+      <button
+        type="button"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={onRemove}
+        className="px-2 py-1 rounded bg-gray-200 hover:bg-gray-300 text-xs"
+        title="Remover"
+      >
+        ×
+      </button>
+    </div>
+  );
+});
+
+/* =========================================================
    Página
 ========================================================= */
 export default function AgendarQuadraCliente() {
@@ -302,9 +376,9 @@ export default function AgendarQuadraCliente() {
       const candidate = e.logoUrl || e.imagem || "";
       const normalized =
         candidate &&
-          !/^(https?:|data:|blob:)/i.test(candidate) &&
-          !candidate.startsWith("/") &&
-          !candidate.includes("/")
+        !/^(https?:|data:|blob:)/i.test(candidate) &&
+        !candidate.startsWith("/") &&
+        !candidate.includes("/")
           ? `/uploads/esportes/${candidate}`
           : candidate;
 
@@ -319,9 +393,9 @@ export default function AgendarQuadraCliente() {
       const candidate = q.logoUrl || q.imagem || q.arquivo || "";
       const normalized =
         candidate &&
-          !/^(https?:|data:|blob:)/i.test(String(candidate)) &&
-          !String(candidate).startsWith("/") &&
-          !String(candidate).includes("/")
+        !/^(https?:|data:|blob:)/i.test(String(candidate)) &&
+        !String(candidate).startsWith("/") &&
+        !String(candidate).includes("/")
           ? `/uploads/quadras/${candidate}`
           : String(candidate);
 
@@ -354,8 +428,6 @@ export default function AgendarQuadraCliente() {
 
   // ======== JOGADORES ========
   const [players, setPlayers] = useState<Player[]>([]);
-  const inputRefs = useRef<Record<string, HTMLInputElement | null>>({}); // convidados
-  const composingRef = useRef<Record<string, boolean>>({});
 
   // inicia players com dono + um campo "com cadastro"
   useEffect(() => {
@@ -380,15 +452,6 @@ export default function AgendarQuadraCliente() {
 
   const addGuestField = () =>
     setPlayers((cur) => [...cur, { id: cryptoRandom(), kind: "guest", value: "" }]);
-
-  // substitua a sua handleGuestChange por esta:
-  const handleGuestChange = useCallback((id: string, e: React.ChangeEvent<HTMLInputElement>) => {
-    // se estiver compondo (acentos/autocorreção), só espelha o valor,
-    // mas não faça nenhuma outra “mágica”
-    const val = e.target.value;
-    setPlayers((cur) => cur.map((p) => (p.id === id ? { ...p, value: val } : p)));
-  }, []);
-
 
   // ===== Vôlei selecionado? =====
   const isVoleiSelected = useMemo(() => {
@@ -878,42 +941,12 @@ export default function AgendarQuadraCliente() {
                     )}
 
                     {p.kind === "guest" && (
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={p.value}
-                          autoComplete="off"
-                          autoCorrect="off"
-                          spellCheck={false}
-                          inputMode="text"
-                          onCompositionStart={() => {
-                            composingRef.current[p.id] = true;
-                          }}
-                          onCompositionEnd={(e) => {
-                            composingRef.current[p.id] = false;
-                            // dispara uma última atualização ao terminar a composição
-                            handleGuestChange(p.id, e as unknown as React.ChangeEvent<HTMLInputElement>);
-                          }}
-                          onChange={(e) => {
-                            // durante a composição, apenas atualize o texto exibido;
-                            // fora da composição, trata normal
-                            handleGuestChange(p.id, e);
-                          }}
-                          placeholder="Jogador convidado (sem cadastro)"
-                          className="w-full rounded-md border px-3 py-2 text-sm bg-white"
-                          ref={(el) => {
-                            inputRefs.current[p.id] = el;
-                          }}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => removePlayer(p.id)}
-                          className="px-2 py-1 rounded bg-gray-200 hover:bg-gray-300 text-xs"
-                          title="Remover"
-                        >
-                          ×
-                        </button>
-                      </div>
+                      <GuestField
+                        id={p.id}
+                        initialValue={p.value}
+                        onCommit={(next) => updatePlayer(p.id, { value: next })}
+                        onRemove={() => removePlayer(p.id)}
+                      />
                     )}
                   </div>
                 ))}
