@@ -10,7 +10,8 @@ import { isoLocalDate } from "@/utils/date";
 import { useAuthStore } from "@/context/AuthStore";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import Spinner from "@/components/Spinner";
-import { API_URL, toAbsolute } from "@/utils/urls";
+import { API_URL } from "@/utils/urls";
+import AppImage from "@/components/AppImage";
 
 type StatusAgendamento = "CONFIRMADO" | "FINALIZADO" | "CANCELADO" | "TRANSFERIDO";
 
@@ -34,48 +35,13 @@ type AgendamentoAPI = {
 
 type AgendamentoCard = {
   id: string;
-  logoUrl: string;
+  logoUrl: string | null;   // pode ser null; AppImage resolve
   quadraNome: string;
   numero?: string;
   esporte: string;
   dia: string;
   hora: string;
 };
-
-/** <Image> com fallback e sem exigir domains (loader + unoptimized) */
-function SmartImage({
-  src,
-  alt,
-  className,
-  width = 320,
-  height = 128,
-}: {
-  src?: string | null;
-  alt: string;
-  className?: string;
-  width?: number;
-  height?: number;
-}) {
-  const FALLBACK = "/quadra.png";
-  const [imgSrc, setImgSrc] = useState<string>(src && src.trim() ? src : FALLBACK);
-
-  useEffect(() => {
-    setImgSrc(src && src.trim() ? src : FALLBACK);
-  }, [src]);
-
-  return (
-    <Image
-      src={imgSrc}
-      alt={alt}
-      loader={({ src }) => src}
-      unoptimized
-      width={width}
-      height={height}
-      className={className}
-      onError={() => setImgSrc(FALLBACK)}
-    />
-  );
-}
 
 export default function Home() {
   // 🔒 Proteção por perfil
@@ -101,7 +67,7 @@ export default function Home() {
 
   const normalizar = useCallback(
     (raw: AgendamentoAPI): AgendamentoCard => {
-      const logo = raw.quadraLogoUrl ?? raw.logoUrl ?? "/quadra.png";
+      const logo = raw.quadraLogoUrl ?? raw.logoUrl ?? null;
       const quadraNome = raw.quadraNome || (raw.local?.split(" - Nº")[0] ?? "Quadra");
 
       // numero da quadra (novo ou extraído do "local" legado)
@@ -120,7 +86,7 @@ export default function Home() {
 
       return {
         id: raw.id,
-        logoUrl: toAbsolute(logo) || "/quadra.png",
+        logoUrl: logo,
         quadraNome,
         numero,
         esporte: raw.esporteNome ?? raw.nome ?? "",
@@ -205,12 +171,15 @@ export default function Home() {
                 >
                   {/* Logo */}
                   <div className="shrink-0 w-28 h-12 sm:w-36 sm:h-14 md:w-40 md:h-16 flex items-center justify-center overflow-hidden">
-                    <SmartImage
-                      src={a.logoUrl}
+                    <AppImage
+                      src={a.logoUrl ?? undefined}
                       alt={a.quadraNome}
                       width={320}
                       height={128}
                       className="w-full h-full object-contain select-none"
+                      legacyDir="quadras"
+                      fallbackSrc="/quadra.png"
+                      forceUnoptimized
                     />
                   </div>
 

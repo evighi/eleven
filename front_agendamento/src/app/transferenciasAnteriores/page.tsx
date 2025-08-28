@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import axios from "axios";
-import Image from "next/image";
 
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import Spinner from "@/components/Spinner";
 import { isoLocalDate } from "@/utils/date";
+import AppImage from "@/components/AppImage";
 
 /* ===== Tipos vindos da rota /agendamentos/transferidos/me ===== */
 type TransferidoAPI = {
@@ -27,7 +27,7 @@ type TransferidoAPI = {
 /* ===== Modelo para exibição ===== */
 type Card = {
   id: string;
-  logoUrl: string;
+  logoUrl?: string | null; // pode vir vazio/indefinido, o AppImage resolve
   quadraNome: string;
   numero?: string;
   esporte: string;
@@ -35,59 +35,6 @@ type Card = {
   hora: string;      // "HH:mm"
   paraQuem?: string; // nome completo de quem recebeu
 };
-
-/** Junta base + path sem barras duplicadas */
-function joinUrl(base: string, path: string) {
-  const b = base.replace(/\/+$/, "");
-  const p = String(path || "").replace(/^\/+/, "");
-  return `${b}/${p}`;
-}
-
-/** Deixa passar absoluto (https:, data:, blob:) e prefixa API_URL no resto */
-function toAbs(API_URL: string, u?: string | null) {
-  if (!u) return "";
-  const v = u.trim();
-  if (/^(https?:|data:|blob:)/i.test(v)) return v;     // R2 ou data/blob
-  if (v.startsWith("/")) return joinUrl(API_URL, v);   // /uploads/...
-  return joinUrl(API_URL, v);                          // "uploads/..." etc
-}
-
-/** Img segura com fallback usando next/image */
-function SafeImg({
-  src,
-  alt,
-  className,
-}: {
-  src?: string | null;
-  alt: string;
-  className?: string;
-}) {
-  const FALLBACK = "/quadra.png";
-  const tried = useRef(false);
-  const [imgSrc, setImgSrc] = useState(
-    src && String(src).trim().length ? String(src) : FALLBACK
-  );
-
-  useEffect(() => {
-    setImgSrc(src && String(src).trim().length ? String(src) : FALLBACK);
-    tried.current = false;
-  }, [src]);
-
-  return (
-    <Image
-      src={imgSrc || FALLBACK}
-      alt={alt}
-      fill
-      sizes="160px"
-      className={className}
-      onError={() => {
-        if (tried.current) return;
-        tried.current = true;
-        setImgSrc(FALLBACK);
-      }}
-    />
-  );
-}
 
 export default function TransferenciasAnterioresPage() {
   // 🔒 Proteção (mesmo conjunto da Home)
@@ -119,52 +66,45 @@ export default function TransferenciasAnterioresPage() {
     return `${d}/${m}`;
   }, [hojeISO]);
 
-  /** Resolve a melhor URL possível para a imagem da quadra (R2 ou legado) */
-  const resolveImg = useCallback(
-    (raw: TransferidoAPI) => {
-      const candidates = [
-        raw.quadraLogoUrl, // back novo já pode mandar absoluto
-        raw.quadraImagem,  // legado: nome do arquivo
-      ].filter((v): v is string => !!v && v.trim().length > 0);
+  /** Normaliza APENAS o valor bruto: deixa absoluto como está,
+   * converte '/uploads/...' para absoluto no backend,
+   * deixa nome de arquivo simples para o AppImage resolver (legado).
+   */
+  const normalizeSrc = useCallback((raw?: string | null) => {
+    if (!raw) return null;
+    const v = raw.trim();
+    if (!v) return null;
 
-      for (const c of candidates) {
-        const v = c.trim();
+    // Absoluto (R2, data, blob) → usa como está
+    if (/^(https?:|data:|blob:)/i.test(v)) return v;
 
-        // 1) absoluto
-        if (/^(https?:|data:|blob:)/i.test(v)) return v;
+    // Caminho do backend começando com /uploads → prefixa o BACKEND
+    if (v.startsWith("/uploads/")) return `${API_URL}${v}`;
 
-        // 2) veio com /uploads/... relativo
-        if (v.startsWith("/uploads/") || v.includes("/uploads/")) {
-          return toAbs(API_URL, v);
-        }
+    // Nome de arquivo simples (legado) → deixe para o AppImage montar com legacyDir
+    // Qualquer outro relativo raro → prefixa BACKEND
+    if (/^[\w.\-]+$/.test(v)) return v;
+    return `${API_URL}/${v.replace(/^\/+/, "")}`;
+  }, [API_URL]);
 
-        // 3) apenas nome do arquivo (ex: "1752877664044.PNG")
-        if (/^[\w.\-]+$/.test(v)) {
-          const prefix = (UPLOADS_PREFIX || "/uploads/quadras").trim();
-          return toAbs(API_URL, joinUrl(prefix, v));
-        }
-
-        // 4) qualquer outro relativo
-        return toAbs(API_URL, v);
-      }
-
-      return "/quadra.png";
-    },
-    [API_URL, UPLOADS_PREFIX]
-  );
-
+  /** Monta o card e deixa o AppImage completar a URL final */
   const normalizar = useCallback(
-    (raw: TransferidoAPI): Card => ({
-      id: raw.id,
-      logoUrl: resolveImg(raw),
-      quadraNome: raw.quadraNome || "Quadra",
-      numero: raw.quadraNumero != null ? String(raw.quadraNumero) : undefined,
-      esporte: raw.esporteNome || "",
-      dia: paraDDMM(raw.data),
-      hora: raw.horario,
-      paraQuem: raw.transferidoPara?.nome || undefined,
-    }),
-    [resolveImg, paraDDMM]
+    (raw: TransferidoAPI): Card => {
+      // prioridade: URL absoluta do backend novo > nome do arquivo legado
+      const picked = normalizeSrc(raw.quadraLogoUrl) ?? normalizeSrc(raw.quadraImagem);
+
+      return {
+        id: raw.id,
+        logoUrl: picked ?? null,
+        quadraNome: raw.quadraNome || "Quadra",
+        numero: raw.quadraNumero != null ? String(raw.quadraNumero) : undefined,
+        esporte: raw.esporteNome || "",
+        dia: paraDDMM(raw.data),
+        hora: raw.horario,
+        paraQuem: raw.transferidoPara?.nome || undefined,
+      };
+    },
+    [normalizeSrc, paraDDMM]
   );
 
   useEffect(() => {
@@ -254,11 +194,16 @@ export default function TransferenciasAnterioresPage() {
                 className="rounded-xl bg-[#f3f3f3] px-3 py-2.5 shadow-sm"
               >
                 <div className="flex items-center gap-3">
-                  <div className="relative shrink-0 w-28 h-12 sm:w-36 sm:h-14 md:w-40 md:h-16 overflow-hidden">
-                    <SafeImg
-                      src={a.logoUrl}
+                  <div className="shrink-0 w-28 h-12 sm:w-36 sm:h-14 md:w-40 md:h-16 flex items-center justify-center overflow-hidden">
+                    <AppImage
+                      src={a.logoUrl ?? undefined}
                       alt={a.quadraNome}
-                      className="object-contain select-none"
+                      width={320}
+                      height={128}
+                      className="w-full h-full object-contain select-none"
+                      legacyDir="quadras"
+                      fallbackSrc="/quadra.png"
+                      forceUnoptimized
                     />
                   </div>
                   <div className="min-w-0 flex-1">

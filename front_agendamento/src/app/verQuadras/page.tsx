@@ -1,13 +1,13 @@
-/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import axios from "axios";
-import { isoLocalDate } from "@/utils/date";
 
+import { isoLocalDate } from "@/utils/date";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import Spinner from "@/components/Spinner";
+import AppImage from "@/components/AppImage";
 
 type AgendamentoAPI = {
   id: string;
@@ -15,17 +15,17 @@ type AgendamentoAPI = {
   data?: string;
   nome?: string;
   local?: string;
-  logoUrl?: string;
+  logoUrl?: string | null;
   quadraNome?: string;
   quadraNumero?: number | string | null;
-  quadraLogoUrl?: string;
+  quadraLogoUrl?: string | null;
   esporteNome?: string;
   status?: "CONFIRMADO" | "FINALIZADO" | "CANCELADO" | "TRANSFERIDO";
 };
 
 type AgendamentoCard = {
   id: string;
-  logoUrl: string;
+  logoUrl?: string | null; // deixa o AppImage resolver (absoluto/legado)
   quadraNome: string;
   numero?: string;
   esporte: string;
@@ -49,14 +49,11 @@ export default function VerQuadrasPage() {
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
   const hojeISO = useMemo(() => isoLocalDate(new Date(), "America/Sao_Paulo"), []);
 
-  const paraDDMM = useCallback(
-    (iso?: string) => {
-      const s = iso || hojeISO;
-      const [, m, d] = s.split("-");
-      return `${d}/${m}`;
-    },
-    [hojeISO]
-  );
+  const paraDDMM = useCallback((iso?: string) => {
+    const s = (iso || hojeISO).slice(0, 10);
+    const [, m, d] = s.split("-");
+    return `${d}/${m}`;
+  }, [hojeISO]);
 
   const extrairNumeroDoLocal = useCallback((local?: string) => {
     if (!local) return undefined;
@@ -64,34 +61,22 @@ export default function VerQuadrasPage() {
     return m?.[1];
   }, []);
 
-  const toAbsolute = useCallback(
-    (u?: string) => {
-      if (!u) return "/quadra.png";
-      if (/^https?:\/\//i.test(u)) return u;
-      return `${API_URL}${u.startsWith("/") ? "" : "/"}${u}`;
-    },
-    [API_URL]
-  );
-
-  const getNumero = useCallback(
-    (raw: AgendamentoAPI) => {
-      const n = raw.quadraNumero ?? extrairNumeroDoLocal(raw.local) ?? "";
-      return String(n || "") || undefined;
-    },
-    [extrairNumeroDoLocal]
-  );
-
+  /** Deixa o AppImage completar a URL final (R2/legado/backend) */
   const normalizar = useCallback(
-    (raw: AgendamentoAPI): AgendamentoCard => ({
-      id: raw.id,
-      logoUrl: toAbsolute(raw.quadraLogoUrl ?? raw.logoUrl),
-      quadraNome: raw.quadraNome || (raw.local?.split(" - Nº")[0] ?? "Quadra"),
-      numero: getNumero(raw),
-      esporte: raw.esporteNome ?? raw.nome ?? "",
-      dia: paraDDMM(raw.data),
-      hora: raw.horario,
-    }),
-    [toAbsolute, getNumero, paraDDMM]
+    (raw: AgendamentoAPI): AgendamentoCard => {
+      const picked = raw.quadraLogoUrl ?? raw.logoUrl ?? null;
+
+      return {
+        id: raw.id,
+        logoUrl: picked,
+        quadraNome: raw.quadraNome || (raw.local?.split(" - Nº")[0] ?? "Quadra"),
+        numero: String(raw.quadraNumero ?? extrairNumeroDoLocal(raw.local) ?? "") || undefined,
+        esporte: raw.esporteNome ?? raw.nome ?? "",
+        dia: paraDDMM(raw.data),
+        hora: raw.horario,
+      };
+    },
+    [extrairNumeroDoLocal, paraDDMM]
   );
 
   useEffect(() => {
@@ -139,7 +124,6 @@ export default function VerQuadrasPage() {
             aria-label="Voltar"
             className="rounded-full bg-white/15 hover:bg-white/25 transition p-2 leading-none"
           >
-            {/* ícone simples de voltar (caret) */}
             <span className="inline-block rotate-180 text-xl cursor-pointer">➜</span>
           </button>
           <h1 className="text-2xl font-extrabold tracking-wide drop-shadow-sm">
@@ -157,7 +141,7 @@ export default function VerQuadrasPage() {
 
           {carregando && (
             <div className="flex items-center gap-2 text-gray-600">
-              <Spinner size="w-4 h-4" />
+              < Spinner size="w-4 h-4" />
               <span className="text-sm">Carregando…</span>
             </div>
           )}
@@ -176,11 +160,15 @@ export default function VerQuadrasPage() {
               >
                 {/* Logo (mais larga e sem borda) */}
                 <div className="shrink-0 w-28 h-12 sm:w-36 sm:h-14 md:w-40 md:h-16 flex items-center justify-center overflow-hidden">
-                  <img
-                    src={a.logoUrl}
+                  <AppImage
+                    src={a.logoUrl ?? undefined}
                     alt={a.quadraNome}
+                    width={320}
+                    height={128}
                     className="w-full h-full object-contain select-none"
-                    onError={(ev) => ((ev.currentTarget as HTMLImageElement).src = "/quadra.png")}
+                    legacyDir="quadras"
+                    fallbackSrc="/quadra.png"
+                    forceUnoptimized
                   />
                 </div>
                 <div className="min-w-0 flex-1">
