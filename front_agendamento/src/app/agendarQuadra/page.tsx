@@ -355,6 +355,7 @@ export default function AgendarQuadraCliente() {
   // ======== JOGADORES ========
   const [players, setPlayers] = useState<Player[]>([]);
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({}); // convidados
+  const composingRef = useRef<Record<string, boolean>>({});
 
   // inicia players com dono + um campo "com cadastro"
   useEffect(() => {
@@ -381,26 +382,13 @@ export default function AgendarQuadraCliente() {
     setPlayers((cur) => [...cur, { id: cryptoRandom(), kind: "guest", value: "" }]);
 
   // substitua a sua handleGuestChange por esta:
-  const handleGuestChange = (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleGuestChange = useCallback((id: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    // se estiver compondo (acentos/autocorreção), só espelha o valor,
+    // mas não faça nenhuma outra “mágica”
     const val = e.target.value;
-    const caret = e.target.selectionStart ?? val.length;
+    setPlayers((cur) => cur.map((p) => (p.id === id ? { ...p, value: val } : p)));
+  }, []);
 
-    updatePlayer(id, { value: val });
-
-    // não chamar focus(); apenas ajusta o caret se o campo ainda estiver focado
-    if (typeof window !== "undefined") {
-      requestAnimationFrame(() => {
-        const el = inputRefs.current[id];
-        if (el && document.activeElement === el) {
-          try {
-            el.setSelectionRange(caret, caret);
-          } catch {
-            /* noop */
-          }
-        }
-      });
-    }
-  };
 
   // ===== Vôlei selecionado? =====
   const isVoleiSelected = useMemo(() => {
@@ -897,7 +885,20 @@ export default function AgendarQuadraCliente() {
                           autoComplete="off"
                           autoCorrect="off"
                           spellCheck={false}
-                          onChange={(e) => handleGuestChange(p.id, e)}
+                          inputMode="text"
+                          onCompositionStart={() => {
+                            composingRef.current[p.id] = true;
+                          }}
+                          onCompositionEnd={(e) => {
+                            composingRef.current[p.id] = false;
+                            // dispara uma última atualização ao terminar a composição
+                            handleGuestChange(p.id, e as unknown as React.ChangeEvent<HTMLInputElement>);
+                          }}
+                          onChange={(e) => {
+                            // durante a composição, apenas atualize o texto exibido;
+                            // fora da composição, trata normal
+                            handleGuestChange(p.id, e);
+                          }}
                           placeholder="Jogador convidado (sem cadastro)"
                           className="w-full rounded-md border px-3 py-2 text-sm bg-white"
                           ref={(el) => {
