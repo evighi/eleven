@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { useAuthStore } from "@/context/AuthStore";
+import Spinner from "@/components/Spinner";
 
 /** Helpers de data/hora em America/Sao_Paulo */
 const SP_TZ = "America/Sao_Paulo";
@@ -22,7 +23,7 @@ const hourStrSP = (d = new Date()) => {
     }).format(d),
     10
   );
-  const clamped = Math.min(23, Math.max(7, hh)); // janela 07..23 como você já usava
+  const clamped = Math.min(23, Math.max(7, hh)); // janela 07..23
   return `${String(clamped).padStart(2, "0")}:00`;
 };
 
@@ -64,7 +65,6 @@ interface ChurrasqueiraDisp {
   nome: string;
   numero: number;
   disponibilidade: ChurrasTurno[];
-  /* Campos opcionais para manter a compatibilidade com o uso atual no JSX */
   disponivel?: boolean;
   tipoReserva?: TipoReserva;
 }
@@ -113,8 +113,13 @@ interface UsuarioLista {
 export default function AdminHome() {
   const [data, setData] = useState("");
   const [horario, setHorario] = useState("");
+
   const [disponibilidade, setDisponibilidade] = useState<DisponibilidadeGeral | null>(null);
-  const [agendamentoSelecionado, setAgendamentoSelecionado] = useState<AgendamentoSelecionado | null>(null);
+  const [loadingDispon, setLoadingDispon] = useState<boolean>(true); // ⬅️ spinner inicial/atualizações
+
+  const [agendamentoSelecionado, setAgendamentoSelecionado] =
+    useState<AgendamentoSelecionado | null>(null);
+  const [loadingDetalhes, setLoadingDetalhes] = useState<boolean>(false); // ⬅️ spinner ao abrir detalhes
 
   const [confirmarCancelamento, setConfirmarCancelamento] = useState(false);
   const [loadingCancelamento, setLoadingCancelamento] = useState(false);
@@ -146,7 +151,11 @@ export default function AdminHome() {
 
   const buscarDisponibilidade = useCallback(async () => {
     if (!isAllowed) return;
-    if (!data || !horario) return;
+    if (!data || !horario) {
+      setLoadingDispon(true);
+      return;
+    }
+    setLoadingDispon(true); // ⬅️ liga spinner
     try {
       const res = await axios.get<DisponibilidadeGeral>(`${API_URL}/disponibilidadeGeral/geral`, {
         params: { data, horario },
@@ -155,15 +164,19 @@ export default function AdminHome() {
       setDisponibilidade(res.data);
     } catch (error) {
       console.error(error);
+      setDisponibilidade(null);
+    } finally {
+      setLoadingDispon(false); // ⬅️ desliga spinner
     }
   }, [API_URL, data, horario, isAllowed]);
 
-  // 🔧 Inicializa data/horário usando America/Sao_Paulo (sem UTC)
+  // 🔧 Inicializa data/horário (SP)
   useEffect(() => {
     setData(todayStrSP());
     setHorario(hourStrSP());
   }, []);
 
+  // Busca disponibilidade quando data/horário mudam
   useEffect(() => {
     buscarDisponibilidade();
   }, [buscarDisponibilidade]);
@@ -189,6 +202,7 @@ export default function AdminHome() {
     }
 
     try {
+      setLoadingDetalhes(true); // ⬅️ liga spinner de detalhes
       const res = await axios.get(`${API_URL}/${rota}`, { withCredentials: true });
 
       setAgendamentoSelecionado({
@@ -204,6 +218,8 @@ export default function AdminHome() {
       });
     } catch (error) {
       console.error("Erro ao buscar detalhes:", error);
+    } finally {
+      setLoadingDetalhes(false); // ⬅️ desliga spinner de detalhes
     }
   };
 
@@ -242,6 +258,7 @@ export default function AdminHome() {
   };
 
   // Buscar usuários (transferência)
+  const [abrirModalTransferenciaState] = useState(false); // placeholder (não alterar comportamento)
   const buscarUsuarios = useCallback(
     async (termo: string) => {
       if (termo.trim().length === 0) {
@@ -423,8 +440,13 @@ export default function AdminHome() {
         </div>
       </div>
 
-      {/* DISPONIBILIDADE */}
-      {disponibilidade && (
+      {/* DISPONIBILIDADE — mostra spinner enquanto carrega/na 1ª vez */}
+      {loadingDispon || !disponibilidade ? (
+        <div className="flex items-center gap-2 text-gray-600">
+          <Spinner />
+          <span>Carregando disponibilidade…</span>
+        </div>
+      ) : (
         <div className="space-y-10">
           {/* QUADRAS */}
           {Object.keys(disponibilidade.quadras).map((esporte) => (
@@ -481,7 +503,10 @@ export default function AdminHome() {
                     key={c.churrasqueiraId + "-dia"}
                     onClick={() =>
                       !diaInfo?.disponivel &&
-                      abrirDetalhes({ ...(diaInfo as DetalheItemMin), tipoLocal: "churrasqueira" }, { turno: "DIA" })
+                      abrirDetalhes(
+                        { ...(diaInfo as DetalheItemMin), tipoLocal: "churrasqueira" },
+                        { turno: "DIA" }
+                      )
                     }
                     className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${
                       diaInfo?.disponivel ? "border-2 border-green-500 bg-green-50" : "border-2 border-red-500 bg-red-50"
@@ -510,7 +535,10 @@ export default function AdminHome() {
                     key={c.churrasqueiraId + "-noite"}
                     onClick={() =>
                       !noiteInfo?.disponivel &&
-                      abrirDetalhes({ ...(noiteInfo as DetalheItemMin), tipoLocal: "churrasqueira" }, { turno: "NOITE" })
+                      abrirDetalhes(
+                        { ...(noiteInfo as DetalheItemMin), tipoLocal: "churrasqueira" },
+                        { turno: "NOITE" }
+                      )
                     }
                     className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${
                       noiteInfo?.disponivel ? "border-2 border-green-500 bg-green-50" : "border-2 border-red-500 bg-red-50"
@@ -527,6 +555,17 @@ export default function AdminHome() {
                   </div>
                 );
               })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* OVERLAY: carregando detalhes */}
+      {loadingDetalhes && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60]">
+          <div className="bg-white rounded-xl shadow-md px-4 py-3">
+            <div className="flex items-center gap-2 text-gray-700">
+              <Spinner /> <span>Carregando detalhes…</span>
             </div>
           </div>
         </div>
@@ -766,10 +805,9 @@ export default function AdminHome() {
               )}
             </div>
 
-            {/* contadores */}
             {(jogadoresSelecionadosIds.length > 0 || convidadosPendentes.length > 0) && (
               <div className="text-xs text-gray-600 mb-2">
-                Selecionados: {jogadoresSelecionadosIds.length} &middot; Convidados: {convidadosPendentes.length}
+                Selecionados: {jogadoresSelecionadosIds.length} · Convidados: {convidadosPendentes.length}
               </div>
             )}
 
