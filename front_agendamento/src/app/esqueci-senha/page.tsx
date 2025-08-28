@@ -97,8 +97,8 @@ export default function RecuperarSenha() {
           <Image
             src="/logoelevenhor.png"
             alt="Logo"
-            width={160}
-            height={160}
+            width={240}
+            height={80}
             priority
             className="mx-auto h-40 w-auto"
           />

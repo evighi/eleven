@@ -65,6 +65,24 @@ const HORARIOS = [
   "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00", "23:00",
 ] as const;
 
+// Helpers de data/hora no fuso de São Paulo
+const SP_TZ = "America/Sao_Paulo";
+const todayIsoSP = new Intl.DateTimeFormat("en-CA", {
+  timeZone: SP_TZ,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+}).format(new Date()); // ex: "2025-03-07"
+
+const hourNowSP = parseInt(
+  new Intl.DateTimeFormat("en-US", {
+    timeZone: SP_TZ,
+    hour: "2-digit",
+    hour12: false,
+  }).format(new Date()),
+  10
+); // ex: 18 (hora atual em SP)
+
 function diasProximos(qtd = 7) {
   const out: { iso: string; d: number; mes: string; wd: string }[] = [];
   const wd = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
@@ -362,22 +380,26 @@ export default function AgendarQuadraCliente() {
   const addGuestField = () =>
     setPlayers((cur) => [...cur, { id: cryptoRandom(), kind: "guest", value: "" }]);
 
-  // corrige bug de foco do convidado
+  // substitua a sua handleGuestChange por esta:
   const handleGuestChange = (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     const caret = e.target.selectionStart ?? val.length;
-    updatePlayer(id, { value: e.target.value });
-    setTimeout(() => {
-      const el = inputRefs.current[id];
-      if (el) {
-        el.focus();
-        try {
-          el.setSelectionRange(caret, caret);
-        } catch {
-          /* noop */
+
+    updatePlayer(id, { value: val });
+
+    // não chamar focus(); apenas ajusta o caret se o campo ainda estiver focado
+    if (typeof window !== "undefined") {
+      requestAnimationFrame(() => {
+        const el = inputRefs.current[id];
+        if (el && document.activeElement === el) {
+          try {
+            el.setSelectionRange(caret, caret);
+          } catch {
+            /* noop */
+          }
         }
-      }
-    }, 0);
+      });
+    }
   };
 
   // ===== Vôlei selecionado? =====
@@ -453,10 +475,17 @@ export default function AgendarQuadraCliente() {
         setHorariosMap({});
         return;
       }
+
+      // se for hoje, só liberar horários estritamente posteriores à hora atual (SP)
+      const isToday = diaISO === todayIsoSP;
+      const hoursToCheck = isToday
+        ? HORARIOS.filter((h) => Number(h.slice(0, 2)) > hourNowSP)
+        : HORARIOS;
+
       setCarregandoHorarios(true);
       try {
         const results = await Promise.all(
-          HORARIOS.map(async (h) => {
+          hoursToCheck.map(async (h) => {
             try {
               const { data } = await axios.get<Disponibilidade[]>(
                 `${API_URL}/disponibilidade`,
@@ -470,7 +499,10 @@ export default function AgendarQuadraCliente() {
           })
         );
         if (!alive) return;
+
+        // monta o mapa: tudo bloqueado por padrão; habilita só o que consultamos/estiver disponível
         const map: Record<string, boolean> = {};
+        HORARIOS.forEach((h) => (map[h] = false));
         results.forEach(([h, ok]) => (map[h] = ok));
         setHorariosMap(map);
       } finally {
@@ -862,6 +894,9 @@ export default function AgendarQuadraCliente() {
                         <input
                           type="text"
                           value={p.value}
+                          autoComplete="off"
+                          autoCorrect="off"
+                          spellCheck={false}
                           onChange={(e) => handleGuestChange(p.id, e)}
                           placeholder="Jogador convidado (sem cadastro)"
                           className="w-full rounded-md border px-3 py-2 text-sm bg-white"
