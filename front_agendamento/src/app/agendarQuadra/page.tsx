@@ -79,8 +79,7 @@ const todayIsoSP = new Intl.DateTimeFormat("en-CA", {
   year: "numeric",
   month: "2-digit",
   day: "2-digit",
-}).format(new Date()); // ex: "2025-03-07"
-
+}).format(new Date());
 const hourNowSP = parseInt(
   new Intl.DateTimeFormat("en-US", {
     timeZone: SP_TZ,
@@ -88,7 +87,7 @@ const hourNowSP = parseInt(
     hour12: false,
   }).format(new Date()),
   10
-); // ex: 18 (hora atual em SP)
+);
 
 function diasProximos(qtd = 7) {
   const out: { iso: string; d: number; mes: string; wd: string }[] = [];
@@ -282,50 +281,59 @@ function UserPicker({
 }
 
 /* =========================================================
-   GuestFieldInline (convidados sem cadastro)
-   - Mantém estado local para não re-renderizar o pai a cada tecla
-   - Comita debounced para o array "players" (ou no blur)
-   - Evita perder foco/fechar teclado
+   GuestFieldUncontrolled (convidados sem cadastro)
+   - Não controla pelo pai: defaultValue + ref
+   - Comita no blur e também debounced (para contar >=2)
+   - Evita perder o foco/fechar teclado
 ========================================================= */
-const GuestFieldInline = memo(function GuestFieldInline({
+const GuestFieldUncontrolled = memo(function GuestFieldUncontrolled({
   id,
-  value,
-  onCommit,
+  initialValue,
+  onDebouncedCommit,
+  onBlurCommit,
   onRemove,
+  inputRef,
 }: {
   id: string;
-  value: string;
-  onCommit: (val: string) => void;
+  initialValue: string;
+  onDebouncedCommit: (val: string) => void;
+  onBlurCommit: (val: string) => void;
   onRemove: () => void;
+  inputRef: (el: HTMLInputElement | null) => void;
 }) {
-  const [local, setLocal] = useState(value ?? "");
-  const timer = useRef<number | null>(null);
+  const localRef = useRef<HTMLInputElement | null>(null);
+  const tRef = useRef<number | null>(null);
 
-  useEffect(() => setLocal(value ?? ""), [value]);
+  useEffect(() => {
+    // se o valor inicial mudar (raro), atualiza o campo
+    if (localRef.current && localRef.current.value !== initialValue) {
+      localRef.current.value = initialValue ?? "";
+    }
+  }, [initialValue]);
 
-  const debouncedCommit = useCallback(
-    (next: string) => {
-      if (timer.current) window.clearTimeout(timer.current);
-      timer.current = window.setTimeout(() => {
-        onCommit(next);
-        timer.current = null;
-      }, 120);
-    },
-    [onCommit]
-  );
+  // expõe a ref pro pai (para contagem/payload)
+  const setRefs = (el: HTMLInputElement | null) => {
+    localRef.current = el;
+    inputRef(el);
+  };
+
+  const debounced = (val: string) => {
+    if (tRef.current) window.clearTimeout(tRef.current);
+    tRef.current = window.setTimeout(() => {
+      onDebouncedCommit(val);
+      tRef.current = null;
+    }, 150);
+  };
 
   return (
     <div className="flex items-center gap-2">
       <input
-        key={id} // ajuda a manter o nó estável
+        key={id}
+        ref={setRefs}
         type="text"
-        value={local}
-        onChange={(e) => {
-          const next = e.target.value;
-          setLocal(next);        // atualiza só local (não perde foco)
-          debouncedCommit(next); // comita para o pai após pequena pausa
-        }}
-        onBlur={() => onCommit(local)} // garante commit ao sair
+        defaultValue={initialValue}
+        onInput={(e) => debounced((e.target as HTMLInputElement).value)}
+        onBlur={(e) => onBlurCommit((e.target as HTMLInputElement).value)}
         autoComplete="off"
         autoCorrect="off"
         spellCheck={false}
@@ -335,7 +343,7 @@ const GuestFieldInline = memo(function GuestFieldInline({
       />
       <button
         type="button"
-        onMouseDown={(e) => e.preventDefault()} // evita blur antes do onClick
+        onMouseDown={(e) => e.preventDefault()} // não deixa o mousedown tirar o foco antes do click
         onClick={onRemove}
         className="px-2 py-1 rounded bg-gray-200 hover:bg-gray-300 text-xs"
         title="Remover"
@@ -426,6 +434,7 @@ export default function AgendarQuadraCliente() {
 
   // ======== JOGADORES ========
   const [players, setPlayers] = useState<Player[]>([]);
+  const guestRefs = useRef<Record<string, HTMLInputElement | null>>({}); // refs dos inputs de convidados
 
   // inicia players com dono + um campo "com cadastro"
   useEffect(() => {
@@ -457,14 +466,29 @@ export default function AgendarQuadraCliente() {
     return nome.includes("vôlei") || nome.includes("volei");
   }, [esportes, esporteId]);
 
-  // validação mínima (2 jogadores)
-  const jogadoresValidos = players.filter(
-    (p) =>
-      (p.kind === "owner" && p.value.trim() !== "") ||
-      (p.kind === "registered" && !!p.userId) ||
-      (p.kind === "guest" && p.value.trim() !== "")
-  );
-  const podeReservar = jogadoresValidos.length >= 2;
+  // ===== Contagem válida (usa refs p/ convidados) =====
+  const jogadoresValidos = useMemo(() => {
+    let count = 0;
+
+    // dono
+    const owner = players.find((p) => p.kind === "owner");
+    if ((owner?.value ?? "").trim() !== "") count += 1;
+
+    // cadastrados
+    count += players.filter((p) => p.kind === "registered" && !!p.userId).length;
+
+    // convidados (usa refs para refletir o que está no input agora)
+    players.forEach((p) => {
+      if (p.kind === "guest") {
+        const v = guestRefs.current[p.id]?.value ?? p.value ?? "";
+        if (v.trim() !== "") count += 1;
+      }
+    });
+
+    return count;
+  }, [players]);
+
+  const podeReservar = jogadoresValidos >= 2;
 
   /* ========= Carregamentos ========= */
   // 1) Esportes
@@ -525,7 +549,6 @@ export default function AgendarQuadraCliente() {
         return;
       }
 
-      // se for hoje, só liberar horários estritamente posteriores à hora atual (SP)
       const isToday = diaISO === todayIsoSP;
       const hoursToCheck = isToday
         ? HORARIOS.filter((h) => Number(h.slice(0, 2)) > hourNowSP)
@@ -549,7 +572,6 @@ export default function AgendarQuadraCliente() {
         );
         if (!alive) return;
 
-        // monta o mapa: tudo bloqueado por padrão; habilita só o que consultamos/estiver disponível
         const map: Record<string, boolean> = {};
         HORARIOS.forEach((h) => (map[h] = false));
         results.forEach(([h, ok]) => (map[h] = ok));
@@ -663,9 +685,12 @@ export default function AgendarQuadraCliente() {
       const jogadoresIds = players
         .filter((p) => p.kind === "registered" && p.userId)
         .map((p) => String(p.userId));
+
+      // convidados: lê pelos refs (ou usa fallback do state)
       const convidadosNomes = players
-        .filter((p) => p.kind === "guest" && p.value.trim() !== "")
-        .map((p) => p.value.trim());
+        .filter((p) => p.kind === "guest")
+        .map((p) => (guestRefs.current[p.id]?.value ?? p.value ?? "").trim())
+        .filter(Boolean);
 
       if (jogadoresIds.length) extra.jogadoresIds = jogadoresIds;
       if (convidadosNomes.length) extra.convidadosNomes = convidadosNomes;
@@ -939,10 +964,19 @@ export default function AgendarQuadraCliente() {
                     )}
 
                     {p.kind === "guest" && (
-                      <GuestFieldInline
+                      <GuestFieldUncontrolled
                         id={p.id}
-                        value={p.value}
-                        onCommit={(next) => updatePlayer(p.id, { value: next })}
+                        initialValue={p.value}
+                        inputRef={(el) => {
+                          guestRefs.current[p.id] = el;
+                        }}
+                        onDebouncedCommit={(val) => {
+                          // opcional: manter algum espelho mínimo no state (não necessário pro foco)
+                          // updatePlayer(p.id, { value: val });
+                        }}
+                        onBlurCommit={(val) => {
+                          updatePlayer(p.id, { value: val });
+                        }}
                         onRemove={() => removePlayer(p.id)}
                       />
                     )}
