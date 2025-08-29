@@ -3,6 +3,8 @@ import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { useAuthStore } from "@/context/AuthStore";
 import Spinner from "@/components/Spinner";
+import Link from "next/link";
+
 
 /** Helpers de data/hora em America/Sao_Paulo */
 const SP_TZ = "America/Sao_Paulo";
@@ -410,7 +412,7 @@ export default function AdminHome() {
   return (
     <div className="space-y-8">
       {/* FILTROS */}
-      <div className="bg-white p-4 shadow rounded-lg flex flex-col sm:flex-row gap-4">
+      <div className="bg-white p-4 shadow rounded-lg flex flex-col sm:flex-row sm:items-end gap-4">
         <div className="flex flex-col w-full sm:w-auto">
           <label className="text-sm text-gray-600">Data</label>
           <input
@@ -420,6 +422,7 @@ export default function AdminHome() {
             onChange={(e) => setData(e.target.value)}
           />
         </div>
+
         <div className="flex flex-col w-full sm:w-auto">
           <label className="text-sm text-gray-600">Horário</label>
           <select
@@ -437,6 +440,16 @@ export default function AdminHome() {
               );
             })}
           </select>
+        </div>
+
+        {/* Botão que leva para a página "todosHorarios" */}
+        <div className="sm:ml-auto">
+          <Link
+            href={`/todosHorarios?data=${encodeURIComponent(data || todayStrSP())}`}
+            className="inline-flex items-center justify-center px-4 py-2 rounded-lg font-semibold bg-orange-600 hover:bg-orange-700 text-white cursor-pointer"
+          >
+            Ver todos os horários
+          </Link>
         </div>
       </div>
 
@@ -463,13 +476,12 @@ export default function AdminHome() {
                   <div
                     key={q.quadraId}
                     onClick={() => !q.disponivel && abrirDetalhes(q, { horario, esporte })}
-                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${
-                      q.bloqueada
+                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${q.bloqueada
                         ? "border-2 border-red-500 bg-red-50"
                         : q.disponivel
-                        ? "border-2 border-green-500 bg-green-50"
-                        : "border-2 border-gray-500 bg-gray-50"
-                    }`}
+                          ? "border-2 border-green-500 bg-green-50"
+                          : "border-2 border-gray-500 bg-gray-50"
+                      }`}
                   >
                     <p className="font-medium">{q.nome}</p>
                     <p className="text-xs text-gray-700">Quadra {q.numero}</p>
@@ -508,9 +520,8 @@ export default function AdminHome() {
                         { turno: "DIA" }
                       )
                     }
-                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${
-                      diaInfo?.disponivel ? "border-2 border-green-500 bg-green-50" : "border-2 border-red-500 bg-red-50"
-                    }`}
+                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${diaInfo?.disponivel ? "border-2 border-green-500 bg-green-50" : "border-2 border-red-500 bg-red-50"
+                      }`}
                   >
                     <p className="font-medium">{c.nome}</p>
                     <p className="text-xs text-gray-700">Quadra {c.numero}</p>
@@ -540,9 +551,8 @@ export default function AdminHome() {
                         { turno: "NOITE" }
                       )
                     }
-                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${
-                      noiteInfo?.disponivel ? "border-2 border-green-500 bg-green-50" : "border-2 border-red-500 bg-red-50"
-                    }`}
+                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${noiteInfo?.disponivel ? "border-2 border-green-500 bg-green-50" : "border-2 border-red-500 bg-red-50"
+                      }`}
                   >
                     <p className="font-medium">{c.nome}</p>
                     <p className="text-xs text-gray-700">Quadra {c.numero}</p>
@@ -688,9 +698,8 @@ export default function AdminHome() {
               {usuariosFiltrados.map((user) => (
                 <li
                   key={user.id}
-                  className={`p-2 cursor-pointer hover:bg-blue-100 ${
-                    usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
-                  }`}
+                  className={`p-2 cursor-pointer hover:bg-blue-100 ${usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
+                    }`}
                   onClick={() => setUsuarioSelecionado(user)}
                 >
                   {user.nome} ({user.email})
@@ -742,9 +751,8 @@ export default function AdminHome() {
                 return (
                   <li
                     key={u.id}
-                    className={`p-2 cursor-pointer flex items-center justify-between hover:bg-orange-50 ${
-                      ativo ? "bg-orange-100" : ""
-                    }`}
+                    className={`p-2 cursor-pointer flex items-center justify-between hover:bg-orange-50 ${ativo ? "bg-orange-100" : ""
+                      }`}
                     onClick={() => alternarSelecionado(u.id)}
                   >
                     <span>

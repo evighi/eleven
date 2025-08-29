@@ -58,6 +58,7 @@ export default function Home() {
   const [nomeUsuario, setNomeUsuario] = useState("Usuário");
   const [agendamentos, setAgendamentos] = useState<AgendamentoCard[]>([]);
   const [carregando, setCarregando] = useState(false);
+  const HABILITAR_TRANSFERENCIA = false;
 
   const hojeISO = useMemo(() => isoLocalDate(), []);
 
@@ -209,10 +210,15 @@ export default function Home() {
           </div>
 
           {/* Ações */}
-          <div className="mt-4 md:mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div
+            className={`mt-4 md:mt-6 grid grid-cols-1 ${HABILITAR_TRANSFERENCIA ? "md:grid-cols-2" : "md:grid-cols-1"
+              } gap-4`}
+          >
             {/* Marcar */}
             <div className="rounded-2xl bg-white shadow-md p-3 md:p-4">
-              <h3 className="text-[13px] sm:text-sm font-semibold text-gray-500 mb-2">Marque a sua quadra</h3>
+              <h3 className="text-[13px] sm:text-sm font-semibold text-gray-500 mb-2">
+                Marque a sua quadra
+              </h3>
               <button
                 onClick={() => router.push("/agendarQuadra")}
                 className="w-full rounded-xl bg-[#f3f3f3] px-3 sm:px-4 py-3 flex items-center justify-between hover:bg-[#ececec] transition"
@@ -236,31 +242,35 @@ export default function Home() {
               </button>
             </div>
 
-            {/* Transferir */}
-            <div className="rounded-2xl bg-white shadow-md p-3 md:p-4">
-              <h3 className="text-[13px] sm:text-sm font-semibold text-gray-500 mb-2">Transfira a sua quadra</h3>
-              <button
-                onClick={() => router.push("/transferirQuadra")}
-                className="w-full rounded-xl bg-[#f3f3f3] px-3 sm:px-4 py-3 flex items-center justify-between hover:bg-[#ececec] transition"
-              >
-                <div className="flex items-center gap-3 sm:gap-4">
-                  <div className="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center">
-                    <Image
-                      src="/icons/transferencia.png"
-                      alt=""
-                      width={40}
-                      height={40}
-                      className="w-9 h-9 sm:w-10 sm:h-10 opacity-70"
-                      priority
-                    />
+            {/* Transferir (condicional) */}
+            {HABILITAR_TRANSFERENCIA && (
+              <div className="rounded-2xl bg-white shadow-md p-3 md:p-4">
+                <h3 className="text-[13px] sm:text-sm font-semibold text-gray-500 mb-2">
+                  Transfira a sua quadra
+                </h3>
+                <button
+                  onClick={() => router.push("/transferirQuadra")}
+                  className="w-full rounded-xl bg-[#f3f3f3] px-3 sm:px-4 py-3 flex items-center justify-between hover:bg-[#ececec] transition"
+                >
+                  <div className="flex items-center gap-3 sm:gap-4">
+                    <div className="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center">
+                      <Image
+                        src="/icons/transferencia.png"
+                        alt=""
+                        width={40}
+                        height={40}
+                        className="w-9 h-9 sm:w-10 sm:h-10 opacity-70"
+                        priority
+                      />
+                    </div>
+                    <div className="w-px h-10 sm:h-12 bg-gray-300" />
+                    <span className="pl-3 text-[14px] sm:text-[15px] font-semibold text-orange-600 cursor-pointer">
+                      Transfira a sua quadra
+                    </span>
                   </div>
-                  <div className="w-px h-10 sm:h-12 bg-gray-300" />
-                  <span className="pl-3 text-[14px] sm:text-[15px] font-semibold text-orange-600 cursor-pointer">
-                    Transfira a sua quadra
-                  </span>
-                </div>
-              </button>
-            </div>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </section>
