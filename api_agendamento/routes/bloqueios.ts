@@ -90,14 +90,22 @@ router.post("/", async (req, res) => {
 router.get("/", async (req, res) => {
   try {
     const bloqueios = await prisma.bloqueioQuadra.findMany({
-      include: {
-        quadras: {
-          select: { id: true, nome: true, numero: true },
-        },
+      select: {
+        id: true,
+        dataBloqueio: true,      // data alvo do bloqueio
+        inicioBloqueio: true,    // hora inicial bloqueada (string, ex: "14:00")
+        fimBloqueio: true,       // hora final bloqueada 
         bloqueadoPor: {
           select: { id: true, nome: true, email: true },
         },
+        quadras: {
+          select: { id: true, nome: true, numero: true },
+        },
       },
+      orderBy: [
+        { dataBloqueio: "desc" },
+        { inicioBloqueio: "asc" },
+      ],
     });
 
     res.json(bloqueios);
@@ -106,6 +114,7 @@ router.get("/", async (req, res) => {
     res.status(500).json({ erro: "Erro ao buscar bloqueios" });
   }
 });
+
 
 router.delete("/:id", async (req, res) => {
   const { id } = req.params;
