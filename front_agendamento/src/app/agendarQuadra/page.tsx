@@ -1,6 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useCallback, type PropsWithChildren } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+  memo,
+  type PropsWithChildren,
+} from "react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/context/AuthStore";
@@ -8,7 +16,6 @@ import { useRequireAuth } from "@/hooks/useRequireAuth";
 import Spinner from "@/components/Spinner";
 import { isoLocalDate } from "@/utils/date";
 import AppImage from "@/components/AppImage";
-
 
 /* =========================================================
    Tipos
@@ -72,8 +79,7 @@ const todayIsoSP = new Intl.DateTimeFormat("en-CA", {
   year: "numeric",
   month: "2-digit",
   day: "2-digit",
-}).format(new Date()); // ex: "2025-03-07"
-
+}).format(new Date());
 const hourNowSP = parseInt(
   new Intl.DateTimeFormat("en-US", {
     timeZone: SP_TZ,
@@ -81,7 +87,7 @@ const hourNowSP = parseInt(
     hour12: false,
   }).format(new Date()),
   10
-); // ex: 18 (hora atual em SP)
+);
 
 function diasProximos(qtd = 7) {
   const out: { iso: string; d: number; mes: string; wd: string }[] = [];
@@ -275,6 +281,80 @@ function UserPicker({
 }
 
 /* =========================================================
+   GuestFieldUncontrolled (convidados sem cadastro)
+   - Não controla pelo pai: defaultValue + ref
+   - Comita no blur e também debounced (para contar >=2)
+   - Evita perder o foco/fechar teclado
+========================================================= */
+const GuestFieldUncontrolled = memo(function GuestFieldUncontrolled({
+  id,
+  initialValue,
+  onDebouncedCommit,
+  onBlurCommit,
+  onRemove,
+  inputRef,
+}: {
+  id: string;
+  initialValue: string;
+  onDebouncedCommit: (val: string) => void;
+  onBlurCommit: (val: string) => void;
+  onRemove: () => void;
+  inputRef: (el: HTMLInputElement | null) => void;
+}) {
+  const localRef = useRef<HTMLInputElement | null>(null);
+  const tRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    // se o valor inicial mudar (raro), atualiza o campo
+    if (localRef.current && localRef.current.value !== initialValue) {
+      localRef.current.value = initialValue ?? "";
+    }
+  }, [initialValue]);
+
+  // expõe a ref pro pai (para contagem/payload)
+  const setRefs = (el: HTMLInputElement | null) => {
+    localRef.current = el;
+    inputRef(el);
+  };
+
+  const debounced = (val: string) => {
+    if (tRef.current) window.clearTimeout(tRef.current);
+    tRef.current = window.setTimeout(() => {
+      onDebouncedCommit(val);
+      tRef.current = null;
+    }, 150);
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        key={id}
+        ref={setRefs}
+        type="text"
+        defaultValue={initialValue}
+        onInput={(e) => debounced((e.target as HTMLInputElement).value)}
+        onBlur={(e) => onBlurCommit((e.target as HTMLInputElement).value)}
+        autoComplete="off"
+        autoCorrect="off"
+        spellCheck={false}
+        inputMode="text"
+        placeholder="Jogador convidado (sem cadastro)"
+        className="w-full rounded-md border px-3 py-2 text-sm bg-white"
+      />
+      <button
+        type="button"
+        onMouseDown={(e) => e.preventDefault()} // não deixa o mousedown tirar o foco antes do click
+        onClick={onRemove}
+        className="px-2 py-1 rounded bg-gray-200 hover:bg-gray-300 text-xs"
+        title="Remover"
+      >
+        ×
+      </button>
+    </div>
+  );
+});
+
+/* =========================================================
    Página
 ========================================================= */
 export default function AgendarQuadraCliente() {
@@ -302,9 +382,9 @@ export default function AgendarQuadraCliente() {
       const candidate = e.logoUrl || e.imagem || "";
       const normalized =
         candidate &&
-          !/^(https?:|data:|blob:)/i.test(candidate) &&
-          !candidate.startsWith("/") &&
-          !candidate.includes("/")
+        !/^(https?:|data:|blob:)/i.test(candidate) &&
+        !candidate.startsWith("/") &&
+        !candidate.includes("/")
           ? `/uploads/esportes/${candidate}`
           : candidate;
 
@@ -319,9 +399,9 @@ export default function AgendarQuadraCliente() {
       const candidate = q.logoUrl || q.imagem || q.arquivo || "";
       const normalized =
         candidate &&
-          !/^(https?:|data:|blob:)/i.test(String(candidate)) &&
-          !String(candidate).startsWith("/") &&
-          !String(candidate).includes("/")
+        !/^(https?:|data:|blob:)/i.test(String(candidate)) &&
+        !String(candidate).startsWith("/") &&
+        !String(candidate).includes("/")
           ? `/uploads/quadras/${candidate}`
           : String(candidate);
 
@@ -354,7 +434,7 @@ export default function AgendarQuadraCliente() {
 
   // ======== JOGADORES ========
   const [players, setPlayers] = useState<Player[]>([]);
-  const inputRefs = useRef<Record<string, HTMLInputElement | null>>({}); // convidados
+  const guestRefs = useRef<Record<string, HTMLInputElement | null>>({}); // refs dos inputs de convidados
 
   // inicia players com dono + um campo "com cadastro"
   useEffect(() => {
@@ -380,42 +460,35 @@ export default function AgendarQuadraCliente() {
   const addGuestField = () =>
     setPlayers((cur) => [...cur, { id: cryptoRandom(), kind: "guest", value: "" }]);
 
-  // substitua a sua handleGuestChange por esta:
-  const handleGuestChange = (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    const caret = e.target.selectionStart ?? val.length;
-
-    updatePlayer(id, { value: val });
-
-    // não chamar focus(); apenas ajusta o caret se o campo ainda estiver focado
-    if (typeof window !== "undefined") {
-      requestAnimationFrame(() => {
-        const el = inputRefs.current[id];
-        if (el && document.activeElement === el) {
-          try {
-            el.setSelectionRange(caret, caret);
-          } catch {
-            /* noop */
-          }
-        }
-      });
-    }
-  };
-
   // ===== Vôlei selecionado? =====
   const isVoleiSelected = useMemo(() => {
     const nome = (esportes.find((e) => String(e.id) === String(esporteId))?.nome || "").toLowerCase();
     return nome.includes("vôlei") || nome.includes("volei");
   }, [esportes, esporteId]);
 
-  // validação mínima (2 jogadores)
-  const jogadoresValidos = players.filter(
-    (p) =>
-      (p.kind === "owner" && p.value.trim() !== "") ||
-      (p.kind === "registered" && !!p.userId) ||
-      (p.kind === "guest" && p.value.trim() !== "")
-  );
-  const podeReservar = jogadoresValidos.length >= 2;
+  // ===== Contagem válida (usa refs p/ convidados) =====
+  const jogadoresValidos = useMemo(() => {
+    let count = 0;
+
+    // dono
+    const owner = players.find((p) => p.kind === "owner");
+    if ((owner?.value ?? "").trim() !== "") count += 1;
+
+    // cadastrados
+    count += players.filter((p) => p.kind === "registered" && !!p.userId).length;
+
+    // convidados (usa refs para refletir o que está no input agora)
+    players.forEach((p) => {
+      if (p.kind === "guest") {
+        const v = guestRefs.current[p.id]?.value ?? p.value ?? "";
+        if (v.trim() !== "") count += 1;
+      }
+    });
+
+    return count;
+  }, [players]);
+
+  const podeReservar = jogadoresValidos >= 2;
 
   /* ========= Carregamentos ========= */
   // 1) Esportes
@@ -476,7 +549,6 @@ export default function AgendarQuadraCliente() {
         return;
       }
 
-      // se for hoje, só liberar horários estritamente posteriores à hora atual (SP)
       const isToday = diaISO === todayIsoSP;
       const hoursToCheck = isToday
         ? HORARIOS.filter((h) => Number(h.slice(0, 2)) > hourNowSP)
@@ -500,7 +572,6 @@ export default function AgendarQuadraCliente() {
         );
         if (!alive) return;
 
-        // monta o mapa: tudo bloqueado por padrão; habilita só o que consultamos/estiver disponível
         const map: Record<string, boolean> = {};
         HORARIOS.forEach((h) => (map[h] = false));
         results.forEach(([h, ok]) => (map[h] = ok));
@@ -614,9 +685,12 @@ export default function AgendarQuadraCliente() {
       const jogadoresIds = players
         .filter((p) => p.kind === "registered" && p.userId)
         .map((p) => String(p.userId));
+
+      // convidados: lê pelos refs (ou usa fallback do state)
       const convidadosNomes = players
-        .filter((p) => p.kind === "guest" && p.value.trim() !== "")
-        .map((p) => p.value.trim());
+        .filter((p) => p.kind === "guest")
+        .map((p) => (guestRefs.current[p.id]?.value ?? p.value ?? "").trim())
+        .filter(Boolean);
 
       if (jogadoresIds.length) extra.jogadoresIds = jogadoresIds;
       if (convidadosNomes.length) extra.convidadosNomes = convidadosNomes;
@@ -890,29 +964,21 @@ export default function AgendarQuadraCliente() {
                     )}
 
                     {p.kind === "guest" && (
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={p.value}
-                          autoComplete="off"
-                          autoCorrect="off"
-                          spellCheck={false}
-                          onChange={(e) => handleGuestChange(p.id, e)}
-                          placeholder="Jogador convidado (sem cadastro)"
-                          className="w-full rounded-md border px-3 py-2 text-sm bg-white"
-                          ref={(el) => {
-                            inputRefs.current[p.id] = el;
-                          }}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => removePlayer(p.id)}
-                          className="px-2 py-1 rounded bg-gray-200 hover:bg-gray-300 text-xs"
-                          title="Remover"
-                        >
-                          ×
-                        </button>
-                      </div>
+                      <GuestFieldUncontrolled
+                        id={p.id}
+                        initialValue={p.value}
+                        inputRef={(el) => {
+                          guestRefs.current[p.id] = el;
+                        }}
+                        onDebouncedCommit={(val) => {
+                          // opcional: manter algum espelho mínimo no state (não necessário pro foco)
+                          // updatePlayer(p.id, { value: val });
+                        }}
+                        onBlurCommit={(val) => {
+                          updatePlayer(p.id, { value: val });
+                        }}
+                        onRemove={() => removePlayer(p.id)}
+                      />
                     )}
                   </div>
                 ))}
@@ -962,8 +1028,9 @@ export default function AgendarQuadraCliente() {
               />
               <Resumo
                 label="Escolha a Quadra:"
-                valor={`${quadras.find((q) => String(q.quadraId) === String(quadraId))?.nome || ""
-                  } - Quadra ${quadras.find((q) => String(q.quadraId) === String(quadraId))?.numero || ""}`}
+                valor={`${
+                  quadras.find((q) => String(q.quadraId) === String(quadraId))?.nome || ""
+                } - Quadra ${quadras.find((q) => String(q.quadraId) === String(quadraId))?.numero || ""}`}
                 onChange={() => setStep(4)}
               />
               <Resumo
