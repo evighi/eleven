@@ -248,7 +248,7 @@ export default function TodosHorariosPage() {
       setErro("");
       setLoading(true);
       try {
-        const url = `${API_URL}/disponibilidadeDia/diario`;
+        const url = `${API_URL}/disponibilidadeGeral/dia`;
         const { data: resp } = await axios.get(url, {
           params: { data: d },
           withCredentials: true,
