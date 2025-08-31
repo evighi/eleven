@@ -148,7 +148,7 @@ export default function TodosHorariosPage() {
     [API_URL, data]
   );
 
-  // Célula da “tabela”
+  // Célula da “tabela” — quadradinha, sem cortes, cores conforme status
   const Cell = ({
     slot,
     hora,
@@ -163,13 +163,15 @@ export default function TodosHorariosPage() {
     const isPerm = slot.tipoReserva === "permanente";
     const isComum = slot.tipoReserva === "comum";
 
-    // estilos bem compactos no mobile para caber 6 colunas
+    // estilo compacto, borda para ficar tabelado, sem arredondar e SEM truncar texto
     const base =
-      "h-6 xs:h-7 sm:h-8 md:h-9 lg:h-10 text-[8px] xs:text-[9px] sm:text-[10px] md:text-xs rounded-[6px] flex items-center justify-center text-center px-1 whitespace-nowrap overflow-hidden";
-    let cls = "bg-white border border-gray-300 text-gray-900"; // livre
-    if (isBloq) cls = "bg-gray-200 text-gray-600 border border-gray-300";
-    if (isPerm) cls = "bg-emerald-600 text-white";
-    if (isComum) cls = "bg-orange-600 text-white";
+      "min-h-7 xs:min-h-8 sm:min-h-9 md:min-h-10 text-[9px] xs:text-[10px] sm:text-[11px] md:text-xs "+ 
+      "rounded-none border flex items-center justify-center text-center px-1 py-1 whitespace-normal break-words leading-tight";
+
+    let cls = "bg-white text-gray-900 border-gray-300"; // livre
+    if (isBloq) cls = "bg-red-600 text-white border-red-700";
+    if (isPerm) cls = "bg-emerald-600 text-white border-emerald-700";
+    if (isComum) cls = "bg-orange-600 text-white border-orange-700";
 
     const hourLabel = onlyHour(hora);
     const label = isBloq
@@ -188,10 +190,13 @@ export default function TodosHorariosPage() {
           clickable &&
           abrirDetalhes(slot.agendamentoId!, slot.tipoReserva as TipoReserva, hora, esporte)
         }
-        title={slot.usuario?.nome || (isBloq ? "Bloqueada" : isLivre ? "Livre" : label)}
-        className={`${base} ${cls} ${clickable ? "cursor-pointer hover:opacity-90" : "cursor-default"}`}
+        title={
+          slot.usuario?.nome ||
+          (isBloq ? "Bloqueada" : isLivre ? "Livre" : label)
+        }
+        className={`${base} ${cls} ${clickable ? "cursor-pointer hover:brightness-95" : "cursor-default"}`}
       >
-        <span className="truncate">{label}</span>
+        <span>{label}</span>
       </button>
     );
   };
@@ -231,27 +236,27 @@ export default function TodosHorariosPage() {
                       {esporteNome} – {minNum} - {maxNum}
                     </h2>
 
-                    {/* Linha com os números das quadras (6 colunas fixas) */}
-                    <div className="grid grid-cols-6 gap-1 mb-1">
+                    {/* Linha com os números das quadras (6 colunas fixas, quadrado) */}
+                    <div className="grid grid-cols-6 gap-0">
                       {grupo.map((q) => (
                         <div
                           key={q.quadraId}
-                          className="h-6 xs:h-7 sm:h-8 md:h-9 lg:h-10 rounded-[6px] bg-gray-100 text-gray-700 text-[8px] xs:text-[9px] sm:text-[10px] md:text-xs flex items-center justify-center font-semibold"
+                          className="min-h-7 xs:min-h-8 sm:min-h-9 md:min-h-10 rounded-none border border-gray-300 bg-gray-100 text-gray-700 text-[9px] xs:text-[10px] sm:text-[11px] md:text-xs flex items-center justify-center font-semibold"
                           title={q.nome}
                         >
                           {q.numero}
                         </div>
                       ))}
-                      {/* Padding pra fechar 6 colunas se tiver menos de 6 quadras */}
+                      {/* Completa 6 colunas, se necessário */}
                       {Array.from({ length: Math.max(0, 6 - grupo.length) }).map((_, i) => (
-                        <div key={`void-${i}`} />
+                        <div key={`void-${i}`} className="border border-transparent" />
                       ))}
                     </div>
 
                     {/* “Tabela”: horas x 6 colunas (sem coluna lateral de horários) */}
-                    <div className="space-y-[4px]">
+                    <div className="space-y-0">
                       {horas.map((hora) => (
-                        <div key={hora} className="grid grid-cols-6 gap-1">
+                        <div key={hora} className="grid grid-cols-6 gap-0">
                           {grupo.map((q) => {
                             const slot = q.slots[hora] || { disponivel: true };
                             return (
@@ -264,7 +269,7 @@ export default function TodosHorariosPage() {
                             );
                           })}
                           {Array.from({ length: Math.max(0, 6 - grupo.length) }).map((_, i) => (
-                            <div key={`pad-${i}`} />
+                            <div key={`pad-${i}`} className="border border-transparent" />
                           ))}
                         </div>
                       ))}
