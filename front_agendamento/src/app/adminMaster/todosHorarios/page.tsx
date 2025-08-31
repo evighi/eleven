@@ -2,246 +2,81 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import Spinner from "@/components/Spinner";
 
-/* ================= Helpers de data (SP) ================= */
+/* =========================
+   Tipos da rota /disponibilidadeGeral/dia
+========================= */
+type Usuario = { nome: string; email?: string; celular?: string };
+type SlotInfo = {
+  disponivel: boolean;
+  bloqueada?: boolean;
+  tipoReserva?: "comum" | "permanente";
+  usuario?: Usuario;
+  agendamentoId?: string;
+};
+type QuadraSlots = {
+  quadraId: string;
+  nome: string;
+  numero: number;
+  slots: Record<string, SlotInfo>; // hora -> slot
+};
+type EsporteBlock = {
+  quadras: QuadraSlots[];
+  grupos: QuadraSlots[][];
+};
+type ApiResp = {
+  data: string; // YYYY-MM-DD
+  horas: string[]; // ["07:00", ... "23:00"]
+  esportes: Record<string, EsporteBlock>;
+};
+
+/* =========================
+   Tipos para modal de detalhes
+========================= */
+type JogadorRef = { nome: string };
+type TipoReserva = "comum" | "permanente";
+type AgendamentoSelecionado = {
+  dia: string;
+  horario: string;
+  usuario: string | Usuario | "—";
+  jogadores: JogadorRef[];
+  esporte?: string | null;
+  tipoReserva: TipoReserva;
+  agendamentoId: string;
+  tipoLocal: "quadra";
+};
+
 const SP_TZ = "America/Sao_Paulo";
-const todayIsoSP = new Intl.DateTimeFormat("en-CA", {
+const todayStrSP = new Intl.DateTimeFormat("en-CA", {
   timeZone: SP_TZ,
   year: "numeric",
   month: "2-digit",
   day: "2-digit",
-}).format(new Date()); // YYYY-MM-DD
+} as any).format(new Date()) as string;
 
-const HORAS: string[] = Array.from({ length: 17 }, (_, i) =>
-  `${String(7 + i).padStart(2, "0")}:00`
-);
-
-/* ================= Tipagens do front (normalizadas) ================= */
-type StatusCelula = "livre" | "comum" | "permanente" | "bloqueada";
-
-type UsuarioSlim = { nome?: string; email?: string };
-
-type Celula = {
-  status: StatusCelula;
-  usuario?: UsuarioSlim | null;
-  agendamentoId?: string | null;
-  tipoReserva?: "comum" | "permanente";
-};
-
-type LinhaHorario = {
-  hora: string; // "07:00"
-  colunas: Celula[]; // sempre 6 (preenche com livres quando sobrar)
-};
-
-type QuadraSlim = { quadraId: string; numero: number; nome: string };
-
-type Grupo = {
-  titulo: string; // ex.: "Quadras 1 a 6"
-  quadras: QuadraSlim[]; // até 6
-  horarios: LinhaHorario[]; // linhas por hora
-};
-
-type EsporteBloco = {
-  esporte: string; // ex.: "Beach Tennis"
-  grupos: Grupo[]; // grupos de 6 colunas
-};
-
-/* ================== Utilidades ================== */
-function chunk<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
+/* helper: primeiro nome para a célula */
+function firstName(full?: string) {
+  if (!full) return "";
+  const [a] = full.trim().split(/\s+/);
+  return a || "";
 }
 
-function firstName(nome?: string) {
-  if (!nome) return "";
-  const p = nome.trim().split(/\s+/);
-  return p[0] || "";
-}
-
-/* ========= Normalizador do retorno da API /disponibilidadeDia/diario ========= */
-function normalizeApi(payload: any): EsporteBloco[] {
-  const esportesArray: any[] =
-    payload?.esportes ??
-    Object.keys(payload || {}).map((key) => ({
-      esporte: key,
-      ...(payload?.[key] || {}),
-    }));
-
-  const resultado: EsporteBloco[] = [];
-
-  for (const esp of esportesArray) {
-    const nomeEsporte: string =
-      esp?.esporte || esp?.nome || esp?.titulo || "Esporte";
-
-    const quadrasSrc: any[] = esp?.quadras || esp?.quadrasDoEsporte || [];
-    const quadras: QuadraSlim[] = (quadrasSrc as any[]).map((q: any) => ({
-      quadraId: String(q?.id ?? q?.quadraId ?? ""),
-      numero: Number(q?.numero ?? 0),
-      nome: String(q?.nome ?? `Quadra ${q?.numero ?? ""}`),
-    }));
-
-    let tabela: Record<string, any[]> = {};
-    if (Array.isArray(esp?.horarios)) {
-      for (const linha of esp.horarios as any[]) {
-        if (linha?.hora) tabela[linha.hora] = linha.colunas || [];
-      }
-    } else if (esp?.horas) {
-      tabela = esp.horas as Record<string, any[]>;
-    } else if (esp?.horariosPorHora) {
-      tabela = esp.horariosPorHora as Record<string, any[]>;
-    }
-
-    const grupos: Grupo[] = [];
-    const gruposQuadras = chunk(quadras, 6);
-
-    for (const qGroup of gruposQuadras) {
-      if (qGroup.length === 0) continue;
-
-      const inicio = qGroup[0]?.numero ?? 0;
-      const fim = qGroup[qGroup.length - 1]?.numero ?? inicio;
-      const titulo = `${nomeEsporte} - Quadras ${inicio} à ${fim}`;
-
-      const linhas: LinhaHorario[] = HORAS.map((h) => {
-        const fullRow = (tabela?.[h] as any[]) || [];
-
-        const colunas: Celula[] = qGroup.map((q) => {
-          const idx = quadras.findIndex((orig) => orig.quadraId === q.quadraId);
-          const cel: any = idx >= 0 ? fullRow[idx] : null;
-
-          const status: StatusCelula = ((): StatusCelula => {
-            const s = (cel?.status || "").toString().toLowerCase();
-            if (s === "comum") return "comum";
-            if (s === "permanente") return "permanente";
-            if (s === "bloqueada" || s === "bloqueio") return "bloqueada";
-            return "livre";
-          })();
-
-          const usuario: UsuarioSlim | null = cel?.usuario
-            ? { nome: cel.usuario?.nome, email: cel.usuario?.email }
-            : null;
-
-          return {
-            status,
-            usuario,
-            agendamentoId: cel?.agendamentoId ?? null,
-            tipoReserva:
-              status === "comum"
-                ? "comum"
-                : status === "permanente"
-                ? "permanente"
-                : undefined,
-          };
-        });
-
-        while (colunas.length < 6) colunas.push({ status: "livre" });
-
-        return { hora: h, colunas };
-      });
-
-      grupos.push({ titulo, quadras: qGroup, horarios: linhas });
-    }
-
-    resultado.push({ esporte: nomeEsporte, grupos });
-  }
-
-  return resultado;
-}
-
-/* ===================== Cell (AGORA NO ESCOPO DO MÓDULO) ===================== */
-function Cell({
-  cel,
-  onClick,
-}: {
-  cel: Celula;
-  onClick?: () => void;
-}) {
-  const clickable = cel.status !== "livre";
-  const base =
-    "w-full h-9 flex items-center justify-center text-xs rounded transition";
-  const cls =
-    cel.status === "permanente"
-      ? "bg-green-600 text-white"
-      : cel.status === "comum"
-      ? "bg-orange-600 text-white"
-      : cel.status === "bloqueada"
-      ? "bg-gray-400 text-white"
-      : "bg-white text-gray-800 border";
-
-  return (
-    <div
-      className={`${base} ${cls} ${
-        clickable ? "cursor-pointer hover:opacity-90" : "cursor-default"
-      }`}
-      onClick={clickable ? onClick : undefined}
-      title={
-        cel.status === "livre"
-          ? "Livre"
-          : `${cel.tipoReserva ?? cel.status}${
-              cel?.usuario?.nome ? ` — ${cel.usuario.nome}` : ""
-            }`
-      }
-    >
-      {cel.status === "livre"
-        ? ""
-        : cel?.usuario?.nome
-        ? firstName(cel.usuario.nome)
-        : cel.tipoReserva === "permanente"
-        ? "Permanente"
-        : "Comum"}
-    </div>
-  );
-}
-
-/* ===================== Row de horário (fora do componente principal) ===================== */
-function FragmentRow({
-  hora,
-  colunas,
-  quadras,
-  onOpen,
-}: {
-  hora: string;
-  colunas: Celula[];
-  quadras: QuadraSlim[];
-  onOpen: (colIdx: number) => void;
-}) {
-  return (
-    <>
-      <div className="h-9 flex items-center justify-center text-xs text-gray-600">
-        {hora}
-      </div>
-      {Array.from({ length: 6 }).map((_, i) => {
-        const cel = colunas[i] ?? { status: "livre" as StatusCelula };
-        const q = quadras[i];
-        return (
-          <Cell
-            key={`${hora}-${i}-${q?.quadraId || "empty"}`}
-            cel={cel}
-            onClick={() => onOpen(i)}
-          />
-        );
-      })}
-    </>
-  );
-}
-
-/* =========================== Página =========================== */
+/* =========================
+   Página
+========================= */
 export default function TodosHorariosPage() {
-  const RAW_API_URL =
-    process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
-  const API_URL = useMemo(() => RAW_API_URL.replace(/\/$/, ""), [RAW_API_URL]);
+  const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
 
-  const [data, setData] = useState<string>(todayIsoSP);
-  const [esportes, setEsportes] = useState<EsporteBloco[] | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [erro, setErro] = useState<string>("");
+  const [data, setData] = useState<string>(todayStrSP);
+  const [horas, setHoras] = useState<string[]>([]);
+  const [esportes, setEsportes] = useState<Record<string, EsporteBlock> | null>(null);
+  const [erro, setErro] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  const [detalhe, setDetalhe] = useState<{
-    hora: string;
-    quadra: QuadraSlim;
-    celula: Celula;
-    tituloGrupo: string;
-  } | null>(null);
+  // Modal de detalhes
+  const [loadingDetalhes, setLoadingDetalhes] = useState(false);
+  const [agendamentoSelecionado, setAgendamentoSelecionado] = useState<AgendamentoSelecionado | null>(null);
 
   const carregar = useCallback(
     async (d: string) => {
@@ -249,12 +84,14 @@ export default function TodosHorariosPage() {
       setLoading(true);
       try {
         const url = `${API_URL}/disponibilidadeGeral/dia`;
-        const { data: resp } = await axios.get(url, {
+        const { data: resp } = await axios.get<ApiResp>(url, {
           params: { data: d },
           withCredentials: true,
         });
-        const norm = normalizeApi(resp);
-        setEsportes(norm);
+
+        // Normaliza mínimo necessário
+        setHoras(resp.horas || []);
+        setEsportes(resp.esportes || {});
       } catch (e) {
         console.error(e);
         setEsportes(null);
@@ -268,115 +105,246 @@ export default function TodosHorariosPage() {
 
   useEffect(() => {
     carregar(data);
-  }, [data, carregar]);
+  }, [carregar, data]);
+
+  // Abre modal com detalhes completos (nome completo etc.)
+  const abrirDetalhes = useCallback(
+    async (agendamentoId: string, tipoReserva: TipoReserva, horario: string, esporte: string) => {
+      if (!agendamentoId || !tipoReserva) return;
+
+      try {
+        setLoadingDetalhes(true);
+        const rota =
+          tipoReserva === "permanente"
+            ? `agendamentosPermanentes/${agendamentoId}`
+            : `agendamentos/${agendamentoId}`;
+
+        const { data: det } = await axios.get(`${API_URL}/${rota}`, { withCredentials: true });
+
+        const usuario =
+          (det?.usuario && typeof det.usuario === "object" ? det.usuario.nome : det?.usuario) || "—";
+        const jogadores: JogadorRef[] = Array.isArray(det?.jogadores) ? det.jogadores : [];
+
+        setAgendamentoSelecionado({
+          dia: data,
+          horario,
+          usuario,
+          jogadores,
+          esporte,
+          tipoReserva,
+          agendamentoId,
+          tipoLocal: "quadra",
+        });
+      } catch (err) {
+        console.error("Erro ao buscar detalhes:", err);
+      } finally {
+        setLoadingDetalhes(false);
+      }
+    },
+    [API_URL, data]
+  );
+
+  // Render de uma célula (slot)
+  const Cell = ({
+    slot,
+    hora,
+    esporte,
+  }: {
+    slot: SlotInfo;
+    hora: string;
+    esporte: string;
+  }) => {
+    const isLivre = slot.disponivel && !slot.bloqueada;
+    const isBloq = !!slot.bloqueada;
+    const isPerm = slot.tipoReserva === "permanente";
+    const isComum = slot.tipoReserva === "comum";
+
+    const base =
+      "h-8 sm:h-9 md:h-10 text-[10px] sm:text-xs md:text-sm rounded-[6px] flex items-center justify-center text-center px-1 whitespace-nowrap overflow-hidden";
+    let cls = "bg-white border border-gray-300 text-gray-800"; // livre
+    if (isBloq) cls = "bg-gray-200 text-gray-600 border border-gray-300";
+    if (isPerm) cls = "bg-emerald-600 text-white";
+    if (isComum) cls = "bg-orange-600 text-white";
+
+    const label = isBloq
+      ? `Bloqueada – ${hora}`
+      : isLivre
+      ? `Livre – ${hora}`
+      : `${firstName(slot.usuario?.nome)} – ${hora}`;
+
+    const clickable = !!(slot.agendamentoId && slot.tipoReserva && !isBloq);
+
+    return (
+      <button
+        type="button"
+        disabled={!clickable}
+        onClick={() =>
+          clickable &&
+          abrirDetalhes(slot.agendamentoId!, slot.tipoReserva as TipoReserva, hora, esporte)
+        }
+        aria-label={label}
+        className={`${base} ${clickable ? "cursor-pointer" : "cursor-default"} ${
+          clickable ? "hover:opacity-90" : ""
+        }`}
+      >
+        <span className="truncate">{label}</span>
+      </button>
+    );
+  };
+
+  const Conteudo = useMemo(() => {
+    if (loading) {
+      return (
+        <div className="flex items-center gap-2 text-gray-700">
+          <Spinner /> <span>Carregando disponibilidade…</span>
+        </div>
+      );
+    }
+    if (erro) {
+      return <div className="text-red-600 text-sm">{erro}</div>;
+    }
+    if (!esportes || horas.length === 0) {
+      return <div className="text-gray-500 text-sm">Nada para mostrar.</div>;
+    }
+
+    return (
+      <div className="space-y-10">
+        {Object.entries(esportes).map(([esporteNome, bloco]) => {
+          if (!bloco?.grupos?.length) return null;
+
+          return (
+            <div key={esporteNome} className="space-y-10">
+              {bloco.grupos.map((grupo, gi) => {
+                if (!grupo?.length) return null;
+
+                const minNum = Math.min(...grupo.map((q) => q.numero));
+                const maxNum = Math.max(...grupo.map((q) => q.numero));
+
+                return (
+                  <section key={`${esporteNome}-${gi}`}>
+                    {/* Título da seção: "Esporte – X a Y" */}
+                    <h2 className="text-center text-2xl sm:text-3xl font-extrabold text-gray-900 mb-3">
+                      {esporteNome} – {minNum} - {maxNum}
+                    </h2>
+
+                    {/* Linha dos números das quadras */}
+                    <div className="grid grid-cols-6 gap-1 mb-1">
+                      {grupo.map((q) => (
+                        <div
+                          key={q.quadraId}
+                          className="h-8 sm:h-9 md:h-10 rounded-[6px] bg-gray-100 text-gray-700 text-[10px] sm:text-xs md:text-sm flex items-center justify-center font-semibold"
+                        >
+                          {q.numero}
+                        </div>
+                      ))}
+                      {/* se o grupo tiver <6 quadras, completa com “vazios” só para manter 6 colunas */}
+                      {Array.from({ length: Math.max(0, 6 - grupo.length) }).map((_, i) => (
+                        <div key={`void-${i}`} />
+                      ))}
+                    </div>
+
+                    {/* Grade de horas x 6 quadras (sem coluna lateral de horas) */}
+                    <div className="space-y-1">
+                      {horas.map((hora) => (
+                        <div key={hora} className="grid grid-cols-6 gap-1">
+                          {grupo.map((q) => {
+                            const slot = q.slots[hora] || { disponivel: true };
+                            return (
+                              <Cell
+                                key={`${q.quadraId}-${hora}`}
+                                slot={slot}
+                                hora={hora}
+                                esporte={esporteNome}
+                              />
+                            );
+                          })}
+                          {/* padding para fechar as 6 colunas quando faltar quadra */}
+                          {Array.from({ length: Math.max(0, 6 - grupo.length) }).map((_, i) => (
+                            <div key={`pad-${i}`} />
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }, [loading, erro, esportes, horas, abrirDetalhes]);
 
   return (
-    <div className="p-4 space-y-6">
-      {/* Filtro de Data */}
-      <div className="bg-white p-4 shadow rounded-lg inline-flex flex-col sm:flex-row items-start sm:items-end gap-3">
-        <div className="flex flex-col">
-          <label className="text-sm text-gray-600 mb-1">Data</label>
-          <input
-            type="date"
-            className="border p-2 rounded-lg"
-            value={data}
-            onChange={(e) => setData(e.target.value)}
-          />
-        </div>
+    <div className="px-3 sm:px-4 py-4">
+      {/* Filtro: Data */}
+      <div className="bg-white p-3 sm:p-4 shadow rounded-lg max-w-md mb-4">
+        <label className="text-sm text-gray-600">Data</label>
+        <input
+          type="date"
+          className="border p-2 rounded-lg w-full"
+          value={data}
+          onChange={(e) => setData(e.target.value)}
+        />
       </div>
 
-      {loading && (
-        <div className="text-gray-600">Carregando disponibilidade…</div>
-      )}
-      {erro && <div className="text-red-600">{erro}</div>}
+      {Conteudo}
 
-      {!loading && !erro && (esportes?.length ?? 0) === 0 && (
-        <div className="text-gray-600">Nenhum dado para este dia.</div>
-      )}
-
-      {!loading &&
-        !erro &&
-        (esportes ?? []).map((esp) =>
-          esp.grupos.map((g) => (
-            <section key={g.titulo} className="space-y-3">
-              <h2 className="text-lg font-semibold text-center text-gray-800">
-                {g.titulo}
-              </h2>
-
-              <div className="grid grid-cols-[64px_repeat(6,minmax(90px,1fr))] gap-2">
-                <div />
-                {g.quadras.map((q) => (
-                  <div
-                    key={q.quadraId}
-                    className="text-center text-xs text-gray-700 font-medium"
-                  >
-                    {String(q.numero).padStart(2, "0")}
-                  </div>
-                ))}
-                {Array.from({ length: Math.max(0, 6 - g.quadras.length) }).map(
-                  (_, i) => (
-                    <div key={`emptyh-${i}`} />
-                  )
-                )}
-
-                {g.horarios.map((linha) => (
-                  <FragmentRow
-                    key={linha.hora}
-                    hora={linha.hora}
-                    colunas={linha.colunas}
-                    quadras={g.quadras}
-                    onOpen={(idx) => {
-                      const q = g.quadras[idx];
-                      const cel = linha.colunas[idx];
-                      setDetalhe({
-                        hora: linha.hora,
-                        quadra: q,
-                        celula: cel,
-                        tituloGrupo: g.titulo,
-                      });
-                    }}
-                  />
-                ))}
-              </div>
-            </section>
-          ))
-        )}
-
-      {detalhe && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl p-4 w-[320px]">
-            <h3 className="text-lg font-semibold mb-2">Detalhes</h3>
-            <div className="text-sm space-y-1">
-              <div>
-                <strong>Grupo:</strong> {detalhe.tituloGrupo}
-              </div>
-              <div>
-                <strong>Hora:</strong> {detalhe.hora}
-              </div>
-              <div>
-                <strong>Quadra:</strong> {detalhe.quadra.numero} —{" "}
-                {detalhe.quadra.nome}
-              </div>
-              <div>
-                <strong>Status:</strong>{" "}
-                {detalhe.celula.tipoReserva ?? detalhe.celula.status}
-              </div>
-              {detalhe.celula.usuario?.nome && (
-                <div>
-                  <strong>Usuário:</strong> {detalhe.celula.usuario.nome}
-                </div>
-              )}
-              {detalhe.celula.agendamentoId && (
-                <div className="break-all">
-                  <strong>Agendamento ID:</strong>{" "}
-                  {detalhe.celula.agendamentoId}
-                </div>
-              )}
+      {/* OVERLAY: carregando detalhes */}
+      {loadingDetalhes && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60]">
+          <div className="bg-white rounded-xl shadow-md px-4 py-3">
+            <div className="flex items-center gap-2 text-gray-700">
+              <Spinner /> <span>Carregando detalhes…</span>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE DETALHES (nome COMPLETO aqui) */}
+      {agendamentoSelecionado && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-lg w-80 relative max-h-[90vh] overflow-auto">
+            <h2 className="text-lg font-semibold mb-4">Detalhes do Agendamento</h2>
+            <p>
+              <strong>Dia:</strong> {agendamentoSelecionado.dia}
+            </p>
+            <p>
+              <strong>Horário:</strong> {agendamentoSelecionado.horario}
+            </p>
+            {agendamentoSelecionado.esporte && (
+              <p>
+                <strong>Esporte:</strong> {agendamentoSelecionado.esporte}
+              </p>
+            )}
+            <p>
+              <strong>Usuário:</strong>{" "}
+              {typeof agendamentoSelecionado.usuario === "string"
+                ? agendamentoSelecionado.usuario
+                : agendamentoSelecionado.usuario?.nome || "—"}
+            </p>
+            <p>
+              <strong>Tipo:</strong> {agendamentoSelecionado.tipoReserva}
+            </p>
+
+            {agendamentoSelecionado.tipoReserva === "comum" && (
+              <div className="mt-2">
+                <strong>Jogadores:</strong>
+                <ul className="list-disc list-inside text-sm text-gray-700 mt-2">
+                  {agendamentoSelecionado.jogadores?.length > 0 ? (
+                    agendamentoSelecionado.jogadores.map((j, idx) => (
+                      <li key={idx}>{j.nome}</li>
+                    ))
+                  ) : (
+                    <li>Nenhum jogador cadastrado</li>
+                  )}
+                </ul>
+              </div>
+            )}
 
             <button
-              className="mt-4 w-full rounded-md bg-orange-600 text-white py-2 hover:bg-orange-700"
-              onClick={() => setDetalhe(null)}
+              onClick={() => setAgendamentoSelecionado(null)}
+              className="mt-4 w-full bg-orange-600 hover:bg-orange-700 text-white py-2 px-4 rounded cursor-pointer"
             >
               Fechar
             </button>

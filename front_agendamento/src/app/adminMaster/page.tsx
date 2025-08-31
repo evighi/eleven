@@ -445,7 +445,7 @@ export default function AdminHome() {
         {/* Botão que leva para a página "todosHorarios" */}
         <div className="sm:ml-auto">
           <Link
-            href={`/todosHorarios`}
+            href={`/adminMaster/todosHorarios`}
             className="inline-flex items-center justify-center px-4 py-2 rounded-lg font-semibold bg-orange-600 hover:bg-orange-700 text-white cursor-pointer"
           >
             Ver todos os horários
