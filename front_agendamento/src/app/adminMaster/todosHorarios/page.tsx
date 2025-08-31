@@ -1,188 +1,97 @@
 "use client";
 
-import { useCallback, useEffect, useState, Fragment } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import Spinner from "@/components/Spinner";
-import { useAuthStore } from "@/context/AuthStore";
 
-/* ===== Helpers de data (America/Sao_Paulo) ===== */
-const SP_TZ = "America/Sao_Paulo";
-const todayIsoSP = () =>
-  new Intl.DateTimeFormat("en-CA", {
-    timeZone: SP_TZ,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-
-const DEFAULT_HOURS = Array.from({ length: 17 }, (_, i) => `${String(7 + i).padStart(2, "0")}:00`);
-
-/* ===== Tipagens do payload da API ===== */
-type TipoReserva = "comum" | "permanente";
-type UsuarioMin = { nome?: string | null };
-
+/* =========================
+   Tipos da rota /disponibilidadeGeral/dia
+========================= */
+type Usuario = { nome: string; email?: string; celular?: string };
 type SlotInfo = {
   disponivel: boolean;
   bloqueada?: boolean;
-  tipoReserva?: TipoReserva;
-  usuario?: UsuarioMin | null;
+  tipoReserva?: "comum" | "permanente";
+  usuario?: Usuario;
   agendamentoId?: string;
 };
-
-type QuadraAPI = {
+type QuadraSlots = {
   quadraId: string;
   nome: string;
   numero: number;
-  slots: Record<string, SlotInfo>;
+  slots: Record<string, SlotInfo>; // hora -> slot
+};
+type EsporteBlock = {
+  quadras: QuadraSlots[];
+  grupos: QuadraSlots[][];
+};
+type ApiResp = {
+  data: string; // YYYY-MM-DD
+  horas: string[]; // ["07:00", ... "23:00"]
+  esportes: Record<string, EsporteBlock>;
 };
 
-type EsporteAPI = {
-  quadras: QuadraAPI[];
-  grupos?: QuadraAPI[][];
+/* =========================
+   Tipos para modal de detalhes
+========================= */
+type JogadorRef = { nome: string };
+type TipoReserva = "comum" | "permanente";
+type AgendamentoSelecionado = {
+  dia: string;
+  horario: string;
+  usuario: string | Usuario | "—";
+  jogadores: JogadorRef[];
+  esporte?: string | null;
+  tipoReserva: TipoReserva;
+  agendamentoId: string;
+  tipoLocal: "quadra";
 };
 
-type ApiDia = {
-  data: string;
-  horas: string[];
-  esportes: Record<string, EsporteAPI>;
-};
+const SP_TZ = "America/Sao_Paulo";
+const todayStrSP = new Intl.DateTimeFormat("en-CA", {
+  timeZone: SP_TZ,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+} as any).format(new Date()) as string;
 
-/* ===== Tipagens internas de render ===== */
-type SlotCell = {
-  numero: number | null; // null = coluna de padding
-  hour: string;
-  status: "livre" | "comum" | "permanente" | "bloqueada";
-  label: string;
-  clickable: boolean;
-  slot?: SlotInfo | null;
-};
-
-type GroupMatrix = {
-  title: string; // "Quadras X à Y"
-  numbers: (number | null)[]; // sempre 6 itens
-  rows: (SlotCell | null)[][]; // rows[hourIndex][colIndex]
-};
-
-type EsporteView = {
-  nome: string;
-  grupos: GroupMatrix[];
-};
-
-/* ===== Utils ===== */
-const firstName = (full?: string | null) => (full ? (full.trim().split(/\s+/)[0] || "") : "");
-
-const chunk6 = <T,>(arr: T[]): T[][] => {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += 6) out.push(arr.slice(i, i + 6));
-  return out;
-};
-
-// type guard para garantir que não é null
-function isSlotCell(c: SlotCell | null | undefined): c is SlotCell {
-  return !!c;
+/* helper: primeiro nome para a célula */
+function firstName(full?: string) {
+  if (!full) return "";
+  const [a] = full.trim().split(/\s+/);
+  return a || "";
 }
 
-/* ===== Normalização do payload /disponibilidadeGeral/dia ===== */
-function normalizeApi(resp: ApiDia): { hours: string[]; esportes: EsporteView[] } {
-  const hours = Array.isArray(resp?.horas) && resp.horas.length > 0 ? resp.horas : DEFAULT_HOURS;
-  const esportesIn = resp?.esportes || {};
-  const esportesOut: EsporteView[] = [];
-
-  for (const nome of Object.keys(esportesIn)) {
-    const list = Array.isArray(esportesIn[nome]?.quadras) ? [...esportesIn[nome].quadras] : [];
-    list.sort((a, b) => a.numero - b.numero);
-    const gruposRaw = chunk6(list);
-
-    const grupos: GroupMatrix[] = gruposRaw.map((quadras) => {
-      const nums = quadras.map((q) => q.numero);
-      const title =
-        nums.length >= 2 ? `Quadras ${nums[0]} à ${nums[nums.length - 1]}` : `Quadra ${nums[0]}`;
-
-      const numbers: (number | null)[] = [...nums];
-      while (numbers.length < 6) numbers.push(null);
-
-      const rows: (SlotCell | null)[][] = hours.map((h) => {
-        const line: (SlotCell | null)[] = quadras.map((q) => {
-          const s = q.slots?.[h];
-          let status: SlotCell["status"] = "livre";
-          let label = "Livre";
-          let clickable = false;
-
-          if (s?.bloqueada) {
-            status = "bloqueada";
-            label = "Bloqueada";
-          } else if (s?.tipoReserva === "permanente") {
-            status = "permanente";
-            label = firstName(s?.usuario?.nome) || "Permanente";
-            clickable = true;
-          } else if (s?.tipoReserva === "comum") {
-            status = "comum";
-            label = firstName(s?.usuario?.nome) || "Comum";
-            clickable = true;
-          } else if (s && s.disponivel === false) {
-            status = "comum";
-            label = firstName(s?.usuario?.nome) || "Reservado";
-            clickable = true;
-          }
-
-          const cell: SlotCell = {
-            numero: q.numero,
-            hour: h,
-            status,
-            label,
-            clickable,
-            slot: s ?? null,
-          };
-
-          return cell;
-        });
-
-        while (line.length < 6) {
-          line.push({
-            numero: null,
-            hour: h,
-            status: "livre",
-            label: "",
-            clickable: false,
-            slot: null,
-          });
-        }
-
-        return line;
-      });
-
-      return { title, numbers, rows };
-    });
-
-    esportesOut.push({ nome, grupos });
-  }
-
-  return { hours, esportes: esportesOut };
-}
-
-/* ===== Componente ===== */
-export default function TodosHorarios() {
+/* =========================
+   Página
+========================= */
+export default function TodosHorariosPage() {
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
-  const { usuario } = useAuthStore();
 
-  const [data, setData] = useState<string>(todayIsoSP());
-  const [loading, setLoading] = useState(false);
-  const [erro, setErro] = useState<string>("");
-  const [hours, setHours] = useState<string[]>(DEFAULT_HOURS);
-  const [esportes, setEsportes] = useState<EsporteView[] | null>(null);
+  const [data, setData] = useState<string>(todayStrSP);
+  const [horas, setHoras] = useState<string[]>([]);
+  const [esportes, setEsportes] = useState<Record<string, EsporteBlock> | null>(null);
+  const [erro, setErro] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  // Modal de detalhes
+  const [loadingDetalhes, setLoadingDetalhes] = useState(false);
+  const [agendamentoSelecionado, setAgendamentoSelecionado] = useState<AgendamentoSelecionado | null>(null);
 
   const carregar = useCallback(
     async (d: string) => {
       setErro("");
       setLoading(true);
       try {
-        const { data: resp } = await axios.get<ApiDia>(`${API_URL}/disponibilidadeGeral/dia`, {
+        const url = `${API_URL}/disponibilidadeGeral/dia`;
+        const { data: resp } = await axios.get<ApiResp>(url, {
           params: { data: d },
           withCredentials: true,
         });
-        const norm = normalizeApi(resp);
-        setHours(norm.hours);
-        setEsportes(norm.esportes);
+
+        // Normaliza mínimo necessário
+        setHoras(resp.horas || []);
+        setEsportes(resp.esportes || {});
       } catch (e) {
         console.error(e);
         setEsportes(null);
@@ -195,112 +104,251 @@ export default function TodosHorarios() {
   );
 
   useEffect(() => {
-    if (data) carregar(data);
-  }, [data, carregar]);
+    carregar(data);
+  }, [carregar, data]);
 
-  const onChangeDate = (e: React.ChangeEvent<HTMLInputElement>) => setData(e.target.value);
+  // Abre modal com detalhes completos (nome completo etc.)
+  const abrirDetalhes = useCallback(
+    async (agendamentoId: string, tipoReserva: TipoReserva, horario: string, esporte: string) => {
+      if (!agendamentoId || !tipoReserva) return;
 
-  const cellClass = (c: SlotCell | null) => {
-    if (!isSlotCell(c)) return "border h-9";
-    switch (c.status) {
-      case "permanente":
-        return "border h-9 bg-green-600 text-white text-xs flex items-center justify-center font-medium";
-      case "comum":
-        return "border h-9 bg-orange-600 text-white text-xs flex items-center justify-center font-medium";
-      case "bloqueada":
-        return "border h-9 bg-red-600 text-white text-xs flex items-center justify-center font-medium";
-      default:
-        return "border h-9 bg-white text-xs flex items-center justify-center text-gray-700";
+      try {
+        setLoadingDetalhes(true);
+        const rota =
+          tipoReserva === "permanente"
+            ? `agendamentosPermanentes/${agendamentoId}`
+            : `agendamentos/${agendamentoId}`;
+
+        const { data: det } = await axios.get(`${API_URL}/${rota}`, { withCredentials: true });
+
+        const usuario =
+          (det?.usuario && typeof det.usuario === "object" ? det.usuario.nome : det?.usuario) || "—";
+        const jogadores: JogadorRef[] = Array.isArray(det?.jogadores) ? det.jogadores : [];
+
+        setAgendamentoSelecionado({
+          dia: data,
+          horario,
+          usuario,
+          jogadores,
+          esporte,
+          tipoReserva,
+          agendamentoId,
+          tipoLocal: "quadra",
+        });
+      } catch (err) {
+        console.error("Erro ao buscar detalhes:", err);
+      } finally {
+        setLoadingDetalhes(false);
+      }
+    },
+    [API_URL, data]
+  );
+
+  // Render de uma célula (slot)
+  const Cell = ({
+    slot,
+    hora,
+    esporte,
+  }: {
+    slot: SlotInfo;
+    hora: string;
+    esporte: string;
+  }) => {
+    const isLivre = slot.disponivel && !slot.bloqueada;
+    const isBloq = !!slot.bloqueada;
+    const isPerm = slot.tipoReserva === "permanente";
+    const isComum = slot.tipoReserva === "comum";
+
+    const base =
+      "h-8 sm:h-9 md:h-10 text-[10px] sm:text-xs md:text-sm rounded-[6px] flex items-center justify-center text-center px-1 whitespace-nowrap overflow-hidden";
+    let cls = "bg-white border border-gray-300 text-gray-800"; // livre
+    if (isBloq) cls = "bg-gray-200 text-gray-600 border border-gray-300";
+    if (isPerm) cls = "bg-emerald-600 text-white";
+    if (isComum) cls = "bg-orange-600 text-white";
+
+    const label = isBloq
+      ? `Bloqueada – ${hora}`
+      : isLivre
+      ? `Livre – ${hora}`
+      : `${firstName(slot.usuario?.nome)} – ${hora}`;
+
+    const clickable = !!(slot.agendamentoId && slot.tipoReserva && !isBloq);
+
+    return (
+      <button
+        type="button"
+        disabled={!clickable}
+        onClick={() =>
+          clickable &&
+          abrirDetalhes(slot.agendamentoId!, slot.tipoReserva as TipoReserva, hora, esporte)
+        }
+        aria-label={label}
+        className={`${base} ${clickable ? "cursor-pointer" : "cursor-default"} ${
+          clickable ? "hover:opacity-90" : ""
+        }`}
+      >
+        <span className="truncate">{label}</span>
+      </button>
+    );
+  };
+
+  const Conteudo = useMemo(() => {
+    if (loading) {
+      return (
+        <div className="flex items-center gap-2 text-gray-700">
+          <Spinner /> <span>Carregando disponibilidade…</span>
+        </div>
+      );
     }
-  };
+    if (erro) {
+      return <div className="text-red-600 text-sm">{erro}</div>;
+    }
+    if (!esportes || horas.length === 0) {
+      return <div className="text-gray-500 text-sm">Nada para mostrar.</div>;
+    }
 
-  const abrirDetalhes = (c: SlotCell | null, esporte: string) => {
-    if (!isSlotCell(c) || !c.clickable || !c.slot) return;
-    const tipo = c.status === "permanente" ? "Permanente" : "Comum";
-    const nome = c.slot.usuario?.nome ? firstName(c.slot.usuario.nome) : "—";
-    alert(`Esporte: ${esporte}\nQuadra: ${c.numero ?? "—"}\nHora: ${c.hour}\nTipo: ${tipo}\nUsuário: ${nome}`);
-    // TODO: integrar com modal de detalhes (igual à Home Admin)
-  };
+    return (
+      <div className="space-y-10">
+        {Object.entries(esportes).map(([esporteNome, bloco]) => {
+          if (!bloco?.grupos?.length) return null;
 
-  return (
-    <div className="space-y-8">
-      {/* FILTRO */}
-      <div className="bg-white p-4 shadow rounded-lg flex flex-col sm:flex-row gap-4">
-        <div className="flex flex-col w-full sm:w-auto">
-          <label className="text-sm text-gray-600">Data</label>
-          <input type="date" className="border p-2 rounded-lg" value={data} onChange={onChangeDate} />
-        </div>
-      </div>
+          return (
+            <div key={esporteNome} className="space-y-10">
+              {bloco.grupos.map((grupo, gi) => {
+                if (!grupo?.length) return null;
 
-      {/* CONTEÚDO */}
-      {loading ? (
-        <div className="flex items-center gap-2 text-gray-600">
-          <Spinner /> <span>Carregando…</span>
-        </div>
-      ) : erro ? (
-        <div className="text-red-600">{erro}</div>
-      ) : !esportes || esportes.length === 0 ? (
-        <div className="text-gray-600">Nenhuma quadra para este dia.</div>
-      ) : (
-        <div className="space-y-10">
-          {esportes.map((esp) =>
-            esp.grupos.length === 0 ? (
-              <div key={esp.nome}>
-                <div className="flex items-center mb-3">
-                  <h2 className="text-lg font-semibold text-orange-700">{esp.nome}</h2>
-                  <div className="flex-1 border-t border-gray-300 ml-3" />
-                </div>
-                <div className="text-sm text-gray-500">Nenhuma quadra cadastrada para este dia.</div>
-              </div>
-            ) : (
-              esp.grupos.map((g, gi) => (
-                <div key={`${esp.nome}-${gi}`}>
-                  <div className="flex items-center mb-3">
-                    <h2 className="text-lg font-semibold text-orange-700">
-                      {esp.nome} – {g.title}
+                const minNum = Math.min(...grupo.map((q) => q.numero));
+                const maxNum = Math.max(...grupo.map((q) => q.numero));
+
+                return (
+                  <section key={`${esporteNome}-${gi}`}>
+                    {/* Título da seção: "Esporte – X a Y" */}
+                    <h2 className="text-center text-2xl sm:text-3xl font-extrabold text-gray-900 mb-3">
+                      {esporteNome} – {minNum} - {maxNum}
                     </h2>
-                    <div className="flex-1 border-t border-gray-300 ml-3" />
-                  </div>
 
-                  <div className="overflow-auto">
-                    <div className="grid grid-cols-7 min-w-[680px]">
-                      {/* Cabeçalho */}
-                      <div className="p-2 text-sm font-semibold text-gray-700 border bg-gray-50">Horário</div>
-                      {g.numbers.map((n, i) => (
+                    {/* Linha dos números das quadras */}
+                    <div className="grid grid-cols-6 gap-1 mb-1">
+                      {grupo.map((q) => (
                         <div
-                          key={`head-${gi}-${i}`}
-                          className="p-2 text-sm font-semibold text-gray-700 border bg-gray-50 text-center"
+                          key={q.quadraId}
+                          className="h-8 sm:h-9 md:h-10 rounded-[6px] bg-gray-100 text-gray-700 text-[10px] sm:text-xs md:text-sm flex items-center justify-center font-semibold"
                         >
-                          {n ? String(n).padStart(2, "0") : "—"}
+                          {q.numero}
                         </div>
                       ))}
-
-                      {/* Linhas */}
-                      {hours.map((h, rIdx) => (
-                        <Fragment key={h}>
-                          <div className="border text-xs h-9 flex items-center justify-center bg-gray-50">{h}</div>
-                          {g.rows[rIdx].map((cel, cIdx) => (
-                            <button
-                              key={`${h}-${cIdx}`}
-                              type="button"
-                              onClick={() => abrirDetalhes(cel, esp.nome)}
-                              disabled={!isSlotCell(cel) || !cel.clickable}
-                              className={`${cellClass(cel)} ${
-                                isSlotCell(cel) && cel.clickable ? "cursor-pointer" : "cursor-default"
-                              }`}
-                              title={isSlotCell(cel) && cel.clickable ? `${cel.label} (${cel.status})` : ""}
-                            >
-                              {isSlotCell(cel) ? cel.label : ""}
-                            </button>
-                          ))}
-                        </Fragment>
+                      {/* se o grupo tiver <6 quadras, completa com “vazios” só para manter 6 colunas */}
+                      {Array.from({ length: Math.max(0, 6 - grupo.length) }).map((_, i) => (
+                        <div key={`void-${i}`} />
                       ))}
                     </div>
-                  </div>
-                </div>
-              ))
-            )
-          )}
+
+                    {/* Grade de horas x 6 quadras (sem coluna lateral de horas) */}
+                    <div className="space-y-1">
+                      {horas.map((hora) => (
+                        <div key={hora} className="grid grid-cols-6 gap-1">
+                          {grupo.map((q) => {
+                            const slot = q.slots[hora] || { disponivel: true };
+                            return (
+                              <Cell
+                                key={`${q.quadraId}-${hora}`}
+                                slot={slot}
+                                hora={hora}
+                                esporte={esporteNome}
+                              />
+                            );
+                          })}
+                          {/* padding para fechar as 6 colunas quando faltar quadra */}
+                          {Array.from({ length: Math.max(0, 6 - grupo.length) }).map((_, i) => (
+                            <div key={`pad-${i}`} />
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }, [loading, erro, esportes, horas, abrirDetalhes]);
+
+  return (
+    <div className="px-3 sm:px-4 py-4">
+      {/* Filtro: Data */}
+      <div className="bg-white p-3 sm:p-4 shadow rounded-lg max-w-md mb-4">
+        <label className="text-sm text-gray-600">Data</label>
+        <input
+          type="date"
+          className="border p-2 rounded-lg w-full"
+          value={data}
+          onChange={(e) => setData(e.target.value)}
+        />
+      </div>
+
+      {Conteudo}
+
+      {/* OVERLAY: carregando detalhes */}
+      {loadingDetalhes && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60]">
+          <div className="bg-white rounded-xl shadow-md px-4 py-3">
+            <div className="flex items-center gap-2 text-gray-700">
+              <Spinner /> <span>Carregando detalhes…</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE DETALHES (nome COMPLETO aqui) */}
+      {agendamentoSelecionado && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-lg w-80 relative max-h-[90vh] overflow-auto">
+            <h2 className="text-lg font-semibold mb-4">Detalhes do Agendamento</h2>
+            <p>
+              <strong>Dia:</strong> {agendamentoSelecionado.dia}
+            </p>
+            <p>
+              <strong>Horário:</strong> {agendamentoSelecionado.horario}
+            </p>
+            {agendamentoSelecionado.esporte && (
+              <p>
+                <strong>Esporte:</strong> {agendamentoSelecionado.esporte}
+              </p>
+            )}
+            <p>
+              <strong>Usuário:</strong>{" "}
+              {typeof agendamentoSelecionado.usuario === "string"
+                ? agendamentoSelecionado.usuario
+                : agendamentoSelecionado.usuario?.nome || "—"}
+            </p>
+            <p>
+              <strong>Tipo:</strong> {agendamentoSelecionado.tipoReserva}
+            </p>
+
+            {agendamentoSelecionado.tipoReserva === "comum" && (
+              <div className="mt-2">
+                <strong>Jogadores:</strong>
+                <ul className="list-disc list-inside text-sm text-gray-700 mt-2">
+                  {agendamentoSelecionado.jogadores?.length > 0 ? (
+                    agendamentoSelecionado.jogadores.map((j, idx) => (
+                      <li key={idx}>{j.nome}</li>
+                    ))
+                  ) : (
+                    <li>Nenhum jogador cadastrado</li>
+                  )}
+                </ul>
+              </div>
+            )}
+
+            <button
+              onClick={() => setAgendamentoSelecionado(null)}
+              className="mt-4 w-full bg-orange-600 hover:bg-orange-700 text-white py-2 px-4 rounded cursor-pointer"
+            >
+              Fechar
+            </button>
+          </div>
         </div>
       )}
     </div>
