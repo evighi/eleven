@@ -55,11 +55,16 @@ const todayStrSP = new Intl.DateTimeFormat("en-CA", {
   day: "2-digit",
 } as any).format(new Date()) as string;
 
-/* helper: primeiro nome para a célula */
+/* helpers */
 function firstName(full?: string) {
   if (!full) return "";
   const [a] = full.trim().split(/\s+/);
   return a || "";
+}
+function onlyHour(hhmm?: string) {
+  if (!hhmm) return "";
+  const [hh] = hhmm.split(":");
+  return hh || hhmm;
 }
 
 /* =========================
@@ -89,7 +94,6 @@ export default function TodosHorariosPage() {
           withCredentials: true,
         });
 
-        // Normaliza mínimo necessário
         setHoras(resp.horas || []);
         setEsportes(resp.esportes || {});
       } catch (e) {
@@ -144,7 +148,7 @@ export default function TodosHorariosPage() {
     [API_URL, data]
   );
 
-  // Render de uma célula (slot)
+  // Célula da “tabela” — quadradinha, sem cortes, cores conforme status
   const Cell = ({
     slot,
     hora,
@@ -159,18 +163,22 @@ export default function TodosHorariosPage() {
     const isPerm = slot.tipoReserva === "permanente";
     const isComum = slot.tipoReserva === "comum";
 
+    // estilo compacto, borda para ficar tabelado, sem arredondar e SEM truncar texto
     const base =
-      "h-8 sm:h-9 md:h-10 text-[10px] sm:text-xs md:text-sm rounded-[6px] flex items-center justify-center text-center px-1 whitespace-nowrap overflow-hidden";
-    let cls = "bg-white border border-gray-300 text-gray-800"; // livre
-    if (isBloq) cls = "bg-gray-200 text-gray-600 border border-gray-300";
-    if (isPerm) cls = "bg-emerald-600 text-white";
-    if (isComum) cls = "bg-orange-600 text-white";
+      "min-h-7 xs:min-h-8 sm:min-h-9 md:min-h-10 text-[9px] xs:text-[10px] sm:text-[11px] md:text-xs "+ 
+      "rounded-none border flex items-center justify-center text-center px-1 py-1 whitespace-normal break-words leading-tight";
 
+    let cls = "bg-white text-gray-900 border-gray-300"; // livre
+    if (isBloq) cls = "bg-red-600 text-white border-red-700";
+    if (isPerm) cls = "bg-emerald-600 text-white border-emerald-700";
+    if (isComum) cls = "bg-orange-600 text-white border-orange-700";
+
+    const hourLabel = onlyHour(hora);
     const label = isBloq
-      ? `Bloqueada – ${hora}`
+      ? `Bloqueada - ${hourLabel}`
       : isLivre
-      ? `Livre – ${hora}`
-      : `${firstName(slot.usuario?.nome)} – ${hora}`;
+      ? `Livre - ${hourLabel}`
+      : `${firstName(slot.usuario?.nome)} - ${hourLabel}`;
 
     const clickable = !!(slot.agendamentoId && slot.tipoReserva && !isBloq);
 
@@ -182,12 +190,13 @@ export default function TodosHorariosPage() {
           clickable &&
           abrirDetalhes(slot.agendamentoId!, slot.tipoReserva as TipoReserva, hora, esporte)
         }
-        aria-label={label}
-        className={`${base} ${clickable ? "cursor-pointer" : "cursor-default"} ${
-          clickable ? "hover:opacity-90" : ""
-        }`}
+        title={
+          slot.usuario?.nome ||
+          (isBloq ? "Bloqueada" : isLivre ? "Livre" : label)
+        }
+        className={`${base} ${cls} ${clickable ? "cursor-pointer hover:brightness-95" : "cursor-default"}`}
       >
-        <span className="truncate">{label}</span>
+        <span>{label}</span>
       </button>
     );
   };
@@ -222,31 +231,32 @@ export default function TodosHorariosPage() {
 
                 return (
                   <section key={`${esporteNome}-${gi}`}>
-                    {/* Título da seção: "Esporte – X a Y" */}
-                    <h2 className="text-center text-2xl sm:text-3xl font-extrabold text-gray-900 mb-3">
+                    {/* Cabeçalho por grupo (ex: Beach Tennis – 1 - 6) */}
+                    <h2 className="text-center text-xl sm:text-2xl md:text-3xl font-extrabold text-gray-900 mb-3">
                       {esporteNome} – {minNum} - {maxNum}
                     </h2>
 
-                    {/* Linha dos números das quadras */}
-                    <div className="grid grid-cols-6 gap-1 mb-1">
+                    {/* Linha com os números das quadras (6 colunas fixas, quadrado) */}
+                    <div className="grid grid-cols-6 gap-0">
                       {grupo.map((q) => (
                         <div
                           key={q.quadraId}
-                          className="h-8 sm:h-9 md:h-10 rounded-[6px] bg-gray-100 text-gray-700 text-[10px] sm:text-xs md:text-sm flex items-center justify-center font-semibold"
+                          className="min-h-7 xs:min-h-8 sm:min-h-9 md:min-h-10 rounded-none border border-gray-300 bg-gray-100 text-gray-700 text-[9px] xs:text-[10px] sm:text-[11px] md:text-xs flex items-center justify-center font-semibold"
+                          title={q.nome}
                         >
                           {q.numero}
                         </div>
                       ))}
-                      {/* se o grupo tiver <6 quadras, completa com “vazios” só para manter 6 colunas */}
+                      {/* Completa 6 colunas, se necessário */}
                       {Array.from({ length: Math.max(0, 6 - grupo.length) }).map((_, i) => (
-                        <div key={`void-${i}`} />
+                        <div key={`void-${i}`} className="border border-transparent" />
                       ))}
                     </div>
 
-                    {/* Grade de horas x 6 quadras (sem coluna lateral de horas) */}
-                    <div className="space-y-1">
+                    {/* “Tabela”: horas x 6 colunas (sem coluna lateral de horários) */}
+                    <div className="space-y-0">
                       {horas.map((hora) => (
-                        <div key={hora} className="grid grid-cols-6 gap-1">
+                        <div key={hora} className="grid grid-cols-6 gap-0">
                           {grupo.map((q) => {
                             const slot = q.slots[hora] || { disponivel: true };
                             return (
@@ -258,9 +268,8 @@ export default function TodosHorariosPage() {
                               />
                             );
                           })}
-                          {/* padding para fechar as 6 colunas quando faltar quadra */}
                           {Array.from({ length: Math.max(0, 6 - grupo.length) }).map((_, i) => (
-                            <div key={`pad-${i}`} />
+                            <div key={`pad-${i}`} className="border border-transparent" />
                           ))}
                         </div>
                       ))}
@@ -276,7 +285,7 @@ export default function TodosHorariosPage() {
   }, [loading, erro, esportes, horas, abrirDetalhes]);
 
   return (
-    <div className="px-3 sm:px-4 py-4">
+    <div className="px-2 sm:px-3 md:px-4 py-4">
       {/* Filtro: Data */}
       <div className="bg-white p-3 sm:p-4 shadow rounded-lg max-w-md mb-4">
         <label className="text-sm text-gray-600">Data</label>
@@ -288,6 +297,7 @@ export default function TodosHorariosPage() {
         />
       </div>
 
+      {/* Conteúdo (tabela/grade) */}
       {Conteudo}
 
       {/* OVERLAY: carregando detalhes */}

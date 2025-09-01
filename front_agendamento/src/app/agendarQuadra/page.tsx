@@ -282,9 +282,6 @@ function UserPicker({
 
 /* =========================================================
    GuestFieldUncontrolled (convidados sem cadastro)
-   - Não controla pelo pai: defaultValue + ref
-   - Comita no blur e também debounced (para contar >=2)
-   - Evita perder o foco/fechar teclado
 ========================================================= */
 const GuestFieldUncontrolled = memo(function GuestFieldUncontrolled({
   id,
@@ -305,13 +302,11 @@ const GuestFieldUncontrolled = memo(function GuestFieldUncontrolled({
   const tRef = useRef<number | null>(null);
 
   useEffect(() => {
-    // se o valor inicial mudar (raro), atualiza o campo
     if (localRef.current && localRef.current.value !== initialValue) {
       localRef.current.value = initialValue ?? "";
     }
   }, [initialValue]);
 
-  // expõe a ref pro pai (para contagem/payload)
   const setRefs = (el: HTMLInputElement | null) => {
     localRef.current = el;
     inputRef(el);
@@ -343,7 +338,7 @@ const GuestFieldUncontrolled = memo(function GuestFieldUncontrolled({
       />
       <button
         type="button"
-        onMouseDown={(e) => e.preventDefault()} // não deixa o mousedown tirar o foco antes do click
+        onMouseDown={(e) => e.preventDefault()}
         onClick={onRemove}
         className="px-2 py-1 rounded bg-gray-200 hover:bg-gray-300 text-xs"
         title="Remover"
@@ -365,13 +360,13 @@ export default function AgendarQuadraCliente() {
   const { isChecking } = useRequireAuth(["CLIENTE", "ADMIN_MASTER"]);
   const { usuario } = useAuthStore();
 
-  // helpers URL (memoizada p/ não quebrar deps)
+  // helpers URL
   const toAbs = useCallback(
     (u?: string | null) => {
       if (!u) return "";
-      if (/^(https?:|data:|blob:)/i.test(u)) return u; // absolutas
-      if (u.startsWith("/")) return `${API_URL}${u}`; // relativo do servidor
-      return `${API_URL}/${u}`; // fallback (legado "uploads/...")
+      if (/^(https?:|data:|blob:)/i.test(u)) return u;
+      if (u.startsWith("/")) return `${API_URL}${u}`;
+      return `${API_URL}/${u}`;
     },
     [API_URL]
   );
@@ -432,9 +427,9 @@ export default function AgendarQuadraCliente() {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
 
-  // ======== JOGADORES ========
+  // ======== JOGADORES (opcional) ========
   const [players, setPlayers] = useState<Player[]>([]);
-  const guestRefs = useRef<Record<string, HTMLInputElement | null>>({}); // refs dos inputs de convidados
+  const guestRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   // inicia players com dono + um campo "com cadastro"
   useEffect(() => {
@@ -450,7 +445,6 @@ export default function AgendarQuadraCliente() {
   const updatePlayer = (id: string, patch: Partial<Player>) =>
     setPlayers((cur) => cur.map((p) => (p.id === id ? { ...p, ...patch } : p)));
 
-  // não remove o dono
   const removePlayer = (id: string) =>
     setPlayers((cur) => cur.filter((p) => p.id !== id || p.kind === "owner"));
 
@@ -465,30 +459,6 @@ export default function AgendarQuadraCliente() {
     const nome = (esportes.find((e) => String(e.id) === String(esporteId))?.nome || "").toLowerCase();
     return nome.includes("vôlei") || nome.includes("volei");
   }, [esportes, esporteId]);
-
-  // ===== Contagem válida (usa refs p/ convidados) =====
-  const jogadoresValidos = useMemo(() => {
-    let count = 0;
-
-    // dono
-    const owner = players.find((p) => p.kind === "owner");
-    if ((owner?.value ?? "").trim() !== "") count += 1;
-
-    // cadastrados
-    count += players.filter((p) => p.kind === "registered" && !!p.userId).length;
-
-    // convidados (usa refs para refletir o que está no input agora)
-    players.forEach((p) => {
-      if (p.kind === "guest") {
-        const v = guestRefs.current[p.id]?.value ?? p.value ?? "";
-        if (v.trim() !== "") count += 1;
-      }
-    });
-
-    return count;
-  }, [players]);
-
-  const podeReservar = jogadoresValidos >= 2;
 
   /* ========= Carregamentos ========= */
   // 1) Esportes
@@ -636,10 +606,11 @@ export default function AgendarQuadraCliente() {
   const avancarQuadra = () => {
     if (!quadraId) return setMsg("Selecione uma quadra.");
     setMsg("");
-    setStep(isVoleiSelected ? 6 : 5);
+    setStep(isVoleiSelected ? 6 : 5); // vôlei pula jogadores como já era antes
   };
+
+  // Etapa de jogadores agora é OPCIONAL (sem validação de quantidade)
   const confirmarJogadores = () => {
-    if (!podeReservar) return setMsg("Informe pelo menos 2 jogadores.");
     setMsg("");
     setStep(6);
   };
@@ -672,29 +643,21 @@ export default function AgendarQuadraCliente() {
   const realizarReserva = async () => {
     if (!quadraId || !diaISO || !horario || !esporteId) return;
 
-    const precisaJogadores = !isVoleiSelected;
-    if (precisaJogadores && !podeReservar) {
-      setMsg("Informe pelo menos 2 jogadores.");
-      return;
-    }
-
     const base: ReservaPayloadBase = { data: diaISO, horario, esporteId, quadraId, tipoReserva: "COMUM" };
+
+    // Sempre opcional: se tiver jogadores, envia; se não tiver, segue sem eles.
+    const jogadoresIds = players
+      .filter((p) => p.kind === "registered" && p.userId)
+      .map((p) => String(p.userId));
+
+    const convidadosNomes = players
+      .filter((p) => p.kind === "guest")
+      .map((p) => (guestRefs.current[p.id]?.value ?? p.value ?? "").trim())
+      .filter(Boolean);
+
     const extra: ReservaPayloadExtra = {};
-
-    if (precisaJogadores) {
-      const jogadoresIds = players
-        .filter((p) => p.kind === "registered" && p.userId)
-        .map((p) => String(p.userId));
-
-      // convidados: lê pelos refs (ou usa fallback do state)
-      const convidadosNomes = players
-        .filter((p) => p.kind === "guest")
-        .map((p) => (guestRefs.current[p.id]?.value ?? p.value ?? "").trim())
-        .filter(Boolean);
-
-      if (jogadoresIds.length) extra.jogadoresIds = jogadoresIds;
-      if (convidadosNomes.length) extra.convidadosNomes = convidadosNomes;
-    }
+    if (jogadoresIds.length) extra.jogadoresIds = jogadoresIds;
+    if (convidadosNomes.length) extra.convidadosNomes = convidadosNomes;
 
     const payload: ReservaPayloadBase & ReservaPayloadExtra = { ...base, ...extra };
 
@@ -927,12 +890,12 @@ export default function AgendarQuadraCliente() {
             </Card>
           )}
 
-          {/* STEP 5 - Jogadores (não é vôlei) */}
+          {/* STEP 5 - Jogadores (opcional) */}
           {step === 5 && !isVoleiSelected && (
             <Card>
-              <h1 className="text-[13px] font-bold text-gray-600 mb-2">Informe o nome dos jogadores:</h1>
-              <p className="text-[13px] font-small text-gray-600 mb-2">
-                Para continuar a reserva é necessário inserir no minímo 2 jogadores
+              <h1 className="text-[13px] font-bold text-gray-600 mb-2">Jogadores (opcional)</h1>
+              <p className="text-[13px] text-gray-600 mb-2">
+                Adicione jogadores cadastrados ou convidados, se quiser. Você pode continuar sem preencher.
               </p>
 
               <div className="space-y-3">
@@ -970,10 +933,7 @@ export default function AgendarQuadraCliente() {
                         inputRef={(el) => {
                           guestRefs.current[p.id] = el;
                         }}
-                        onDebouncedCommit={(val) => {
-                          // opcional: manter algum espelho mínimo no state (não necessário pro foco)
-                          // updatePlayer(p.id, { value: val });
-                        }}
+                        onDebouncedCommit={() => {}}
                         onBlurCommit={(val) => {
                           updatePlayer(p.id, { value: val });
                         }}
@@ -991,12 +951,8 @@ export default function AgendarQuadraCliente() {
                   className="w-full rounded-md bg-[#f3f3f3] hover:bg-[#ececec] text-[12px] font-semibold text-gray-700 px-3 py-2 text-left cursor-pointer"
                 >
                   <span className="inline-block mr-2 text-orange-600">+</span>
-                  Adicionar mais jogadores cadastrados
+                  Adicionar jogador cadastrado
                 </button>
-
-                <p className="text-[13px] font-small text-gray-600 mb-2">
-                  Caso os jogadores não tenham cadastro, informe o nome deles abaixo:
-                </p>
 
                 <button
                   type="button"
@@ -1004,11 +960,11 @@ export default function AgendarQuadraCliente() {
                   className="w-full rounded-md bg-[#f3f3f3] hover:bg-[#ececec] text-[12px] font-semibold text-gray-700 px-3 py-2 text-left cursor-pointer"
                 >
                   <span className="inline-block mr-2 text-orange-600">+</span>
-                  Adicione jogadores convidados (sem cadastro)
+                  Adicionar convidado (sem cadastro)
                 </button>
               </div>
 
-              <Btn className="mt-4 cursor-pointer" onClick={confirmarJogadores} disabled={!podeReservar}>
+              <Btn className="mt-4 cursor-pointer" onClick={confirmarJogadores}>
                 Confirmar
               </Btn>
             </Card>
@@ -1035,10 +991,12 @@ export default function AgendarQuadraCliente() {
               />
               <Resumo
                 label="Jogadores:"
-                valor={players
-                  .filter((p) => (p.kind !== "registered" ? (p.value ?? "").trim() !== "" : !!p.userId))
-                  .map((p) => p.value.trim())
-                  .join(", ")}
+                valor={
+                  players
+                    .filter((p) => (p.kind !== "registered" ? (p.value ?? "").trim() !== "" : !!p.userId))
+                    .map((p) => p.value.trim())
+                    .join(", ") || "—"
+                }
                 onChange={() => setStep(5)}
               />
 

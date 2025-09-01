@@ -69,7 +69,8 @@ export default function PerfilHome() {
               </Tile>
             </Bloco>
 
-            {/* Bloco Transferências */}
+            {/* Bloco Transferências — DESATIVADO TEMPORARIAMENTE */}
+            {/*
             <Bloco titulo="Transferências">
               <Tile
                 href="/transferenciasAnteriores"
@@ -79,6 +80,7 @@ export default function PerfilHome() {
                 Ver suas transferências anteriores
               </Tile>
             </Bloco>
+            */}
           </div>
         </div>
       </section>
