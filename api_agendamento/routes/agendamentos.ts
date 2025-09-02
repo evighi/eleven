@@ -12,6 +12,28 @@ import cron from "node-cron"; // ⏰ cron para finalizar vencidos
 import verificarToken from "../middleware/authMiddleware";
 import { r2PublicUrl } from "../src/lib/r2";
 
+// Mapa DiaSemana -> número JS (0=Dom..6=Sáb)
+const DIA_IDX: Record<DiaSemana, number> = {
+  DOMINGO: 0,
+  SEGUNDA: 1,
+  TERCA: 2,
+  QUARTA: 3,
+  QUINTA: 4,
+  SEXTA: 5,
+  SABADO: 6,
+};
+
+// Próxima data (YYYY-MM-DD, UTC) para um DiaSemana, respeitando dataInicio opcional
+function nextDateISOForDiaSemana(dia: DiaSemana, minDate?: Date | null) {
+  const hoje = new Date();
+  const base = minDate && minDate > hoje ? minDate : hoje;
+  const cur = base.getDay();                 // 0..6
+  const target = DIA_IDX[dia] ?? 0;          // 0..6
+  const delta = (target - cur + 7) % 7;      // 0..6
+  const d = startOfDay(addDays(base, delta));
+  return d.toISOString().slice(0, 10);
+}
+
 
 function getUtcDayRange(dateStr?: string) {
   // Se o front informou "YYYY-MM-DD", respeitamos esse dia
@@ -321,7 +343,7 @@ router.get("/", async (req, res) => {
 });
 
 
-// GET /agendamentos/me  (coloque ANTES de "/:id")
+// GET /agendamentos/me  -> agora SEM filtro de data: traz TODOS os "comuns" CONFIRMADOS + permanentes ATIVOS
 router.get("/me", verificarToken, async (req, res) => {
   const reqCustom = req as typeof req & {
     usuario?: { usuarioLogadoId: string; usuarioLogadoNome?: string; usuarioLogadoTipo?: string };
@@ -330,37 +352,31 @@ router.get("/me", verificarToken, async (req, res) => {
 
   try {
     const usuarioId = reqCustom.usuario.usuarioLogadoId;
-    const { inicio, fim } = getUtcDayRange(req.query.data as string | undefined);
 
-    const agendamentos = await prisma.agendamento.findMany({
+    // 1) Comuns CONFIRMADOS onde o usuário é dono ou jogador
+    const comunsConfirmados = await prisma.agendamento.findMany({
       where: {
-        data: { gte: inicio, lt: fim },
-        status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+        status: "CONFIRMADO",
         OR: [{ usuarioId }, { jogadores: { some: { id: usuarioId } } }],
       },
       include: {
-        quadra: { select: { id: true, nome: true, numero: true, imagem: true } }, // +imagem
+        quadra: { select: { id: true, nome: true, numero: true, imagem: true } },
         esporte: { select: { id: true, nome: true } },
-        jogadores: { select: { id: true, nome: true } },
-        usuario: { select: { id: true, nome: true } },
       },
-      orderBy: [{ horario: "asc" }],
+      orderBy: [{ data: "asc" }, { horario: "asc" }],
     });
 
-    const resp = agendamentos.map((a) => {
+    const respComuns = comunsConfirmados.map((a) => {
       const quadraLogoUrl = resolveQuadraImg(a.quadra?.imagem) || "/quadra.png";
       return {
         id: a.id,
-        // compat atual:
         nome: a.esporte?.nome ?? "Quadra",
         local: a.quadra ? `${a.quadra.nome} - Nº ${a.quadra.numero}` : "",
         horario: a.horario,
-        tipoReserva: "COMUM",
+        tipoReserva: "COMUM" as const,
         status: a.status,
         logoUrl: quadraLogoUrl,
-        data: a.data.toISOString().slice(0, 10),
-
-        // novos campos para o front:
+        data: a.data.toISOString().slice(0, 10), // data efetiva do comum
         quadraNome: a.quadra?.nome ?? "",
         quadraNumero: a.quadra?.numero ?? null,
         quadraLogoUrl,
@@ -368,13 +384,55 @@ router.get("/me", verificarToken, async (req, res) => {
       };
     });
 
-    return res.json(resp);
+    // 2) Permanentes ATIVOS onde o usuário é dono
+    const permanentes = await prisma.agendamentoPermanente.findMany({
+      where: {
+        usuarioId,
+        status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+      },
+      include: {
+        quadra: { select: { id: true, nome: true, numero: true, imagem: true } },
+        esporte: { select: { id: true, nome: true } },
+      },
+      orderBy: [{ diaSemana: "asc" }, { horario: "asc" }],
+    });
 
+    const respPermanentes = permanentes.map((p) => {
+      const quadraLogoUrl = resolveQuadraImg(p.quadra?.imagem) || "/quadra.png";
+      const proximaData = nextDateISOForDiaSemana(p.diaSemana as DiaSemana, p.dataInicio ?? undefined);
+      return {
+        id: p.id,
+        nome: p.esporte?.nome ?? "Quadra",
+        local: p.quadra ? `${p.quadra.nome} - Nº ${p.quadra.numero}` : "",
+        horario: p.horario,
+        tipoReserva: "PERMANENTE" as const,
+        status: p.status,
+        logoUrl: quadraLogoUrl,
+        data: null,                 // permanentes não têm uma data fixa
+        diaSemana: p.diaSemana,     // exibir "toda SEGUNDA"
+        proximaData,                // ajuda a ordenar/mostrar
+        quadraNome: p.quadra?.nome ?? "",
+        quadraNumero: p.quadra?.numero ?? null,
+        quadraLogoUrl,
+        esporteNome: p.esporte?.nome ?? "",
+      };
+    });
+
+    // 3) Junta e ordena por (data|proximaData) + horário
+    const tudo = [...respComuns, ...respPermanentes].sort((a: any, b: any) => {
+      const da = a.data || a.proximaData || "";
+      const db = b.data || b.proximaData || "";
+      if (da === db) return String(a.horario).localeCompare(String(b.horario));
+      return String(da).localeCompare(String(db));
+    });
+
+    return res.json(tudo);
   } catch (e) {
     console.error(e);
     return res.status(500).json({ erro: "Erro ao listar agendamentos do usuário" });
   }
 });
+
 
 // 🔎 Lista transferências feitas pelo usuário logado + "para quem" foi transferido
 router.get("/transferidos/me", verificarToken, async (req, res) => {
