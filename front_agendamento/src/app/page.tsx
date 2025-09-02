@@ -13,38 +13,46 @@ import Spinner from "@/components/Spinner";
 import { API_URL } from "@/utils/urls";
 import AppImage from "@/components/AppImage";
 
-type StatusAgendamento = "CONFIRMADO" | "FINALIZADO" | "CANCELADO" | "TRANSFERIDO";
+type Status = "CONFIRMADO" | "FINALIZADO" | "CANCELADO" | "TRANSFERIDO";
+type TipoReserva = "COMUM" | "PERMANENTE";
 
 type AgendamentoAPI = {
   id: string;
   horario: string;
+  status?: Status;
+
+  // comuns
   data?: string;
 
-  // legado
-  nome?: string;          // nome do esporte
-  local?: string;         // “Quadra X - Nº 3”
-  logoUrl?: string;       // legado
+  // permanentes
+  diaSemana?: "DOMINGO" | "SEGUNDA" | "TERCA" | "QUARTA" | "QUINTA" | "SEXTA" | "SABADO";
+  proximaData?: string | null;
 
-  // novo (backend já retorna)
+  // metadados (compat + novos)
+  nome?: string;
+  local?: string;
+  logoUrl?: string | null;
   quadraNome?: string;
   quadraNumero?: number | string | null;
-  quadraLogoUrl?: string; // ABSOLUTA quando vier do R2
+  quadraLogoUrl?: string | null;
   esporteNome?: string;
-  status?: StatusAgendamento;
+
+  // novo (vem do back)
+  tipoReserva: TipoReserva;
 };
 
 type AgendamentoCard = {
   id: string;
-  logoUrl: string | null;   // pode ser null; AppImage resolve
+  logoUrl: string | null;
   quadraNome: string;
   numero?: string;
   esporte: string;
-  dia: string;
+  dia: string;   // "dd/mm" ou "Quarta"
   hora: string;
+  tipo: TipoReserva;
 };
 
 export default function Home() {
-  // 🔒 Proteção por perfil
   const { isChecking } = useRequireAuth([
     "CLIENTE",
     "ADMIN_MASTER",
@@ -65,13 +73,25 @@ export default function Home() {
     if (usuario?.nome) setNomeUsuario(usuario.nome.split(" ")[0]);
   }, [usuario?.nome]);
 
+  const paraDDMM = useCallback(
+    (iso?: string | null) => {
+      const s = (iso || hojeISO).slice(0, 10);
+      const [, m, d] = s.split("-");
+      return `${d}/${m}`;
+    },
+    [hojeISO]
+  );
+
+  const prettyDiaSemana = (d?: AgendamentoAPI["diaSemana"]) =>
+    d ? d.charAt(0) + d.slice(1).toLowerCase() : "";
+
   const normalizar = useCallback(
     (raw: AgendamentoAPI): AgendamentoCard => {
       const logo = raw.quadraLogoUrl ?? raw.logoUrl ?? null;
       const quadraNome = raw.quadraNome || (raw.local?.split(" - Nº")[0] ?? "Quadra");
 
-      // numero da quadra (novo ou extraído do "local" legado)
-      let numero = "";
+      // número da quadra (novo ou extraído do legado)
+      let numero: string | undefined;
       if (raw.quadraNumero != null && raw.quadraNumero !== "") {
         numero = String(raw.quadraNumero);
       } else if (raw.local) {
@@ -79,10 +99,13 @@ export default function Home() {
         if (m?.[1]) numero = m[1];
       }
 
-      // dia no formato DD/MM (usa hoje se não vier data)
-      const s = raw.data || hojeISO;
-      const [, m, d] = s.split("-");
-      const diaFmt = `${d}/${m}`;
+      // dia: COMUM -> dd/mm; PERMANENTE -> proximaData(dd/mm) ou nome do dia
+      const dia =
+        raw.tipoReserva === "COMUM"
+          ? paraDDMM(raw.data)
+          : raw.proximaData
+            ? paraDDMM(raw.proximaData)
+            : prettyDiaSemana(raw.diaSemana);
 
       return {
         id: raw.id,
@@ -90,11 +113,12 @@ export default function Home() {
         quadraNome,
         numero,
         esporte: raw.esporteNome ?? raw.nome ?? "",
-        dia: diaFmt,
+        dia,
         hora: raw.horario,
+        tipo: raw.tipoReserva,
       };
     },
-    [hojeISO]
+    [paraDDMM]
   );
 
   useEffect(() => {
@@ -104,11 +128,28 @@ export default function Home() {
       setCarregando(true);
       try {
         const res = await axios.get<AgendamentoAPI[]>(`${API_URL}/agendamentos/me`, {
-          withCredentials: true,
-          params: { data: hojeISO },
+          withCredentials: true, // não precisa passar ?data
         });
-        const confirmados = (res.data || []).filter((a) => a.status === "CONFIRMADO");
-        setAgendamentos(confirmados.map(normalizar));
+
+        // back já traz: comuns CONFIRMADOS + permanentes ativos
+        const list = (res.data || []).map(normalizar);
+
+        // ordenar por data (dd/mm primeiro) + hora
+        list.sort((a, b) => {
+          const isDDMM = (s: string) => /^\d{2}\/\d{2}$/.test(s);
+          const aDD = isDDMM(a.dia), bDD = isDDMM(b.dia);
+          if (aDD && bDD) {
+            const [ad, am] = a.dia.split("/").map(Number);
+            const [bd, bm] = b.dia.split("/").map(Number);
+            if (am !== bm) return am - bm;
+            if (ad !== bd) return ad - bd;
+          } else if (aDD !== bDD) {
+            return aDD ? -1 : 1; // datas vêm antes de "Quarta"
+          }
+          return a.hora.localeCompare(b.hora);
+        });
+
+        setAgendamentos(list);
       } catch {
         setAgendamentos([]);
       } finally {
@@ -117,9 +158,8 @@ export default function Home() {
     };
 
     fetchAgendamentos();
-  }, [hojeISO, isChecking, normalizar]);
+  }, [isChecking, normalizar]);
 
-  // Loading global enquanto checa cookie/usuário
   if (isChecking) {
     return (
       <main className="min-h-screen grid place-items-center bg-[#f5f5f5]">
@@ -139,9 +179,7 @@ export default function Home() {
             Bem vindo(a), {nomeUsuario}!
           </h1>
           <p className="text-sm md:text-base text-white/85">
-            Você tem {agendamentos.length} quadra
-            {agendamentos.length === 1 ? "" : "s"} marcad
-            {agendamentos.length === 1 ? "a" : "as"} para hoje!
+            Você tem {agendamentos.length} agendamento{agendamentos.length === 1 ? "" : "s"}.
           </p>
         </div>
       </header>
@@ -160,7 +198,7 @@ export default function Home() {
             )}
 
             {!carregando && agendamentos.length === 0 && (
-              <p className="text-sm text-gray-500">Você não tem agendamentos hoje.</p>
+              <p className="text-sm text-gray-500">Você não tem agendamentos.</p>
             )}
 
             <div className="space-y-3">
@@ -188,10 +226,28 @@ export default function Home() {
                     <p className="text-[13px] sm:text-[15px] font-semibold text-gray-800 truncate">
                       {a.quadraNome}
                     </p>
-                    <p className="text-[12px] sm:text-[13px] text-gray-600 leading-tight">{a.esporte}</p>
-                    <p className="text-[12px] sm:text-[13px] text-gray-500">
-                      Dia {a.dia} às {a.hora}
+
+                    <p className="text-[12px] sm:text-[13px] text-gray-600 leading-tight flex items-center gap-2">
+                      {a.esporte}
+                      <span
+                        className={`text-[10px] px-2 py-[2px] rounded-full ${
+                          a.tipo === "PERMANENTE"
+                            ? "bg-gray-200 text-gray-800"     // cinza para permanentes
+                            : "bg-orange-100 text-orange-700" // laranja para comuns
+                        }`}
+                        title={a.tipo === "PERMANENTE" ? "Agendamento permanente" : "Agendamento comum"}
+                      >
+                        {a.tipo === "PERMANENTE" ? "Permanente" : "Comum"}
+                      </span>
                     </p>
+
+                    <p className="text-[12px] sm:text-[13px] text-gray-500">
+                      {/* dd/mm => 'Dia'; caso contrário (Quarta) => 'Toda' */}
+                      {/^\d{2}\/\d{2}$/.test(a.dia)
+                        ? <>Dia {a.dia} às {a.hora}</>
+                        : <>Toda {a.dia} às {a.hora}</>}
+                    </p>
+
                     {a.numero && (
                       <p className="text-[11px] sm:text-[12px] text-gray-500">Quadra {a.numero}</p>
                     )}
