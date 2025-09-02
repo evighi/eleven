@@ -14,21 +14,9 @@ type QuadraDisponivel = {
   conflitoPermanente?: boolean;
 };
 
-type Esporte = {
-  id: string;
-  nome: string;
-};
-
-type UsuarioBusca = {
-  id: string;
-  nome: string;
-  email?: string | null;
-};
-
-type ProximasDatasResp = {
-  proximasDatasDisponiveis: string[];
-  dataUltimoConflito: string | null;
-};
+type Esporte = { id: string; nome: string };
+type UsuarioBusca = { id: string; nome: string; email?: string | null };
+type ProximasDatasResp = { proximasDatasDisponiveis: string[]; dataUltimoConflito: string | null };
 
 const diasEnum = ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"] as const;
 const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
@@ -41,12 +29,15 @@ export default function CadastrarPermanente() {
   const [quadraId, setQuadraId] = useState<string>("");
   const [horario, setHorario] = useState<string>("");
 
-  // Dono do permanente
+  // Dono cadastrado
   const [usuarioId, setUsuarioId] = useState<string>("");
   const [busca, setBusca] = useState<string>("");
   const [usuariosEncontrados, setUsuariosEncontrados] = useState<UsuarioBusca[]>([]);
   const [carregandoUsuarios, setCarregandoUsuarios] = useState<boolean>(false);
   const [listaAberta, setListaAberta] = useState<boolean>(false);
+
+  // Convidado como dono (nome livre)
+  const [convidadoDonoNome, setConvidadoDonoNome] = useState<string>("");
 
   // Datas e disponibilidade
   const [dataInicio, setDataInicio] = useState<string>("");
@@ -56,7 +47,9 @@ export default function CadastrarPermanente() {
   const [dataUltimoConflito, setDataUltimoConflito] = useState<string | null>(null);
   const [proximasDatasDisponiveis, setProximasDatasDisponiveis] = useState<string[]>([]);
 
-  // Esportes
+  // Spinner do botão
+  const [submitting, setSubmitting] = useState(false);
+
   // Esportes
   useEffect(() => {
     axios
@@ -65,8 +58,7 @@ export default function CadastrarPermanente() {
       .catch(console.error);
   }, []);
 
-
-  // Disponibilidade
+  // Disponibilidade (permanente)
   useEffect(() => {
     if (!esporteId || !horario || diaSemana === "") {
       setQuadras([]);
@@ -140,22 +132,19 @@ export default function CadastrarPermanente() {
       });
   }, [diaSemana, horario, quadraId, quadras]);
 
-  // 🔎 Busca padronizada — só busca quando a lista estiver aberta
+  // Busca usuários (apenas com a lista aberta)
   useEffect(() => {
     let cancel = false;
-
     const run = async () => {
       if (!listaAberta) {
         if (!cancel) setUsuariosEncontrados([]);
         return;
       }
-
       const termo = busca.trim();
       if (termo.length < 2) {
         if (!cancel) setUsuariosEncontrados([]);
         return;
       }
-
       setCarregandoUsuarios(true);
       try {
         const res = await axios.get<UsuarioBusca[]>(`${API_URL}/clientes`, {
@@ -169,7 +158,6 @@ export default function CadastrarPermanente() {
         if (!cancel) setCarregandoUsuarios(false);
       }
     };
-
     const t = setTimeout(run, 300);
     return () => {
       cancel = true;
@@ -180,8 +168,9 @@ export default function CadastrarPermanente() {
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    if (!usuarioId) {
-      alert("Selecione um usuário válido na lista.");
+    // precisa de um dono: usuarioId OU convidadoDonoNome
+    if (!usuarioId && convidadoDonoNome.trim() === "") {
+      alert("Informe um usuário (selecionando da lista) OU um convidado como dono.");
       return;
     }
 
@@ -190,24 +179,27 @@ export default function CadastrarPermanente() {
       return;
     }
 
-    const body = {
+    const body: Record<string, any> = {
       diaSemana,
       esporteId,
       quadraId,
       horario,
-      usuarioId, // dono
+      ...(usuarioId
+        ? { usuarioId }
+        : { convidadosNomes: [convidadoDonoNome.trim()] }), // ← conforme o back
       ...(existeAgendamentoComum ? { dataInicio } : {}),
     };
 
     try {
-      await axios.post(`${API_URL}/agendamentosPermanentes`, body, {
-        withCredentials: true,
-      });
+      setSubmitting(true);
+      await axios.post(`${API_URL}/agendamentosPermanentes`, body, { withCredentials: true });
       alert("Agendamento permanente cadastrado com sucesso!");
       router.push("/adminMaster/quadras");
     } catch (error) {
-      alert("Erro ao cadastrar permanente");
       console.error(error);
+      alert("Erro ao cadastrar permanente");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -302,54 +294,80 @@ export default function CadastrarPermanente() {
           </select>
         </div>
 
-        {/* Usuário (dono) */}
-        <div>
-          <label className="block font-semibold mb-1">Usuário (dono do agendamento)</label>
-          <input
-            type="text"
-            value={busca}
-            onChange={(e) => {
-              setBusca(e.target.value);
-              setUsuarioId("");
-              setListaAberta(true);
-            }}
-            onFocus={() => setListaAberta(true)}
-            placeholder="Buscar por nome ou e-mail"
-            className="w-full border rounded p-2"
-            required
-          />
+        {/* Dono cadastrado OU Convidado dono */}
+        <div className="space-y-2">
+          <label className="block font-semibold">Dono do agendamento</label>
 
-          {carregandoUsuarios && <div className="text-sm text-gray-500 mt-1">Buscando...</div>}
+          {/* Busca usuário cadastrado */}
+          <div>
+            <input
+              type="text"
+              value={busca}
+              onChange={(e) => {
+                setBusca(e.target.value);
+                setUsuarioId("");
+                setListaAberta(true);
+              }}
+              onFocus={() => setListaAberta(true)}
+              placeholder="Buscar usuário por nome ou e-mail"
+              className="w-full border rounded p-2"
+            />
 
-          {listaAberta && usuariosEncontrados.length > 0 && (
-            <ul className="mt-1 border rounded w-full max-h-48 overflow-y-auto divide-y">
-              {usuariosEncontrados.map((u) => (
-                <li
-                  key={u.id}
-                  className="px-3 py-2 hover:bg-orange-50 cursor-pointer"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => {
-                    setUsuarioId(u.id);
-                    setBusca(u.nome);
-                    setUsuariosEncontrados([]);
-                    setListaAberta(false);
-                  }}
-                >
-                  <div className="font-medium text-gray-800">{u.nome}</div>
-                  {u.email && <div className="text-xs text-gray-500">{u.email}</div>}
-                </li>
-              ))}
-            </ul>
-          )}
+            {carregandoUsuarios && <div className="text-sm text-gray-500 mt-1">Buscando...</div>}
 
-          {listaAberta &&
-            busca.trim().length >= 2 &&
-            !carregandoUsuarios &&
-            usuariosEncontrados.length === 0 && (
-              <div className="text-xs text-gray-500 mt-1">Nenhum usuário encontrado.</div>
+            {listaAberta && usuariosEncontrados.length > 0 && (
+              <ul className="mt-1 border rounded w-full max-h-48 overflow-y-auto divide-y">
+                {usuariosEncontrados.map((u) => (
+                  <li
+                    key={u.id}
+                    className="px-3 py-2 hover:bg-orange-50 cursor-pointer"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setUsuarioId(u.id);
+                      setBusca(u.nome);
+                      setUsuariosEncontrados([]);
+                      setListaAberta(false);
+                      setConvidadoDonoNome("");
+                    }}
+                  >
+                    <div className="font-medium text-gray-800">{u.nome}</div>
+                    {u.email && <div className="text-xs text-gray-500">{u.email}</div>}
+                  </li>
+                ))}
+              </ul>
             )}
 
-          {usuarioId && <div className="text-xs text-green-700 mt-1">Usuário selecionado.</div>}
+            {listaAberta &&
+              busca.trim().length >= 2 &&
+              !carregandoUsuarios &&
+              usuariosEncontrados.length === 0 && (
+                <div className="text-xs text-gray-500 mt-1">Nenhum usuário encontrado.</div>
+              )}
+
+            {usuarioId && <div className="text-xs text-green-700 mt-1">Usuário selecionado.</div>}
+          </div>
+
+          {/* Convidado dono */}
+          <div>
+            <input
+              type="text"
+              value={convidadoDonoNome}
+              onChange={(e) => {
+                setConvidadoDonoNome(e.target.value);
+                if (e.target.value.trim()) {
+                  setUsuarioId("");
+                  setBusca("");
+                  setUsuariosEncontrados([]);
+                  setListaAberta(false);
+                }
+              }}
+              placeholder="Ou informe um convidado como dono (nome e telefone opcional)"
+              className="w-full border rounded p-2"
+            />
+            <p className="text-[11px] text-gray-500 mt-1">
+              Preencha <strong>um</strong> dos dois: usuário cadastrado <em>ou</em> convidado dono.
+            </p>
+          </div>
         </div>
 
         {/* Conflito + datas de início */}
@@ -367,8 +385,9 @@ export default function CadastrarPermanente() {
                   <button
                     key={dataStr}
                     type="button"
-                    className={`py-2 px-3 border rounded ${dataInicio === dataStr ? "bg-orange-500 text-white" : "bg-white"
-                      }`}
+                    className={`py-2 px-3 border rounded ${
+                      dataInicio === dataStr ? "bg-orange-500 text-white" : "bg-white"
+                    }`}
                     onClick={() => setDataInicio(dataStr)}
                   >
                     {dataFormatada}
@@ -381,9 +400,18 @@ export default function CadastrarPermanente() {
 
         <button
           type="submit"
-          className="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-2 px-4 rounded mt-4"
+          disabled={submitting}
+          className={`w-full text-white font-semibold py-2 px-4 rounded mt-4 transition
+            ${submitting ? "bg-orange-400 cursor-not-allowed" : "bg-orange-500 hover:bg-orange-600"}`}
         >
-          Cadastrar
+          {submitting ? (
+            <span className="inline-flex items-center gap-2">
+              <span className="h-4 w-4 rounded-full border-2 border-white/60 border-t-transparent animate-spin" />
+              Cadastrando…
+            </span>
+          ) : (
+            "Cadastrar"
+          )}
         </button>
       </form>
     </div>
