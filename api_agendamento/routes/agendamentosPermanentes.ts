@@ -1,18 +1,53 @@
 import { Router } from "express";
 import { PrismaClient, DiaSemana } from "@prisma/client";
 import { z } from "zod";
+import bcrypt from "bcryptjs";           // ← novo
+import crypto from "crypto";             // ← novo
 
 const prisma = new PrismaClient();
 const router = Router();
 
-const schemaAgendamentoPermanente = z.object({
-  diaSemana: z.nativeEnum(DiaSemana),
-  horario: z.string().min(1),
-  quadraId: z.string().uuid(),
-  esporteId: z.string().uuid(),
-  usuarioId: z.string().uuid(),
-  dataInicio: z.string().optional() // agora aceita opcionalmente
-});
+/** Aceita OU usuarioId OU convidadosNomes[0] */
+const schemaAgendamentoPermanente = z
+  .object({
+    diaSemana: z.nativeEnum(DiaSemana),
+    horario: z.string().min(1),
+    quadraId: z.string().uuid(),
+    esporteId: z.string().uuid(),
+    usuarioId: z.string().uuid().optional(), // ← agora opcional
+    dataInicio: z.string().optional(),       // segue opcional
+    convidadosNomes: z.array(z.string().trim().min(1)).optional().default([]), // ← novo
+  })
+  .refine(
+    (v) => !!v.usuarioId || (v.convidadosNomes?.length ?? 0) > 0,
+    { path: ["usuarioId"], message: "Informe um usuário dono ou um convidado dono." }
+  );
+
+/** Cria um usuário mínimo a partir do nome do convidado (igual ao fluxo de comuns) */
+async function criarConvidadoComoUsuario(nomeConvidado: string) {
+  const cleanName = nomeConvidado.trim().replace(/\s+/g, " ");
+  const localPart = cleanName.toLowerCase().replace(/\s+/g, ".");
+  const suffix = crypto.randomBytes(3).toString("hex"); // 6 chars p/ unicidade
+  const emailSintetico = `${localPart}+guest.${suffix}@noemail.local`;
+
+  const randomPass = crypto.randomUUID();
+  const hashed = await bcrypt.hash(randomPass, 10);
+
+  const convidado = await prisma.usuario.create({
+    data: {
+      nome: cleanName,
+      email: emailSintetico,
+      senha: hashed,
+      tipo: "CLIENTE",
+      celular: null,
+      cpf: null,
+      nascimento: null,
+    },
+    select: { id: true, nome: true, email: true },
+  });
+
+  return convidado;
+}
 
 // 🔄 Criar agendamento permanente
 router.post("/", async (req, res) => {
@@ -21,10 +56,15 @@ router.post("/", async (req, res) => {
     return res.status(400).json({ erro: validacao.error.errors });
   }
 
-  const { diaSemana, horario, quadraId, esporteId, usuarioId, dataInicio } = validacao.data;
+  const {
+    diaSemana, horario, quadraId, esporteId,
+    usuarioId: usuarioIdBody,
+    dataInicio,
+    convidadosNomes = [],
+  } = validacao.data;
 
   try {
-    // Verifica se quadra existe e está associada ao esporte
+    // Verifica se quadra existe e está associada ao esporte (igual estava)
     const quadra = await prisma.quadra.findUnique({
       where: { id: quadraId },
       include: { quadraEsportes: true }
@@ -39,7 +79,7 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ erro: "A quadra não está associada ao esporte informado" });
     }
 
-    // Verifica se já existe agendamento permanente no mesmo dia, horário e quadra
+    // Verifica se já existe agendamento permanente no mesmo dia, horário e quadra (igual estava)
     const permanenteExistente = await prisma.agendamentoPermanente.findFirst({
       where: {
         diaSemana,
@@ -53,35 +93,46 @@ router.post("/", async (req, res) => {
       return res.status(409).json({ erro: "Já existe um agendamento permanente nesse horário, quadra e dia" });
     }
 
-    // ⚠️ Verifica conflitos com agendamentos comuns ATIVOS (ignora cancelados)
+    // ⚠️ Conflitos com comuns (mantido)
     const agendamentosComuns = await prisma.agendamento.findMany({
       where: {
         horario,
         quadraId,
-        status: "CONFIRMADO"  // <-- só considera agendamentos ativos
+        status: "CONFIRMADO"
       }
     });
 
     const possuiConflito = agendamentosComuns.some(ag => {
       const data = new Date(ag.data);
-      const dia = data.toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" }).toUpperCase();
+      const dia = data
+        .toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" })
+        .toUpperCase();
       return dia === diaSemana;
     });
 
     if (possuiConflito && !dataInicio) {
-      // Só bloqueia se não foi enviada dataInicio para iniciar depois do conflito
       return res.status(409).json({ erro: "Conflito com agendamento comum existente nesse dia, horário e quadra" });
     }
 
-    // Cria o agendamento permanente
+    // 🔑 Resolve DONO: prioriza usuarioId; se não veio, cria convidado dono
+    let usuarioIdDono = usuarioIdBody || "";
+    if (!usuarioIdDono && convidadosNomes.length > 0) {
+      const convidado = await criarConvidadoComoUsuario(convidadosNomes[0]);
+      usuarioIdDono = convidado.id;
+    }
+    if (!usuarioIdDono) {
+      return res.status(400).json({ erro: "Informe um usuário dono ou um convidado dono." });
+    }
+
+    // Cria o permanente (resto intacto)
     const novo = await prisma.agendamentoPermanente.create({
       data: {
         diaSemana,
         horario,
         quadraId,
         esporteId,
-        usuarioId,
-        ...(dataInicio ? { dataInicio: new Date(dataInicio) } : {}) // salva se existir
+        usuarioId: usuarioIdDono,
+        ...(dataInicio ? { dataInicio: new Date(dataInicio) } : {})
       }
     });
 
@@ -93,7 +144,7 @@ router.post("/", async (req, res) => {
 });
 
 // 📋 Listar todos
-router.get("/", async (req, res) => {
+router.get("/", async (_req, res) => {
   try {
     const agendamentos = await prisma.agendamentoPermanente.findMany({
       include: {

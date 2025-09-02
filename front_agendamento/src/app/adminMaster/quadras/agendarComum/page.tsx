@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import axios from 'axios'
+import Spinner from '@/components/Spinner'
 
 type Esporte = { id: number | string; nome: string }
 type Usuario = { id: number | string; nome: string }
@@ -26,8 +27,11 @@ export default function AgendamentoComum() {
   const [usuariosEncontrados, setUsuariosEncontrados] = useState<Usuario[]>([])
   const [jogadores, setJogadores] = useState<Usuario[]>([])
 
-  // 👇 novo: convidado como DONO (opcional, só nome)
+  // convidado como DONO (opcional, só nome)
   const [ownerGuestNome, setOwnerGuestNome] = useState<string>('')
+
+  // feedback do submit
+  const [salvando, setSalvando] = useState<boolean>(false)
 
   // Esportes
   useEffect(() => {
@@ -54,12 +58,12 @@ export default function AgendamentoComum() {
           }
         )
 
-        setQuadrasDisponiveis(
-          (disp || [])
-            .filter((q) => q.disponivel)
-            .map(({ quadraId, nome, numero }) => ({ quadraId, nome, numero }))
-        )
-        setMensagem((disp || []).length === 0 ? 'Nenhuma quadra disponível.' : '')
+        const filtradas = (disp || [])
+          .filter((q) => q.disponivel)
+          .map(({ quadraId, nome, numero }) => ({ quadraId, nome, numero }))
+
+        setQuadrasDisponiveis(filtradas)
+        setMensagem(filtradas.length === 0 ? 'Nenhuma quadra disponível.' : '')
       } catch (err) {
         console.error(err)
         setMensagem('Erro ao verificar disponibilidade.')
@@ -110,39 +114,34 @@ export default function AgendamentoComum() {
   const agendar = async () => {
     setMensagem('')
 
-    // precisa de quadra e OU pelo menos 1 jogador cadastrado OU um convidado dono
     if (!quadraSelecionada || (jogadores.length === 0 && ownerGuestNome.trim() === '')) {
       setMensagem('Selecione uma quadra e pelo menos um jogador, ou informe um convidado como dono.')
       return
     }
 
-    // Dono inicial (temporário): se houver jogador cadastrado, usa o primeiro;
-    // senão, o próprio admin logado (deixe sem usuarioId que o back usa o token)
     const usuarioIdTemp = jogadores[0]?.id
 
-    // Monta payload do POST
     const payload: any = {
       data,
       horario,
       esporteId: String(esporteSelecionado),
       quadraId: String(quadraSelecionada),
       jogadoresIds: jogadores.map((j) => String(j.id)),
-      // se for convidado dono, manda no convidadosNomes para o back CRIAR o usuário
       convidadosNomes: ownerGuestNome.trim() ? [ownerGuestNome.trim()] : undefined,
     }
     if (usuarioIdTemp) payload.usuarioId = String(usuarioIdTemp)
 
+    setSalvando(true)
     try {
-      // 1) cria o agendamento (convidado entra como jogador e tem um usuário criado)
+      // 1) cria o agendamento
       const { data: novo } = await axios.post(
         `${API_URL}/agendamentos`,
         payload,
         { withCredentials: true }
       )
 
-      // 2) se tiver "convidado dono", transfere a titularidade para ele
+      // 2) se tiver “convidado dono”, transfere titularidade
       if (ownerGuestNome.trim()) {
-        // tenta localizar o convidado recém-criado pelos jogadores retornados
         const convidado = Array.isArray(novo?.jogadores)
           ? novo.jogadores.find((j: any) =>
               String(j?.nome || '').trim().toLowerCase() === ownerGuestNome.trim().toLowerCase()
@@ -152,11 +151,7 @@ export default function AgendamentoComum() {
         if (convidado?.id) {
           await axios.patch(
             `${API_URL}/agendamentos/${novo.id}/transferir`,
-            {
-              novoUsuarioId: String(convidado.id),
-              // opcional: quem executou a transferência (se quiser: admin logado)
-              // transferidoPorId: String(convidado.id),
-            },
+            { novoUsuarioId: String(convidado.id) },
             { withCredentials: true }
           )
         }
@@ -170,6 +165,8 @@ export default function AgendamentoComum() {
     } catch (error) {
       console.error(error)
       setMensagem('Erro ao realizar agendamento.')
+    } finally {
+      setSalvando(false)
     }
   }
 
@@ -206,7 +203,11 @@ export default function AgendamentoComum() {
         onChange={(e) => setHorario(e.target.value)}
       >
         <option value="">Selecione um horário</option>
-        {['08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00','21:00','22:00','23:00'].map((h) => (
+        {[
+          '08:00','09:00','10:00','11:00','12:00','13:00',
+          '14:00','15:00','16:00','17:00','18:00','19:00',
+          '20:00','21:00','22:00','23:00'
+        ].map((h) => (
           <option key={h} value={h}>{h}</option>
         ))}
       </select>
@@ -294,16 +295,28 @@ export default function AgendamentoComum() {
           </div>
 
           <button
-            className="mt-4 bg-orange-600 text-white px-4 py-2 rounded"
+            className={`mt-4 px-4 py-2 rounded text-white ${
+              salvando ? 'bg-orange-500/70 cursor-not-allowed' : 'bg-orange-600 hover:bg-orange-700'
+            }`}
             onClick={agendar}
+            disabled={salvando}
+            aria-busy={salvando}
           >
-            Confirmar Agendamento
+            {salvando ? (
+              <span className="inline-flex items-center gap-2">
+                <Spinner size="w-4 h-4" /> <span>Enviando…</span>
+              </span>
+            ) : (
+              'Confirmar Agendamento'
+            )}
           </button>
         </div>
       )}
 
       {mensagem && (
-        <p className="mt-4 text-center text-sm text-red-600">{mensagem}</p>
+        <p className="mt-4 text-center text-sm text-red-600" aria-live="polite">
+          {mensagem}
+        </p>
       )}
     </div>
   )
