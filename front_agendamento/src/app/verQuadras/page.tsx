@@ -231,8 +231,8 @@ export default function VerQuadrasPage() {
                     <span
                       className={`text-[10px] px-2 py-[2px] rounded-full ${
                         a.tipo === "PERMANENTE"
-                          ? "bg-purple-100 text-purple-700"
-                          : "bg-sky-100 text-sky-700"
+                          ? "bg-gray-200 text-gray-800"
+                          : "bg-orange-100 text-orange-600"
                       }`}
                       title={a.tipo === "PERMANENTE" ? "Agendamento permanente" : "Agendamento comum"}
                     >
