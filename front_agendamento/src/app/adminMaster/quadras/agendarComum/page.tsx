@@ -3,9 +3,9 @@
 import { useEffect, useState } from 'react'
 import axios from 'axios'
 
-type Esporte = { id: number; nome: string }
-type Usuario = { id: number; nome: string }
-type Quadra = { quadraId: number; nome: string; numero: number }
+type Esporte = { id: number | string; nome: string }
+type Usuario = { id: number | string; nome: string }
+type Quadra = { quadraId: number | string; nome: string; numero: number }
 type DisponibilidadeQuadra = Quadra & { disponivel: boolean }
 
 export default function AgendamentoComum() {
@@ -21,15 +21,19 @@ export default function AgendamentoComum() {
 
   const [mensagem, setMensagem] = useState<string>('')
 
+  // busca/seleção de jogadores cadastrados
   const [buscaUsuario, setBuscaUsuario] = useState<string>('')
   const [usuariosEncontrados, setUsuariosEncontrados] = useState<Usuario[]>([])
   const [jogadores, setJogadores] = useState<Usuario[]>([])
+
+  // 👇 novo: convidado como DONO (opcional, só nome)
+  const [ownerGuestNome, setOwnerGuestNome] = useState<string>('')
 
   // Esportes
   useEffect(() => {
     axios
       .get<Esporte[]>(`${API_URL}/esportes`, { withCredentials: true })
-      .then((res) => setEsportes(res.data))
+      .then((res) => setEsportes(res.data || []))
       .catch((err) => console.error(err))
   }, [API_URL])
 
@@ -50,13 +54,12 @@ export default function AgendamentoComum() {
           }
         )
 
-        // mantém só as disponíveis e remove o campo 'disponivel' na UI
         setQuadrasDisponiveis(
-          disp
+          (disp || [])
             .filter((q) => q.disponivel)
             .map(({ quadraId, nome, numero }) => ({ quadraId, nome, numero }))
         )
-        setMensagem(disp.length === 0 ? 'Nenhuma quadra disponível.' : '')
+        setMensagem((disp || []).length === 0 ? 'Nenhuma quadra disponível.' : '')
       } catch (err) {
         console.error(err)
         setMensagem('Erro ao verificar disponibilidade.')
@@ -66,7 +69,7 @@ export default function AgendamentoComum() {
     buscarDisponibilidade()
   }, [API_URL, data, esporteSelecionado, horario])
 
-  // Busca de usuários
+  // Busca de usuários cadastrados
   useEffect(() => {
     const buscar = async () => {
       if (buscaUsuario.trim().length < 2) {
@@ -82,7 +85,7 @@ export default function AgendamentoComum() {
             withCredentials: true,
           }
         )
-        setUsuariosEncontrados(data)
+        setUsuariosEncontrados(data || [])
       } catch (err) {
         console.error(err)
       }
@@ -94,42 +97,76 @@ export default function AgendamentoComum() {
 
   const adicionarJogador = (usuario: Usuario) => {
     setJogadores((prev) =>
-      prev.find((j) => j.id === usuario.id) ? prev : [...prev, usuario]
+      prev.find((j) => String(j.id) === String(usuario.id)) ? prev : [...prev, usuario]
     )
     setBuscaUsuario('')
     setUsuariosEncontrados([])
   }
 
-  const removerJogador = (id: number) => {
-    setJogadores((prev) => prev.filter((j) => j.id !== id))
+  const removerJogador = (id: number | string) => {
+    setJogadores((prev) => prev.filter((j) => String(j.id) !== String(id)))
   }
 
   const agendar = async () => {
-    if (!quadraSelecionada || jogadores.length === 0) {
-      setMensagem('Selecione uma quadra e pelo menos um jogador.')
+    setMensagem('')
+
+    // precisa de quadra e OU pelo menos 1 jogador cadastrado OU um convidado dono
+    if (!quadraSelecionada || (jogadores.length === 0 && ownerGuestNome.trim() === '')) {
+      setMensagem('Selecione uma quadra e pelo menos um jogador, ou informe um convidado como dono.')
       return
     }
 
-    const usuarioId = jogadores[0].id
+    // Dono inicial (temporário): se houver jogador cadastrado, usa o primeiro;
+    // senão, o próprio admin logado (deixe sem usuarioId que o back usa o token)
+    const usuarioIdTemp = jogadores[0]?.id
+
+    // Monta payload do POST
+    const payload: any = {
+      data,
+      horario,
+      esporteId: String(esporteSelecionado),
+      quadraId: String(quadraSelecionada),
+      jogadoresIds: jogadores.map((j) => String(j.id)),
+      // se for convidado dono, manda no convidadosNomes para o back CRIAR o usuário
+      convidadosNomes: ownerGuestNome.trim() ? [ownerGuestNome.trim()] : undefined,
+    }
+    if (usuarioIdTemp) payload.usuarioId = String(usuarioIdTemp)
 
     try {
-      await axios.post(
+      // 1) cria o agendamento (convidado entra como jogador e tem um usuário criado)
+      const { data: novo } = await axios.post(
         `${API_URL}/agendamentos`,
-        {
-          data,
-          horario,
-          esporteId: esporteSelecionado, // ajuste se backend espera número/UUID
-          quadraId: quadraSelecionada,   // idem
-          usuarioId,
-          jogadoresIds: jogadores.map((j) => j.id),
-        },
+        payload,
         { withCredentials: true }
       )
+
+      // 2) se tiver "convidado dono", transfere a titularidade para ele
+      if (ownerGuestNome.trim()) {
+        // tenta localizar o convidado recém-criado pelos jogadores retornados
+        const convidado = Array.isArray(novo?.jogadores)
+          ? novo.jogadores.find((j: any) =>
+              String(j?.nome || '').trim().toLowerCase() === ownerGuestNome.trim().toLowerCase()
+            )
+          : null
+
+        if (convidado?.id) {
+          await axios.patch(
+            `${API_URL}/agendamentos/${novo.id}/transferir`,
+            {
+              novoUsuarioId: String(convidado.id),
+              // opcional: quem executou a transferência (se quiser: admin logado)
+              // transferidoPorId: String(convidado.id),
+            },
+            { withCredentials: true }
+          )
+        }
+      }
 
       setMensagem('✅ Agendamento realizado com sucesso!')
       setQuadraSelecionada('')
       setQuadrasDisponiveis([])
       setJogadores([])
+      setOwnerGuestNome('')
     } catch (error) {
       console.error(error)
       setMensagem('Erro ao realizar agendamento.')
@@ -156,7 +193,7 @@ export default function AgendamentoComum() {
       >
         <option value="">Selecione um esporte</option>
         {esportes.map((e) => (
-          <option key={e.id} value={e.id}>
+          <option key={String(e.id)} value={String(e.id)}>
             {e.nome}
           </option>
         ))}
@@ -174,9 +211,21 @@ export default function AgendamentoComum() {
         ))}
       </select>
 
-      {/* Busca e seleção de jogadores */}
+      {/* Dono convidado (opcional) */}
       <div className="mb-4">
-        <label className="block mb-1 font-medium">Adicionar Jogadores</label>
+        <label className="block mb-1 font-medium">Convidado dono (nome e telefone)</label>
+        <input
+          type="text"
+          className="w-full p-2 border rounded"
+          placeholder="Ex.: João 53 99127-8304"
+          value={ownerGuestNome}
+          onChange={(e) => setOwnerGuestNome(e.target.value)}
+        />
+      </div>
+
+      {/* Busca e seleção de jogadores cadastrados */}
+      <div className="mb-4">
+        <label className="block mb-1 font-medium">Adicionar Jogadores (cadastrados)</label>
         <input
           type="text"
           className="w-full p-2 border rounded mb-2"
@@ -189,7 +238,7 @@ export default function AgendamentoComum() {
           <ul className="border rounded mb-2 max-h-40 overflow-y-auto">
             {usuariosEncontrados.map((u) => (
               <li
-                key={u.id}
+                key={String(u.id)}
                 className="p-2 hover:bg-gray-100 cursor-pointer"
                 onClick={() => adicionarJogador(u)}
               >
@@ -205,7 +254,7 @@ export default function AgendamentoComum() {
             <ul className="flex flex-wrap gap-2">
               {jogadores.map((j) => (
                 <li
-                  key={j.id}
+                  key={String(j.id)}
                   className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm flex items-center gap-2"
                 >
                   {j.nome}
@@ -218,6 +267,9 @@ export default function AgendamentoComum() {
                 </li>
               ))}
             </ul>
+            <p className="text-[11px] text-gray-500 mt-1">
+              Obs.: se não informar “Convidado dono”, o primeiro jogador cadastrado será o dono inicial.
+            </p>
           </div>
         )}
       </div>
@@ -228,7 +280,7 @@ export default function AgendamentoComum() {
           <div className="grid grid-cols-2 gap-2">
             {quadrasDisponiveis.map((q) => (
               <button
-                key={q.quadraId}
+                key={String(q.quadraId)}
                 className={`p-2 rounded border ${
                   quadraSelecionada === String(q.quadraId)
                     ? 'bg-green-600 text-white'
