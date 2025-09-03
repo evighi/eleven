@@ -119,10 +119,10 @@ export default function SideMenu({ open, onClose }: Props) {
           <nav className="space-y-2 mt-1">
             <Item href="/perfil" label="Perfil" icon="/icons/meuperfil.png" onClose={onClose} />
             <Item href="/agendarQuadra" label="Marcar quadra" icon="/icons/marcarquadra.png" onClose={onClose} />
-            <Item href="/transferirQuadra" label="Transferir quadras" icon="/icons/transferquadra.png" onClose={onClose} />
+            {/*<Item href="/transferirQuadra" label="Transferir quadras" icon="/icons/transferquadra.png" onClose={onClose} />*/}
             <Item href="/verQuadras" label="Suas quadras" icon="/icons/suasquadras.png" onClose={onClose} />
             <Item href="/reservasAnteriores" label="Ver reservas anteriores" icon="/icons/verreservasanter.png" onClose={onClose} />
-            <Item href="/transferenciasAnteriores" label="Ver transferências anteriores" icon="/icons/vertransferenciasanter.png" onClose={onClose} />
+            {/*<Item href="/transferenciasAnteriores" label="Ver transferências anteriores" icon="/icons/vertransferenciasanter.png" onClose={onClose} />*/}
 
             {/* item exclusivo do ADMIN_MASTER */}
             {isAdminMaster && (

@@ -17,8 +17,8 @@ export default function BloqueioQuadrasPage() {
 
   // Filtros / Formulário
   const [data, setData] = useState<string>("");      // Data do bloqueio
-  const [inicio, setInicio] = useState<string>("");  // Início do bloqueio
-  const [fim, setFim] = useState<string>("");        // Fim do bloqueio
+  const [inicio, setInicio] = useState<string>("");  // Início do bloqueio (HH:MM)
+  const [fim, setFim] = useState<string>("");        // Fim do bloqueio (HH:MM ou "00:00" na UI)
 
   // Quadras
   const [quadras, setQuadras] = useState<QuadraDTO[]>([]);
@@ -28,11 +28,20 @@ export default function BloqueioQuadrasPage() {
   // Submissão
   const [enviando, setEnviando] = useState<boolean>(false);
 
-  // Opções de horários (07:00 — 23:00)
-  const opcoesHora = useMemo(
+  // Horas base: 07:00..23:00 (inteiras)
+  const HORAS_BASE = useMemo(
     () => Array.from({ length: 17 }, (_, i) => `${String(7 + i).padStart(2, "0")}:00`),
     []
   );
+
+  // Select de INÍCIO usa apenas as horas cheias do dia
+  const opcoesHoraInicio = HORAS_BASE;
+
+  // Select de FIM mostra "00:00" para representar "até meia-noite" (será normalizado para 23:59)
+  const opcoesHoraFimUI = useMemo(() => [...HORAS_BASE, "00:00"], [HORAS_BASE]);
+
+  // Normaliza o valor do FIM antes de comparar/enviar
+  const normalizeFim = (valor: string) => (valor === "00:00" ? "23:59" : valor);
 
   // Carregar quadras (com esportes) ao entrar
   useEffect(() => {
@@ -86,7 +95,12 @@ export default function BloqueioQuadrasPage() {
   const validar = () => {
     if (!data) return "Selecione a data.";
     if (!inicio || !fim) return "Selecione o horário de início e de fim.";
-    if (inicio >= fim) return "O horário de início deve ser menor que o horário de fim.";
+
+    const fimComparacao = normalizeFim(fim);
+    if (inicio >= fimComparacao) {
+      return "O horário de início deve ser menor que o horário de fim.";
+    }
+
     if (!usuario) return "Usuário não autenticado.";
     if (quadrasSelecionadas.length === 0) return "Selecione pelo menos uma quadra.";
     return null;
@@ -100,6 +114,8 @@ export default function BloqueioQuadrasPage() {
       return;
     }
 
+    const fimReq = normalizeFim(fim);
+
     setEnviando(true);
     try {
       await axios.post(
@@ -107,8 +123,8 @@ export default function BloqueioQuadrasPage() {
         {
           quadraIds: quadrasSelecionadas,
           dataBloqueio: data,     // "YYYY-MM-DD"
-          inicioBloqueio: inicio,
-          fimBloqueio: fim,
+          inicioBloqueio: inicio, // ex.: "22:00"
+          fimBloqueio: fimReq,    // "23:59" quando UI seleciona "00:00"
           bloqueadoPorId: usuario?.id,
         },
         { withCredentials: true }
@@ -118,7 +134,6 @@ export default function BloqueioQuadrasPage() {
       setQuadrasSelecionadas([]);
     } catch (e: unknown) {
       console.error(e);
-      // mesma lógica de mensagem, mas sem `any`
       let msg = "Erro ao criar bloqueio.";
       if (axios.isAxiosError(e)) {
         const d = e.response?.data as { erro?: string; error?: string } | undefined;
@@ -164,7 +179,7 @@ export default function BloqueioQuadrasPage() {
             onChange={(e) => setInicio(e.target.value)}
           >
             <option value="">Selecione</option>
-            {opcoesHora.map((h) => (
+            {opcoesHoraInicio.map((h) => (
               <option key={h} value={h}>
                 {h}
               </option>
@@ -180,12 +195,15 @@ export default function BloqueioQuadrasPage() {
             onChange={(e) => setFim(e.target.value)}
           >
             <option value="">Selecione</option>
-            {opcoesHora.map((h) => (
+            {opcoesHoraFimUI.map((h) => (
               <option key={h} value={h}>
                 {h}
               </option>
             ))}
           </select>
+          <span className="mt-1 text-[11px] text-gray-500">
+            Dica: selecione <strong>00:00</strong> para bloquear até o fim do dia (enviado como 23:59).
+          </span>
         </div>
       </div>
 
@@ -212,7 +230,11 @@ export default function BloqueioQuadrasPage() {
                         key={q.id}
                         onClick={() => toggleQuadraSelecionada(q.id)}
                         className={`p-3 rounded-lg text-center cursor-pointer select-none transition border
-                          ${selecionada ? "border-green-600 bg-green-100" : "border-gray-300 hover:border-orange-500 hover:bg-orange-50"}`}
+                          ${
+                            selecionada
+                              ? "border-green-600 bg-green-100"
+                              : "border-gray-300 hover:border-orange-500 hover:bg-orange-50"
+                          }`}
                       >
                         <p className="font-medium">{q.nome}</p>
                         <p className="text-xs text-gray-700">Quadra {q.numero}</p>
