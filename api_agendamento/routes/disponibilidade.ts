@@ -15,6 +15,11 @@ const diasEnum: DiaSemana[] = [
   "SABADO",
 ];
 
+// normaliza "YYYY-MM-DD" para Date em 00:00:00Z (mesmo formato salvo no banco)
+function toUtc00(isoYYYYMMDD: string) {
+  return new Date(`${isoYYYYMMDD}T00:00:00Z`);
+}
+
 // Função para verificar se o horário está dentro do intervalo do bloqueio
 function horarioDentroDoBloqueio(horario: string, inicioBloqueio: string, fimBloqueio: string): boolean {
   // Considera horário >= inicio e < fim para evitar sobreposição no limite final
@@ -39,13 +44,11 @@ router.get("/", async (req, res) => {
     diaSemanaFinal = diaSemana as DiaSemana;
   } else if (data) {
     const [year, month, day] = (data as string).split("-").map(Number);
-    const dataObj = new Date(year, month - 1, day);
-
+    const dataObj = new Date(year, month - 1, day); // local -> será usado apenas para getDay()
     if (isNaN(dataObj.getTime())) {
       return res.status(400).json({ erro: "Data inválida" });
     }
-
-    const indexDia = getDay(dataObj);
+    const indexDia = getDay(dataObj); // 0..6
     diaSemanaFinal = diasEnum[indexDia];
   } else {
     return res.status(400).json({ erro: "Forneça data ou diaSemana" });
@@ -54,40 +57,75 @@ router.get("/", async (req, res) => {
   try {
     const quadras = await prisma.quadra.findMany({
       where: {
-        quadraEsportes: {
-          some: {
-            esporteId: esporteId as string,
-          },
-        },
+        quadraEsportes: { some: { esporteId: esporteId as string } },
       },
     });
 
     const quadrasComConflitos = await Promise.all(
       quadras.map(async (quadra) => {
-        // Verifica conflito com agendamento permanente
-        const conflitoPermanente = await prisma.agendamentoPermanente.findFirst({
-          where: {
-            quadraId: quadra.id,
-            horario: horario as string,
-            diaSemana: diaSemanaFinal,
-            status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
-          },
-        });
+        // ------------------------------
+        // 1) Conflito com PERMANENTE (agora ignorando exceções quando 'data' for enviada)
+        // ------------------------------
+        let conflitoPermanente = false;
 
-        // Verifica conflito com agendamento comum
+        if (data) {
+          // Quando sabemos a data, só bloqueia se NÃO houver exceção para esse dia
+          const dataUTC = toUtc00(data as string);
+
+          // permanentes ativos e já iniciados (dataInicio <= data ou null)
+          const permanentesAtivos = await prisma.agendamentoPermanente.findMany({
+            where: {
+              quadraId: quadra.id,
+              horario: horario as string,
+              diaSemana: diaSemanaFinal,
+              status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+              OR: [{ dataInicio: null }, { dataInicio: { lte: dataUTC } }],
+            },
+            select: { id: true },
+          });
+
+          if (permanentesAtivos.length > 0) {
+            const exc = await prisma.agendamentoPermanenteCancelamento.findFirst({
+              where: {
+                agendamentoPermanenteId: { in: permanentesAtivos.map((p) => p.id) },
+                data: dataUTC,
+              },
+              select: { id: true },
+            });
+            conflitoPermanente = !exc; // só conflita se NÃO houver exceção para a data
+          }
+        } else {
+          // Sem data específica, mantemos o comportamento antigo:
+          // existe algum permanente ativo nesse dia/horário/quadra? então conflita.
+          const count = await prisma.agendamentoPermanente.count({
+            where: {
+              quadraId: quadra.id,
+              horario: horario as string,
+              diaSemana: diaSemanaFinal,
+              status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+            },
+          });
+          conflitoPermanente = count > 0;
+        }
+
+        // ------------------------------
+        // 2) Conflito com AGENDAMENTO COMUM
+        // ------------------------------
         let conflitoComum: Agendamento | null = null;
 
         if (data) {
-          const dataVerificar = new Date(data as string);
+          // data precisa estar exatamente em 00:00Z, que é como salvamos no banco
+          const dataUTC = toUtc00(data as string);
           conflitoComum = await prisma.agendamento.findFirst({
             where: {
               quadraId: quadra.id,
               horario: horario as string,
-              data: dataVerificar,
+              data: dataUTC,
               status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
             },
           });
         } else {
+          // Sem data: olhamos as próximas 8 ocorrências daquele dia da semana
           const hoje = new Date();
           const hojeDia = hoje.getDay();
           const indexSelecionado = diasEnum.indexOf(diaSemanaFinal);
@@ -98,38 +136,37 @@ router.get("/", async (req, res) => {
           for (let i = 0; i < 8; i++) {
             const dataTemp = new Date();
             dataTemp.setDate(hoje.getDate() + diasAte + i * 7);
-            datasVerificar.push(new Date(dataTemp.toISOString().split("T")[0]));
+            // normaliza para 00:00Z
+            const iso = dataTemp.toISOString().split("T")[0]; // YYYY-MM-DD (UTC)
+            datasVerificar.push(toUtc00(iso));
           }
 
           conflitoComum = await prisma.agendamento.findFirst({
             where: {
               quadraId: quadra.id,
               horario: horario as string,
-              data: {
-                in: datasVerificar,
-              },
+              data: { in: datasVerificar },
               status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
             },
           });
         }
 
-        // Verifica conflito de bloqueio considerando intervalo de bloqueio
+        // ------------------------------
+        // 3) Conflito de BLOQUEIO (intervalo de horas)
+        // ------------------------------
         let conflitoBloqueio: BloqueioQuadra | null = null;
         if (data) {
           const bloqueios = await prisma.bloqueioQuadra.findMany({
             where: {
-              quadras: {
-                some: {
-                  id: quadra.id,
-                },
-              },
-              dataBloqueio: new Date(data as string),
+              quadras: { some: { id: quadra.id } },
+              dataBloqueio: toUtc00(data as string),
             },
           });
 
-          conflitoBloqueio = bloqueios.find(b =>
-            horarioDentroDoBloqueio(horario as string, b.inicioBloqueio, b.fimBloqueio)
-          ) ?? null;
+          conflitoBloqueio =
+            bloqueios.find((b) =>
+              horarioDentroDoBloqueio(horario as string, b.inicioBloqueio, b.fimBloqueio)
+            ) ?? null;
         }
 
         const disponivel = !conflitoPermanente && !conflitoComum && !conflitoBloqueio;

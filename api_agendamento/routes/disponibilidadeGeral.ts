@@ -15,22 +15,21 @@ const diasEnum: DiaSemana[] = [
   "SABADO",
 ];
 
-// Tipos explícitos para usuário selecionado
+// Tipos explícitos (somente o que o front precisa)
 type UsuarioSelecionado = {
   nome: string;
   email: string;
-  celular: string;
+  celular: string | null;
 };
 
-// Tipo para agendamento que inclui o usuário (ou null)
 type AgendamentoComUsuario =
   | {
-      id: string; // id do agendamento (comum/permanente)
+      id: string;
       usuario: UsuarioSelecionado;
     }
   | null;
 
-// Função para verificar se o horário está dentro do intervalo do bloqueio
+// horário dentro do intervalo de bloqueio [início, fim)
 function horarioDentroDoBloqueio(
   horario: string,
   inicioBloqueio: string,
@@ -39,11 +38,9 @@ function horarioDentroDoBloqueio(
   return horario >= inicioBloqueio && horario < fimBloqueio;
 }
 
+// 07:00..23:00 (inteiras)
 function horasDoDia(): string[] {
-  // 07:00 até 23:00 (inclusive), inteiras
-  return Array.from({ length: 17 }, (_, i) =>
-    `${String(7 + i).padStart(2, "0")}:00`
-  );
+  return Array.from({ length: 17 }, (_, i) => `${String(7 + i).padStart(2, "0")}:00`);
 }
 
 function chunk<T>(arr: T[], size: number): T[][] {
@@ -52,10 +49,19 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
+// boundary UTC [início, fim) para "YYYY-MM-DD"
+function getUtcDayRange(dateStr: string) {
+  const base = dateStr.slice(0, 10);
+  const inicio = new Date(`${base}T00:00:00Z`);
+  const fim = new Date(`${base}T00:00:00Z`);
+  fim.setUTCDate(fim.getUTCDate() + 1);
+  return { inicio, fim };
+}
+
 /**
  * ROTA ANTIGA (mantida): /disponibilidadeGeral/geral
- * Parâmetros: data (ou diaSemana) + horario [opcional: esporteId]
- * (sem alterações)
+ * Parâmetros: data (ou diaSemana) + horario  [opcional: esporteId]
+ * Regra nova: se vier "data", desconsidera permanente se houver exceção para aquele dia.
  */
 router.get("/geral", async (req, res) => {
   const { data, diaSemana, horario, esporteId } = req.query;
@@ -73,8 +79,8 @@ router.get("/geral", async (req, res) => {
     }
     diaSemanaFinal = diaSemana as DiaSemana;
   } else if (data) {
-    const [year, month, day] = (data as string).split("-").map(Number);
-    const dataObj = new Date(year, month - 1, day);
+    const [y, m, d] = (data as string).split("-").map(Number);
+    const dataObj = new Date(y, m - 1, d);
     if (isNaN(dataObj.getTime())) {
       return res.status(400).json({ erro: "Data inválida" });
     }
@@ -82,6 +88,10 @@ router.get("/geral", async (req, res) => {
   } else {
     return res.status(400).json({ erro: "Forneça data ou diaSemana" });
   }
+
+  // Se "data" veio, já calcule o range para filtros gte/lt
+  const hasData = Boolean(data);
+  const inicioFim = hasData ? getUtcDayRange(String(data)) : null;
 
   try {
     // -------------------- QUADRAS --------------------
@@ -94,72 +104,60 @@ router.get("/geral", async (req, res) => {
 
     const quadrasDisponibilidade = await Promise.all(
       quadras.map(async (quadra) => {
-        // Checar conflito permanente
+        // Permanente (com exceção se "data" veio)
+        const wherePermBase: any = {
+          quadraId: quadra.id,
+          horario: horario as string,
+          diaSemana: diaSemanaFinal,
+          status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+        };
+        if (inicioFim) {
+          wherePermBase.cancelamentos = {
+            none: { dataCancelada: { gte: inicioFim.inicio, lt: inicioFim.fim } },
+          };
+        }
+
         const conflitoPermanente = (await prisma.agendamentoPermanente.findFirst({
-          where: {
-            quadraId: quadra.id,
-            horario: horario as string,
-            diaSemana: diaSemanaFinal,
-            status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
-          },
-          include: {
-            usuario: {
-              select: {
-                nome: true,
-                email: true,
-                celular: true,
-              },
-            },
+          where: wherePermBase,
+          select: {
+            id: true,
+            usuario: { select: { nome: true, email: true, celular: true } },
           },
         })) as AgendamentoComUsuario;
 
-        // Checar conflito comum
+        // Comum (se tiver "data", usa igualdade por dia via range)
         let conflitoComum: AgendamentoComUsuario = null;
-        if (data) {
+        if (inicioFim) {
           conflitoComum = (await prisma.agendamento.findFirst({
             where: {
               quadraId: quadra.id,
               horario: horario as string,
-              data: new Date(data as string),
               status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+              data: { gte: inicioFim.inicio, lt: inicioFim.fim },
             },
-            include: {
-              usuario: {
-                select: {
-                  nome: true,
-                  email: true,
-                  celular: true,
-                },
-              },
+            select: {
+              id: true,
+              usuario: { select: { nome: true, email: true, celular: true } },
             },
           })) as AgendamentoComUsuario;
         }
 
-        // Checar bloqueio de quadra para a data exata e horário dentro do intervalo
+        // Bloqueio (só faz sentido se "data" veio)
         let conflitoBloqueio: BloqueioQuadra | null = null;
-        if (data) {
+        if (inicioFim) {
           const bloqueios = await prisma.bloqueioQuadra.findMany({
             where: {
-              quadras: {
-                some: {
-                  id: quadra.id,
-                },
-              },
-              dataBloqueio: new Date(data as string),
+              quadras: { some: { id: quadra.id } },
+              dataBloqueio: inicioFim.inicio, // você salva como dia, então equality ok
             },
           });
-
           conflitoBloqueio =
             bloqueios.find((b) =>
-              horarioDentroDoBloqueio(
-                horario as string,
-                b.inicioBloqueio,
-                b.fimBloqueio
-              )
+              horarioDentroDoBloqueio(horario as string, b.inicioBloqueio, b.fimBloqueio)
             ) ?? null;
         }
 
-        let tipoReserva: string | null = null;
+        let tipoReserva: "permanente" | "comum" | null = null;
         let usuario: UsuarioSelecionado | null = null;
         let agendamentoId: string | null = null;
 
@@ -173,7 +171,6 @@ router.get("/geral", async (req, res) => {
           agendamentoId = conflitoComum.id;
         }
 
-        // Se bloqueada, força indisponível
         const disponivel = !tipoReserva && !conflitoBloqueio;
 
         return {
@@ -190,14 +187,12 @@ router.get("/geral", async (req, res) => {
       })
     );
 
-    // Agrupa quadras pelo nome do esporte
+    // Agrupa por esporte
     const quadrasAgrupadasPorEsporte = quadrasDisponibilidade.reduce(
       (acc, quadra) => {
         const esportes = quadra.esporte.split(",").map((e) => e.trim());
         esportes.forEach((esporteNome) => {
-          if (!acc[esporteNome]) {
-            acc[esporteNome] = [];
-          }
+          if (!acc[esporteNome]) acc[esporteNome] = [];
           acc[esporteNome].push(quadra);
         });
         return acc;
@@ -207,52 +202,39 @@ router.get("/geral", async (req, res) => {
 
     // -------------------- CHURRASQUEIRAS --------------------
     const churrasqueiras = await prisma.churrasqueira.findMany();
-
     const turnos: Turno[] = ["DIA", "NOITE"];
 
     const churrasqueirasDisponibilidade = await Promise.all(
       churrasqueiras.map(async (churrasqueira) => {
         const disponibilidadesPorTurno = await Promise.all(
           turnos.map(async (turno) => {
-            const conflitoPermanente =
-              (await prisma.agendamentoPermanenteChurrasqueira.findFirst({
-                where: {
-                  diaSemana: diaSemanaFinal,
-                  turno,
-                  churrasqueiraId: churrasqueira.id,
-                  status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
-                },
-                include: {
-                  usuario: {
-                    select: {
-                      nome: true,
-                      email: true,
-                      celular: true,
-                    },
-                  },
-                },
-              })) as AgendamentoComUsuario;
+            const conflitoPermanente = (await prisma.agendamentoPermanenteChurrasqueira.findFirst({
+              where: {
+                diaSemana: diaSemanaFinal,
+                turno,
+                churrasqueiraId: churrasqueira.id,
+                status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+              },
+              select: {
+                id: true,
+                usuario: { select: { nome: true, email: true, celular: true } },
+              },
+            })) as AgendamentoComUsuario;
 
-            const conflitoComum =
-              (await prisma.agendamentoChurrasqueira.findFirst({
-                where: {
-                  diaSemana: diaSemanaFinal,
-                  turno,
-                  churrasqueiraId: churrasqueira.id,
-                  status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
-                },
-                include: {
-                  usuario: {
-                    select: {
-                      nome: true,
-                      email: true,
-                      celular: true,
-                    },
-                  },
-                },
-              })) as AgendamentoComUsuario;
+            const conflitoComum = (await prisma.agendamentoChurrasqueira.findFirst({
+              where: {
+                diaSemana: diaSemanaFinal,
+                turno,
+                churrasqueiraId: churrasqueira.id,
+                status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+              },
+              select: {
+                id: true,
+                usuario: { select: { nome: true, email: true, celular: true } },
+              },
+            })) as AgendamentoComUsuario;
 
-            let tipoReserva: string | null = null;
+            let tipoReserva: "permanente" | "comum" | null = null;
             let usuario: UsuarioSelecionado | null = null;
             let agendamentoId: string | null = null;
 
@@ -298,38 +280,38 @@ router.get("/geral", async (req, res) => {
 /**
  * NOVA ROTA: /disponibilidadeGeral/dia
  * Parâmetros: ?data=YYYY-MM-DD  (obrigatório)
- * Retorna todas as horas (07:00..23:00) por esporte, com slots por quadra.
+ * Retorna horas (07..23) por esporte, com slots por quadra.
+ * Regra nova: desconsidera permanentes que tenham exceção para o dia.
  */
 router.get("/dia", async (req, res) => {
   const { data } = req.query;
   if (!data) {
-    return res
-      .status(400)
-      .json({ erro: "Parâmetro obrigatório: data (YYYY-MM-DD)" });
+    return res.status(400).json({ erro: "Parâmetro obrigatório: data (YYYY-MM-DD)" });
   }
 
-  // Validar e calcular dia da semana
-  const [year, month, day] = (data as string).split("-").map(Number);
-  const dataObj = new Date(year, month - 1, day);
-  if (isNaN(dataObj.getTime())) {
+  const [y, m, d] = (data as string).split("-").map(Number);
+  const dataLocal = new Date(y, m - 1, d);
+  if (isNaN(dataLocal.getTime())) {
     return res.status(400).json({ erro: "Data inválida" });
   }
-  const diaSemanaFinal: DiaSemana = diasEnum[getDay(dataObj)];
+  const diaSemanaFinal: DiaSemana = diasEnum[getDay(dataLocal)];
+  const { inicio, fim } = getUtcDayRange(String(data));
 
   try {
     const horas = horasDoDia();
 
-    // 1) Buscar QUADRAS + seus esportes
+    // QUADRAS + esportes
     const quadras = await prisma.quadra.findMany({
       include: { quadraEsportes: { include: { esporte: true } } },
       orderBy: { numero: "asc" },
     });
 
-    // 2) Buscar todos os agendamentos permanentes do dia da semana
+    // Permanentes do dia-da-semana, retirando as com exceção no dia
     const permanentes = await prisma.agendamentoPermanente.findMany({
       where: {
         diaSemana: diaSemanaFinal,
         status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+        cancelamentos: { none: { data: { gte: inicio, lt: fim } } },
       },
       select: {
         id: true,
@@ -339,11 +321,11 @@ router.get("/dia", async (req, res) => {
       },
     });
 
-    // 3) Buscar todos os agendamentos comuns para a DATA informada
+    // Comuns do dia (por range)
     const comuns = await prisma.agendamento.findMany({
       where: {
-        data: dataObj,
         status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+        data: { gte: inicio, lt: fim },
       },
       select: {
         id: true,
@@ -353,39 +335,24 @@ router.get("/dia", async (req, res) => {
       },
     });
 
-    // 4) Buscar todos os bloqueios na DATA, com as quadras associadas
+    // Bloqueios do dia
     const bloqueios = await prisma.bloqueioQuadra.findMany({
-      where: { dataBloqueio: dataObj },
+      where: { dataBloqueio: inicio },
       include: { quadras: { select: { id: true } } },
     });
 
-    // 5) Indexar (para consultas O(1))
-    const permByKey = new Map<
-      string,
-      { id: string; usuario: UsuarioSelecionado }
-    >(); // key = quadraId|hora
+    // indexadores
+    const permByKey = new Map<string, { id: string; usuario: UsuarioSelecionado }>();
     permanentes.forEach((p) => {
-      permByKey.set(`${p.quadraId}|${p.horario}`, {
-        id: p.id,
-        usuario: p.usuario,
-      });
+      permByKey.set(`${p.quadraId}|${p.horario}`, { id: p.id, usuario: p.usuario });
     });
 
-    const comumByKey = new Map<
-      string,
-      { id: string; usuario: UsuarioSelecionado }
-    >(); // key = quadraId|hora
+    const comumByKey = new Map<string, { id: string; usuario: UsuarioSelecionado }>();
     comuns.forEach((c) => {
-      comumByKey.set(`${c.quadraId}|${c.horario}`, {
-        id: c.id,
-        usuario: c.usuario,
-      });
+      comumByKey.set(`${c.quadraId}|${c.horario}`, { id: c.id, usuario: c.usuario });
     });
 
-    const bloqueiosPorQuadra = new Map<
-      string,
-      { inicio: string; fim: string }[]
-    >(); // quadraId -> intervalos no dia
+    const bloqueiosPorQuadra = new Map<string, { inicio: string; fim: string }[]>();
     bloqueios.forEach((b) => {
       b.quadras.forEach((q) => {
         const list = bloqueiosPorQuadra.get(q.id) || [];
@@ -394,7 +361,7 @@ router.get("/dia", async (req, res) => {
       });
     });
 
-    // 6) Montar estrutura por ESPORTE -> QUADRAS -> SLOTS (07..23)
+    // estrutura final
     type SlotInfo = {
       disponivel: boolean;
       bloqueada?: boolean;
@@ -407,37 +374,26 @@ router.get("/dia", async (req, res) => {
       quadraId: string;
       nome: string;
       numero: number;
-      slots: Record<string, SlotInfo>; // hora -> slot
+      slots: Record<string, SlotInfo>;
     };
 
     const esportesMap: Record<
-      string, // nome do esporte
-      {
-        quadras: QuadraComSlots[];
-        grupos: QuadraComSlots[][]; // fatiado em colunas de até 6
-      }
+      string,
+      { quadras: QuadraComSlots[]; grupos: QuadraComSlots[][] }
     > = {};
 
     for (const q of quadras) {
       const nomesEsportes = q.quadraEsportes.map((qe) => qe.esporte.nome);
 
-      // slots da quadra por hora
       const slots: Record<string, SlotInfo> = {};
       for (const hora of horas) {
-        // bloqueio?
         const intervals = bloqueiosPorQuadra.get(q.id) || [];
-        const bloqueada = intervals.some((iv) =>
-          horarioDentroDoBloqueio(hora, iv.inicio, iv.fim)
-        );
+        const bloqueada = intervals.some((iv) => horarioDentroDoBloqueio(hora, iv.inicio, iv.fim));
 
-        // permanente?
         const perm = permByKey.get(`${q.id}|${hora}`) || null;
-
-        // comum?
         const com = comumByKey.get(`${q.id}|${hora}`) || null;
 
         let slot: SlotInfo = { disponivel: true };
-
         if (bloqueada) {
           slot = { disponivel: false, bloqueada: true };
         } else if (perm) {
@@ -455,7 +411,6 @@ router.get("/dia", async (req, res) => {
             agendamentoId: com.id,
           };
         }
-
         slots[hora] = slot;
       }
 
@@ -466,7 +421,6 @@ router.get("/dia", async (req, res) => {
         slots,
       };
 
-      // a mesma quadra pode aparecer em mais de um esporte (se assim modelado)
       for (const nomeEsporte of nomesEsportes) {
         if (!esportesMap[nomeEsporte]) {
           esportesMap[nomeEsporte] = { quadras: [], grupos: [] };
@@ -475,23 +429,15 @@ router.get("/dia", async (req, res) => {
       }
     }
 
-    // ordenar quadras por número dentro de cada esporte e fatiar em grupos de 6
     Object.values(esportesMap).forEach((blk) => {
       blk.quadras.sort((a, b) => a.numero - b.numero);
       blk.grupos = chunk(blk.quadras, 6);
     });
 
-    // resposta
-    return res.json({
-      data,
-      horas,
-      esportes: esportesMap,
-    });
+    return res.json({ data, horas, esportes: esportesMap });
   } catch (err) {
     console.error(err);
-    return res
-      .status(500)
-      .json({ erro: "Erro ao montar disponibilidade do dia" });
+    return res.status(500).json({ erro: "Erro ao montar disponibilidade do dia" });
   }
 });
 
