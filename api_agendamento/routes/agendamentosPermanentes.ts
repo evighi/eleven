@@ -3,6 +3,7 @@ import { PrismaClient, DiaSemana } from "@prisma/client";
 import { z } from "zod";
 import bcrypt from "bcryptjs";           // ← novo
 import crypto from "crypto";             // ← novo
+import { addDays, addMonths, startOfDay } from "date-fns";
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -47,6 +48,26 @@ async function criarConvidadoComoUsuario(nomeConvidado: string) {
   });
 
   return convidado;
+}
+
+const DIA_IDX: Record<DiaSemana, number> = {
+  DOMINGO: 0,
+  SEGUNDA: 1,
+  TERCA: 2,
+  QUARTA: 3,
+  QUINTA: 4,
+  SEXTA: 5,
+  SABADO: 6,
+};
+
+// Converte "YYYY-MM-DD" para Date em 00:00:00Z (coerente com seu padrão no banco)
+function toUtc00(isoYYYYMMDD: string) {
+  return new Date(`${isoYYYYMMDD}T00:00:00.000Z`);
+}
+
+// Formata Date -> "YYYY-MM-DD" (sempre em UTC)
+function toISODateUTC(d: Date) {
+  return d.toISOString().slice(0, 10);
 }
 
 // 🔄 Criar agendamento permanente
@@ -192,6 +213,155 @@ router.get("/:id", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ erro: "Erro ao buscar agendamento permanente" });
+  }
+});
+
+router.get("/:id/datas-excecao", async (req, res) => {
+  const { id } = req.params;
+  const meses = Number(req.query.meses ?? "1");
+  const clampMeses = Number.isFinite(meses) && meses > 0 && meses <= 6 ? meses : 1;
+
+  try {
+    const perm = await prisma.agendamentoPermanente.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        diaSemana: true,
+        horario: true,
+        dataInicio: true,
+        status: true,
+      },
+    });
+
+    if (!perm) return res.status(404).json({ erro: "Agendamento permanente não encontrado" });
+    if (["CANCELADO", "TRANSFERIDO"].includes(perm.status)) {
+      return res.status(400).json({ erro: "Agendamento permanente não está ativo." });
+    }
+
+    // Janela: hoje (00:00 local) ou dataInicio, o que for maior
+    const hoje = startOfDay(new Date());
+    const base = perm.dataInicio ? startOfDay(new Date(perm.dataInicio)) : hoje;
+    const inicioJanela = base > hoje ? base : hoje;
+    const fimJanela = startOfDay(addMonths(inicioJanela, clampMeses));
+
+    // Primeira ocorrência do dia da semana dentro da janela
+    const targetIdx = DIA_IDX[perm.diaSemana as DiaSemana];
+    const curIdx = inicioJanela.getDay(); // 0..6
+    const delta = (targetIdx - curIdx + 7) % 7;
+    let d = addDays(inicioJanela, delta);
+
+    // Todas as datas recorrentes semanais até o fim da janela
+    const todas: string[] = [];
+    while (d < fimJanela) {
+      // respeita dataInicio se existir
+      if (!perm.dataInicio || d >= startOfDay(new Date(perm.dataInicio))) {
+        todas.push(toISODateUTC(d));
+      }
+      d = addDays(d, 7);
+    }
+
+    // Busca exceções já criadas nessa janela
+    const jaCanceladas = await prisma.agendamentoPermanenteCancelamento.findMany({
+      where: {
+        agendamentoPermanenteId: id,
+        data: { gte: inicioJanela, lt: fimJanela },
+      },
+      select: { data: true },
+    });
+    const jaCanceladasSet = new Set(jaCanceladas.map((c) => toISODateUTC(new Date(c.data))));
+
+    // Remove datas já canceladas
+    const elegiveis = todas.filter((iso) => !jaCanceladasSet.has(iso));
+
+    return res.json({
+      permanenteId: perm.id,
+      inicioJanela: toISODateUTC(inicioJanela),
+      fimJanela: toISODateUTC(fimJanela),
+      diaSemana: perm.diaSemana,
+      horario: perm.horario,
+      datas: elegiveis,
+      jaCanceladas: Array.from(jaCanceladasSet),
+    });
+  } catch (e) {
+    console.error("Erro em GET /:id/datas-excecao", e);
+    return res.status(500).json({ erro: "Erro ao listar datas para exceção" });
+  }
+});
+
+router.post("/:id/cancelar-dia", async (req, res) => {
+  const { id } = req.params;
+
+  const schema = z.object({
+    data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), // "YYYY-MM-DD"
+    usuarioId: z.string().uuid().optional(),
+    motivo: z.string().trim().max(200).optional(),
+  });
+
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ erro: parsed.error.format() });
+  }
+
+  const { data: iso, usuarioId, motivo } = parsed.data;
+
+  try {
+    const perm = await prisma.agendamentoPermanente.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        usuarioId: true,
+        diaSemana: true,
+        dataInicio: true,
+        status: true,
+      },
+    });
+
+    if (!perm) return res.status(404).json({ erro: "Agendamento permanente não encontrado" });
+    if (["CANCELADO", "TRANSFERIDO"].includes(perm.status)) {
+      return res.status(400).json({ erro: "Agendamento permanente não está ativo." });
+    }
+
+    const dataUTC = toUtc00(iso);
+
+    // 1) valida se data respeita dataInicio (se existir)
+    if (perm.dataInicio && dataUTC < startOfDay(new Date(perm.dataInicio))) {
+      return res.status(400).json({ erro: "Data anterior ao início do agendamento permanente." });
+    }
+
+    // 2) valida se o dia da semana bate
+    const idx = dataUTC.getUTCDay(); // coerente com seu padrão (00:00Z)
+    if (idx !== DIA_IDX[perm.diaSemana as DiaSemana]) {
+      return res.status(400).json({ erro: "Data não corresponde ao dia da semana do permanente." });
+    }
+
+    // 3) evita duplicidade
+    const jaExiste = await prisma.agendamentoPermanenteCancelamento.findFirst({
+      where: { agendamentoPermanenteId: id, data: dataUTC },
+    });
+    if (jaExiste) {
+      return res.status(409).json({ erro: "Esta data já está marcada como exceção para este permanente." });
+    }
+
+    // 4) cria exceção
+    const novo = await prisma.agendamentoPermanenteCancelamento.create({
+      data: {
+        agendamentoPermanenteId: id,
+        data: dataUTC,
+        motivo: motivo ?? null,
+        criadoPorId: usuarioId ?? perm.usuarioId, // fallback para o dono se não vier
+      },
+    });
+
+    return res.status(201).json({
+      id: novo.id,
+      agendamentoPermanenteId: id,
+      data: toISODateUTC(new Date(novo.data)),
+      motivo: novo.motivo ?? null,
+      criadoPorId: novo.criadoPorId,
+    });
+  } catch (e) {
+    console.error("Erro em POST /:id/cancelar-dia", e);
+    return res.status(500).json({ erro: "Erro ao registrar exceção do permanente" });
   }
 });
 
