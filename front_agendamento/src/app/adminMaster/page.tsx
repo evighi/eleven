@@ -5,7 +5,6 @@ import { useAuthStore } from "@/context/AuthStore";
 import Spinner from "@/components/Spinner";
 import Link from "next/link";
 
-
 /** Helpers de data/hora em America/Sao_Paulo */
 const SP_TZ = "America/Sao_Paulo";
 const todayStrSP = (d = new Date()) =>
@@ -103,6 +102,9 @@ interface AgendamentoSelecionado {
   tipoReserva: TipoReserva;
   agendamentoId: string;
   tipoLocal: TipoLocal;
+  // novos (para exceção):
+  diaSemana?: string | null;
+  dataInicio?: string | null; // YYYY-MM-DD
 }
 
 interface UsuarioLista {
@@ -112,20 +114,97 @@ interface UsuarioLista {
 }
 /* ============================================= */
 
+/** Map DiaSemana -> index JS */
+const DIA_IDX: Record<string, number> = {
+  DOMINGO: 0,
+  SEGUNDA: 1,
+  TERCA: 2,
+  QUARTA: 3,
+  QUINTA: 4,
+  SEXTA: 5,
+  SABADO: 6,
+};
+
+/** Formata Date -> YYYY-MM-DD em SP */
+function toYmdSP(d: Date) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: SP_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
+/** Gera próximas datas (até `janelaDias`) para o mesmo dia-da-semana.
+ *  Respeita dataInicio (se vier) e pode começar de uma base (ex.: filtro atual).
+ */
+function gerarProximasDatasDiaSemana(
+  diaSemana: string,
+  baseYmd?: string | null,
+  dataInicio?: string | null,
+  janelaDias = 30
+): string[] {
+  const base = baseYmd ? new Date(`${baseYmd}T00:00:00`) : new Date();
+  const start = new Date(base);
+  start.setHours(0, 0, 0, 0);
+
+  // respeita dataInicio se existir e for maior que a base
+  if (dataInicio) {
+    const di = new Date(`${dataInicio}T00:00:00`);
+    if (di > start) {
+      start.setTime(di.getTime());
+    }
+  }
+
+  const target = DIA_IDX[diaSemana] ?? 0;
+  const cur = new Intl.DateTimeFormat("en-US", { timeZone: SP_TZ, weekday: "short" })
+    .formatToParts(start)
+    .find((p) => p.type === "weekday");
+  // Pega index do dia da semana em JS com base em SP
+  const startDow = new Date(
+    new Intl.DateTimeFormat("en-CA", { timeZone: SP_TZ }).format(start)
+  ).getDay(); // cuidado: isso pega local do Node; aceitável aqui pois só precisamos do offset relativo
+
+  const delta = (target - startDow + 7) % 7;
+  const first = new Date(start);
+  first.setDate(first.getDate() + delta);
+
+  const out: string[] = [];
+  for (let i = 0; i < janelaDias; i++) {
+    const d = new Date(first);
+    d.setDate(first.getDate() + i);
+    // Mantém somente as que batem o mesmo dia-da-semana
+    if (d.getDay() === target) {
+      out.push(toYmdSP(d));
+    }
+  }
+  return out;
+}
+
 export default function AdminHome() {
   const [data, setData] = useState("");
   const [horario, setHorario] = useState("");
 
   const [disponibilidade, setDisponibilidade] = useState<DisponibilidadeGeral | null>(null);
-  const [loadingDispon, setLoadingDispon] = useState<boolean>(true); // ⬅️ spinner inicial/atualizações
+  const [loadingDispon, setLoadingDispon] = useState<boolean>(true);
 
   const [agendamentoSelecionado, setAgendamentoSelecionado] =
     useState<AgendamentoSelecionado | null>(null);
-  const [loadingDetalhes, setLoadingDetalhes] = useState<boolean>(false); // ⬅️ spinner ao abrir detalhes
+  const [loadingDetalhes, setLoadingDetalhes] = useState<boolean>(false);
 
-  const [confirmarCancelamento, setConfirmarCancelamento] = useState(false);
+  const [confirmarCancelamento, setConfirmarCancelamento] = useState(false); // fluxo antigo
   const [loadingCancelamento, setLoadingCancelamento] = useState(false);
   const [loadingTransferencia, setLoadingTransferencia] = useState(false);
+
+  // NOVO: opções p/ permanente
+  const [mostrarOpcoesCancelamento, setMostrarOpcoesCancelamento] = useState(false);
+  const [confirmarCancelamentoForever, setConfirmarCancelamentoForever] = useState(false);
+
+  // NOVO: exceção (cancelar 1 dia)
+  const [mostrarExcecaoModal, setMostrarExcecaoModal] = useState(false);
+  const [datasExcecao, setDatasExcecao] = useState<string[]>([]);
+  const [dataExcecaoSelecionada, setDataExcecaoSelecionada] = useState<string | null>(null);
+  const [postandoExcecao, setPostandoExcecao] = useState(false);
 
   // Transferência
   const [abrirModalTransferencia, setAbrirModalTransferencia] = useState(false);
@@ -157,7 +236,7 @@ export default function AdminHome() {
       setLoadingDispon(true);
       return;
     }
-    setLoadingDispon(true); // ⬅️ liga spinner
+    setLoadingDispon(true);
     try {
       const res = await axios.get<DisponibilidadeGeral>(`${API_URL}/disponibilidadeGeral/geral`, {
         params: { data, horario },
@@ -168,7 +247,7 @@ export default function AdminHome() {
       console.error(error);
       setDisponibilidade(null);
     } finally {
-      setLoadingDispon(false); // ⬅️ desliga spinner
+      setLoadingDispon(false);
     }
   }, [API_URL, data, horario, isAllowed]);
 
@@ -204,7 +283,7 @@ export default function AdminHome() {
     }
 
     try {
-      setLoadingDetalhes(true); // ⬅️ liga spinner de detalhes
+      setLoadingDetalhes(true);
       const res = await axios.get(`${API_URL}/${rota}`, { withCredentials: true });
 
       setAgendamentoSelecionado({
@@ -213,19 +292,40 @@ export default function AdminHome() {
         turno: extra?.turno || null,
         usuario: (res.data as { usuario?: string | UsuarioRef })?.usuario || "—",
         jogadores: (res.data as { jogadores?: JogadorRef[] })?.jogadores || [],
-        esporte: extra?.esporte || (res.data as { esporte?: { nome?: string } })?.esporte?.nome || null,
+        esporte:
+          extra?.esporte || (res.data as { esporte?: { nome?: string } })?.esporte?.nome || null,
         tipoReserva: item.tipoReserva,
         agendamentoId,
         tipoLocal,
+        // novos se for permanente de quadra (o backend manda isso):
+        diaSemana: (res.data as any)?.diaSemana ?? null,
+        dataInicio:
+          (res.data as any)?.dataInicio
+            ? String((res.data as any).dataInicio).slice(0, 10)
+            : null,
       });
     } catch (error) {
       console.error("Erro ao buscar detalhes:", error);
     } finally {
-      setLoadingDetalhes(false); // ⬅️ desliga spinner de detalhes
+      setLoadingDetalhes(false);
     }
   };
 
-  // Cancelar (POST)
+  /** Decide qual modal abrir quando clicar em "Cancelar Agendamento" */
+  const abrirFluxoCancelamento = () => {
+    if (!agendamentoSelecionado) return;
+    const { tipoReserva, tipoLocal } = agendamentoSelecionado;
+
+    // Se for permanente de QUADRA -> mostrar opções (sempre x apenas 1 dia)
+    if (tipoReserva === "permanente" && tipoLocal === "quadra") {
+      setMostrarOpcoesCancelamento(true);
+    } else {
+      // fluxo antigo: confirmação simples
+      setConfirmarCancelamento(true);
+    }
+  };
+
+  // Cancelar (POST) — usado no fluxo antigo e também no "para sempre"
   const cancelarAgendamento = async () => {
     if (!agendamentoSelecionado) return;
     setLoadingCancelamento(true);
@@ -250,12 +350,59 @@ export default function AdminHome() {
       alert("Agendamento cancelado com sucesso!");
       setAgendamentoSelecionado(null);
       setConfirmarCancelamento(false);
+      setMostrarOpcoesCancelamento(false);
+      setConfirmarCancelamentoForever(false);
       buscarDisponibilidade();
     } catch (error) {
       console.error("Erro ao cancelar agendamento:", error);
       alert("Erro ao cancelar agendamento.");
     } finally {
       setLoadingCancelamento(false);
+    }
+  };
+
+  /** Abrir modal de exceção (cancelar apenas 1 dia) */
+  const abrirExcecao = () => {
+    if (!agendamentoSelecionado?.diaSemana) {
+      alert("Não foi possível identificar o dia da semana deste permanente.");
+      return;
+    }
+    // Gera lista local de próximas datas (30 dias), respeitando dataInicio
+    const lista = gerarProximasDatasDiaSemana(
+      agendamentoSelecionado.diaSemana,
+      data || todayStrSP(),
+      agendamentoSelecionado.dataInicio || null,
+      30
+    );
+    setDatasExcecao(lista);
+    setDataExcecaoSelecionada(null);
+    setMostrarExcecaoModal(true);
+    setMostrarOpcoesCancelamento(false);
+  };
+
+  /** Confirma a exceção chamando o endpoint POST /agendamentosPermanentes/:id/excecoes */
+  const confirmarExcecao = async () => {
+    if (!agendamentoSelecionado?.agendamentoId || !dataExcecaoSelecionada) return;
+    try {
+      setPostandoExcecao(true);
+      await axios.post(
+        `${API_URL}/agendamentosPermanentes/${agendamentoSelecionado.agendamentoId}/cancelar-dia`,
+        { dataExcecao: dataExcecaoSelecionada },
+        { withCredentials: true }
+      );
+      alert("Exceção criada com sucesso (cancelado somente este dia).");
+      setMostrarExcecaoModal(false);
+      setAgendamentoSelecionado(null);
+      buscarDisponibilidade();
+    } catch (e: any) {
+      console.error(e);
+      const msg =
+        e?.response?.data?.erro ||
+        e?.response?.data?.message ||
+        "Falha ao criar exceção do agendamento.";
+      alert(msg);
+    } finally {
+      setPostandoExcecao(false);
     }
   };
 
@@ -306,7 +453,7 @@ export default function AdminHome() {
         `${API_URL}/agendamentos/${agendamentoSelecionado.agendamentoId}/transferir`,
         {
           novoUsuarioId: usuarioSelecionado.id,
-          transferidoPorId: usuarioSelecionado.id, // ajuste para o id do admin logado, se necessário
+          transferidoPorId: usuarioSelecionado.id, // ajuste se necessário
         },
         { withCredentials: true }
       );
@@ -362,7 +509,9 @@ export default function AdminHome() {
   }, [buscaJogador, buscarUsuariosParaJogadores]);
 
   const alternarSelecionado = (id: string) => {
-    setJogadoresSelecionadosIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    setJogadoresSelecionadosIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
   };
 
   const adicionarConvidado = () => {
@@ -453,7 +602,7 @@ export default function AdminHome() {
         </div>
       </div>
 
-      {/* DISPONIBILIDADE — mostra spinner enquanto carrega/na 1ª vez */}
+      {/* DISPONIBILIDADE */}
       {loadingDispon || !disponibilidade ? (
         <div className="flex items-center gap-2 text-gray-600">
           <Spinner />
@@ -476,12 +625,13 @@ export default function AdminHome() {
                   <div
                     key={q.quadraId}
                     onClick={() => !q.disponivel && abrirDetalhes(q, { horario, esporte })}
-                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${q.bloqueada
+                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${
+                      q.bloqueada
                         ? "border-2 border-red-500 bg-red-50"
                         : q.disponivel
-                          ? "border-2 border-green-500 bg-green-50"
-                          : "border-2 border-gray-500 bg-gray-50"
-                      }`}
+                        ? "border-2 border-green-500 bg-green-50"
+                        : "border-2 border-gray-500 bg-gray-50"
+                    }`}
                   >
                     <p className="font-medium">{q.nome}</p>
                     <p className="text-xs text-gray-700">Quadra {q.numero}</p>
@@ -520,8 +670,11 @@ export default function AdminHome() {
                         { turno: "DIA" }
                       )
                     }
-                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${diaInfo?.disponivel ? "border-2 border-green-500 bg-green-50" : "border-2 border-red-500 bg-red-50"
-                      }`}
+                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${
+                      diaInfo?.disponivel
+                        ? "border-2 border-green-500 bg-green-50"
+                        : "border-2 border-red-500 bg-red-50"
+                    }`}
                   >
                     <p className="font-medium">{c.nome}</p>
                     <p className="text-xs text-gray-700">Quadra {c.numero}</p>
@@ -551,8 +704,11 @@ export default function AdminHome() {
                         { turno: "NOITE" }
                       )
                     }
-                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${noiteInfo?.disponivel ? "border-2 border-green-500 bg-green-50" : "border-2 border-red-500 bg-red-50"
-                      }`}
+                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${
+                      noiteInfo?.disponivel
+                        ? "border-2 border-green-500 bg-green-50"
+                        : "border-2 border-red-500 bg-red-50"
+                    }`}
                   >
                     <p className="font-medium">{c.nome}</p>
                     <p className="text-xs text-gray-700">Quadra {c.numero}</p>
@@ -586,12 +742,30 @@ export default function AdminHome() {
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg shadow-lg w-80 relative max-h-[90vh] overflow-auto">
             <h2 className="text-lg font-semibold mb-4">Detalhes do Agendamento</h2>
-            <p><strong>Dia:</strong> {agendamentoSelecionado.dia}</p>
-            {agendamentoSelecionado.horario && (<p><strong>Horário:</strong> {agendamentoSelecionado.horario}</p>)}
-            {agendamentoSelecionado.turno && (<p><strong>Turno:</strong> {agendamentoSelecionado.turno}</p>)}
-            <p><strong>Usuário:</strong> {agendamentoSelecionado.usuario as string}</p>
-            {agendamentoSelecionado.esporte && (<p><strong>Esporte:</strong> {agendamentoSelecionado.esporte}</p>)}
-            <p><strong>Tipo:</strong> {agendamentoSelecionado.tipoReserva}</p>
+            <p>
+              <strong>Dia:</strong> {agendamentoSelecionado.dia}
+            </p>
+            {agendamentoSelecionado.horario && (
+              <p>
+                <strong>Horário:</strong> {agendamentoSelecionado.horario}
+              </p>
+            )}
+            {agendamentoSelecionado.turno && (
+              <p>
+                <strong>Turno:</strong> {agendamentoSelecionado.turno}
+              </p>
+            )}
+            <p>
+              <strong>Usuário:</strong> {agendamentoSelecionado.usuario as string}
+            </p>
+            {agendamentoSelecionado.esporte && (
+              <p>
+                <strong>Esporte:</strong> {agendamentoSelecionado.esporte}
+              </p>
+            )}
+            <p>
+              <strong>Tipo:</strong> {agendamentoSelecionado.tipoReserva}
+            </p>
 
             {agendamentoSelecionado.tipoReserva === "comum" &&
               agendamentoSelecionado.tipoLocal === "quadra" && (
@@ -633,7 +807,7 @@ export default function AdminHome() {
               )}
 
             <button
-              onClick={() => setConfirmarCancelamento(true)}
+              onClick={abrirFluxoCancelamento}
               className="mt-4 w-full bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded cursor-pointer"
             >
               Cancelar Agendamento
@@ -646,7 +820,7 @@ export default function AdminHome() {
               Fechar
             </button>
 
-            {/* Confirmação de cancelamento */}
+            {/* Fluxo antigo: confirmação simples */}
             {confirmarCancelamento && (
               <div className="absolute inset-0 bg-black bg-opacity-80 flex flex-col items-center justify-center p-4 rounded-xl border shadow-lg z-50">
                 <p className="text-center text-white mb-4">
@@ -666,6 +840,120 @@ export default function AdminHome() {
                   >
                     Não
                   </button>
+                </div>
+              </div>
+            )}
+
+            {/* NOVO: Opções para PERMANENTE de QUADRA */}
+            {mostrarOpcoesCancelamento && (
+              <div className="absolute inset-0 bg-black bg-opacity-80 flex flex-col items-center justify-center p-4 rounded-xl border shadow-lg z-50">
+                <div className="bg-white rounded-lg p-4 w-full">
+                  <p className="font-semibold mb-3 text-center">
+                    Como deseja cancelar este agendamento permanente?
+                  </p>
+                  <div className="grid gap-3">
+                    <button
+                      onClick={() => {
+                        setMostrarOpcoesCancelamento(false);
+                        setConfirmarCancelamentoForever(true);
+                      }}
+                      className="w-full bg-red-600 hover:bg-red-700 text-white py-2 rounded cursor-pointer"
+                    >
+                      Cancelar PARA SEMPRE
+                    </button>
+                    <button
+                      onClick={abrirExcecao}
+                      className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded cursor-pointer"
+                    >
+                      Cancelar APENAS 1 dia
+                    </button>
+                    <button
+                      onClick={() => setMostrarOpcoesCancelamento(false)}
+                      className="w-full bg-gray-300 hover:bg-gray-400 text-black py-2 rounded cursor-pointer"
+                    >
+                      Voltar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* NOVO: Confirmação "para sempre" */}
+            {confirmarCancelamentoForever && (
+              <div className="absolute inset-0 bg-black bg-opacity-80 flex flex-col items-center justify-center p-4 rounded-xl border shadow-lg z-50">
+                <p className="text-center text-white mb-4">
+                  Tem certeza que deseja cancelar <b>para sempre</b> este agendamento permanente?
+                </p>
+                <div className="flex gap-4">
+                  <button
+                    onClick={cancelarAgendamento}
+                    disabled={loadingCancelamento}
+                    className="bg-red-600 text-white px-4 py-1 rounded hover:bg-red-700 transition cursor-pointer"
+                  >
+                    {loadingCancelamento ? "Cancelando..." : "Sim, cancelar para sempre"}
+                  </button>
+                  <button
+                    onClick={() => setConfirmarCancelamentoForever(false)}
+                    className="bg-gray-300 text-black px-4 py-1 rounded hover:bg-gray-400 transition cursor-pointer"
+                  >
+                    Não
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* NOVO: Modal de EXCEÇÃO (cancelar apenas 1 dia) */}
+            {mostrarExcecaoModal && (
+              <div className="absolute inset-0 bg-black bg-opacity-80 flex items-center justify-center p-4 rounded-xl z-50">
+                <div className="bg-white rounded-lg p-4 w-full max-w-sm">
+                  <h3 className="text-lg font-semibold mb-2">Cancelar apenas 1 dia</h3>
+                  <p className="text-sm text-gray-600 mb-3">
+                    Selecione uma data (próximos {Math.min(30, datasExcecao.length)} dias que caem em{" "}
+                    {agendamentoSelecionado?.diaSemana ?? "-"}).
+                  </p>
+
+                  {datasExcecao.length === 0 ? (
+                    <div className="text-sm text-gray-600">Não há datas disponíveis.</div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2 max-h-64 overflow-auto mb-3">
+                      {datasExcecao.map((d) => {
+                        const ativo = dataExcecaoSelecionada === d;
+                        return (
+                          <button
+                            key={d}
+                            type="button"
+                            onClick={() => setDataExcecaoSelecionada(d)}
+                            className={`px-3 py-2 rounded border text-sm ${
+                              ativo
+                                ? "border-indigo-600 bg-indigo-50 text-indigo-700"
+                                : "border-gray-300 hover:bg-gray-50"
+                            }`}
+                          >
+                            {d}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setMostrarExcecaoModal(false)}
+                      disabled={postandoExcecao}
+                      className="px-3 py-2 rounded bg-gray-300 hover:bg-gray-400"
+                    >
+                      Voltar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={confirmarExcecao}
+                      disabled={!dataExcecaoSelecionada || postandoExcecao}
+                      className="px-3 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:bg-indigo-300"
+                    >
+                      {postandoExcecao ? "Salvando..." : "Confirmar exceção"}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -690,16 +978,19 @@ export default function AdminHome() {
 
             {carregandoUsuarios && <p>Carregando usuários...</p>}
 
-            {!carregandoUsuarios && usuariosFiltrados.length === 0 && buscaUsuario.trim().length > 0 && (
-              <p className="text-sm text-gray-500">Nenhum usuário encontrado</p>
-            )}
+            {!carregandoUsuarios &&
+              usuariosFiltrados.length === 0 &&
+              buscaUsuario.trim().length > 0 && (
+                <p className="text-sm text-gray-500">Nenhum usuário encontrado</p>
+              )}
 
             <ul className="max-h-64 overflow-y-auto border rounded mb-4">
               {usuariosFiltrados.map((user) => (
                 <li
                   key={user.id}
-                  className={`p-2 cursor-pointer hover:bg-blue-100 ${usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
-                    }`}
+                  className={`p-2 cursor-pointer hover:bg-blue-100 ${
+                    usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
+                  }`}
                   onClick={() => setUsuarioSelecionado(user)}
                 >
                   {user.nome} ({user.email})
@@ -751,8 +1042,9 @@ export default function AdminHome() {
                 return (
                   <li
                     key={u.id}
-                    className={`p-2 cursor-pointer flex items-center justify-between hover:bg-orange-50 ${ativo ? "bg-orange-100" : ""
-                      }`}
+                    className={`p-2 cursor-pointer flex items-center justify-between hover:bg-orange-50 ${
+                      ativo ? "bg-orange-100" : ""
+                    }`}
                     onClick={() => alternarSelecionado(u.id)}
                   >
                     <span>
@@ -815,7 +1107,8 @@ export default function AdminHome() {
 
             {(jogadoresSelecionadosIds.length > 0 || convidadosPendentes.length > 0) && (
               <div className="text-xs text-gray-600 mb-2">
-                Selecionados: {jogadoresSelecionadosIds.length} · Convidados: {convidadosPendentes.length}
+                Selecionados: {jogadoresSelecionadosIds.length} · Convidados:{" "}
+                {convidadosPendentes.length}
               </div>
             )}
 
@@ -830,7 +1123,8 @@ export default function AdminHome() {
               <button
                 onClick={confirmarAdicionarJogadores}
                 disabled={
-                  addingPlayers || (jogadoresSelecionadosIds.length === 0 && convidadosPendentes.length === 0)
+                  addingPlayers ||
+                  (jogadoresSelecionadosIds.length === 0 && convidadosPendentes.length === 0)
                 }
                 className="px-4 py-2 rounded bg-orange-600 text-white hover:bg-orange-700 disabled:bg-orange-300"
               >
