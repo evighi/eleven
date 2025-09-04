@@ -135,51 +135,49 @@ function toYmdSP(d: Date) {
   }).format(d);
 }
 
-/** Gera próximas datas (até `janelaDias`) para o mesmo dia-da-semana.
- *  Respeita dataInicio (se vier) e pode começar de uma base (ex.: filtro atual).
+/** Próximas datas do mesmo dia-da-semana.
+ * - Inclui a própria base (se cair no mesmo dia da semana).
+ * - Respeita dataInicio (se vier).
+ * - Gera 'quantidade' ocorrências, de 7 em 7 dias.
+ * - Tudo calculado em fuso de São Paulo.
  */
 function gerarProximasDatasDiaSemana(
   diaSemana: string,
   baseYmd?: string | null,
   dataInicio?: string | null,
-  janelaDias = 30
+  quantidade = 4,
+  incluirBase = true
 ): string[] {
-  const base = baseYmd ? new Date(`${baseYmd}T00:00:00`) : new Date();
-  const start = new Date(base);
+  const target = DIA_IDX[diaSemana] ?? 0;
+
+  // Base em SP (início do dia)
+  const baseIso = (baseYmd || todayStrSP()) + "T00:00:00-03:00";
+  const start = new Date(baseIso);
   start.setHours(0, 0, 0, 0);
 
-  // respeita dataInicio se existir e for maior que a base
+  // Respeita dataInicio (se for mais à frente que a base)
   if (dataInicio) {
-    const di = new Date(`${dataInicio}T00:00:00`);
-    if (di > start) {
-      start.setTime(di.getTime());
-    }
+    const di = new Date(`${dataInicio}T00:00:00-03:00`);
+    di.setHours(0, 0, 0, 0);
+    if (di > start) start.setTime(di.getTime());
   }
 
-  const target = DIA_IDX[diaSemana] ?? 0;
-  const cur = new Intl.DateTimeFormat("en-US", { timeZone: SP_TZ, weekday: "short" })
-    .formatToParts(start)
-    .find((p) => p.type === "weekday");
-  // Pega index do dia da semana em JS com base em SP
-  const startDow = new Date(
-    new Intl.DateTimeFormat("en-CA", { timeZone: SP_TZ }).format(start)
-  ).getDay(); // cuidado: isso pega local do Node; aceitável aqui pois só precisamos do offset relativo
+  const startDow = start.getDay(); // 0..6
+  let delta = (target - startDow + 7) % 7; // 0 significa “mesmo dia da semana”
+  if (delta === 0 && !incluirBase) delta = 7; // pular para a próxima semana se não quiser incluir a base
 
-  const delta = (target - startDow + 7) % 7;
   const first = new Date(start);
   first.setDate(first.getDate() + delta);
 
   const out: string[] = [];
-  for (let i = 0; i < janelaDias; i++) {
+  for (let i = 0; i < quantidade; i++) {
     const d = new Date(first);
-    d.setDate(first.getDate() + i);
-    // Mantém somente as que batem o mesmo dia-da-semana
-    if (d.getDay() === target) {
-      out.push(toYmdSP(d));
-    }
+    d.setDate(first.getDate() + i * 7);
+    out.push(toYmdSP(d));
   }
   return out;
 }
+
 
 export default function AdminHome() {
   const [data, setData] = useState("");
@@ -628,10 +626,10 @@ export default function AdminHome() {
                     key={q.quadraId}
                     onClick={() => !q.disponivel && abrirDetalhes(q, { horario, esporte })}
                     className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${q.bloqueada
-                        ? "border-2 border-red-500 bg-red-50"
-                        : q.disponivel
-                          ? "border-2 border-green-500 bg-green-50"
-                          : "border-2 border-gray-500 bg-gray-50"
+                      ? "border-2 border-red-500 bg-red-50"
+                      : q.disponivel
+                        ? "border-2 border-green-500 bg-green-50"
+                        : "border-2 border-gray-500 bg-gray-50"
                       }`}
                   >
                     <p className="font-medium">{q.nome}</p>
@@ -672,8 +670,8 @@ export default function AdminHome() {
                       )
                     }
                     className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${diaInfo?.disponivel
-                        ? "border-2 border-green-500 bg-green-50"
-                        : "border-2 border-red-500 bg-red-50"
+                      ? "border-2 border-green-500 bg-green-50"
+                      : "border-2 border-red-500 bg-red-50"
                       }`}
                   >
                     <p className="font-medium">{c.nome}</p>
@@ -705,8 +703,8 @@ export default function AdminHome() {
                       )
                     }
                     className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${noiteInfo?.disponivel
-                        ? "border-2 border-green-500 bg-green-50"
-                        : "border-2 border-red-500 bg-red-50"
+                      ? "border-2 border-green-500 bg-green-50"
+                      : "border-2 border-red-500 bg-red-50"
                       }`}
                   >
                     <p className="font-medium">{c.nome}</p>
@@ -923,8 +921,8 @@ export default function AdminHome() {
                             type="button"
                             onClick={() => setDataExcecaoSelecionada(d)}
                             className={`px-3 py-2 rounded border text-sm ${ativo
-                                ? "border-indigo-600 bg-indigo-50 text-indigo-700"
-                                : "border-gray-300 hover:bg-gray-50"
+                              ? "border-indigo-600 bg-indigo-50 text-indigo-700"
+                              : "border-gray-300 hover:bg-gray-50"
                               }`}
                           >
                             {d}
