@@ -589,7 +589,7 @@ export default function AdminHome() {
     }).toString();
 
     // ajuste o caminho se seu agendarcomum estiver em outro diretório
-    router.push(`/adminMaster/agendarcomum?${qs}`);
+    router.push(`/adminMaster/quadras/agendarComum?${qs}`);
   };
 
   return (
