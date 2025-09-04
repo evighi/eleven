@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import Spinner from "@/components/Spinner";
 import { useAuthStore } from "@/context/AuthStore";
+import { useRouter } from "next/navigation";
 
 /* =========================
    Tipos da rota /disponibilidadeGeral/dia
@@ -87,11 +88,7 @@ function toDdMm(isoYmd: string) {
   return `${d}-${m}`;
 }
 
-/** Próximas datas do mesmo dia-da-semana (idêntico à Home):
- * - inclui a base se cair no mesmo dia-da-semana
- * - respeita dataInicio (se vier)
- * - gera `quantidade` ocorrências, de 7 em 7 dias (fuso SP)
- */
+/** Próximas datas do mesmo dia-da-semana (idêntico à Home) */
 function gerarProximasDatasDiaSemana(
   diaSemana: string,
   baseYmd?: string | null,
@@ -144,8 +141,9 @@ function onlyHour(hhmm?: string) {
 export default function TodosHorariosPage() {
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
   const { usuario } = useAuthStore();
+  const router = useRouter();
 
-  const [data, setData] = useState<string>(""); // agora com init via useEffect
+  const [data, setData] = useState<string>(""); // init via useEffect
   const [horas, setHoras] = useState<string[]>([]);
   const [esportes, setEsportes] = useState<Record<string, EsporteBlock> | null>(null);
   const [erro, setErro] = useState("");
@@ -185,6 +183,16 @@ export default function TodosHorariosPage() {
   const [convidadosPendentes, setConvidadosPendentes] = useState<string[]>([]);
   const [carregandoJogadores, setCarregandoJogadores] = useState(false);
   const [addingPlayers, setAddingPlayers] = useState(false);
+
+  // NOVO: confirmação de agendamento rápido (slot livre)
+  const [confirmAgendar, setConfirmAgendar] = useState(false);
+  const [agendarCtx, setAgendarCtx] = useState<{
+    hora: string;
+    esporte: string;
+    quadraId: string;
+    quadraNome: string;
+    quadraNumero: number;
+  } | null>(null);
 
   // init data
   useEffect(() => {
@@ -262,6 +270,35 @@ export default function TodosHorariosPage() {
     },
     [API_URL, data]
   );
+
+  /* ====== Clique em slot LIVRE -> confirmação e redirect ====== */
+  const abrirConfirmAgendar = useCallback(
+    (hora: string, esporte: string, q: { quadraId: string; nome: string; numero: number }) => {
+      if (!data) return;
+      setAgendarCtx({
+        hora,
+        esporte,
+        quadraId: q.quadraId,
+        quadraNome: q.nome,
+        quadraNumero: q.numero,
+      });
+      setConfirmAgendar(true);
+    },
+    [data]
+  );
+
+  const confirmarAgendamentoRapido = () => {
+    if (!agendarCtx || !data) return;
+    const params = new URLSearchParams({
+      data,
+      horario: agendarCtx.hora,
+      quadraId: agendarCtx.quadraId,
+      esporteNome: agendarCtx.esporte, // usamos nome; a page tenta casar pelo nome também
+    });
+    setConfirmAgendar(false);
+    setAgendarCtx(null);
+    router.push(`/adminMaster/quadras/agendarComum?${params.toString()}`);
+  };
 
   /* ====== AÇÕES: cancelar ====== */
   const abrirFluxoCancelamento = () => {
@@ -490,15 +527,17 @@ export default function TodosHorariosPage() {
     }
   };
 
-  // Célula da grade (inalterada, só chama abrirDetalhes)
+  // Célula da grade — agora também clica em "Livre" para agendar
   const Cell = ({
     slot,
     hora,
     esporte,
+    quadra,
   }: {
     slot: SlotInfo;
     hora: string;
     esporte: string;
+    quadra: { quadraId: string; nome: string; numero: number };
   }) => {
     const isLivre = slot.disponivel && !slot.bloqueada;
     const isBloq = !!slot.bloqueada;
@@ -521,16 +560,23 @@ export default function TodosHorariosPage() {
       ? `Livre - ${hourLabel}`
       : `${firstName(slot.usuario?.nome)} - ${hourLabel}`;
 
-    const clickable = !!(slot.agendamentoId && slot.tipoReserva && !isBloq);
+    const isAgendado = !!(slot.agendamentoId && slot.tipoReserva);
+    const clickable = !isBloq && (isAgendado || isLivre);
+
+    const onClick = () => {
+      if (!clickable) return;
+      if (isLivre) {
+        abrirConfirmAgendar(hora, esporte, quadra);
+      } else {
+        abrirDetalhes(slot.agendamentoId!, slot.tipoReserva as TipoReserva, hora, esporte);
+      }
+    };
 
     return (
       <button
         type="button"
         disabled={!clickable}
-        onClick={() =>
-          clickable &&
-          abrirDetalhes(slot.agendamentoId!, slot.tipoReserva as TipoReserva, hora, esporte)
-        }
+        onClick={onClick}
         title={slot.usuario?.nome || (isBloq ? "Bloqueada" : isLivre ? "Livre" : label)}
         className={`${base} ${cls} ${clickable ? "cursor-pointer hover:brightness-95" : "cursor-default"}`}
       >
@@ -597,7 +643,13 @@ export default function TodosHorariosPage() {
                           {grupo.map((q) => {
                             const slot = q.slots[hora] || { disponivel: true };
                             return (
-                              <Cell key={`${q.quadraId}-${hora}`} slot={slot} hora={hora} esporte={esporteNome} />
+                              <Cell
+                                key={`${q.quadraId}-${hora}`}
+                                slot={slot}
+                                hora={hora}
+                                esporte={esporteNome}
+                                quadra={{ quadraId: q.quadraId, nome: q.nome, numero: q.numero }}
+                              />
                             );
                           })}
                           {Array.from({ length: Math.max(0, 6 - grupo.length) }).map((_, i) => (
@@ -614,7 +666,7 @@ export default function TodosHorariosPage() {
         })}
       </div>
     );
-  }, [loading, erro, esportes, horas, abrirDetalhes]);
+  }, [loading, erro, esportes, horas, abrirDetalhes, abrirConfirmAgendar]);
 
   return (
     <div className="px-2 sm:px-3 md:px-4 py-4">
@@ -638,6 +690,33 @@ export default function TodosHorariosPage() {
           <div className="bg-white rounded-xl shadow-md px-4 py-3">
             <div className="flex items-center gap-2 text-gray-700">
               <Spinner /> <span>Carregando detalhes…</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CONFIRMAÇÃO DE AGENDAMENTO RÁPIDO (slot livre) */}
+      {confirmAgendar && agendarCtx && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[65]">
+          <div className="bg-white rounded-lg p-5 w-[90%] max-w-md">
+            <h3 className="text-lg font-semibold mb-2">Confirmar agendamento</h3>
+            <p className="text-sm text-gray-700 mb-4">
+              Deseja agendar a <b>Quadra {agendarCtx.quadraNumero}</b> ({agendarCtx.quadraNome})
+              em <b>{toDdMm(data)}</b> às <b>{agendarCtx.hora}</b> para <b>{agendarCtx.esporte}</b>?
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => { setConfirmAgendar(false); setAgendarCtx(null); }}
+                className="px-3 py-2 rounded bg-gray-300 hover:bg-gray-400"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmarAgendamentoRapido}
+                className="px-3 py-2 rounded bg-orange-600 text-white hover:bg-orange-700"
+              >
+                Sim, agendar
+              </button>
             </div>
           </div>
         </div>
