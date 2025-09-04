@@ -12,7 +12,6 @@ import { UsuarioLogadoItf } from "@/utils/types/UsuarioLogadoItf";
 type Inputs = {
   email: string;
   senha: string;
-  manter: boolean;
 };
 
 export default function Login() {
@@ -21,8 +20,7 @@ export default function Login() {
     handleSubmit,
     formState: { isSubmitting },
     setValue,
-    watch,
-  } = useForm<Inputs>({ defaultValues: { email: "", senha: "", manter: true } });
+  } = useForm<Inputs>({ defaultValues: { email: "", senha: "" } });
 
   const { logaUsuario } = useAuthStore();
   const router = useRouter();
@@ -42,7 +40,7 @@ export default function Login() {
         body: JSON.stringify({
           email: data.email,
           senha: data.senha,
-          // manter: data.manter  // você usará isso quando implementar refresh token
+          manter: true, // sempre persistente
         }),
       });
 
@@ -57,7 +55,6 @@ export default function Login() {
       const serverMsg: string | undefined = body?.erro || body?.message;
 
       if (!response.ok) {
-        // Mapeia erros específicos
         switch (response.status) {
           case 404:
             toast.error("E-mail não cadastrado.");
@@ -81,21 +78,17 @@ export default function Login() {
       const dados: Omit<UsuarioLogadoItf, "token"> = body ?? {};
       logaUsuario({ ...dados, token: "" });
 
-      // Lembra e-mail (opcional) — nunca armazene senha em localStorage
+      // Sempre lembrar o e-mail (não armazene senha)
       try {
-        if (watch("manter")) {
-          localStorage.setItem("lastEmail", data.email);
-        } else {
-          localStorage.removeItem("lastEmail");
-        }
+        localStorage.setItem("lastEmail", data.email);
       } catch {
         /* ignore */
       }
 
-      // Tentativa progressiva de salvar credencial (Chrome/Android)
+      // Tentar salvar credencial (se suportado pelo browser)
       try {
         // @ts-ignore - tipos do Credential Management API podem não existir
-        if ("credentials" in navigator && "PasswordCredential" in window && watch("manter")) {
+        if ("credentials" in navigator && "PasswordCredential" in window) {
           // @ts-ignore
           const cred = new window.PasswordCredential({
             id: data.email,
@@ -106,7 +99,7 @@ export default function Login() {
           await navigator.credentials.store(cred);
         }
       } catch {
-        /* se não suportar, tudo bem */
+        /* ok se não suportar */
       }
 
       // Redireciona por tipo
@@ -147,11 +140,7 @@ export default function Login() {
         </div>
 
         {/* Formulário com autofill habilitado */}
-        <form
-          onSubmit={handleSubmit(verificaLogin)}
-          className="space-y-4 text-left"
-          autoComplete="on"
-        >
+        <form onSubmit={handleSubmit(verificaLogin)} className="space-y-4 text-left" autoComplete="on">
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-gray-700">
               E-mail
@@ -192,17 +181,6 @@ export default function Login() {
             />
           </div>
 
-          {/* Manter conectado (por enquanto front-only) */}
-          <label className="flex items-center gap-2 text-sm text-gray-700">
-            <input
-              type="checkbox"
-              {...register("manter")}
-              className="h-4 w-4"
-              disabled={isSubmitting}
-            />
-            Manter conectado neste dispositivo
-          </label>
-
           <div className="text-sm text-gray-500">
             <p>
               Esqueceu a senha?{" "}
@@ -231,3 +209,4 @@ export default function Login() {
     </main>
   );
 }
+
