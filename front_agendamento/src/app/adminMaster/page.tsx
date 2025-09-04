@@ -4,6 +4,7 @@ import axios from "axios";
 import { useAuthStore } from "@/context/AuthStore";
 import Spinner from "@/components/Spinner";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 /** Helpers de data/hora em America/Sao_Paulo */
 const SP_TZ = "America/Sao_Paulo";
@@ -112,6 +113,16 @@ interface UsuarioLista {
   nome: string;
   email?: string;
 }
+
+/** Novo: pré-reserva para confirmar agendar comum */
+type PreReserva = {
+  data: string;
+  horario: string;
+  esporte: string; // se seu agendarcomum espera ID, troque para esporteId
+  quadraId: string;
+  quadraNome: string;
+  quadraNumero: number;
+};
 /* ============================================= */
 
 /** Map DiaSemana -> index JS */
@@ -140,13 +151,7 @@ function toDdMm(isoYmd: string) {
   return `${d}-${m}`;
 }
 
-
-/** Próximas datas do mesmo dia-da-semana.
- * - Inclui a própria base (se cair no mesmo dia da semana).
- * - Respeita dataInicio (se vier).
- * - Gera 'quantidade' ocorrências, de 7 em 7 dias.
- * - Tudo calculado em fuso de São Paulo.
- */
+/** Próximas datas do mesmo dia-da-semana. */
 function gerarProximasDatasDiaSemana(
   diaSemana: string,
   baseYmd?: string | null,
@@ -184,8 +189,9 @@ function gerarProximasDatasDiaSemana(
   return out;
 }
 
-
 export default function AdminHome() {
+  const router = useRouter();
+
   const [data, setData] = useState("");
   const [horario, setHorario] = useState("");
 
@@ -200,11 +206,11 @@ export default function AdminHome() {
   const [loadingCancelamento, setLoadingCancelamento] = useState(false);
   const [loadingTransferencia, setLoadingTransferencia] = useState(false);
 
-  // NOVO: opções p/ permanente
+  // Opções p/ permanente
   const [mostrarOpcoesCancelamento, setMostrarOpcoesCancelamento] = useState(false);
   const [confirmarCancelamentoForever, setConfirmarCancelamentoForever] = useState(false);
 
-  // NOVO: exceção (cancelar 1 dia)
+  // Exceção (cancelar 1 dia)
   const [mostrarExcecaoModal, setMostrarExcecaoModal] = useState(false);
   const [datasExcecao, setDatasExcecao] = useState<string[]>([]);
   const [dataExcecaoSelecionada, setDataExcecaoSelecionada] = useState<string | null>(null);
@@ -226,6 +232,10 @@ export default function AdminHome() {
   const [convidadosPendentes, setConvidadosPendentes] = useState<string[]>([]);
   const [carregandoJogadores, setCarregandoJogadores] = useState(false);
   const [addingPlayers, setAddingPlayers] = useState(false);
+
+  // Novo: confirmação para agendar comum quando quadra está livre
+  const [mostrarConfirmaAgendar, setMostrarConfirmaAgendar] = useState(false);
+  const [preReserva, setPreReserva] = useState<PreReserva | null>(null);
 
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
   const { usuario } = useAuthStore();
@@ -377,8 +387,8 @@ export default function AdminHome() {
       agendamentoSelecionado.diaSemana,
       data || todayStrSP(),
       agendamentoSelecionado.dataInicio || null,
-      6,      // <- quantidade
-      true    // <- incluir a própria base, se for o mesmo dia da semana
+      6,      // quantidade
+      true    // incluir a própria base, se for o mesmo dia da semana
     );
 
     setDatasExcecao(lista);
@@ -387,7 +397,7 @@ export default function AdminHome() {
     setMostrarOpcoesCancelamento(false);
   };
 
-  /** Confirma a exceção chamando o endpoint POST /agendamentosPermanentes/:id/excecoes */
+  /** Confirma a exceção chamando o endpoint POST /agendamentosPermanentes/:id/cancelar-dia */
   const confirmarExcecao = async () => {
     if (!agendamentoSelecionado?.agendamentoId || !dataExcecaoSelecionada) return;
     try {
@@ -404,16 +414,12 @@ export default function AdminHome() {
     } catch (e: any) {
       console.error(e);
       const raw = e?.response?.data?.erro ?? e?.response?.data?.message ?? e?.message;
-      const msg =
-        typeof raw === "string"
-          ? raw
-          : JSON.stringify(raw); // evita [object Object]
+      const msg = typeof raw === "string" ? raw : JSON.stringify(raw);
       alert(msg);
     } finally {
       setPostandoExcecao(false);
     }
   };
-
 
   // Buscar usuários (transferência)
   const [abrirModalTransferenciaState] = useState(false); // placeholder (não alterar comportamento)
@@ -567,6 +573,25 @@ export default function AdminHome() {
     }
   };
 
+  // ====== NOVO: confirmação para agendar comum quando quadra está livre ======
+  const abrirConfirmacaoAgendar = (info: PreReserva) => {
+    setPreReserva(info);
+    setMostrarConfirmaAgendar(true);
+  };
+
+  const irParaAgendarComum = () => {
+    if (!preReserva) return;
+    const qs = new URLSearchParams({
+      data: preReserva.data,
+      horario: preReserva.horario,
+      esporte: preReserva.esporte, // troque para esporteId se necessário
+      quadraId: preReserva.quadraId,
+    }).toString();
+
+    // ajuste o caminho se seu agendarcomum estiver em outro diretório
+    router.push(`/adminMaster/agendarcomum?${qs}`);
+  };
+
   return (
     <div className="space-y-8">
       {/* FILTROS */}
@@ -630,28 +655,50 @@ export default function AdminHome() {
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4">
-                {disponibilidade.quadras[esporte].map((q: DisponQuadra) => (
-                  <div
-                    key={q.quadraId}
-                    onClick={() => !q.disponivel && abrirDetalhes(q, { horario, esporte })}
-                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${q.bloqueada
-                      ? "border-2 border-red-500 bg-red-50"
-                      : q.disponivel
-                        ? "border-2 border-green-500 bg-green-50"
-                        : "border-2 border-gray-500 bg-gray-50"
+                {disponibilidade.quadras[esporte].map((q: DisponQuadra) => {
+                  const clickable = !q.bloqueada; // bloqueada não clica
+                  const clsBase =
+                    "p-3 rounded-lg text-center shadow-sm flex flex-col justify-center " +
+                    (clickable ? "cursor-pointer" : "cursor-not-allowed");
+
+                  return (
+                    <div
+                      key={q.quadraId}
+                      onClick={() => {
+                        if (q.bloqueada) return;
+                        if (q.disponivel) {
+                          abrirConfirmacaoAgendar({
+                            data,
+                            horario,
+                            esporte,
+                            quadraId: q.quadraId,
+                            quadraNome: q.nome,
+                            quadraNumero: q.numero,
+                          });
+                        } else {
+                          abrirDetalhes(q, { horario, esporte });
+                        }
+                      }}
+                      className={`${clsBase} ${
+                        q.bloqueada
+                          ? "border-2 border-red-500 bg-red-50"
+                          : q.disponivel
+                          ? "border-2 border-green-500 bg-green-50"
+                          : "border-2 border-gray-500 bg-gray-50"
                       }`}
-                  >
-                    <p className="font-medium">{q.nome}</p>
-                    <p className="text-xs text-gray-700">Quadra {q.numero}</p>
-                    {q.bloqueada && <div className="text-red-600 font-bold">Bloqueada</div>}
-                    {!q.disponivel && (
-                      <div>
-                        <p className="font-bold">{q.usuario?.nome}</p>
-                        {q.tipoReserva}
-                      </div>
-                    )}
-                  </div>
-                ))}
+                    >
+                      <p className="font-medium">{q.nome}</p>
+                      <p className="text-xs text-gray-700">Quadra {q.numero}</p>
+                      {q.bloqueada && <div className="text-red-600 font-bold">Bloqueada</div>}
+                      {!q.disponivel && (
+                        <div>
+                          <p className="font-bold">{q.usuario?.nome}</p>
+                          {q.tipoReserva}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           ))}
@@ -678,10 +725,11 @@ export default function AdminHome() {
                         { turno: "DIA" }
                       )
                     }
-                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${diaInfo?.disponivel
-                      ? "border-2 border-green-500 bg-green-50"
-                      : "border-2 border-red-500 bg-red-50"
-                      }`}
+                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center ${
+                      diaInfo?.disponivel
+                        ? "border-2 border-green-500 bg-green-50 cursor-pointer"
+                        : "border-2 border-red-500 bg-red-50 cursor-pointer"
+                    }`}
                   >
                     <p className="font-medium">{c.nome}</p>
                     <p className="text-xs text-gray-700">Quadra {c.numero}</p>
@@ -711,10 +759,11 @@ export default function AdminHome() {
                         { turno: "NOITE" }
                       )
                     }
-                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${noiteInfo?.disponivel
-                      ? "border-2 border-green-500 bg-green-50"
-                      : "border-2 border-red-500 bg-red-50"
-                      }`}
+                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center ${
+                      noiteInfo?.disponivel
+                        ? "border-2 border-green-500 bg-green-50 cursor-pointer"
+                        : "border-2 border-red-500 bg-red-50 cursor-pointer"
+                    }`}
                   >
                     <p className="font-medium">{c.nome}</p>
                     <p className="text-xs text-gray-700">Quadra {c.numero}</p>
@@ -850,7 +899,7 @@ export default function AdminHome() {
               </div>
             )}
 
-            {/* NOVO: Opções para PERMANENTE de QUADRA */}
+            {/* Opções para PERMANENTE de QUADRA */}
             {mostrarOpcoesCancelamento && (
               <div className="absolute inset-0 bg-black bg-opacity-80 flex flex-col items-center justify-center p-4 rounded-xl border shadow-lg z-50">
                 <div className="bg-white rounded-lg p-4 w-full">
@@ -884,7 +933,7 @@ export default function AdminHome() {
               </div>
             )}
 
-            {/* NOVO: Confirmação "para sempre" */}
+            {/* Confirmação "para sempre" */}
             {confirmarCancelamentoForever && (
               <div className="absolute inset-0 bg-black bg-opacity-80 flex flex-col items-center justify-center p-4 rounded-xl border shadow-lg z-50">
                 <p className="text-center text-white mb-4">
@@ -908,7 +957,7 @@ export default function AdminHome() {
               </div>
             )}
 
-            {/* NOVO: Modal de EXCEÇÃO (cancelar apenas 1 dia) */}
+            {/* Modal de EXCEÇÃO (cancelar apenas 1 dia) */}
             {mostrarExcecaoModal && (
               <div className="absolute inset-0 bg-black bg-opacity-80 flex items-center justify-center p-4 rounded-xl z-50">
                 <div className="bg-white rounded-lg p-4 w-full max-w-sm">
@@ -929,12 +978,13 @@ export default function AdminHome() {
                             key={d}
                             type="button"
                             onClick={() => setDataExcecaoSelecionada(d)}
-                            className={`px-3 py-2 rounded border text-sm ${ativo
-                              ? "border-indigo-600 bg-indigo-50 text-indigo-700"
-                              : "border-gray-300 hover:bg-gray-50"
-                              }`}
+                            className={`px-3 py-2 rounded border text-sm ${
+                              ativo
+                                ? "border-indigo-600 bg-indigo-50 text-indigo-700"
+                                : "border-gray-300 hover:bg-gray-50"
+                            }`}
                           >
-                            {toDdMm(d)} {/* <- aqui! */}
+                            {toDdMm(d)}
                           </button>
                         );
                       })}
@@ -993,8 +1043,9 @@ export default function AdminHome() {
               {usuariosFiltrados.map((user) => (
                 <li
                   key={user.id}
-                  className={`p-2 cursor-pointer hover:bg-blue-100 ${usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
-                    }`}
+                  className={`p-2 cursor-pointer hover:bg-blue-100 ${
+                    usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
+                  }`}
                   onClick={() => setUsuarioSelecionado(user)}
                 >
                   {user.nome} ({user.email})
@@ -1046,8 +1097,9 @@ export default function AdminHome() {
                 return (
                   <li
                     key={u.id}
-                    className={`p-2 cursor-pointer flex items-center justify-between hover:bg-orange-50 ${ativo ? "bg-orange-100" : ""
-                      }`}
+                    className={`p-2 cursor-pointer flex items-center justify-between hover:bg-orange-50 ${
+                      ativo ? "bg-orange-100" : ""
+                    }`}
                     onClick={() => alternarSelecionado(u.id)}
                   >
                     <span>
@@ -1132,6 +1184,35 @@ export default function AdminHome() {
                 className="px-4 py-2 rounded bg-orange-600 text-white hover:bg-orange-700 disabled:bg-orange-300"
               >
                 {addingPlayers ? "Adicionando..." : "Adicionar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* NOVO MODAL: Confirmar agendamento comum (quadra livre) */}
+      {mostrarConfirmaAgendar && preReserva && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[70]">
+          <div className="bg-white p-5 rounded-lg shadow-lg w-[340px]">
+            <h3 className="text-lg font-semibold mb-3">Confirmar agendamento</h3>
+            <p className="text-sm text-gray-700 mb-4">
+              Deseja agendar <b>{preReserva.esporte}</b> na{" "}
+              <b>{preReserva.quadraNome} (nº {preReserva.quadraNumero})</b>
+              <br />
+              em <b>{preReserva.data}</b> às <b>{preReserva.horario}</b>?
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setMostrarConfirmaAgendar(false)}
+                className="px-3 py-2 rounded bg-gray-300 hover:bg-gray-400"
+              >
+                Não
+              </button>
+              <button
+                onClick={irParaAgendarComum}
+                className="px-3 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700"
+              >
+                Sim, agendar
               </button>
             </div>
           </div>
