@@ -1,168 +1,177 @@
 import { PrismaClient, TipoUsuario } from "@prisma/client";
-import { Router } from "express";
-import bcrypt from 'bcrypt';
-import { z } from 'zod';
+import { Router, Request } from "express";
+import bcrypt from "bcrypt";
+import { z } from "zod";
+
+// 🔐 middlewares
+import verificarToken from "../middleware/authMiddleware"; // ou "../middleware/authMiddlewares"
+import { requireAdmin } from "../middleware/acl";
 
 const prisma = new PrismaClient();
 const router = Router();
 
-// Validação do corpo da requisição para criação de admin
+const baseSelect = {
+  id: true,
+  nome: true,
+  email: true,
+  celular: true,
+  tipo: true,
+} as const;
+
+const isMaster = (req: Request) => req.usuario?.usuarioLogadoTipo === "ADMIN_MASTER";
+
+// ⚙️ validação
 const adminSchema = z.object({
-  nome: z.string().min(5, { message: 'Nome deve possuir, no mínimo, 5 caracteres' }),
+  nome: z.string().min(5, { message: "Nome deve possuir, no mínimo, 5 caracteres" }),
   email: z.string().email(),
-  celular: z.string().min(10, { message: 'Celular deve ter DDD + número' }),
+  celular: z.string().min(10, { message: "Celular deve ter DDD + número" }),
   senha: z.string(),
-  tipo: z.nativeEnum(TipoUsuario).refine(t => t !== 'CLIENTE', {
-    message: 'Tipo de usuário inválido para admin'
-  })
+  tipo: z.nativeEnum(TipoUsuario).refine((t) => t !== "CLIENTE", {
+    message: "Tipo de usuário inválido para admin",
+  }),
 });
 
-// Função para validar força da senha (regra simples)
-function validaSenha(senha: string) {
+function validaSenha(s: string) {
   const erros: string[] = [];
-  if (senha.length < 6) erros.push("Senha deve possuir, no mínimo, 6 caracteres");
-  if (!/[A-Z]/.test(senha)) erros.push("Senha deve possuir pelo menos 1 letra maiúscula");
+  if (s.length < 6) erros.push("Senha deve possuir, no mínimo, 6 caracteres");
+  if (!/[A-Z]/.test(s)) erros.push("Senha deve possuir pelo menos 1 letra maiúscula");
   return erros;
 }
 
+// 🔒 tudo aqui dentro exige login + ser ADMIN
+router.use(verificarToken);
+router.use(requireAdmin);
 
-// GET /admin - lista todos os administradores (todos os níveis)
-router.get("/", async (req, res) => {
+// GET /admin — listar admins (qualquer admin pode ver)
+router.get("/", async (_req, res) => {
   try {
     const admins = await prisma.usuario.findMany({
-      where: {
-        tipo: {
-          in: ["ADMIN_MASTER", "ADMIN_ATENDENTE", "ADMIN_PROFESSORES"]
-        }
-      }
+      where: { tipo: { in: ["ADMIN_MASTER", "ADMIN_ATENDENTE", "ADMIN_PROFESSORES"] } },
+      select: baseSelect,
+      orderBy: { nome: "asc" },
     });
-    res.status(200).json(admins);
+    return res.status(200).json(admins);
   } catch (error) {
-    res.status(400).json(error);
+    return res.status(500).json({ erro: "Erro ao listar administradores" });
   }
 });
 
-// POST /admin - cria um administrador com nível específico
+// POST /admin — criar admin (apenas ADMIN_MASTER)
 router.post("/", async (req, res) => {
-  const validacao = adminSchema.safeParse(req.body);
-  if (!validacao.success) {
-    return res.status(400).json({
-      erro: validacao.error.errors.map(e => e.message).join("; ")
-    });
+  if (!isMaster(req)) return res.status(403).json({ erro: "Somente ADMIN_MASTER pode criar administradores" });
+
+  const valid = adminSchema.safeParse(req.body);
+  if (!valid.success) {
+    return res.status(400).json({ erro: valid.error.errors.map((e) => e.message).join("; ") });
   }
 
-  const errosSenha = validaSenha(validacao.data.senha);
-  if (errosSenha.length > 0) {
-    return res.status(400).json({ erro: errosSenha.join("; ") });
-  }
+  const errosSenha = validaSenha(valid.data.senha);
+  if (errosSenha.length) return res.status(400).json({ erro: errosSenha.join("; ") });
 
-  const salt = bcrypt.genSaltSync(12);
-  const hash = bcrypt.hashSync(validacao.data.senha, salt);
-
-  const { nome, email, celular, tipo } = validacao.data;
+  const hash = bcrypt.hashSync(valid.data.senha, 12);
+  const { nome, email, celular, tipo } = valid.data;
 
   try {
     const novoAdmin = await prisma.usuario.create({
-      data: {
-        nome,
-        email,
-        celular,
-        senha: hash,
-        tipo
-      }
+      data: { nome, email, celular, senha: hash, tipo },
+      select: baseSelect,
     });
-
-    res.status(201).json({
-      id: novoAdmin.id,
-      nome: novoAdmin.nome,
-      email: novoAdmin.email,
-      celular: novoAdmin.celular,
-      tipo: novoAdmin.tipo
-    });
+    return res.status(201).json(novoAdmin);
   } catch (error: any) {
-    if (error.code === 'P2002') {
-      return res.status(409).json({ erro: "Email já cadastrado" });
+    if (error?.code === "P2002") {
+      return res.status(409).json({ erro: "E-mail já cadastrado" });
     }
-    res.status(500).json({ erro: "Erro ao criar administrador" });
+    return res.status(500).json({ erro: "Erro ao criar administrador" });
   }
 });
 
-// PATCH /admin/:id - editar dados do administrador
+// PATCH /admin/:id — editar admin
+// - ADMIN_MASTER pode editar qualquer admin e alterar `tipo`.
+// - Admin não-master só pode editar **a si mesmo** e **não** pode alterar `tipo`.
 router.patch("/:id", async (req, res) => {
   const { id } = req.params;
 
-  // Validar os campos que podem ser atualizados
-  const updateSchema = z.object({
+  const ehMaster = isMaster(req);
+  const ehSelf = req.usuario?.usuarioLogadoId === id;
+
+  if (!ehMaster && !ehSelf) {
+    return res.status(403).json({ erro: "Sem permissão para editar outro administrador" });
+  }
+
+  const updateSelfSchema = z.object({
     nome: z.string().min(5).optional(),
     email: z.string().email().optional(),
     celular: z.string().min(10).optional(),
     senha: z.string().optional(),
-    tipo: z.nativeEnum(TipoUsuario).refine(t => t !== 'CLIENTE', {
-      message: 'Tipo de usuário inválido para admin'
-    }).optional()
   });
 
-  const validacao = updateSchema.safeParse(req.body);
-  if (!validacao.success) {
-    return res.status(400).json({
-      erro: validacao.error.errors.map(e => e.message).join("; ")
-    });
+  const updateMasterSchema = updateSelfSchema.extend({
+    tipo: z
+      .nativeEnum(TipoUsuario)
+      .refine((t) => t !== "CLIENTE", { message: "Tipo de usuário inválido para admin" })
+      .optional(),
+  });
+
+  const schema = ehMaster ? updateMasterSchema : updateSelfSchema;
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ erro: parsed.error.errors.map((e) => e.message).join("; ") });
   }
 
-  const dadosAtualizar = { ...validacao.data };
+  const data: any = { ...parsed.data };
 
-  // Se senha foi passada, validar e hashear
-  if (dadosAtualizar.senha) {
-    const errosSenha = validaSenha(dadosAtualizar.senha);
-    if (errosSenha.length > 0) {
-      return res.status(400).json({ erro: errosSenha.join("; ") });
-    }
-    const salt = bcrypt.genSaltSync(12);
-    dadosAtualizar.senha = bcrypt.hashSync(dadosAtualizar.senha, salt);
+  // senha -> valida e hash
+  if (data.senha) {
+    const erros = validaSenha(data.senha);
+    if (erros.length) return res.status(400).json({ erro: erros.join("; ") });
+    data.senha = bcrypt.hashSync(data.senha, 12);
   }
 
   try {
-    const adminExistente = await prisma.usuario.findUnique({ where: { id } });
-    if (!adminExistente) {
+    const existe = await prisma.usuario.findUnique({ where: { id } });
+    if (!existe || !["ADMIN_MASTER", "ADMIN_ATENDENTE", "ADMIN_PROFESSORES"].includes(existe.tipo)) {
       return res.status(404).json({ erro: "Administrador não encontrado" });
     }
 
-    // Atualiza admin no banco
+    // se não-master, garantir que não vai alterar `tipo`
+    if (!ehMaster) delete data.tipo;
+
     const adminAtualizado = await prisma.usuario.update({
       where: { id },
-      data: dadosAtualizar
+      data,
+      select: baseSelect,
     });
 
-    res.json({
-      id: adminAtualizado.id,
-      nome: adminAtualizado.nome,
-      email: adminAtualizado.email,
-      celular: adminAtualizado.celular,
-      tipo: adminAtualizado.tipo
-    });
+    return res.json(adminAtualizado);
   } catch (error: any) {
-    if (error.code === 'P2002') {
-      return res.status(409).json({ erro: "Email já cadastrado" });
+    if (error?.code === "P2002") {
+      return res.status(409).json({ erro: "E-mail já cadastrado" });
     }
-    res.status(500).json({ erro: "Erro ao atualizar administrador" });
+    return res.status(500).json({ erro: "Erro ao atualizar administrador" });
   }
 });
 
-
-// DELETE /admin/:id - excluir administrador
+// DELETE /admin/:id — excluir admin (apenas ADMIN_MASTER; evita apagar a si mesmo)
 router.delete("/:id", async (req, res) => {
   const { id } = req.params;
 
+  if (!isMaster(req)) {
+    return res.status(403).json({ erro: "Somente ADMIN_MASTER pode excluir administradores" });
+  }
+  if (req.usuario?.usuarioLogadoId === id) {
+    return res.status(400).json({ erro: "Você não pode excluir a si mesmo" });
+  }
+
   try {
     const adminExistente = await prisma.usuario.findUnique({ where: { id } });
-    if (!adminExistente) {
+    if (!adminExistente || !["ADMIN_MASTER", "ADMIN_ATENDENTE", "ADMIN_PROFESSORES"].includes(adminExistente.tipo)) {
       return res.status(404).json({ erro: "Administrador não encontrado" });
     }
 
     await prisma.usuario.delete({ where: { id } });
-    res.json({ message: "Administrador excluído com sucesso" });
-  } catch (error) {
-    res.status(500).json({ erro: "Erro ao excluir administrador" });
+    return res.json({ mensagem: "Administrador excluído com sucesso" });
+  } catch {
+    return res.status(500).json({ erro: "Erro ao excluir administrador" });
   }
 });
 
