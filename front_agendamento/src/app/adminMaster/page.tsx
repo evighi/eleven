@@ -135,6 +135,12 @@ function toYmdSP(d: Date) {
   }).format(d);
 }
 
+function toDdMm(isoYmd: string) {
+  const [y, m, d] = isoYmd.split("-");
+  return `${d}-${m}`;
+}
+
+
 /** Próximas datas do mesmo dia-da-semana.
  * - Inclui a própria base (se cair no mesmo dia da semana).
  * - Respeita dataInicio (se vier).
@@ -359,19 +365,22 @@ export default function AdminHome() {
     }
   };
 
-  /** Abrir modal de exceção (cancelar apenas 1 dia) */
+  // Abrir modal de exceção (cancelar apenas 1 dia)
   const abrirExcecao = () => {
     if (!agendamentoSelecionado?.diaSemana) {
       alert("Não foi possível identificar o dia da semana deste permanente.");
       return;
     }
-    // Gera lista local de próximas datas (30 dias), respeitando dataInicio
+
+    // agora: só 6 datas e inclui a base (data selecionada)
     const lista = gerarProximasDatasDiaSemana(
       agendamentoSelecionado.diaSemana,
       data || todayStrSP(),
       agendamentoSelecionado.dataInicio || null,
-      30
+      6,      // <- quantidade
+      true    // <- incluir a própria base, se for o mesmo dia da semana
     );
+
     setDatasExcecao(lista);
     setDataExcecaoSelecionada(null);
     setMostrarExcecaoModal(true);
@@ -905,7 +914,7 @@ export default function AdminHome() {
                 <div className="bg-white rounded-lg p-4 w-full max-w-sm">
                   <h3 className="text-lg font-semibold mb-2">Cancelar apenas 1 dia</h3>
                   <p className="text-sm text-gray-600 mb-3">
-                    Selecione uma data (próximos {Math.min(30, datasExcecao.length)} dias que caem em{" "}
+                    Selecione uma data (próximas {datasExcecao.length} datas que caem em{" "}
                     {agendamentoSelecionado?.diaSemana ?? "-"}).
                   </p>
 
@@ -925,7 +934,7 @@ export default function AdminHome() {
                               : "border-gray-300 hover:bg-gray-50"
                               }`}
                           >
-                            {d}
+                            {toDdMm(d)} {/* <- aqui! */}
                           </button>
                         );
                       })}
