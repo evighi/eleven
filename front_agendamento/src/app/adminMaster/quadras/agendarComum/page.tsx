@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import axios from 'axios'
 import Spinner from '@/components/Spinner'
+import { useSearchParams } from 'next/navigation'
 
 type Esporte = { id: number | string; nome: string }
 type Usuario = { id: number | string; nome: string }
@@ -11,10 +12,11 @@ type DisponibilidadeQuadra = Quadra & { disponivel: boolean }
 
 export default function AgendamentoComum() {
   const API_URL = process.env.NEXT_PUBLIC_URL_API || 'http://localhost:3001'
+  const searchParams = useSearchParams()
 
   const [data, setData] = useState<string>('')
   const [esportes, setEsportes] = useState<Esporte[]>([])
-  const [esporteSelecionado, setEsporteSelecionado] = useState<string>('')
+  const [esporteSelecionado, setEsporteSelecionado] = useState<string>('') // sempre guarda o ID
   const [horario, setHorario] = useState<string>('')
 
   const [quadrasDisponiveis, setQuadrasDisponiveis] = useState<Quadra[]>([])
@@ -33,6 +35,22 @@ export default function AgendamentoComum() {
   // feedback do submit
   const [salvando, setSalvando] = useState<boolean>(false)
 
+  // --- NOVO: guardar o parâmetro de esporte (pode vir id OU nome) para mapear quando esportes carregarem
+  const [esporteParam, setEsporteParam] = useState<string>('')
+
+  // --- NOVO: ler params vindos da Home e pré-preencher
+  useEffect(() => {
+    const d = searchParams.get('data')
+    const h = searchParams.get('horario')
+    const q = searchParams.get('quadraId')
+    const e = searchParams.get('esporteId') || searchParams.get('esporte') // aceita id OU nome
+
+    if (d) setData(d)
+    if (h) setHorario(h)
+    if (q) setQuadraSelecionada(q)
+    if (e) setEsporteParam(e)
+  }, [searchParams])
+
   // Esportes
   useEffect(() => {
     axios
@@ -40,6 +58,23 @@ export default function AgendamentoComum() {
       .then((res) => setEsportes(res.data || []))
       .catch((err) => console.error(err))
   }, [API_URL])
+
+  // --- NOVO: quando a lista de esportes chegar, mapeia o param (id ou nome) para o ID correto
+  useEffect(() => {
+    if (!esportes.length || !esporteParam) return
+
+    // tenta por ID
+    const byId = esportes.find((e) => String(e.id) === String(esporteParam))
+    if (byId) {
+      setEsporteSelecionado(String(byId.id))
+      return
+    }
+    // tenta por NOME (case-insensitive)
+    const byName = esportes.find(
+      (e) => e.nome?.trim().toLowerCase() === esporteParam.trim().toLowerCase()
+    )
+    if (byName) setEsporteSelecionado(String(byName.id))
+  }, [esportes, esporteParam])
 
   // Disponibilidade
   useEffect(() => {
@@ -170,6 +205,12 @@ export default function AgendamentoComum() {
     }
   }
 
+  const horas = [
+    '07:00','08:00','09:00','10:00','11:00','12:00','13:00',
+    '14:00','15:00','16:00','17:00','18:00','19:00',
+    '20:00','21:00','22:00','23:00'
+  ]
+
   return (
     <div className="max-w-xl mx-auto mt-10 p-6 bg-white shadow rounded-xl">
       <h1 className="text-2xl font-bold mb-4">Agendar Quadra Comum</h1>
@@ -203,11 +244,7 @@ export default function AgendamentoComum() {
         onChange={(e) => setHorario(e.target.value)}
       >
         <option value="">Selecione um horário</option>
-        {[
-          '08:00','09:00','10:00','11:00','12:00','13:00',
-          '14:00','15:00','16:00','17:00','18:00','19:00',
-          '20:00','21:00','22:00','23:00'
-        ].map((h) => (
+        {horas.map((h) => (
           <option key={h} value={h}>{h}</option>
         ))}
       </select>
