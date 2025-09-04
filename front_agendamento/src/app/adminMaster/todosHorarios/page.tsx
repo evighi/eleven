@@ -293,7 +293,7 @@ export default function TodosHorariosPage() {
       data,
       horario: agendarCtx.hora,
       quadraId: agendarCtx.quadraId,
-      esporteNome: agendarCtx.esporte, // usamos nome; a page tenta casar pelo nome também
+      esporte: agendarCtx.esporte, // usamos nome; a page tenta casar pelo nome também
     });
     setConfirmAgendar(false);
     setAgendarCtx(null);
@@ -602,11 +602,11 @@ export default function TodosHorariosPage() {
 
     return (
       <div className="space-y-10">
-        {Object.entries(esportes).map(([esporteNome, bloco]) => {
+        {Object.entries(esportes).map(([esporte, bloco]) => {
           if (!bloco?.grupos?.length) return null;
 
           return (
-            <div key={esporteNome} className="space-y-10">
+            <div key={esporte} className="space-y-10">
               {bloco.grupos.map((grupo, gi) => {
                 if (!grupo?.length) return null;
 
@@ -614,10 +614,10 @@ export default function TodosHorariosPage() {
                 const maxNum = Math.max(...grupo.map((q) => q.numero));
 
                 return (
-                  <section key={`${esporteNome}-${gi}`}>
+                  <section key={`${esporte}-${gi}`}>
                     {/* Cabeçalho por grupo (ex: Beach Tennis – 1 - 6) */}
                     <h2 className="text-center text-xl sm:text-2xl md:text-3xl font-extrabold text-gray-900 mb-3">
-                      {esporteNome} – {minNum} - {maxNum}
+                      {esporte} – {minNum} - {maxNum}
                     </h2>
 
                     {/* Linha com os números das quadras */}
@@ -647,7 +647,7 @@ export default function TodosHorariosPage() {
                                 key={`${q.quadraId}-${hora}`}
                                 slot={slot}
                                 hora={hora}
-                                esporte={esporteNome}
+                                esporte={esporte}
                                 quadra={{ quadraId: q.quadraId, nome: q.nome, numero: q.numero }}
                               />
                             );
