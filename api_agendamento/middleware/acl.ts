@@ -32,3 +32,30 @@ export function requireSelfOrAdminParam(paramName: string) {
     return res.status(403).json({ erro: "Sem permissão (somente dono ou admin)" });
   };
 }
+
+export function requireOwnerByRecord(
+  loader: (req: Request) => Promise<string | null> | string | null
+) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    if (!req.usuario) return res.status(401).json({ erro: "Não autenticado" });
+
+    try {
+      const result = await loader(req);
+      const ownerId = result ?? null;
+
+      if (!ownerId) {
+        return res.status(404).json({ erro: "Recurso não encontrado" });
+      }
+
+      const { usuarioLogadoId, usuarioLogadoTipo } = req.usuario;
+
+      if (isAdmin(usuarioLogadoTipo) || usuarioLogadoId === ownerId) {
+        return next();
+      }
+
+      return res.status(403).json({ erro: "Sem permissão (somente dono ou admin)" });
+    } catch (e) {
+      return res.status(500).json({ erro: "Erro ao validar permissão" });
+    }
+  };
+}

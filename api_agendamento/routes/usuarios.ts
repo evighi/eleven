@@ -2,52 +2,52 @@
 import { Request, Response, Router } from "express";
 import { PrismaClient } from "@prisma/client";
 import { z } from "zod";
+import verificarToken from "../middleware/authMiddleware";
 
 const prisma = new PrismaClient();
 const router = Router();
 
+// seleção segura (nunca retornar senha/codigo)
+const baseUserSelect = {
+  id: true,
+  nome: true,
+  email: true,
+  celular: true,
+  nascimento: true,
+  cpf: true,
+  tipo: true,
+} as const;
+
+// 🔒 todas as rotas daqui exigem login
+router.use(verificarToken);
+
 /**
- * Mantido como estava: retorna dados básicos do usuário logado.
- * (NÃO alterado)
+ * GET /usuarios/me
+ * Retorna dados do usuário logado (consultando o BD, não o token)
  */
-router.get("/me", (req: Request, res: Response) => {
-  // Forçar o tipo extendido com type assertion:
-  const reqCustom = req as Request & {
-    usuario?: {
-      usuarioLogadoId: string;
-      usuarioLogadoNome: string;
-      usuarioLogadoTipo: string;
-    };
-  };
+router.get("/me", async (req: Request, res: Response) => {
+  if (!req.usuario) return res.status(401).json({ erro: "Não autenticado" });
 
-  if (!reqCustom.usuario) {
-    return res.status(401).json({ erro: "Não autenticado" });
+  try {
+    const user = await prisma.usuario.findUnique({
+      where: { id: req.usuario.usuarioLogadoId },
+      select: baseUserSelect,
+    });
+    if (!user) return res.status(404).json({ erro: "Usuário não encontrado" });
+    return res.json(user);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ erro: "Erro ao carregar perfil" });
   }
-
-  const { usuarioLogadoId, usuarioLogadoNome, usuarioLogadoTipo } = reqCustom.usuario;
-
-  return res.json({
-    id: usuarioLogadoId,
-    nome: usuarioLogadoNome,
-    tipo: usuarioLogadoTipo,
-  });
 });
 
 /**
- * NOVO: Atualiza SOMENTE o celular do usuário logado.
  * PATCH /usuarios/me/celular
+ * Atualiza SOMENTE o celular do usuário logado
  */
 router.patch("/me/celular", async (req: Request, res: Response) => {
-  // Pega o id do usuário autenticado (via middleware que popula req.usuario)
-  const reqCustom = req as Request & {
-    usuario?: { usuarioLogadoId: string };
-  };
+  if (!req.usuario) return res.status(401).json({ erro: "Não autenticado" });
 
-  if (!reqCustom.usuario) {
-    return res.status(401).json({ erro: "Não autenticado" });
-  }
-
-  // Validação do campo "celular"
   const schema = z.object({
     celular: z
       .string({ required_error: "Informe o celular" })
@@ -66,20 +66,10 @@ router.patch("/me/celular", async (req: Request, res: Response) => {
 
   try {
     const user = await prisma.usuario.update({
-      where: { id: reqCustom.usuario.usuarioLogadoId },
+      where: { id: req.usuario.usuarioLogadoId },
       data: { celular: valid.data.celular },
-      // já devolve tudo que você quer exibir no front (não editável)
-      select: {
-        id: true,
-        nome: true,
-        email: true,
-        celular: true,
-        nascimento: true,
-        cpf: true,
-        tipo: true,
-      },
+      select: baseUserSelect,
     });
-
     return res.json(user);
   } catch (err) {
     console.error(err);
