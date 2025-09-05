@@ -6,33 +6,48 @@ import bcrypt from "bcrypt";
 const prisma = new PrismaClient();
 const router = Router();
 
+const JWT_KEY = process.env.JWT_KEY as string;
+const isProd = process.env.NODE_ENV === "production";
+
+// POST /login
 router.post("/", async (req, res) => {
-  const { email, senha } = req.body;
-
-  const mensaPadrao = "Login ou senha incorretos";
-
-  if (!email || !senha) {
-    return res.status(400).json({ erro: mensaPadrao });
-  }
-
   try {
+    let { email, senha } = req.body as { email?: string; senha?: string };
+
+    if (!email || !senha) {
+      return res.status(400).json({ erro: "Informe e-mail e senha." });
+    }
+
+    // normaliza e-mail para evitar confusão de caixa
+    email = email.trim().toLowerCase();
+
+    // busca apenas o necessário
     const usuario = await prisma.usuario.findUnique({
       where: { email },
+      select: {
+        id: true,
+        nome: true,
+        email: true,
+        senha: true,
+        tipo: true,
+        verificado: true,
+      },
     });
 
     if (!usuario) {
-      return res.status(400).json({ erro: mensaPadrao });
+      // mensagem explícita
+      return res.status(404).json({ erro: "E-mail não cadastrado." });
     }
 
     if (usuario.tipo === TipoUsuario.CLIENTE && !usuario.verificado) {
       return res.status(403).json({
-        erro: "E-mail não confirmado. Por favor, confirme seu e-mail antes de fazer login.",
+        erro: "E-mail não confirmado. Verifique seu e-mail antes de entrar.",
       });
     }
 
-    const senhaValida = bcrypt.compareSync(senha, usuario.senha);
+    const senhaValida = await bcrypt.compare(senha, usuario.senha);
     if (!senhaValida) {
-      return res.status(400).json({ erro: mensaPadrao });
+      return res.status(401).json({ erro: "Senha incorreta." });
     }
 
     const token = jwt.sign(
@@ -41,19 +56,19 @@ router.post("/", async (req, res) => {
         usuarioLogadoNome: usuario.nome,
         usuarioLogadoTipo: usuario.tipo,
       },
-      process.env.JWT_KEY as string,
+      JWT_KEY,
       { expiresIn: "1h" }
     );
 
-    // SETAR COOKIE HTTP ONLY COM O TOKEN
+    // cookie httpOnly com o token
     res.cookie("auth_token", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 3600000, // 1 hora em ms
-      sameSite: "strict",
+      secure: isProd,
+      sameSite: "strict", // mude para "lax" se front e API estiverem em subdomínios diferentes
+      maxAge: 60 * 60 * 1000, // 1h
+      path: "/",
     });
 
-    // Envia dados do usuário sem o token no corpo da resposta
     return res.status(200).json({
       id: usuario.id,
       nome: usuario.nome,
@@ -61,18 +76,19 @@ router.post("/", async (req, res) => {
       tipo: usuario.tipo,
     });
   } catch (error) {
-    return res.status(400).json({ erro: "Erro interno no servidor" });
+    console.error("Erro no login:", error);
+    return res.status(500).json({ erro: "Erro interno no servidor" });
   }
 });
 
 router.post("/logout", (req, res) => {
   res.clearCookie("auth_token", {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: isProd,
     sameSite: "strict",
+    path: "/",
   });
-  res.json({ mensagem: "Logout realizado com sucesso" });
+  return res.json({ mensagem: "Logout realizado com sucesso" });
 });
-
 
 export default router;

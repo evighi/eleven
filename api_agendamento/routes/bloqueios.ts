@@ -3,44 +3,58 @@ import { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { startOfDay, endOfDay } from "date-fns";
 
+import verificarToken from "../middleware/authMiddleware";
+import { requireAdmin } from "../middleware/acl";
+
 const router = Router();
 const prisma = new PrismaClient();
 
+// 🔒 tudo aqui exige login + ser ADMIN
+router.use(verificarToken);
+router.use(requireAdmin);
+
+// helpers
+const horaRegex = /^([01]\d|2[0-3]):[0-5]\d$/;
 const bloqueioSchema = z.object({
-  quadraIds: z.array(z.string().uuid()),
+  quadraIds: z.array(z.string().uuid()).nonempty("Selecione ao menos 1 quadra"),
   dataBloqueio: z.coerce.date(),
-  inicioBloqueio: z.string().min(1),
-  fimBloqueio: z.string().min(1),
-  bloqueadoPorId: z.string().uuid(),
+  inicioBloqueio: z.string().regex(horaRegex, "Hora inicial inválida (HH:MM)"),
+  fimBloqueio: z.string().regex(horaRegex, "Hora final inválida (HH:MM)"),
 });
 
 router.post("/", async (req, res) => {
-  const parseResult = bloqueioSchema.safeParse(req.body);
-  if (!parseResult.success) {
-    return res.status(400).json({ erro: parseResult.error.errors });
+  const parsed = bloqueioSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ erro: "Dados inválidos", detalhes: parsed.error.errors });
   }
 
-  const { quadraIds, dataBloqueio, inicioBloqueio, fimBloqueio, bloqueadoPorId } = parseResult.data;
+  const { quadraIds, dataBloqueio, inicioBloqueio, fimBloqueio } = parsed.data;
+
+  // valida janela de horário
+  if (inicioBloqueio >= fimBloqueio) {
+    return res.status(400).json({ erro: "Hora inicial deve ser menor que a final" });
+  }
+
+  // id do usuário logado (não confiar no body)
+  const bloqueadoPorId = req.usuario!.usuarioLogadoId;
 
   try {
     const dataInicio = startOfDay(dataBloqueio);
     const dataFim = endOfDay(dataBloqueio);
 
-    // Verifica conflitos para todas as quadras antes de criar
-    for (const quadraId of quadraIds) {
+    // (opcional) garantir IDs únicos
+    const uniqueQuadraIds = Array.from(new Set(quadraIds));
+
+    // Verifica conflitos com agendamentos COMUNS confirmados
+    for (const quadraId of uniqueQuadraIds) {
       const conflitoComum = await prisma.agendamento.findFirst({
         where: {
           quadraId,
-          horario: {
-            gte: inicioBloqueio,
-            lt: fimBloqueio,
-          },
-          data: {
-            gte: dataInicio,
-            lte: dataFim,
-          },
           status: "CONFIRMADO",
+          data: { gte: dataInicio, lte: dataFim },
+          horario: { gte: inicioBloqueio, lt: fimBloqueio },
         },
+        select: { id: true },
       });
 
       if (conflitoComum) {
@@ -48,84 +62,68 @@ router.post("/", async (req, res) => {
           erro: `Não é possível bloquear a quadra ${quadraId}: conflito com agendamento comum confirmado.`,
         });
       }
+
+      // TODO (se quiser): também considerar agendamentos permanentes que caiam nesse dia/horário
+      // Ex.: checar regra que mapeia DiaSemana + horario -> dataBloqueio
     }
 
-    // Cria o bloqueio com várias quadras (associação)
     const bloqueioCriado = await prisma.bloqueioQuadra.create({
       data: {
         dataBloqueio,
         inicioBloqueio,
         fimBloqueio,
         bloqueadoPorId,
-        quadras: {
-          connect: quadraIds.map(id => ({ id })),
-        },
+        quadras: { connect: uniqueQuadraIds.map((id) => ({ id })) },
       },
       include: {
-        bloqueadoPor: {
-          select: {
-            nome: true,
-            email: true,
-          },
-        },
-        quadras: {
-          select: {
-            nome: true,
-            numero: true,
-          },
-        },
+        bloqueadoPor: { select: { id: true, nome: true, email: true } },
+        quadras: { select: { id: true, nome: true, numero: true } },
       },
     });
 
     return res.status(201).json({
-      message: "Bloqueio criado com sucesso",
+      mensagem: "Bloqueio criado com sucesso",
       bloqueio: bloqueioCriado,
     });
-  } catch (error) {
+  } catch (error: any) {
+    // Quadra inexistente -> P2025
+    if (error?.code === "P2025") {
+      return res.status(404).json({ erro: "Uma ou mais quadras não foram encontradas" });
+    }
     console.error("Erro ao criar bloqueio:", error);
     return res.status(500).json({ erro: "Erro interno ao tentar bloquear as quadras" });
   }
 });
 
-router.get("/", async (req, res) => {
+router.get("/", async (_req, res) => {
   try {
     const bloqueios = await prisma.bloqueioQuadra.findMany({
       select: {
         id: true,
-        dataBloqueio: true,      // data alvo do bloqueio
-        inicioBloqueio: true,    // hora inicial bloqueada (string, ex: "14:00")
-        fimBloqueio: true,       // hora final bloqueada 
-        bloqueadoPor: {
-          select: { id: true, nome: true, email: true },
-        },
-        quadras: {
-          select: { id: true, nome: true, numero: true },
-        },
+        dataBloqueio: true,
+        inicioBloqueio: true,
+        fimBloqueio: true,
+        bloqueadoPor: { select: { id: true, nome: true, email: true } },
+        quadras: { select: { id: true, nome: true, numero: true } },
       },
-      orderBy: [
-        { dataBloqueio: "desc" },
-        { inicioBloqueio: "asc" },
-      ],
+      orderBy: [{ dataBloqueio: "desc" }, { inicioBloqueio: "asc" }],
     });
 
-    res.json(bloqueios);
+    return res.json(bloqueios);
   } catch (error) {
     console.error(error);
-    res.status(500).json({ erro: "Erro ao buscar bloqueios" });
+    return res.status(500).json({ erro: "Erro ao buscar bloqueios" });
   }
 });
 
-
 router.delete("/:id", async (req, res) => {
-  const { id } = req.params;
-
   try {
-    await prisma.bloqueioQuadra.delete({
-      where: { id },
-    });
-
-    return res.status(200).json({ message: "Bloqueio removido com sucesso!" });
-  } catch (error) {
+    await prisma.bloqueioQuadra.delete({ where: { id: req.params.id } });
+    return res.json({ mensagem: "Bloqueio removido com sucesso" });
+  } catch (error: any) {
+    if (error?.code === "P2025") {
+      return res.status(404).json({ erro: "Bloqueio não encontrado" });
+    }
     console.error("Erro ao remover bloqueio:", error);
     return res.status(500).json({ erro: "Erro ao remover bloqueio" });
   }
