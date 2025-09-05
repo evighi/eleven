@@ -43,7 +43,7 @@ type Player = {
   kind: PlayerKind;
   value: string;
   userId?: string;
-  // campos antigos (mantidos para compat)
+  // compat
   open?: boolean;
   search?: string;
   loading?: boolean;
@@ -72,7 +72,6 @@ const HORARIOS = [
   "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00", "23:00",
 ] as const;
 
-// Helpers de data/hora no fuso de São Paulo
 const SP_TZ = "America/Sao_Paulo";
 const todayIsoSP = new Intl.DateTimeFormat("en-CA", {
   timeZone: SP_TZ,
@@ -90,7 +89,6 @@ const hourNowSP = parseInt(
 );
 
 function dateFromIsoSP(isoYmd: string) {
-  // garante cálculo do DOW em SP
   return new Date(`${isoYmd}T00:00:00-03:00`);
 }
 
@@ -114,7 +112,7 @@ function diasProximos(qtd = 7) {
       d: dt.getDate(),
       mes: meses[dt.getMonth()],
       wdShort: wdShort[dow],
-      wdFull: DOW_MIXED[dow], // <-- nome completo (Quinta, Sexta, Sábado…)
+      wdFull: DOW_MIXED[dow],
     });
   }
   return out;
@@ -125,9 +123,7 @@ function formatarDia(iso: string) {
   const [y, m, d] = iso.split("-");
   return `${d}/${m}/${y}`;
 }
-
 function formatarDiaCurto(iso: string) {
-  // "QUINTA 04/09" (sem ano, dia da semana em CAIXA ALTA)
   if (!iso) return "";
   const sp = dateFromIsoSP(iso);
   const dow = sp.getDay();
@@ -142,7 +138,6 @@ function cryptoRandom() {
   }
   return Math.random().toString(36).slice(2);
 }
-
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
 }
@@ -175,11 +170,10 @@ function StepTrail({
           const base =
             "whitespace-nowrap rounded-full border px-3 py-1 text-[12px] font-semibold transition";
 
-          // cores: atual = laranja; concluído = CINZA ESCURO; futuro = CINZA CLARO
           const cls = isCurrent
             ? "bg-orange-600 border-orange-600 text-white"
             : isDone
-            ? "bg-gray-300 border-gray-400 text-gray-900" // <-- cinza mais escuro para concluídos
+            ? "bg-gray-300 border-gray-400 text-gray-900"
             : "bg-gray-100 border-gray-300 text-gray-700";
 
           return (
@@ -209,7 +203,6 @@ function initialsFromName(nome?: string) {
   const [a = "", b = ""] = nome.trim().split(/\s+/);
   return (a[0] || "").concat(b[0] || "").toUpperCase();
 }
-
 function AvatarCircle({ label }: { label?: string }) {
   return (
     <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-200 text-[12px] font-semibold text-gray-600">
@@ -506,11 +499,32 @@ export default function AgendarQuadraCliente() {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
 
+  // ======== feedback/tap lock ========
+  const [navLock, setNavLock] = useState(false);
+  const [autoMsg, setAutoMsg] = useState<string | null>(null);
+  const [pressEsporteId, setPressEsporteId] = useState<string | null>(null);
+  const [pressDiaISO, setPressDiaISO] = useState<string | null>(null);
+  const [pressQuadraId, setPressQuadraId] = useState<string | null>(null);
+
+  const flashAdvance = (msg: string, run: () => void, after?: () => void) => {
+    setNavLock(true);
+    setAutoMsg(msg);
+    // pequeno atraso para mostrar o estado pressionado
+    setTimeout(() => {
+      run();
+      // mantém o lock por um curto período para o usuário perceber o feedback
+      setTimeout(() => {
+        setNavLock(false);
+        setAutoMsg(null);
+        after?.();
+      }, 350);
+    }, 80);
+  };
+
   // ======== JOGADORES (opcional) ========
   const [players, setPlayers] = useState<Player[]>([]);
   const guestRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
-  // inicia players com dono + um campo "com cadastro"
   useEffect(() => {
     const ownerName = usuario?.nome ?? "";
     const base: Player[] = [
@@ -520,16 +534,12 @@ export default function AgendarQuadraCliente() {
     setPlayers(base);
   }, [usuario?.nome]);
 
-  // helpers jogador
   const updatePlayer = (id: string, patch: Partial<Player>) =>
     setPlayers((cur) => cur.map((p) => (p.id === id ? { ...p, ...patch } : p)));
-
   const removePlayer = (id: string) =>
     setPlayers((cur) => cur.filter((p) => p.id !== id || p.kind === "owner"));
-
   const addRegisteredField = () =>
     setPlayers((cur) => [...cur, { id: cryptoRandom(), kind: "registered", value: "" }]);
-
   const addGuestField = () =>
     setPlayers((cur) => [...cur, { id: cryptoRandom(), kind: "guest", value: "" }]);
 
@@ -540,7 +550,6 @@ export default function AgendarQuadraCliente() {
   }, [esportes, esporteId]);
 
   /* ========= Carregamentos ========= */
-  // 1) Esportes
   useEffect(() => {
     if (isChecking) return;
     const loadEsportes = async () => {
@@ -562,7 +571,6 @@ export default function AgendarQuadraCliente() {
     loadEsportes();
   }, [isChecking, buildEsporteLogo, API_URL]);
 
-  // 2) Logos das quadras
   useEffect(() => {
     if (isChecking) return;
     const loadQuadras = async () => {
@@ -583,7 +591,6 @@ export default function AgendarQuadraCliente() {
     loadQuadras();
   }, [isChecking, buildQuadraLogo, API_URL]);
 
-  // 3) Mapa de horários
   useEffect(() => {
     if (isChecking) return;
     setHorario("");
@@ -635,7 +642,6 @@ export default function AgendarQuadraCliente() {
     };
   }, [API_URL, esporteId, diaISO, isChecking]);
 
-  // 4) Lista de quadras disponíveis
   useEffect(() => {
     if (isChecking) return;
     const buscar = async () => {
@@ -678,12 +684,12 @@ export default function AgendarQuadraCliente() {
   const trailItems = useMemo(
     () => [
       { step: 1, hint: "Escolha o esporte", value: esporteId ? firstWord(esporteNome) : null },
-      { step: 2, hint: "Selecione o dia", value: diaISO ? formatarDiaCurto(diaISO) : null }, // QUINTA 04/09
+      { step: 2, hint: "Selecione o dia", value: diaISO ? formatarDiaCurto(diaISO) : null },
       { step: 3, hint: "Selecione o horário", value: horario || null },
       {
         step: 4,
         hint: "Escolha a quadra",
-        value: quadraSel ? `${quadraSel.numero} - ${quadraSel.nome}` : null, // número primeiro
+        value: quadraSel ? `${quadraSel.numero} - ${quadraSel.nome}` : null,
       },
       { step: 5, hint: isVoleiSelected ? "Jogadores (pulado)" : "Jogadores (opcional)", value: null },
       { step: 6, hint: "Confirmar", value: null },
@@ -701,10 +707,9 @@ export default function AgendarQuadraCliente() {
   const avancarQuadraDireto = (id: string) => {
     setQuadraId(id);
     setMsg("");
-    setStep(isVoleiSelected ? 6 : 5); // pula jogadores se for vôlei
+    setStep(isVoleiSelected ? 6 : 5);
   };
 
-  // Etapa de jogadores agora é OPCIONAL (sem validação de quantidade)
   const confirmarJogadores = () => {
     setMsg("");
     setStep(6);
@@ -740,7 +745,6 @@ export default function AgendarQuadraCliente() {
 
     const base: ReservaPayloadBase = { data: diaISO, horario, esporteId, quadraId, tipoReserva: "COMUM" };
 
-    // Sempre opcional: se tiver jogadores, envia; se não tiver, segue sem eles.
     const jogadoresIds = players
       .filter((p) => p.kind === "registered" && p.userId)
       .map((p) => String(p.userId));
@@ -824,18 +828,26 @@ export default function AgendarQuadraCliente() {
         </div>
       </header>
 
-      {/* Caminho de rato (não mostra no sucesso) */}
       {step < 7 && (
         <StepTrail
           items={trailItems}
           currentStep={step}
           onJump={(s) => {
-            if (s < step) setStep(s as Step);
+            if (s < step && !navLock) setStep(s as Step);
           }}
         />
       )}
 
-      <section className="px-4 py-4">
+      <section className="px-4 py-4 relative">
+        {/* Chip flutuante de feedback */}
+        {navLock && (
+          <div className="fixed inset-x-0 top-3 z-50 flex justify-center px-4 pointer-events-none">
+            <div className="flex items-center gap-2 bg-black/70 text-white text-xs px-3 py-1 rounded-full shadow">
+              <Spinner size="w-4 h-4" /> <span>{autoMsg ?? "Avançando..."}</span>
+            </div>
+          </div>
+        )}
+
         <div className="max-w-sm mx-auto space-y-4">
           {msg && <div className="text-center text-sm text-red-600">{msg}</div>}
 
@@ -857,16 +869,25 @@ export default function AgendarQuadraCliente() {
               <div className="grid grid-cols-4 gap-3">
                 {esportes.map((e) => {
                   const ativo = String(esporteId) === String(e.id);
+                  const pressed = pressEsporteId === String(e.id);
                   return (
                     <button
                       key={e.id}
-                      className={`rounded-xl border text-center px-2 py-3 text-[12px] leading-tight
+                      disabled={navLock}
+                      className={`rounded-xl border text-center px-2 py-3 text-[12px] leading-tight transition
+                        active:scale-[0.98]
                         ${ativo ? "bg-orange-50 border-orange-400 text-orange-700" : "bg-gray-50 border-gray-200 text-gray-700"}
+                        ${navLock ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}
+                        ${pressed ? "ring-2 ring-orange-500 animate-pulse" : ""}
                       `}
                       onClick={() => {
+                        if (navLock) return;
                         setMsg("");
-                        setEsporteId(String(e.id));
-                        setStep(2); // AVANÇA automaticamente
+                        setPressEsporteId(String(e.id));
+                        flashAdvance(`Esporte: ${e.nome}`, () => {
+                          setEsporteId(String(e.id));
+                          setStep(2);
+                        }, () => setPressEsporteId(null));
                       }}
                     >
                       <div className="mx-auto mb-2 w-9 h-9 rounded-full bg-gray-200 overflow-hidden relative flex items-center justify-center">
@@ -883,7 +904,6 @@ export default function AgendarQuadraCliente() {
                   );
                 })}
               </div>
-              {/* sem botão Confirmar */}
             </Card>
           )}
 
@@ -894,26 +914,33 @@ export default function AgendarQuadraCliente() {
               <div className="flex gap-2 overflow-x-auto pb-1">
                 {dias.map((d) => {
                   const ativo = diaISO === d.iso;
+                  const pressed = pressDiaISO === d.iso;
                   return (
                     <button
                       key={d.iso}
+                      disabled={navLock}
                       onClick={() => {
+                        if (navLock) return;
                         setMsg("");
-                        setDiaISO(d.iso);
-                        setStep(3); // AVANÇA automaticamente
+                        setPressDiaISO(d.iso);
+                        flashAdvance(`Dia: ${formatarDiaCurto(d.iso)}`, () => {
+                          setDiaISO(d.iso);
+                          setStep(3);
+                        }, () => setPressDiaISO(null));
                       }}
-                      className={`min-w-[110px] rounded-xl border px-2 py-2 text-[12px] text-center
+                      className={`min-w-[110px] rounded-xl border px-2 py-2 text-[12px] text-center transition active:scale-[0.98]
                         ${ativo ? "bg-orange-100 border-orange-500 text-orange-700" : "bg-gray-100 border-gray-200 text-gray-700"}
+                        ${navLock ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}
+                        ${pressed ? "ring-2 ring-orange-500 animate-pulse" : ""}
                       `}
                     >
                       <div className="text-[11px]">{d.mes}</div>
                       <div className="text-lg font-bold">{String(d.d).padStart(2, "0")}</div>
-                      <div className="text-[11px]">{d.wdFull}</div> {/* Nome completo: Quinta, Sexta, Sábado... */}
+                      <div className="text-[11px]">{d.wdFull}</div>
                     </button>
                   );
                 })}
               </div>
-              {/* sem botão Avançar */}
             </Card>
           )}
 
@@ -934,10 +961,10 @@ export default function AgendarQuadraCliente() {
                     <button
                       key={h}
                       onClick={() => enabled && setHorario(h)}
-                      disabled={!enabled}
-                      className={`rounded-md px-2 py-2 text-sm border
+                      disabled={!enabled || navLock}
+                      className={`rounded-md px-2 py-2 text-sm border transition active:scale-[0.98]
                         ${ativo ? "bg-orange-100 border-orange-500 text-orange-700" : "bg-gray-100 border-gray-200 text-gray-700"}
-                        ${enabled ? "" : "opacity-50 cursor-not-allowed"}
+                        ${enabled && !navLock ? "cursor-pointer" : "opacity-50 cursor-not-allowed"}
                       `}
                     >
                       {h}
@@ -945,7 +972,7 @@ export default function AgendarQuadraCliente() {
                   );
                 })}
               </div>
-              <Btn className="mt-4 cursor-pointer" onClick={confirmarHorario} disabled={!horario}>
+              <Btn className="mt-4 cursor-pointer" onClick={confirmarHorario} disabled={!horario || navLock}>
                 Confirmar
               </Btn>
             </Card>
@@ -969,13 +996,23 @@ export default function AgendarQuadraCliente() {
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                 {quadras.map((q) => {
                   const ativo = String(quadraId) === String(q.quadraId);
+                  const pressed = pressQuadraId === String(q.quadraId);
                   const src = q.logoUrl || "/quadra.png";
                   return (
                     <button
                       key={q.quadraId}
-                      onClick={() => avancarQuadraDireto(String(q.quadraId))} // <-- AVANÇA automaticamente
-                      className={`rounded-xl border p-3 transition flex flex-col items-center text-center
+                      disabled={navLock}
+                      onClick={() => {
+                        if (navLock) return;
+                        setPressQuadraId(String(q.quadraId));
+                        flashAdvance(`Quadra ${q.numero} - ${q.nome}`, () => {
+                          avancarQuadraDireto(String(q.quadraId));
+                        }, () => setPressQuadraId(null));
+                      }}
+                      className={`rounded-xl border p-3 transition flex flex-col items-center text-center active:scale-[0.98]
                         ${ativo ? "bg-orange-50 border-orange-500" : "bg-gray-50 border-gray-200 hover:border-gray-300"}
+                        ${navLock ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}
+                        ${pressed ? "ring-2 ring-orange-500 animate-pulse" : ""}
                       `}
                     >
                       <div className="relative w-full h-15 md:h-32 overflow-hidden flex items-center justify-center mb-2">
@@ -1072,7 +1109,7 @@ export default function AgendarQuadraCliente() {
                 </button>
               </div>
 
-              <Btn className="mt-4 cursor-pointer" onClick={confirmarJogadores}>
+              <Btn className="mt-4 cursor-pointer" onClick={confirmarJogadores} disabled={navLock}>
                 Confirmar
               </Btn>
             </Card>
@@ -1092,7 +1129,7 @@ export default function AgendarQuadraCliente() {
               />
               <Resumo
                 label="Escolha a Quadra:"
-                valor={`${quadraSel?.numero ?? ""} - ${quadraSel?.nome ?? ""}`} // número primeiro
+                valor={`${quadraSel?.numero ?? ""} - ${quadraSel?.nome ?? ""}`}
                 onChange={() => setStep(4)}
               />
               <Resumo
@@ -1106,7 +1143,7 @@ export default function AgendarQuadraCliente() {
                 onChange={() => setStep(5)}
               />
 
-              <Btn className="mt-2 cursor-pointer" onClick={realizarReserva} disabled={loading}>
+              <Btn className="mt-2 cursor-pointer" onClick={realizarReserva} disabled={loading || navLock}>
                 {loading ? "Enviando..." : "Realizar Reserva"}
               </Btn>
             </Card>
