@@ -377,9 +377,9 @@ export default function AgendarQuadraCliente() {
       const candidate = e.logoUrl || e.imagem || "";
       const normalized =
         candidate &&
-        !/^(https?:|data:|blob:)/i.test(candidate) &&
-        !candidate.startsWith("/") &&
-        !candidate.includes("/")
+          !/^(https?:|data:|blob:)/i.test(candidate) &&
+          !candidate.startsWith("/") &&
+          !candidate.includes("/")
           ? `/uploads/esportes/${candidate}`
           : candidate;
 
@@ -394,9 +394,9 @@ export default function AgendarQuadraCliente() {
       const candidate = q.logoUrl || q.imagem || q.arquivo || "";
       const normalized =
         candidate &&
-        !/^(https?:|data:|blob:)/i.test(String(candidate)) &&
-        !String(candidate).startsWith("/") &&
-        !String(candidate).includes("/")
+          !/^(https?:|data:|blob:)/i.test(String(candidate)) &&
+          !String(candidate).startsWith("/") &&
+          !String(candidate).includes("/")
           ? `/uploads/quadras/${candidate}`
           : String(candidate);
 
@@ -588,16 +588,6 @@ export default function AgendarQuadraCliente() {
   }, [API_URL, diaISO, horario, esporteId, quadraLogos, isChecking]);
 
   /* ========= Navegação ========= */
-  const confirmarEsporte = () => {
-    if (!esporteId) return setMsg("Selecione um esporte.");
-    setMsg("");
-    setStep(2);
-  };
-  const confirmarDia = () => {
-    if (!diaISO) return setMsg("Selecione um dia.");
-    setMsg("");
-    setStep(3);
-  };
   const confirmarHorario = () => {
     if (!horario) return setMsg("Selecione um horário.");
     setMsg("");
@@ -755,9 +745,13 @@ export default function AgendarQuadraCliente() {
                     <button
                       key={e.id}
                       className={`rounded-xl border text-center px-2 py-3 text-[12px] leading-tight
-                        ${ativo ? "bg-orange-50 border-orange-400 text-orange-700" : "bg-gray-50 border-gray-200 text-gray-700"}
-                      `}
-                      onClick={() => setEsporteId(String(e.id))}
+              ${ativo ? "bg-orange-50 border-orange-400 text-orange-700" : "bg-gray-50 border-gray-200 text-gray-700"}
+            `}
+                      onClick={() => {
+                        setMsg("");
+                        setEsporteId(String(e.id));
+                        setStep(2); // <- AVANÇA AUTOMATICAMENTE PRO STEP 2
+                      }}
                     >
                       <div className="mx-auto mb-2 w-9 h-9 rounded-full bg-gray-200 overflow-hidden relative flex items-center justify-center">
                         <AppImage
@@ -773,9 +767,7 @@ export default function AgendarQuadraCliente() {
                   );
                 })}
               </div>
-              <Btn className="mt-4 cursor-pointer" onClick={confirmarEsporte}>
-                Confirmar
-              </Btn>
+              {/* Removido o botão "Confirmar" */}
             </Card>
           )}
 
@@ -789,10 +781,14 @@ export default function AgendarQuadraCliente() {
                   return (
                     <button
                       key={d.iso}
-                      onClick={() => setDiaISO(d.iso)}
+                      onClick={() => {
+                        setMsg("");
+                        setDiaISO(d.iso);
+                        setStep(3); // <- AVANÇA AUTOMATICAMENTE PRO STEP 3
+                      }}
                       className={`min-w-[90px] rounded-xl border px-2 py-2 text-[12px] text-center
-                        ${ativo ? "bg-orange-100 border-orange-500 text-orange-700" : "bg-gray-100 border-gray-200 text-gray-700"}
-                      `}
+              ${ativo ? "bg-orange-100 border-orange-500 text-orange-700" : "bg-gray-100 border-gray-200 text-gray-700"}
+            `}
                     >
                       <div className="text-[11px]">{d.mes}</div>
                       <div className="text-lg font-bold">{String(d.d).padStart(2, "0")}</div>
@@ -801,9 +797,7 @@ export default function AgendarQuadraCliente() {
                   );
                 })}
               </div>
-              <Btn className="mt-4 cursor-pointer" onClick={confirmarDia}>
-                Avançar
-              </Btn>
+              {/* Removido o botão "Avançar" */}
             </Card>
           )}
 
@@ -933,7 +927,7 @@ export default function AgendarQuadraCliente() {
                         inputRef={(el) => {
                           guestRefs.current[p.id] = el;
                         }}
-                        onDebouncedCommit={() => {}}
+                        onDebouncedCommit={() => { }}
                         onBlurCommit={(val) => {
                           updatePlayer(p.id, { value: val });
                         }}
@@ -984,9 +978,8 @@ export default function AgendarQuadraCliente() {
               />
               <Resumo
                 label="Escolha a Quadra:"
-                valor={`${
-                  quadras.find((q) => String(q.quadraId) === String(quadraId))?.nome || ""
-                } - Quadra ${quadras.find((q) => String(q.quadraId) === String(quadraId))?.numero || ""}`}
+                valor={`${quadras.find((q) => String(q.quadraId) === String(quadraId))?.nome || ""
+                  } - Quadra ${quadras.find((q) => String(q.quadraId) === String(quadraId))?.numero || ""}`}
                 onChange={() => setStep(4)}
               />
               <Resumo
