@@ -1,30 +1,24 @@
 // src/routes/usuarios.ts
 import { Request, Response, Router } from "express";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, TipoUsuario } from "@prisma/client";
 import { z } from "zod";
+import verificarToken from "../middleware/authMiddleware"; // ⬅️ exige login
 
 const prisma = new PrismaClient();
 const router = Router();
 
+// 🔒 todas as rotas deste módulo exigem usuário autenticado
+router.use(verificarToken);
+
 /**
- * Mantido como estava: retorna dados básicos do usuário logado.
- * (NÃO alterado)
+ * Retorna dados básicos do usuário logado.
  */
 router.get("/me", (req: Request, res: Response) => {
-  // Forçar o tipo extendido com type assertion:
-  const reqCustom = req as Request & {
-    usuario?: {
-      usuarioLogadoId: string;
-      usuarioLogadoNome: string;
-      usuarioLogadoTipo: string;
-    };
-  };
-
-  if (!reqCustom.usuario) {
+  if (!req.usuario) {
     return res.status(401).json({ erro: "Não autenticado" });
   }
 
-  const { usuarioLogadoId, usuarioLogadoNome, usuarioLogadoTipo } = reqCustom.usuario;
+  const { usuarioLogadoId, usuarioLogadoNome, usuarioLogadoTipo } = req.usuario;
 
   return res.json({
     id: usuarioLogadoId,
@@ -34,16 +28,11 @@ router.get("/me", (req: Request, res: Response) => {
 });
 
 /**
- * NOVO: Atualiza SOMENTE o celular do usuário logado.
+ * Atualiza SOMENTE o celular do usuário logado.
  * PATCH /usuarios/me/celular
  */
 router.patch("/me/celular", async (req: Request, res: Response) => {
-  // Pega o id do usuário autenticado (via middleware que popula req.usuario)
-  const reqCustom = req as Request & {
-    usuario?: { usuarioLogadoId: string };
-  };
-
-  if (!reqCustom.usuario) {
+  if (!req.usuario) {
     return res.status(401).json({ erro: "Não autenticado" });
   }
 
@@ -66,9 +55,8 @@ router.patch("/me/celular", async (req: Request, res: Response) => {
 
   try {
     const user = await prisma.usuario.update({
-      where: { id: reqCustom.usuario.usuarioLogadoId },
+      where: { id: req.usuario.usuarioLogadoId },
       data: { celular: valid.data.celular },
-      // já devolve tudo que você quer exibir no front (não editável)
       select: {
         id: true,
         nome: true,
@@ -84,6 +72,68 @@ router.patch("/me/celular", async (req: Request, res: Response) => {
   } catch (err) {
     console.error(err);
     return res.status(500).json({ erro: "Erro ao atualizar celular" });
+  }
+});
+
+/**
+ * 🔎 Autocomplete público (autenticado): retorna apenas { id, nome }.
+ * GET /usuarios/buscar?q=jo&limit=10&tipos=CLIENTE
+ *
+ * - q: texto (mín. 2 caracteres)
+ * - limit: 1..20 (padrão 10)
+ * - tipos: por padrão só CLIENTE; pode informar algo como "CLIENTE,ADMIN_MASTER"
+ */
+router.get("/buscar", async (req: Request, res: Response) => {
+  const q = String(req.query.q ?? "").trim();
+  const limitRaw = Number(req.query.limit ?? 10);
+  const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(limitRaw, 20)) : 10;
+
+  // por padrão, só CLIENTE
+  const tiposParam = String(req.query.tipos ?? "CLIENTE")
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean) as (keyof typeof TipoUsuario)[];
+
+  const tiposValidos = tiposParam.filter((t) => t in TipoUsuario) as unknown as TipoUsuario[];
+
+  if (q.length < 2) {
+    // evita varredura/enumeração com consulta muito curta
+    return res.json([]);
+  }
+
+  try {
+    const usuarios = await prisma.usuario.findMany({
+      where: {
+        nome: { contains: q, mode: "insensitive" },
+        ...(tiposValidos.length ? { tipo: { in: tiposValidos } } : {}),
+      },
+      select: { id: true, nome: true }, // ⬅️ apenas id e nome
+      orderBy: { nome: "asc" },
+      take: limit,
+    });
+
+    res.json(usuarios);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: "Erro ao buscar usuários" });
+  }
+});
+
+/**
+ * (Opcional) Público autenticado: obter só id+nome de 1 usuário
+ * GET /usuarios/:id/public
+ */
+router.get("/:id/public", async (req: Request, res: Response) => {
+  try {
+    const u = await prisma.usuario.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, nome: true },
+    });
+    if (!u) return res.status(404).json({ erro: "Usuário não encontrado" });
+    res.json(u);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: "Erro ao buscar usuário" });
   }
 });
 
