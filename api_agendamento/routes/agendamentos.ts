@@ -23,6 +23,36 @@ const DIA_IDX: Record<DiaSemana, number> = {
   SABADO: 6,
 };
 
+// ================= Helpers de horário local (America/Sao_Paulo) =================
+const SP_TZ = "America/Sao_Paulo";
+
+function localYMD(d: Date, tz = SP_TZ) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d); // "YYYY-MM-DD"
+}
+
+function localHM(d: Date, tz = SP_TZ) {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: tz,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(d); // "HH:mm"
+}
+
+// Constrói um "timestamp" em milissegundos em uma linha do tempo local (codificada como UTC)
+// Útil para diferenças de minutos sem depender do offset real do SO.
+function msFromLocalYMDHM(ymd: string, hm: string) {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const [hh, mm] = hm.split(":").map(Number);
+  return Date.UTC(y, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0, 0, 0);
+}
+
+
 // Próxima data (YYYY-MM-DD, UTC) para um DiaSemana, respeitando dataInicio opcional
 function nextDateISOForDiaSemana(dia: DiaSemana, minDate?: Date | null) {
   const hoje = new Date();
@@ -608,29 +638,105 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-// ✅ Cancelar agendamento comum
-router.post("/cancelar/:id", async (req, res) => {
+// ✅ Cancelar agendamento comum (com regra de 12h/15min no BACK)
+router.post("/cancelar/:id", verificarToken, async (req, res) => {
   const { id } = req.params;
-  const { usuarioId } = req.body;
+
+  const reqCustom = req as typeof req & {
+    usuario?: { usuarioLogadoId: string; usuarioLogadoTipo?: string };
+  };
+  if (!reqCustom.usuario) {
+    return res.status(401).json({ erro: "Não autenticado" });
+  }
 
   try {
-    const agendamento = await prisma.agendamento.update({
+    // carrega campos necessários
+    const ag = await prisma.agendamento.findUnique({
       where: { id },
-      data: {
-        status: "CANCELADO",
-        canceladoPorId: usuarioId,
+      select: {
+        id: true,
+        data: true,          // Date (00:00Z do dia local)
+        horario: true,       // "HH:mm"
+        usuarioId: true,
+        status: true,
+        createdAt: true,
       },
     });
 
-    res.status(200).json({
+    if (!ag) return res.status(404).json({ erro: "Agendamento não encontrado" });
+
+    if (["CANCELADO", "TRANSFERIDO", "FINALIZADO"].includes(ag.status)) {
+      return res.status(409).json({ erro: "Este agendamento não pode ser cancelado." });
+    }
+
+    const isAdmin = ["ADMIN_MASTER", "ADMIN_ATENDENTE", "ADMIN_PROFESSORES"]
+      .includes(reqCustom.usuario.usuarioLogadoTipo || "");
+    const isOwner = String(ag.usuarioId) === String(reqCustom.usuario.usuarioLogadoId);
+
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({ erro: "Você não pode cancelar este agendamento." });
+    }
+
+    // ===== Regra de tempo (para CLIENTE/dono) =====
+    if (!isAdmin) {
+      // Agora (local SP)
+      const now = new Date();
+      const nowYMD = localYMD(now);
+      const nowHM = localHM(now);
+      const nowMs = msFromLocalYMDHM(nowYMD, nowHM);
+
+      // Início do agendamento (local SP)
+      // Obs: ag.data está como "00:00Z" do mesmo YYYY-MM-DD que o DIA local pretendido.
+      const schedYMD = ag.data.toISOString().slice(0, 10); // "YYYY-MM-DD" do dia local
+      const schedHM = ag.horario;                          // "HH:mm"
+      const schedMs = msFromLocalYMDHM(schedYMD, schedHM);
+
+      // Se já passou, não cancela
+      if (schedMs <= nowMs) {
+        return res.status(422).json({ erro: "Não é possível cancelar um agendamento já iniciado ou finalizado." });
+      }
+
+      const minutesToStart = Math.floor((schedMs - nowMs) / 60000); // quanto falta
+      const canBy12h = minutesToStart >= 12 * 60;
+
+      if (!canBy12h) {
+        // Janela de graça de 15 minutos a partir da CRIAÇÃO, válida sempre que < 12h para o início
+        const createdYMD = localYMD(ag.createdAt);
+        const createdHM = localHM(ag.createdAt);
+        const createdMs = msFromLocalYMDHM(createdYMD, createdHM);
+
+        const minutesSinceCreation = Math.floor((nowMs - createdMs) / 60000);
+
+        if (minutesSinceCreation > 15) {
+          return res.status(422).json({
+            erro:
+              "Cancelamento permitido até 12 horas antes do horário do agendamento " +
+              "ou, se faltar menos de 12 horas, em até 15 minutos após a criação.",
+          });
+        }
+      }
+    }
+
+    // Efetiva o cancelamento (idempotência simples: só atualiza se ainda não cancelado)
+    const atualizado = await prisma.agendamento.update({
+      where: { id },
+      data: {
+        status: "CANCELADO",
+        canceladoPorId: reqCustom.usuario.usuarioLogadoId,
+        // canceladoEm: new Date(), // use se existir a coluna
+      },
+    });
+
+    return res.status(200).json({
       message: "Agendamento cancelado com sucesso.",
-      agendamento,
+      agendamento: atualizado,
     });
   } catch (error) {
     console.error("Erro ao cancelar agendamento:", error);
-    res.status(500).json({ error: "Erro ao cancelar agendamento." });
+    return res.status(500).json({ erro: "Erro ao cancelar agendamento." });
   }
 });
+
 
 router.delete("/:id", async (req, res) => {
   const { id } = req.params;
@@ -787,9 +893,9 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
     // 4) Buscar usuários válidos por ID (se houver)
     const usuariosValidos = jogadoresIds.length
       ? await prisma.usuario.findMany({
-          where: { id: { in: jogadoresIds } },
-          select: { id: true },
-        })
+        where: { id: { in: jogadoresIds } },
+        select: { id: true },
+      })
       : [];
 
     if (usuariosValidos.length !== jogadoresIds.length) {
