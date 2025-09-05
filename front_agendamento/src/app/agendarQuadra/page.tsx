@@ -89,9 +89,17 @@ const hourNowSP = parseInt(
   10
 );
 
+function dateFromIsoSP(isoYmd: string) {
+  // garante cálculo do DOW em SP
+  return new Date(`${isoYmd}T00:00:00-03:00`);
+}
+
+const DOW_MIXED = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+const DOW_UPPER = ["DOMINGO", "SEGUNDA", "TERÇA", "QUARTA", "QUINTA", "SEXTA", "SÁBADO"];
+
 function diasProximos(qtd = 7) {
-  const out: { iso: string; d: number; mes: string; wd: string }[] = [];
-  const wd = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+  const out: { iso: string; d: number; mes: string; wdShort: string; wdFull: string }[] = [];
+  const wdShort = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
   const meses = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"];
 
   const base = new Date();
@@ -99,7 +107,15 @@ function diasProximos(qtd = 7) {
     const dt = new Date(base);
     dt.setDate(base.getDate() + i);
     const iso = isoLocalDate(dt);
-    out.push({ iso, d: dt.getDate(), mes: meses[dt.getMonth()], wd: wd[dt.getDay()] });
+    const sp = dateFromIsoSP(iso);
+    const dow = sp.getDay();
+    out.push({
+      iso,
+      d: dt.getDate(),
+      mes: meses[dt.getMonth()],
+      wdShort: wdShort[dow],
+      wdFull: DOW_MIXED[dow], // <-- nome completo (Quinta, Sexta, Sábado…)
+    });
   }
   return out;
 }
@@ -108,6 +124,15 @@ function formatarDia(iso: string) {
   if (!iso) return "";
   const [y, m, d] = iso.split("-");
   return `${d}/${m}/${y}`;
+}
+
+function formatarDiaCurto(iso: string) {
+  // "QUINTA 04/09" (sem ano, dia da semana em CAIXA ALTA)
+  if (!iso) return "";
+  const sp = dateFromIsoSP(iso);
+  const dow = sp.getDay();
+  const [y, m, d] = iso.split("-");
+  return `${DOW_UPPER[dow]} ${d}/${m}`;
 }
 
 function cryptoRandom() {
@@ -129,9 +154,6 @@ function firstWord(s?: string) {
   if (!s) return "";
   return s.trim().split(/\s+/)[0] || "";
 }
-function formatarDiaCurto(iso: string) {
-  return formatarDia(iso);
-}
 
 function StepTrail({
   items,
@@ -147,22 +169,26 @@ function StepTrail({
       <div className="flex items-center gap-2 overflow-x-auto">
         {items.map((it, i) => {
           const isCurrent = it.step === currentStep;
+          const isDone = it.step < currentStep;
           const label = (it.value && String(it.value)) || it.hint;
+
           const base =
             "whitespace-nowrap rounded-full border px-3 py-1 text-[12px] font-semibold transition";
+
+          // cores: atual = laranja; concluído = CINZA ESCURO; futuro = CINZA CLARO
           const cls = isCurrent
             ? "bg-orange-600 border-orange-600 text-white"
-            : it.value
-            ? "bg-emerald-50 border-emerald-400 text-emerald-700"
+            : isDone
+            ? "bg-gray-300 border-gray-400 text-gray-900" // <-- cinza mais escuro para concluídos
             : "bg-gray-100 border-gray-300 text-gray-700";
 
           return (
             <div key={it.step} className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => (it.step < currentStep ? onJump(it.step) : undefined)}
-                className={`${base} ${cls} ${it.step < currentStep ? "cursor-pointer hover:brightness-95" : "cursor-default"}`}
-                title={it.step < currentStep ? "Voltar para este passo" : undefined}
+                onClick={() => (isDone ? onJump(it.step) : undefined)}
+                className={`${base} ${cls} ${isDone ? "cursor-pointer hover:brightness-95" : "cursor-default"}`}
+                title={isDone ? "Voltar para este passo" : undefined}
               >
                 {label}
               </button>
@@ -430,9 +456,9 @@ export default function AgendarQuadraCliente() {
       const candidate = e.logoUrl || e.imagem || "";
       const normalized =
         candidate &&
-          !/^(https?:|data:|blob:)/i.test(candidate) &&
-          !candidate.startsWith("/") &&
-          !candidate.includes("/")
+        !/^(https?:|data:|blob:)/i.test(candidate) &&
+        !candidate.startsWith("/") &&
+        !candidate.includes("/")
           ? `/uploads/esportes/${candidate}`
           : candidate;
 
@@ -447,9 +473,9 @@ export default function AgendarQuadraCliente() {
       const candidate = q.logoUrl || q.imagem || q.arquivo || "";
       const normalized =
         candidate &&
-          !/^(https?:|data:|blob:)/i.test(String(candidate)) &&
-          !String(candidate).startsWith("/") &&
-          !String(candidate).includes("/")
+        !/^(https?:|data:|blob:)/i.test(String(candidate)) &&
+        !String(candidate).startsWith("/") &&
+        !String(candidate).includes("/")
           ? `/uploads/quadras/${candidate}`
           : String(candidate);
 
@@ -652,12 +678,12 @@ export default function AgendarQuadraCliente() {
   const trailItems = useMemo(
     () => [
       { step: 1, hint: "Escolha o esporte", value: esporteId ? firstWord(esporteNome) : null },
-      { step: 2, hint: "Selecione o dia", value: diaISO ? formatarDiaCurto(diaISO) : null },
+      { step: 2, hint: "Selecione o dia", value: diaISO ? formatarDiaCurto(diaISO) : null }, // QUINTA 04/09
       { step: 3, hint: "Selecione o horário", value: horario || null },
       {
         step: 4,
         hint: "Escolha a quadra",
-        value: quadraSel ? `${quadraSel.nome} · ${quadraSel.numero}` : null,
+        value: quadraSel ? `${quadraSel.numero} - ${quadraSel.nome}` : null, // número primeiro
       },
       { step: 5, hint: isVoleiSelected ? "Jogadores (pulado)" : "Jogadores (opcional)", value: null },
       { step: 6, hint: "Confirmar", value: null },
@@ -671,10 +697,11 @@ export default function AgendarQuadraCliente() {
     setMsg("");
     setStep(4);
   };
-  const avancarQuadra = () => {
-    if (!quadraId) return setMsg("Selecione uma quadra.");
+
+  const avancarQuadraDireto = (id: string) => {
+    setQuadraId(id);
     setMsg("");
-    setStep(isVoleiSelected ? 6 : 5); // vôlei pula jogadores como já era antes
+    setStep(isVoleiSelected ? 6 : 5); // pula jogadores se for vôlei
   };
 
   // Etapa de jogadores agora é OPCIONAL (sem validação de quantidade)
@@ -834,8 +861,8 @@ export default function AgendarQuadraCliente() {
                     <button
                       key={e.id}
                       className={`rounded-xl border text-center px-2 py-3 text-[12px] leading-tight
-              ${ativo ? "bg-orange-50 border-orange-400 text-orange-700" : "bg-gray-50 border-gray-200 text-gray-700"}
-            `}
+                        ${ativo ? "bg-orange-50 border-orange-400 text-orange-700" : "bg-gray-50 border-gray-200 text-gray-700"}
+                      `}
                       onClick={() => {
                         setMsg("");
                         setEsporteId(String(e.id));
@@ -875,13 +902,13 @@ export default function AgendarQuadraCliente() {
                         setDiaISO(d.iso);
                         setStep(3); // AVANÇA automaticamente
                       }}
-                      className={`min-w-[90px] rounded-xl border px-2 py-2 text-[12px] text-center
-              ${ativo ? "bg-orange-100 border-orange-500 text-orange-700" : "bg-gray-100 border-gray-200 text-gray-700"}
-            `}
+                      className={`min-w-[110px] rounded-xl border px-2 py-2 text-[12px] text-center
+                        ${ativo ? "bg-orange-100 border-orange-500 text-orange-700" : "bg-gray-100 border-gray-200 text-gray-700"}
+                      `}
                     >
                       <div className="text-[11px]">{d.mes}</div>
                       <div className="text-lg font-bold">{String(d.d).padStart(2, "0")}</div>
-                      <div className="text-[11px]">{d.wd}</div>
+                      <div className="text-[11px]">{d.wdFull}</div> {/* Nome completo: Quinta, Sexta, Sábado... */}
                     </button>
                   );
                 })}
@@ -946,10 +973,10 @@ export default function AgendarQuadraCliente() {
                   return (
                     <button
                       key={q.quadraId}
-                      onClick={() => setQuadraId(String(q.quadraId))}
+                      onClick={() => avancarQuadraDireto(String(q.quadraId))} // <-- AVANÇA automaticamente
                       className={`rounded-xl border p-3 transition flex flex-col items-center text-center
-              ${ativo ? "bg-orange-50 border-orange-500" : "bg-gray-50 border-gray-200 hover:border-gray-300"}
-            `}
+                        ${ativo ? "bg-orange-50 border-orange-500" : "bg-gray-50 border-gray-200 hover:border-gray-300"}
+                      `}
                     >
                       <div className="relative w-full h-15 md:h-32 overflow-hidden flex items-center justify-center mb-2">
                         <AppImage
@@ -967,9 +994,7 @@ export default function AgendarQuadraCliente() {
                 })}
               </div>
 
-              <Btn className="mt-4 cursor-pointer" onClick={avancarQuadra}>
-                Avançar
-              </Btn>
+              {/* botão Avançar removido */}
             </Card>
           )}
 
@@ -1058,17 +1083,16 @@ export default function AgendarQuadraCliente() {
             <Card>
               <p className="text-[13px] font-semibold text-gray-600 mb-3">Confirmar Reserva:</p>
 
-              <Resumo label="Escolha o Dia:" valor={formatarDia(diaISO)} onChange={() => setStep(2)} />
+              <Resumo label="Escolha o Dia:" valor={formatarDiaCurto(diaISO)} onChange={() => setStep(2)} />
               <Resumo label="Escolha o Horário:" valor={horario} onChange={() => setStep(3)} />
               <Resumo
                 label="Escolha o Esporte:"
-                valor={esportes.find((e) => String(e.id) === String(esporteId))?.nome || ""}
+                valor={esporteNome}
                 onChange={() => setStep(1)}
               />
               <Resumo
                 label="Escolha a Quadra:"
-                valor={`${quadras.find((q) => String(q.quadraId) === String(quadraId))?.nome || ""
-                  } - Quadra ${quadras.find((q) => String(q.quadraId) === String(quadraId))?.numero || ""}`}
+                valor={`${quadraSel?.numero ?? ""} - ${quadraSel?.nome ?? ""}`} // número primeiro
                 onChange={() => setStep(4)}
               />
               <Resumo
