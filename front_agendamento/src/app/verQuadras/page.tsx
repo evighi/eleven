@@ -172,7 +172,6 @@ export default function VerQuadrasPage() {
       (typeof body?.message === "string" && body.message) ||
       (ax?.response?.statusText ?? "");
 
-    // simplifica a mensagem específica das 12 horas
     const lowered = String(msg).toLowerCase();
     if (lowered.includes("12h") || lowered.includes("12 horas") || lowered.includes("janela de cancelamento")) {
       return "Este agendamento já está dentro das 12 horas e não pode ser cancelado.";
@@ -200,21 +199,18 @@ export default function VerQuadrasPage() {
     setCancelSending(true);
 
     try {
-      // rota com regra 12h/15min
       await axios.post(
         `${API_URL}/agendamentos/cancelar-cliente/${cancelTarget.id}`,
         {},
         { withCredentials: true }
       );
 
-      // remove da lista e mostra step de sucesso
       setAgendamentos((cur) => cur.filter((x) => x.id !== cancelTarget.id));
       fecharModalCancelar();
       setView("success");
       return;
     } catch (e: any) {
       if (e?.response?.status === 404) {
-        // fallback para rota antiga (se existir)
         try {
           await axios.post(
             `${API_URL}/agendamentos/cancelar/${cancelTarget.id}`,
@@ -236,7 +232,6 @@ export default function VerQuadrasPage() {
     }
   };
 
-  // ⏳ Enquanto verifica cookie/usuário
   if (isChecking) {
     return (
       <main className="min-h-screen grid place-items-center bg-[#f5f5f5]">
@@ -260,7 +255,7 @@ export default function VerQuadrasPage() {
           >
             <span className="inline-block rotate-180 text-xl cursor-pointer">➜</span>
           </button>
-        <h1 className="text-2xl font-extrabold tracking-wide drop-shadow-sm">
+          <h1 className="text-2xl font-extrabold tracking-wide drop-shadow-sm">
             {view === "success" ? "Reserva cancelada" : "Suas quadras"}
           </h1>
         </div>
@@ -269,12 +264,12 @@ export default function VerQuadrasPage() {
       {view === "list" && (
         <section className="px-0 py-0">
           <div className="max-w-sm mx-auto bg-white rounded-2xl shadow-md p-4">
-            {/* Aviso (acima do título “Suas quadras:”) */}
-            <div className="rounded-xl border border-orange-200 bg-orange-50 text-orange-800 px-3 py-2 mb-3 text-[12px] leading-snug text-center">
-              <div className="font-semibold text-[11px] tracking-wide uppercase mb-1">Atenção</div>
+            {/* Aviso: só texto laranja, sem fundo e sem borda */}
+            <div className="text-center text-orange-600 text-[12px] leading-snug mb-3">
+              <div className="font-semibold text-[11px] tracking-wide uppercase mb-1">Atenção:</div>
               As reservas só podem ser canceladas com <strong>12 horas</strong> de antecedência
               ou em até <strong>15 minutos</strong> após a criação (quando faltarem menos de 12h).
-              Em caso de dúvidas, contate os administradores.
+              Em caso de dúvidas, contate os administradores. (53) 991032959
             </div>
 
             <h2 className="text-[13px] font-semibold text-gray-500 mb-3">
@@ -371,7 +366,7 @@ export default function VerQuadrasPage() {
           <div className="max-w-sm mx-auto bg-white rounded-2xl shadow-md p-6 flex flex-col items-center text-center">
             <div className="w-56 h-56 mb-4">
               <Image
-                src="/icons/realizada.png" // se tiver um ícone de cancelamento, troque aqui (ex.: /icons/cancelada.png)
+                src="/icons/realizada.png"
                 alt="Reserva cancelada"
                 width={224}
                 height={224}
@@ -383,7 +378,6 @@ export default function VerQuadrasPage() {
             <button
               onClick={() => {
                 setView("list");
-                // opcional: recarregar para garantir estado sincronizado
                 carregarLista();
               }}
               className="rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-sm font-semibold px-4 py-2 shadow-md cursor-pointer"
@@ -394,17 +388,15 @@ export default function VerQuadrasPage() {
         </section>
       )}
 
-      {/* Modal: confirmar cancelamento (visual do mock) */}
+      {/* Modal: confirmar cancelamento (borda cinza clarinho) */}
       {cancelOpen && cancelTarget && (
         <div className="fixed inset-0 z-50">
-          {/* fundo translúcido */}
           <div
             className="absolute inset-0 bg-black/40 backdrop-blur-[1px]"
             onClick={fecharModalCancelar}
           />
-          {/* caixinha */}
           <div className="absolute inset-0 flex items-center justify-center p-4">
-            <div className="w-full max-w-sm rounded-2xl bg-white shadow-xl p-4 border-2 border-sky-500">
+            <div className="w-full max-w-sm rounded-2xl bg-white shadow-xl p-4 border border-gray-200">
               <h3 className="text-base font-bold text-gray-800 mb-1 text-center">
                 Confirmar cancelamento?
               </h3>
