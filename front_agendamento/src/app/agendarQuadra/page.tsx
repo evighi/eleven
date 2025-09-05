@@ -123,6 +123,59 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 }
 
 /* =========================================================
+   Helpers do stepper (caminho de rato)
+========================================================= */
+function firstWord(s?: string) {
+  if (!s) return "";
+  return s.trim().split(/\s+/)[0] || "";
+}
+function formatarDiaCurto(iso: string) {
+  return formatarDia(iso);
+}
+
+function StepTrail({
+  items,
+  currentStep,
+  onJump,
+}: {
+  items: { step: number; hint: string; value?: string | null }[];
+  currentStep: number;
+  onJump: (s: number) => void;
+}) {
+  return (
+    <div className="max-w-sm mx-auto mt-3 mb-4">
+      <div className="flex items-center gap-2 overflow-x-auto">
+        {items.map((it, i) => {
+          const isCurrent = it.step === currentStep;
+          const label = (it.value && String(it.value)) || it.hint;
+          const base =
+            "whitespace-nowrap rounded-full border px-3 py-1 text-[12px] font-semibold transition";
+          const cls = isCurrent
+            ? "bg-orange-600 border-orange-600 text-white"
+            : it.value
+            ? "bg-emerald-50 border-emerald-400 text-emerald-700"
+            : "bg-gray-100 border-gray-300 text-gray-700";
+
+          return (
+            <div key={it.step} className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => (it.step < currentStep ? onJump(it.step) : undefined)}
+                className={`${base} ${cls} ${it.step < currentStep ? "cursor-pointer hover:brightness-95" : "cursor-default"}`}
+                title={it.step < currentStep ? "Voltar para este passo" : undefined}
+              >
+                {label}
+              </button>
+              {i < items.length - 1 && <span className="text-gray-400">›</span>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
    Avatar + UserPicker (autocomplete)
 ========================================================= */
 function initialsFromName(nome?: string) {
@@ -587,6 +640,31 @@ export default function AgendarQuadraCliente() {
     buscar();
   }, [API_URL, diaISO, horario, esporteId, quadraLogos, isChecking]);
 
+  /* ======= Rótulos do stepper ======= */
+  const esporteNome = useMemo(
+    () => esportes.find((e) => String(e.id) === String(esporteId))?.nome || "",
+    [esportes, esporteId]
+  );
+  const quadraSel = useMemo(
+    () => quadras.find((q) => String(q.quadraId) === String(quadraId)),
+    [quadras, quadraId]
+  );
+  const trailItems = useMemo(
+    () => [
+      { step: 1, hint: "Escolha o esporte", value: esporteId ? firstWord(esporteNome) : null },
+      { step: 2, hint: "Selecione o dia", value: diaISO ? formatarDiaCurto(diaISO) : null },
+      { step: 3, hint: "Selecione o horário", value: horario || null },
+      {
+        step: 4,
+        hint: "Escolha a quadra",
+        value: quadraSel ? `${quadraSel.nome} · ${quadraSel.numero}` : null,
+      },
+      { step: 5, hint: isVoleiSelected ? "Jogadores (pulado)" : "Jogadores (opcional)", value: null },
+      { step: 6, hint: "Confirmar", value: null },
+    ],
+    [esporteId, esporteNome, diaISO, horario, quadraSel, isVoleiSelected]
+  );
+
   /* ========= Navegação ========= */
   const confirmarHorario = () => {
     if (!horario) return setMsg("Selecione um horário.");
@@ -719,6 +797,17 @@ export default function AgendarQuadraCliente() {
         </div>
       </header>
 
+      {/* Caminho de rato (não mostra no sucesso) */}
+      {step < 7 && (
+        <StepTrail
+          items={trailItems}
+          currentStep={step}
+          onJump={(s) => {
+            if (s < step) setStep(s as Step);
+          }}
+        />
+      )}
+
       <section className="px-4 py-4">
         <div className="max-w-sm mx-auto space-y-4">
           {msg && <div className="text-center text-sm text-red-600">{msg}</div>}
@@ -750,7 +839,7 @@ export default function AgendarQuadraCliente() {
                       onClick={() => {
                         setMsg("");
                         setEsporteId(String(e.id));
-                        setStep(2); // <- AVANÇA AUTOMATICAMENTE PRO STEP 2
+                        setStep(2); // AVANÇA automaticamente
                       }}
                     >
                       <div className="mx-auto mb-2 w-9 h-9 rounded-full bg-gray-200 overflow-hidden relative flex items-center justify-center">
@@ -767,7 +856,7 @@ export default function AgendarQuadraCliente() {
                   );
                 })}
               </div>
-              {/* Removido o botão "Confirmar" */}
+              {/* sem botão Confirmar */}
             </Card>
           )}
 
@@ -784,7 +873,7 @@ export default function AgendarQuadraCliente() {
                       onClick={() => {
                         setMsg("");
                         setDiaISO(d.iso);
-                        setStep(3); // <- AVANÇA AUTOMATICAMENTE PRO STEP 3
+                        setStep(3); // AVANÇA automaticamente
                       }}
                       className={`min-w-[90px] rounded-xl border px-2 py-2 text-[12px] text-center
               ${ativo ? "bg-orange-100 border-orange-500 text-orange-700" : "bg-gray-100 border-gray-200 text-gray-700"}
@@ -797,7 +886,7 @@ export default function AgendarQuadraCliente() {
                   );
                 })}
               </div>
-              {/* Removido o botão "Avançar" */}
+              {/* sem botão Avançar */}
             </Card>
           )}
 
@@ -927,7 +1016,7 @@ export default function AgendarQuadraCliente() {
                         inputRef={(el) => {
                           guestRefs.current[p.id] = el;
                         }}
-                        onDebouncedCommit={() => { }}
+                        onDebouncedCommit={() => {}}
                         onBlurCommit={(val) => {
                           updatePlayer(p.id, { value: val });
                         }}
