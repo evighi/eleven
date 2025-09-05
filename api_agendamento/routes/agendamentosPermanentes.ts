@@ -58,6 +58,35 @@ function toISODateUTC(d: Date) {
   return d.toISOString().slice(0, 10);
 }
 
+/** Próxima data (YYYY-MM-DD) da recorrência, PULANDO exceções já cadastradas. */
+async function proximaDataPermanenteSemExcecao(p: {
+  id: string;
+  diaSemana: DiaSemana;
+  dataInicio: Date | null;
+}): Promise<string | null> {
+  const hoje = startOfDay(new Date());
+  const base = p.dataInicio && startOfDay(new Date(p.dataInicio)) > hoje
+    ? startOfDay(new Date(p.dataInicio))
+    : hoje;
+
+  const cur = base.getDay();                 // 0..6 local
+  const target = DIA_IDX[p.diaSemana] ?? 0;  // 0..6
+  const delta = (target - cur + 7) % 7;
+
+  let tentativa = addDays(base, delta);
+  // Limite defensivo ~2 anos
+  for (let i = 0; i < 120; i++) {
+    const iso = toISODateUTC(tentativa); // "YYYY-MM-DD"
+    const exc = await prisma.agendamentoPermanenteCancelamento.findFirst({
+      where: { agendamentoPermanenteId: p.id, data: toUtc00(iso) },
+      select: { id: true },
+    });
+    if (!exc) return iso;
+    tentativa = addDays(tentativa, 7);
+  }
+  return null;
+}
+
 // 🔒 todas as rotas daqui exigem login
 router.use(verificarToken);
 
@@ -329,7 +358,89 @@ router.post(
   }
 );
 
-// ✅ Cancelar agendamento permanente — dono ou admin
+/**
+ * ✅ Cancelar **a próxima ocorrência** de um permanente (cliente dono ou admin)
+ * - Admin: SEM restrição de 12h.
+ * - Cliente dono: permitido apenas até 12h antes do horário da próxima ocorrência.
+ * - Implementado criando uma exceção na data correspondente.
+ */
+router.post(
+  "/:id/cancelar-proxima",
+  requireOwnerByRecord(async (req) => {
+    const reg = await prisma.agendamentoPermanente.findUnique({
+      where: { id: req.params.id },
+      select: { usuarioId: true },
+    });
+    return reg?.usuarioId ?? null; // permite admin ou dono
+  }),
+  async (req, res) => {
+    const { id } = req.params;
+
+    try {
+      const perm = await prisma.agendamentoPermanente.findUnique({
+        where: { id },
+        select: { id: true, usuarioId: true, diaSemana: true, horario: true, dataInicio: true, status: true },
+      });
+      if (!perm) return res.status(404).json({ erro: "Agendamento permanente não encontrado" });
+      if (["CANCELADO", "TRANSFERIDO"].includes(perm.status)) {
+        return res.status(400).json({ erro: "Agendamento permanente não está ativo." });
+      }
+
+      // próxima data sem exceções já registradas
+      const proximaISO = await proximaDataPermanenteSemExcecao({
+        id: perm.id,
+        diaSemana: perm.diaSemana as DiaSemana,
+        dataInicio: perm.dataInicio ? new Date(perm.dataInicio) : null,
+      });
+      if (!proximaISO) {
+        return res.status(409).json({ erro: "Não há próxima ocorrência disponível para cancelamento." });
+      }
+
+      const ehAdmin = isAdminTipo(req.usuario!.usuarioLogadoTipo);
+      if (!ehAdmin) {
+        // Regra de 12 horas para o CLIENTE dono
+        // Brasil sem DST — usa offset -03:00 explícito
+        const alvo = new Date(`${proximaISO}T${perm.horario}:00-03:00`);
+        const diffHoras = (alvo.getTime() - Date.now()) / (1000 * 60 * 60);
+        if (diffHoras < 12) {
+          return res.status(403).json({
+            erro: "Cancelamento permitido apenas até 12 horas antes da próxima ocorrência.",
+          });
+        }
+      }
+
+      // Evitar duplicidade (concorrência)
+      const jaExiste = await prisma.agendamentoPermanenteCancelamento.findFirst({
+        where: { agendamentoPermanenteId: id, data: toUtc00(proximaISO) },
+        select: { id: true },
+      });
+      if (jaExiste) {
+        return res.status(409).json({ erro: "A próxima ocorrência já foi cancelada." });
+      }
+
+      const exc = await prisma.agendamentoPermanenteCancelamento.create({
+        data: {
+          agendamentoPermanenteId: id,
+          data: toUtc00(proximaISO),
+          motivo: "Cancelado pelo cliente (próxima ocorrência)",
+          criadoPorId: req.usuario!.usuarioLogadoId,
+        },
+      });
+
+      return res.status(201).json({
+        ok: true,
+        mensagem: "Próxima ocorrência cancelada com sucesso.",
+        agendamentoPermanenteId: id,
+        dataCancelada: toISODateUTC(new Date(exc.data)),
+      });
+    } catch (e) {
+      console.error("Erro em POST /:id/cancelar-proxima", e);
+      return res.status(500).json({ erro: "Erro ao cancelar a próxima ocorrência do permanente" });
+    }
+  }
+);
+
+// ✅ Cancelar agendamento permanente (encerrar recorrência) — dono ou admin
 router.post(
   "/cancelar/:id",
   requireOwnerByRecord(async (req) => {
