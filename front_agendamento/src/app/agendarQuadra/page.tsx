@@ -50,7 +50,7 @@ type Player = {
   results?: { id: string; nome: string; email?: string }[];
 };
 
-type UsuarioBusca = { id: string; nome: string; email?: string | null };
+type UsuarioBusca = { id: string; nome: string };
 
 type ReservaPayloadBase = {
   data: string;
@@ -173,8 +173,8 @@ function StepTrail({
           const cls = isCurrent
             ? "bg-orange-600 border-orange-600 text-white"
             : isDone
-            ? "bg-gray-300 border-gray-400 text-gray-900"
-            : "bg-gray-100 border-gray-300 text-gray-700";
+              ? "bg-gray-300 border-gray-400 text-gray-900"
+              : "bg-gray-100 border-gray-300 text-gray-700";
 
           return (
             <div key={it.step} className="flex items-center gap-2">
@@ -248,32 +248,52 @@ function UserPicker({
   }, []);
 
   useEffect(() => {
-    if (!open || term.trim().length < 2) {
+    if (!open) {
       setResults([]);
       return;
     }
 
-    let cancel = false;
+    const q = term.trim();
+    if (q.length < 2) {
+      setResults([]);
+      return;
+    }
+
+    const controller = new AbortController();
     setLoading(true);
+
     const t = setTimeout(async () => {
       try {
-        const res = await axios.get<UsuarioBusca[]>(`${apiUrl}/clientes`, {
-          params: { nome: term.trim() },
-          withCredentials: true,
-        });
-        if (!cancel) {
-          const lista = (res.data || []).filter((u) => !excludeIds.includes(u.id));
-          setResults(lista);
+        const { data } = await axios.get<UsuarioBusca[]>(
+          `${apiUrl}/usuarios/buscar`,
+          {
+            params: {
+              q,
+              limit: 10,
+              // opcional: por padrão o back já filtra CLIENTE,
+              // mas se quiser incluir admins em alguma tela interna:
+              // tipos: "CLIENTE,ADMIN_ATENDENTE,ADMIN_PROFESSORES"
+            },
+            withCredentials: true,
+            signal: controller.signal,
+          }
+        );
+
+        const lista = (data || []).filter((u) => !excludeIds.includes(u.id));
+        setResults(lista);
+      } catch (err: any) {
+        if (!controller.signal.aborted) {
+          setResults([]);
         }
-      } catch {
-        if (!cancel) setResults([]);
       } finally {
-        if (!cancel) setLoading(false);
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
       }
     }, 300);
 
     return () => {
-      cancel = true;
+      controller.abort();
       clearTimeout(t);
     };
   }, [open, term, apiUrl, excludeIds]);
@@ -336,10 +356,9 @@ function UserPicker({
                       setOpen(false);
                     }}
                   >
-                    <AvatarCircle label={u.nome || u.email || ""} />
+                    <AvatarCircle label={u.nome || ""} />
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-medium text-gray-800">{u.nome}</div>
-                      {u.email && <div className="truncate text-[11px] text-gray-500">{u.email}</div>}
+                      <div className="truncate text-sm font-medium text-orange-600">{u.nome}</div>
                     </div>
                   </button>
                 </li>
@@ -449,9 +468,9 @@ export default function AgendarQuadraCliente() {
       const candidate = e.logoUrl || e.imagem || "";
       const normalized =
         candidate &&
-        !/^(https?:|data:|blob:)/i.test(candidate) &&
-        !candidate.startsWith("/") &&
-        !candidate.includes("/")
+          !/^(https?:|data:|blob:)/i.test(candidate) &&
+          !candidate.startsWith("/") &&
+          !candidate.includes("/")
           ? `/uploads/esportes/${candidate}`
           : candidate;
 
@@ -466,9 +485,9 @@ export default function AgendarQuadraCliente() {
       const candidate = q.logoUrl || q.imagem || q.arquivo || "";
       const normalized =
         candidate &&
-        !/^(https?:|data:|blob:)/i.test(String(candidate)) &&
-        !String(candidate).startsWith("/") &&
-        !String(candidate).includes("/")
+          !/^(https?:|data:|blob:)/i.test(String(candidate)) &&
+          !String(candidate).startsWith("/") &&
+          !String(candidate).includes("/")
           ? `/uploads/quadras/${candidate}`
           : String(candidate);
 
@@ -1078,7 +1097,7 @@ export default function AgendarQuadraCliente() {
                         inputRef={(el) => {
                           guestRefs.current[p.id] = el;
                         }}
-                        onDebouncedCommit={() => {}}
+                        onDebouncedCommit={() => { }}
                         onBlurCommit={(val) => {
                           updatePlayer(p.id, { value: val });
                         }}
