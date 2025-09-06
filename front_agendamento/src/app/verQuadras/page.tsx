@@ -48,7 +48,7 @@ type AgendamentoCard = {
   dia: string; // "dd/mm" ou "Quarta"
   hora: string;
   tipo: TipoReserva;
-  _rawDataISO?: string | null; // comuns: data | permanentes: proximaData
+  _rawDataISO?: string | null; // comuns: data | permanentes: proximaData efetiva
 };
 
 export default function VerQuadrasPage() {
@@ -97,18 +97,69 @@ export default function VerQuadrasPage() {
     return d.charAt(0) + d.slice(1).toLowerCase(); // "QUARTA" -> "Quarta"
   };
 
+  // 🔹 Fallback local para permanentes quando o back NÃO mandar `proximaData`
+  //    ou quando a do back cair indevidamente na semana que vem apesar de hoje ainda servir.
+  function proximaDataLocalQuandoFaltar(
+    diaSemana?: AgendamentoAPI["diaSemana"],
+    horario?: string
+  ) {
+    if (!diaSemana) return null;
+
+    const DIA_IDX: Record<NonNullable<AgendamentoAPI["diaSemana"]>, number> = {
+      DOMINGO: 0, SEGUNDA: 1, TERCA: 2, QUARTA: 3, QUINTA: 4, SEXTA: 5, SABADO: 6,
+    };
+
+    const tz = "America/Sao_Paulo";
+    const now = new Date();
+
+    const cur = now.getDay(); // 0..6 (provavelmente local do device)
+    const target = DIA_IDX[diaSemana];
+    let delta = (target - cur + 7) % 7;
+
+    // só compara horário se vier "HH:mm"
+    const hasHM = typeof horario === "string" && /^\d{2}:\d{2}$/.test(horario);
+    if (delta === 0 && hasHM) {
+      const hmNow = new Intl.DateTimeFormat("en-GB", {
+        timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false,
+      }).format(now); // "HH:mm"
+      if (hmNow >= horario) {
+        delta = 7; // hoje já passou o horário -> próxima semana
+      }
+    }
+
+    const d = new Date(now);
+    d.setDate(d.getDate() + delta);
+
+    const ymd = new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(d);
+
+    return ymd; // "YYYY-MM-DD"
+  }
+
   const normalizar = useCallback(
     (raw: AgendamentoAPI): AgendamentoCard => {
       const picked = raw.quadraLogoUrl ?? raw.logoUrl ?? null;
 
-      // decidir “dia”
-      let diaStr = "";
+      // decidir “dia” / ISO efetiva
+      let isoEfetiva: string | null = null;
+
       if (raw.tipoReserva === "COMUM") {
-        diaStr = paraDDMM(raw.data);
+        isoEfetiva = raw.data ?? null;
       } else {
-        // PERMANENTE: usa proximaData (se vier) ou o dia da semana
-        diaStr = raw.proximaData ? paraDDMM(raw.proximaData) : prettyDiaSemana(raw.diaSemana);
+        // PERMANENTE: usa a mais PRÓXIMA entre a vinda do back e o fallback local
+        const fallbackISO = proximaDataLocalQuandoFaltar(raw.diaSemana, raw.horario);
+        if (raw.proximaData && fallbackISO) {
+          isoEfetiva = raw.proximaData < fallbackISO ? raw.proximaData : fallbackISO;
+        } else {
+          isoEfetiva = raw.proximaData ?? fallbackISO ?? null;
+        }
       }
+
+      const diaStr =
+        isoEfetiva ? paraDDMM(isoEfetiva) :
+        // sem ISO -> mostra o nome do dia para permanentes sem data calculada
+        (raw.tipoReserva === "PERMANENTE" ? prettyDiaSemana(raw.diaSemana) : paraDDMM(raw.data));
 
       return {
         id: raw.id,
@@ -119,7 +170,7 @@ export default function VerQuadrasPage() {
         dia: diaStr,
         hora: raw.horario,
         tipo: raw.tipoReserva,
-        _rawDataISO: raw.data ?? raw.proximaData ?? null,
+        _rawDataISO: isoEfetiva, // usado no modal
       };
     },
     [extrairNumeroDoLocal, paraDDMM]
@@ -134,7 +185,7 @@ export default function VerQuadrasPage() {
       );
       const list = (res.data || []).map(normalizar);
 
-      // ordenar por data (ou proximaData) + hora
+      // ordenar por data (ou proximaData efetiva) + hora
       list.sort((a, b) => {
         const isDDMM = (s: string) => /^\d{2}\/\d{2}$/.test(s);
         const aDD = isDDMM(a.dia), bDD = isDDMM(b.dia);
@@ -420,8 +471,7 @@ export default function VerQuadrasPage() {
 
               {cancelTarget.tipo === "PERMANENTE" ? (
                 <p className="text-[12px] text-gray-500 italic">
-                  *Cancelamento permitido somente até 12 horas antes do horário
-                  da próxima ocorrência.
+                  *Cancelamento permitido somente com 12 horas de antecedencia da próxima reserva.
                 </p>
               ) : (
                 <p className="text-[12px] text-gray-500 italic">
