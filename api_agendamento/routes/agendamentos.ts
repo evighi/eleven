@@ -45,7 +45,6 @@ function localHM(d: Date, tz = SP_TZ) {
 }
 
 // Constrói um "timestamp" em milissegundos em uma linha do tempo local (codificada como UTC)
-// Útil para diferenças de minutos sem depender do offset real do SO.
 function msFromLocalYMDHM(ymd: string, hm: string) {
   const [y, m, d] = ymd.split("-").map(Number);
   const [hh, mm] = hm.split(":").map(Number);
@@ -133,24 +132,40 @@ const router = Router();
 
 /**
  * Calcula a PRÓXIMA data (YYYY-MM-DD) para um permanente,
- * PULANDO as datas já marcadas como exceção.
+ * PULANDO as datas já marcadas como exceção e CONSIDERANDO o horário.
  */
 async function proximaDataPermanenteSemExcecao(p: {
   id: string;
   diaSemana: DiaSemana;
   dataInicio: Date | null;
+  horario: string; // "HH:mm"
 }): Promise<string> {
-  const hoje = new Date();
-  const base = p.dataInicio && p.dataInicio > hoje ? p.dataInicio : hoje;
+  const agora = new Date();
+
+  // base: hoje ou dataInicio se estiver no futuro
+  const base =
+    p.dataInicio && p.dataInicio > agora ? p.dataInicio : agora;
 
   const cur = base.getDay();                    // 0..6 (local)
   const target = DIA_IDX[p.diaSemana] ?? 0;     // 0..6
   const delta = (target - cur + 7) % 7;
+
   let tentativa = startOfDay(addDays(base, delta));
+
+  // Se a tentativa é "hoje" no calendário local, respeitar o horário:
+  const tentativaEhHojeLocal =
+    localYMD(tentativa) === localYMD(agora); // ambos em SP
+  if (tentativaEhHojeLocal) {
+    const agoraHHMM = localHM(agora); // "HH:mm" em SP
+    if (agoraHHMM >= p.horario) {
+      // já passou o horário de hoje -> pula uma semana
+      tentativa = addDays(tentativa, 7);
+    }
+  }
 
   // Limite de segurança de 120 iterações (~2 anos)
   for (let i = 0; i < 120; i++) {
-    const iso = toISODateUTC(tentativa); // "YYYY-MM-DD" (do ponto de vista local)
+    const iso = toISODateUTC(tentativa); // "YYYY-MM-DD"
     const exc = await prisma.agendamentoPermanenteCancelamento.findFirst({
       where: {
         agendamentoPermanenteId: p.id,
@@ -433,7 +448,7 @@ router.get("/", async (req, res) => {
   }
 });
 
-// GET /agendamentos/me  -> TODOS os "comuns" CONFIRMADOS + permanentes ATIVOS (próxima data pula exceções)
+// GET /agendamentos/me  -> TODOS os "comuns" CONFIRMADOS + permanentes ATIVOS (próxima data pula exceções e respeita horário)
 router.get("/me", verificarToken, async (req, res) => {
   const reqCustom = req as typeof req & {
     usuario?: { usuarioLogadoId: string; usuarioLogadoNome?: string; usuarioLogadoTipo?: string };
@@ -487,7 +502,7 @@ router.get("/me", verificarToken, async (req, res) => {
       orderBy: [{ diaSemana: "asc" }, { horario: "asc" }],
     });
 
-    // pega próxima data pulando exceções
+    // pega próxima data pulando exceções E respeitando horário (hoje antes/depois)
     const respPermanentes = await Promise.all(
       permanentes.map(async (p) => {
         const quadraLogoUrl = resolveQuadraImg(p.quadra?.imagem) || "/quadra.png";
@@ -495,6 +510,7 @@ router.get("/me", verificarToken, async (req, res) => {
           id: p.id,
           diaSemana: p.diaSemana as DiaSemana,
           dataInicio: p.dataInicio ?? null,
+          horario: p.horario, // 👈 agora respeita horário
         });
 
         return {
@@ -507,7 +523,7 @@ router.get("/me", verificarToken, async (req, res) => {
           logoUrl: quadraLogoUrl,
           data: null,                 // permanentes não têm uma data fixa
           diaSemana: p.diaSemana,     // exibir "toda SEGUNDA"
-          proximaData,                // já pulando exceções
+          proximaData,                // já pulando exceções e respeitando horário
           quadraNome: p.quadra?.nome ?? "",
           quadraNumero: p.quadra?.numero ?? null,
           quadraLogoUrl,
