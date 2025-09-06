@@ -86,6 +86,46 @@ export default function Home() {
   const prettyDiaSemana = (d?: AgendamentoAPI["diaSemana"]) =>
     d ? d.charAt(0) + d.slice(1).toLowerCase() : "";
 
+  // 🔹 Fallback local para permanentes quando o back NÃO mandar `proximaData`
+  function proximaDataLocalQuandoFaltar(
+    diaSemana?: AgendamentoAPI["diaSemana"],
+    horario?: string
+  ) {
+    if (!diaSemana) return null;
+
+    const DIA_IDX: Record<NonNullable<AgendamentoAPI["diaSemana"]>, number> = {
+      DOMINGO: 0, SEGUNDA: 1, TERCA: 2, QUARTA: 3, QUINTA: 4, SEXTA: 5, SABADO: 6,
+    };
+
+    const tz = "America/Sao_Paulo";
+    const now = new Date();
+
+    const cur = now.getDay(); // 0..6
+    const target = DIA_IDX[diaSemana];
+    let delta = (target - cur + 7) % 7;
+
+    // só compara horário se vier "HH:mm"
+    const hasHM = typeof horario === "string" && /^\d{2}:\d{2}$/.test(horario);
+    if (delta === 0 && hasHM) {
+      const hmNow = new Intl.DateTimeFormat("en-GB", {
+        timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false,
+      }).format(now); // "HH:mm"
+      if (hmNow >= horario) {
+        delta = 7; // hoje já passou o horário -> próxima semana
+      }
+    }
+
+    const d = new Date(now);
+    d.setDate(d.getDate() + delta);
+
+    // "YYYY-MM-DD" no fuso de SP
+    const ymd = new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(d);
+
+    return ymd;
+  }
+
   const normalizar = useCallback(
     (raw: AgendamentoAPI): AgendamentoCard => {
       const logo = raw.quadraLogoUrl ?? raw.logoUrl ?? null;
@@ -100,13 +140,18 @@ export default function Home() {
         if (m?.[1]) numero = m[1];
       }
 
-      // dia: COMUM -> dd/mm; PERMANENTE -> proximaData(dd/mm) ou nome do dia
-      const dia =
+      // Escolhe a ISO que será formatada:
+      // - COMUM: usa `data`
+      // - PERMANENTE: usa `proximaData`; se não vier, calcula localmente sem empurrar indevidamente
+      const isoParaFormatar =
         raw.tipoReserva === "COMUM"
-          ? paraDDMM(raw.data)
-          : raw.proximaData
-            ? paraDDMM(raw.proximaData)
-            : prettyDiaSemana(raw.diaSemana);
+          ? (raw.data ?? null)
+          : (raw.proximaData ?? proximaDataLocalQuandoFaltar(raw.diaSemana, raw.horario) ?? null);
+
+      const dia =
+        isoParaFormatar
+          ? paraDDMM(isoParaFormatar)
+          : prettyDiaSemana(raw.diaSemana);
 
       return {
         id: raw.id,
