@@ -48,7 +48,7 @@ type AgendamentoCard = {
   dia: string; // "dd/mm" ou "Quarta"
   hora: string;
   tipo: TipoReserva;
-  _rawDataISO?: string | null;
+  _rawDataISO?: string | null; // comuns: data | permanentes: proximaData
 };
 
 export default function VerQuadrasPage() {
@@ -173,8 +173,13 @@ export default function VerQuadrasPage() {
       (ax?.response?.statusText ?? "");
 
     const lowered = String(msg).toLowerCase();
-    if (lowered.includes("12h") || lowered.includes("12 horas") || lowered.includes("janela de cancelamento")) {
-      return "Este agendamento já está dentro das 12 horas e não pode ser cancelado.";
+    if (
+      lowered.includes("12h") ||
+      lowered.includes("12 horas") ||
+      lowered.includes("janela de cancelamento") ||
+      lowered.includes("faltam menos de 12")
+    ) {
+      return "O prazo para cancelamento desta reserva foi esgotado e  não poderá ser cancelado. Contate os administradores. (53) 99103-2959";
     }
 
     return msg || "Não foi possível cancelar. Tente novamente.";
@@ -199,34 +204,38 @@ export default function VerQuadrasPage() {
     setCancelSending(true);
 
     try {
-      await axios.post(
-        `${API_URL}/agendamentos/cancelar-cliente/${cancelTarget.id}`,
-        {},
-        { withCredentials: true }
-      );
+      if (cancelTarget.tipo === "COMUM") {
+        // comum -> rota com regra 12h/15min
+        await axios.post(
+          `${API_URL}/agendamentos/cancelar-cliente/${cancelTarget.id}`,
+          {},
+          { withCredentials: true }
+        );
+        // remove da lista
+        setAgendamentos((cur) => cur.filter((x) => x.id !== cancelTarget.id));
+      } else {
+        // permanente -> cancela a PRÓXIMA ocorrência (12h, sem 15min)
+        // tenta '/agendamentos-permanentes', se 404 tenta '/agendamentosPermanentes'
+        const url1 = `${API_URL}/agendamentos-permanentes/${cancelTarget.id}/cancelar-proxima`;
+        const url2 = `${API_URL}/agendamentosPermanentes/${cancelTarget.id}/cancelar-proxima`;
+        try {
+          await axios.post(url1, {}, { withCredentials: true });
+        } catch (e1: any) {
+          if (e1?.response?.status === 404) {
+            await axios.post(url2, {}, { withCredentials: true });
+          } else {
+            throw e1;
+          }
+        }
+        // recarrega para atualizar a próxima data
+        await carregarLista();
+      }
 
-      setAgendamentos((cur) => cur.filter((x) => x.id !== cancelTarget.id));
       fecharModalCancelar();
       setView("success");
       return;
-    } catch (e: any) {
-      if (e?.response?.status === 404) {
-        try {
-          await axios.post(
-            `${API_URL}/agendamentos/cancelar/${cancelTarget.id}`,
-            { usuarioId: usuario?.id },
-            { withCredentials: true }
-          );
-          setAgendamentos((cur) => cur.filter((x) => x.id !== cancelTarget.id));
-          fecharModalCancelar();
-          setView("success");
-          return;
-        } catch (e2) {
-          setCancelError(parseErro(e2));
-        }
-      } else {
-        setCancelError(parseErro(e));
-      }
+    } catch (e) {
+      setCancelError(parseErro(e));
     } finally {
       setCancelSending(false);
     }
@@ -264,12 +273,12 @@ export default function VerQuadrasPage() {
       {view === "list" && (
         <section className="px-0 py-0">
           <div className="max-w-sm mx-auto bg-white rounded-2xl shadow-md p-4">
-            {/* Aviso: só texto laranja, sem fundo e sem borda */}
+            {/* Aviso (mantido) */}
             <div className="text-center text-orange-600 text-[12px] leading-snug mb-3">
-              <div className="font-semibold text-[11px] tracking-wide uppercase mb-1">Atenção:</div>
-              As reservas só podem ser canceladas com <strong>12 horas</strong> de antecedência
-              ou em até <strong>15 minutos</strong> após a criação (quando faltarem menos de 12h).
-              Em caso de dúvidas, contate os administradores. (53) 991032959
+              <div className="font-semibold text-[11px] tracking-wide uppercase mb-1">Atenção!</div>
+              O cancelamento de quadras é permitido com 12 horas de antecedência. Caso a reserva seja realizada com menos 
+              de 12 horas, o usuario pode cancelar a reserva em ate 15 minutos. Caso haja dúvidas, contate os administradores.
+              (53) 991032959
             </div>
 
             <h2 className="text-[13px] font-semibold text-gray-500 mb-3">
@@ -317,11 +326,10 @@ export default function VerQuadrasPage() {
                       <p className="text-[12px] text-gray-600 leading-tight flex items-center gap-2">
                         {a.esporte}
                         <span
-                          className={`text-[10px] px-2 py-[2px] rounded-full ${
-                            a.tipo === "PERMANENTE"
+                          className={`text-[10px] px-2 py-[2px] rounded-full ${a.tipo === "PERMANENTE"
                               ? "bg-gray-200 text-gray-800"
                               : "bg-orange-100 text-orange-600"
-                          }`}
+                            }`}
                           title={a.tipo === "PERMANENTE" ? "Agendamento permanente" : "Agendamento comum"}
                         >
                           {a.tipo === "PERMANENTE" ? "Permanente" : "Comum"}
@@ -340,20 +348,16 @@ export default function VerQuadrasPage() {
                     </div>
                   </div>
 
-                  {/* Ações (apenas COMUM) */}
-                  {a.tipo === "COMUM" && (
-                    <>
-                      <div className="mt-2 border-t border-gray-300/70" />
-                      <div className="flex gap-2 pt-2">
-                        <button
-                          onClick={() => abrirModalCancelar(a)}
-                          className="w-full py-2 text-[13px] font-semibold text-orange-600 hover:text-orange-700 cursor-pointer"
-                        >
-                          Cancelar agendamento
-                        </button>
-                      </div>
-                    </>
-                  )}
+                  {/* Ações — agora também para PERMANENTE */}
+                  <div className="mt-2 border-t border-gray-300/70" />
+                  <div className="flex gap-2 pt-2">
+                    <button
+                      onClick={() => abrirModalCancelar(a)}
+                      className="w-full py-2 text-[13px] font-semibold text-orange-600 hover:text-orange-700 cursor-pointer"
+                    >
+                      Cancelar agendamento
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -404,15 +408,26 @@ export default function VerQuadrasPage() {
               <p className="text-sm text-gray-700 mb-1">
                 Você está cancelando:
               </p>
+
+              {/* texto adaptado p/ COMUM x PERMANENTE */}
               <p className="text-[13px] font-semibold text-gray-800 mb-2">
-                {cancelTarget.esporte} — Quadra {cancelTarget.numero ?? "—"}: {cancelTarget.quadraNome}
-                {" "}no dia {cancelTarget.dia} às {cancelTarget.hora}.
+                {cancelTarget.esporte} — Quadra {cancelTarget.numero ?? "—"}: {cancelTarget.quadraNome}{" "}
+                no dia{" "}
+                {cancelTarget._rawDataISO ? paraDDMM(cancelTarget._rawDataISO) : cancelTarget.dia}{" "}
+                às {cancelTarget.hora}.
+                {cancelTarget.tipo === "PERMANENTE" && " (permanente — próxima ocorrência)"}
               </p>
 
-              <p className="text-[12px] text-gray-500 italic">
-                *De acordo com nossos termos, você pode cancelar até <strong>12 horas</strong> antes.
-                Se faltarem menos de 12h, o cancelamento é permitido somente até <strong>15 minutos</strong> após a criação da reserva.
-              </p>
+              {cancelTarget.tipo === "PERMANENTE" ? (
+                <p className="text-[12px] text-gray-500 italic">
+                  *Cancelamento permitido somente até 12 horas antes do horário
+                  da próxima ocorrência.
+                </p>
+              ) : (
+                <p className="text-[12px] text-gray-500 italic">
+                  *segundo nossos termos e condições, o cancelamento é permitido com 12 horas de antecedencia. Para reservas realizadas com menos de 12 horas, o cancelamento é permitido durante 15 minutos após a solicitação da reserva.
+                </p>
+              )}
 
               {cancelError && (
                 <div className="mt-3 rounded-md bg-red-100 text-red-800 text-[13px] px-3 py-2">
