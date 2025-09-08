@@ -34,6 +34,26 @@ export default function AgendamentoChurrasqueiraPermanente() {
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
   const diasEnum = ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"]
 
+  const DIA_IDX: Record<string, number> = {
+    DOMINGO: 0, SEGUNDA: 1, TERCA: 2, QUARTA: 3, QUINTA: 4, SEXTA: 5, SABADO: 6
+  };
+
+  function nextISOForDiaSemana(dia: string): string | null {
+    const target = DIA_IDX[dia];
+    if (typeof target !== 'number') return null;
+
+    const hoje = new Date();
+    const delta = (target - hoje.getDay() + 7) % 7; // 0..6
+    const dt = new Date(hoje);
+    dt.setDate(hoje.getDate() + delta);
+
+    const y = dt.getFullYear();
+    const m = String(dt.getMonth() + 1).padStart(2, '0');
+    const d = String(dt.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`; // YYYY-MM-DD
+  }
+
+
   // monta URL de imagem (R2 preferencial; legado como fallback)
   const toImgUrl = (c: Churrasqueira) => {
     const v = c.imagemUrl ?? c.logoUrl ?? c.imagem ?? ''
@@ -56,31 +76,39 @@ export default function AgendamentoChurrasqueiraPermanente() {
     }
   }
 
-  // Buscar disponibilidade
   useEffect(() => {
     const buscar = async () => {
       if (!diaSemana || !turno) {
-        setChurrasqueirasDisponiveis([])
-        return
+        setChurrasqueirasDisponiveis([]);
+        setMensagem('');
+        return;
+      }
+
+      const data = nextISOForDiaSemana(diaSemana);
+      if (!data) {
+        setChurrasqueirasDisponiveis([]);
+        setMensagem('Dia da semana inválido.');
+        return;
       }
 
       try {
         const res = await axios.get(`${API_URL}/disponibilidadeChurrasqueiras`, {
-          params: { diaSemana, turno },
+          params: { data, turno },
           withCredentials: true,
-        })
-        const lista: Churrasqueira[] = Array.isArray(res.data) ? res.data : []
-        const disponiveis = lista.filter((c) => c.disponivel !== false)
-        setChurrasqueirasDisponiveis(disponiveis)
-        setMensagem(disponiveis.length === 0 ? 'Nenhuma churrasqueira disponível.' : '')
+        });
+        const lista: Churrasqueira[] = Array.isArray(res.data) ? res.data : [];
+        const disponiveis = lista.filter((c) => c.disponivel !== false);
+        setChurrasqueirasDisponiveis(disponiveis);
+        setMensagem(disponiveis.length === 0 ? 'Nenhuma churrasqueira disponível.' : '');
       } catch (err) {
-        console.error(err)
-        setMensagem('Erro ao verificar disponibilidade.')
+        console.error(err);
+        setMensagem('Erro ao verificar disponibilidade.');
       }
-    }
+    };
 
-    buscar()
-  }, [diaSemana, turno, API_URL])
+    buscar();
+  }, [diaSemana, turno, API_URL]);
+
 
   // Buscar usuários
   useEffect(() => {
@@ -224,7 +252,7 @@ export default function AgendamentoChurrasqueiraPermanente() {
           <button
             className="mt-4 bg-orange-600 text-white px-4 py-2 rounded disabled:opacity-60"
             onClick={agendar}
-            disabled={!churrasqueiraSelecionada || !usuarioSelecionado}
+            disabled={!diaSemana || !turno || !churrasqueiraSelecionada || !usuarioSelecionado}
           >
             Confirmar Agendamento
           </button>

@@ -72,38 +72,42 @@ export default function AgendamentoChurrasqueiraComum() {
     buscar()
   }, [data, turno, API_URL])
 
-  // Busca usuários (somente id+nome) — debounce + AbortController
+  // Busca usuários (id+nome) — debounce + AbortController (axios)
   useEffect(() => {
-    if (buscaUsuario.trim().length < 2) {
-      setUsuariosEncontrados([])
-      return
+    const q = buscaUsuario.trim();
+
+    if (q.length < 2) {
+      setUsuariosEncontrados([]);
+      setBuscandoUsuarios(false); // evita spinner preso
+      return;
     }
-    let cancel = false
-    const ctrl = new AbortController()
-    setBuscandoUsuarios(true)
+
+    const ctrl = new AbortController();
+    setBuscandoUsuarios(true);
 
     const t = setTimeout(async () => {
       try {
-        const r = await fetch(
-          `${API_URL}/usuarios/buscar?nome=${encodeURIComponent(buscaUsuario.trim())}`,
-          { credentials: "include", signal: ctrl.signal }
-        )
-        if (!r.ok) throw new Error("Falha ao buscar usuários")
-        const data = (await r.json()) as Usuario[]
-        if (!cancel) setUsuariosEncontrados(data || [])
-      } catch (e) {
-        if (!cancel) setUsuariosEncontrados([])
+        const { data: lista } = await axios.get<Usuario[]>(
+          `${API_URL}/usuarios/buscar`,
+          { params: { nome: q }, withCredentials: true, signal: ctrl.signal as any }
+        );
+        setUsuariosEncontrados(Array.isArray(lista) ? lista : []);
+      } catch (err: any) {
+        // ignorar cancelamentos
+        if (err?.name !== "CanceledError" && err?.code !== "ERR_CANCELED") {
+          console.error("Falha ao buscar usuários:", err);
+        }
+        setUsuariosEncontrados([]);
       } finally {
-        if (!cancel) setBuscandoUsuarios(false)
+        setBuscandoUsuarios(false);
       }
-    }, 300)
+    }, 300);
 
     return () => {
-      cancel = true
-      clearTimeout(t)
-      ctrl.abort()
-    }
-  }, [buscaUsuario, API_URL])
+      clearTimeout(t);
+      ctrl.abort();
+    };
+  }, [buscaUsuario, API_URL]);
 
   const agendar = async () => {
     if (!data || !turno || !churrasqueiraSelecionada || !usuarioSelecionado) {
