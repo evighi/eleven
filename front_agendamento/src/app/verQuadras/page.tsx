@@ -22,7 +22,7 @@ type AgendamentoAPI = {
   // comuns
   data?: string;
 
-  // permanentes
+  // permanentes (back já considera exceções e horário)
   diaSemana?: "DOMINGO" | "SEGUNDA" | "TERCA" | "QUARTA" | "QUINTA" | "SEXTA" | "SABADO";
   proximaData?: string | null;
 
@@ -45,7 +45,7 @@ type AgendamentoCard = {
   quadraNome: string;
   numero?: string;
   esporte: string;
-  dia: string; // "dd/mm" ou "Quarta"
+  dia: string;             // "dd/mm" ou "Quarta"
   hora: string;
   tipo: TipoReserva;
   _rawDataISO?: string | null; // comuns: data | permanentes: proximaData efetiva
@@ -97,8 +97,10 @@ export default function VerQuadrasPage() {
     return d.charAt(0) + d.slice(1).toLowerCase(); // "QUARTA" -> "Quarta"
   };
 
-  // 🔹 Fallback local para permanentes quando o back NÃO mandar `proximaData`
-  //    ou quando a do back cair indevidamente na semana que vem apesar de hoje ainda servir.
+  /**
+   * Fallback local para permanentes — usar APENAS se o back NÃO mandar `proximaData`.
+   * NÃO sabe nada sobre exceções, então não deve sobrescrever a data calculada pelo back.
+   */
   function proximaDataLocalQuandoFaltar(
     diaSemana?: AgendamentoAPI["diaSemana"],
     horario?: string
@@ -112,19 +114,16 @@ export default function VerQuadrasPage() {
     const tz = "America/Sao_Paulo";
     const now = new Date();
 
-    const cur = now.getDay(); // 0..6 (provavelmente local do device)
+    const cur = now.getDay(); // 0..6 (timezone do device)
     const target = DIA_IDX[diaSemana];
     let delta = (target - cur + 7) % 7;
 
-    // só compara horário se vier "HH:mm"
     const hasHM = typeof horario === "string" && /^\d{2}:\d{2}$/.test(horario);
     if (delta === 0 && hasHM) {
       const hmNow = new Intl.DateTimeFormat("en-GB", {
         timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false,
       }).format(now); // "HH:mm"
-      if (hmNow >= horario) {
-        delta = 7; // hoje já passou o horário -> próxima semana
-      }
+      if (hmNow >= horario) delta = 7; // hoje já passou
     }
 
     const d = new Date(now);
@@ -141,25 +140,21 @@ export default function VerQuadrasPage() {
     (raw: AgendamentoAPI): AgendamentoCard => {
       const picked = raw.quadraLogoUrl ?? raw.logoUrl ?? null;
 
-      // decidir “dia” / ISO efetiva
+      // ISO efetiva:
+      // - COMUM: usa `data`
+      // - PERMANENTE: usa SEMPRE `proximaData` do back (que já pula exceções e respeita horário);
+      //               se vier vazio, cai no fallback local (sem exceções).
       let isoEfetiva: string | null = null;
-
       if (raw.tipoReserva === "COMUM") {
         isoEfetiva = raw.data ?? null;
       } else {
-        // PERMANENTE: usa a mais PRÓXIMA entre a vinda do back e o fallback local
-        const fallbackISO = proximaDataLocalQuandoFaltar(raw.diaSemana, raw.horario);
-        if (raw.proximaData && fallbackISO) {
-          isoEfetiva = raw.proximaData < fallbackISO ? raw.proximaData : fallbackISO;
-        } else {
-          isoEfetiva = raw.proximaData ?? fallbackISO ?? null;
-        }
+        isoEfetiva = raw.proximaData ?? proximaDataLocalQuandoFaltar(raw.diaSemana, raw.horario) ?? null;
       }
 
       const diaStr =
-        isoEfetiva ? paraDDMM(isoEfetiva) :
-        // sem ISO -> mostra o nome do dia para permanentes sem data calculada
-        (raw.tipoReserva === "PERMANENTE" ? prettyDiaSemana(raw.diaSemana) : paraDDMM(raw.data));
+        isoEfetiva
+          ? paraDDMM(isoEfetiva)
+          : (raw.tipoReserva === "PERMANENTE" ? prettyDiaSemana(raw.diaSemana) : paraDDMM(raw.data));
 
       return {
         id: raw.id,
@@ -170,7 +165,7 @@ export default function VerQuadrasPage() {
         dia: diaStr,
         hora: raw.horario,
         tipo: raw.tipoReserva,
-        _rawDataISO: isoEfetiva, // usado no modal
+        _rawDataISO: isoEfetiva, // usado no modal e na ordenação
       };
     },
     [extrairNumeroDoLocal, paraDDMM]
@@ -185,8 +180,17 @@ export default function VerQuadrasPage() {
       );
       const list = (res.data || []).map(normalizar);
 
-      // ordenar por data (ou proximaData efetiva) + hora
+      // Ordenar priorizando a ISO real (_rawDataISO) e, em empate, pela hora
       list.sort((a, b) => {
+        const ai = a._rawDataISO;
+        const bi = b._rawDataISO;
+        if (ai && bi) {
+          if (ai !== bi) return ai.localeCompare(bi);
+          return a.hora.localeCompare(b.hora);
+        }
+        if (ai && !bi) return -1;       // quem tem data efetiva vem antes
+        if (!ai && bi) return 1;
+        // fallback pela string 'dia' (dd/mm) e hora, só para casos sem ISO
         const isDDMM = (s: string) => /^\d{2}\/\d{2}$/.test(s);
         const aDD = isDDMM(a.dia), bDD = isDDMM(b.dia);
         if (aDD && bDD) {
@@ -195,7 +199,7 @@ export default function VerQuadrasPage() {
           if (am !== bm) return am - bm;
           if (ad !== bd) return ad - bd;
         } else if (aDD !== bDD) {
-          return aDD ? -1 : 1; // datas (dd/mm) antes de “Quarta”
+          return aDD ? -1 : 1;
         }
         return a.hora.localeCompare(b.hora);
       });
@@ -399,7 +403,7 @@ export default function VerQuadrasPage() {
                     </div>
                   </div>
 
-                  {/* Ações — agora também para PERMANENTE */}
+                  {/* Ações — também para PERMANENTE */}
                   <div className="mt-2 border-t border-gray-300/70" />
                   <div className="flex gap-2 pt-2">
                     <button
@@ -443,7 +447,7 @@ export default function VerQuadrasPage() {
         </section>
       )}
 
-      {/* Modal: confirmar cancelamento (borda cinza clarinho) */}
+      {/* Modal: confirmar cancelamento */}
       {cancelOpen && cancelTarget && (
         <div className="fixed inset-0 z-50">
           <div
