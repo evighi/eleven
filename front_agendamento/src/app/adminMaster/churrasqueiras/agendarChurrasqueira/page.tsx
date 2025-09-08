@@ -88,7 +88,7 @@ export default function AgendamentoChurrasqueiraComum() {
     const t = setTimeout(async () => {
       try {
         const { data: lista } = await axios.get<Usuario[]>(
-          `${API_URL}/usuarios/buscar`,
+          `${API_URL}/clientes`,
           { params: { nome: q }, withCredentials: true, signal: ctrl.signal as any }
         );
         setUsuariosEncontrados(Array.isArray(lista) ? lista : []);
