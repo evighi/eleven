@@ -190,9 +190,11 @@ model AgendamentoPermanente {
 }
 
 model AgendamentoChurrasqueira {
-  id        String    @id @default(uuid())
-  diaSemana DiaSemana
-  turno     Turno
+  id String @id @default(uuid())
+
+  // ✅ comum por data (mantém Turno)
+  data  DateTime
+  turno Turno
 
   churrasqueira   Churrasqueira @relation(fields: [churrasqueiraId], references: [id])
   churrasqueiraId String
@@ -210,6 +212,10 @@ model AgendamentoChurrasqueira {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@unique([churrasqueiraId, data, turno]) // evita dupla-reserva no mesmo slot
+  @@index([usuarioId])
+  @@index([churrasqueiraId, data])
 }
 
 model AgendamentoPermanenteChurrasqueira {
@@ -234,6 +240,9 @@ model AgendamentoPermanenteChurrasqueira {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // ✅ bom ter essa unique para impedir duplicatas
+  @@unique([churrasqueiraId, diaSemana, turno], map: "uniq_perm_churra_slot")
 }
 
 // Nova model para bloquear quadras por dia e horário
