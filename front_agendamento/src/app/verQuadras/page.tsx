@@ -466,7 +466,7 @@ export default function VerQuadrasPage() {
                 no dia{" "}
                 {cancelTarget._rawDataISO ? paraDDMM(cancelTarget._rawDataISO) : cancelTarget.dia}{" "}
                 às {cancelTarget.hora}.
-                {cancelTarget.tipo === "PERMANENTE" && " (permanente — próxima ocorrência)"}
+                {cancelTarget.tipo === "PERMANENTE" && " (permanente — próxima reserva)"}
               </p>
 
               {cancelTarget.tipo === "PERMANENTE" ? (
@@ -478,7 +478,7 @@ export default function VerQuadrasPage() {
                   *segundo nossos termos e condições, o cancelamento é permitido com 12 horas de antecedencia. Para reservas realizadas com menos de 12 horas, o cancelamento é permitido durante 15 minutos após a solicitação da reserva.
                 </p>
               )}
-
+  
               {cancelError && (
                 <div className="mt-3 rounded-md bg-red-100 text-red-800 text-[13px] px-3 py-2">
                   {cancelError}

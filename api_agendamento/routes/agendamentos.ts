@@ -3,11 +3,7 @@ import { PrismaClient, DiaSemana } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { z } from "zod";
-import {
-  startOfDay,
-  addDays,
-  getDay,
-} from "date-fns";
+import { startOfDay, addDays, getDay } from "date-fns";
 import cron from "node-cron"; // ⏰ cron para finalizar vencidos
 import verificarToken from "../middleware/authMiddleware";
 import { r2PublicUrl } from "../src/lib/r2";
@@ -24,7 +20,7 @@ const DIA_IDX: Record<DiaSemana, number> = {
 };
 
 // ================= Helpers de horário local (America/Sao_Paulo) =================
-const SP_TZ = "America/Sao_Paulo";
+const SP_TZ = process.env.TZ || "America/Sao_Paulo";
 
 function localYMD(d: Date, tz = SP_TZ) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -51,14 +47,13 @@ function msFromLocalYMDHM(ymd: string, hm: string) {
   return Date.UTC(y, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0, 0, 0);
 }
 
-
 // Próxima data (YYYY-MM-DD, UTC) para um DiaSemana, respeitando dataInicio opcional
 function nextDateISOForDiaSemana(dia: DiaSemana, minDate?: Date | null) {
   const hoje = new Date();
   const base = minDate && minDate > hoje ? minDate : hoje;
-  const cur = base.getDay();                 // 0..6
-  const target = DIA_IDX[dia] ?? 0;          // 0..6
-  const delta = (target - cur + 7) % 7;      // 0..6
+  const cur = base.getDay(); // 0..6
+  const target = DIA_IDX[dia] ?? 0; // 0..6
+  const delta = (target - cur + 7) % 7; // 0..6
   const d = startOfDay(addDays(base, delta));
   return d.toISOString().slice(0, 10);
 }
@@ -87,9 +82,8 @@ function getUtcDayRange(dateStr?: string) {
  */
 // Força o dia local em America/Sao_Paulo e devolve os limites em UTC [início, fim)
 function getStoredUtcBoundaryForLocalDay(dLocal = new Date()) {
-  // pega YYYY-MM-DD do ponto de vista de São Paulo
   const fmt = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Sao_Paulo",
+    timeZone: SP_TZ,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -143,18 +137,16 @@ async function proximaDataPermanenteSemExcecao(p: {
   const agora = new Date();
 
   // base: hoje ou dataInicio se estiver no futuro
-  const base =
-    p.dataInicio && p.dataInicio > agora ? p.dataInicio : agora;
+  const base = p.dataInicio && p.dataInicio > agora ? p.dataInicio : agora;
 
-  const cur = base.getDay();                    // 0..6 (local)
-  const target = DIA_IDX[p.diaSemana] ?? 0;     // 0..6
+  const cur = base.getDay(); // 0..6 (local)
+  const target = DIA_IDX[p.diaSemana] ?? 0; // 0..6
   const delta = (target - cur + 7) % 7;
 
   let tentativa = startOfDay(addDays(base, delta));
 
   // Se a tentativa é "hoje" no calendário local, respeitar o horário:
-  const tentativaEhHojeLocal =
-    localYMD(tentativa) === localYMD(agora); // ambos em SP
+  const tentativaEhHojeLocal = localYMD(tentativa) === localYMD(agora); // ambos em SP
   if (tentativaEhHojeLocal) {
     const agoraHHMM = localHM(agora); // "HH:mm" em SP
     if (agoraHHMM >= p.horario) {
@@ -232,16 +224,17 @@ const diasEnum = ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "S
  * ⛳ Finaliza agendamentos CONFIRMADOS cujo dia/horário já passaram.
  * Regras:
  *  1) data < HOJE(UTC00 do dia local)  -> FINALIZADO
- *  2) HOJE <= data < AMANHÃ (utc00) e horario < HH:mm atual -> FINALIZADO
+ *  2) HOJE <= data < AMANHÃ (utc00) e horario < HH:mm ATUAL LOCAL(SP) -> FINALIZADO
  * Obs: 'horario' no formato 'HH:mm' permite comparação lexicográfica.
  */
 async function finalizarAgendamentosVencidos() {
   const agora = new Date();
+
+  // Limites do dia LOCAL (SP) codificados em UTC 00:00 — compatíveis com como "data" é salva
   const { hojeUTC00, amanhaUTC00 } = getStoredUtcBoundaryForLocalDay(agora);
 
-  const hh = String(agora.getHours()).padStart(2, "0");
-  const mm = String(agora.getMinutes()).padStart(2, "0");
-  const agoraHHMM = `${hh}:${mm}`;
+  // HORA ATUAL NO FUSO DE SP — NÃO usar getHours()/getMinutes()
+  const agoraHHMM = localHM(agora, SP_TZ); // "HH:mm"
 
   // 1) Qualquer dia anterior a hoje
   const r1 = await prisma.agendamento.updateMany({
@@ -279,7 +272,7 @@ if (!globalAny.__cronFinalizaVencidos__) {
         console.error("Cron finalizarAgendamentosVencidos erro:", e)
       );
     },
-    { timezone: process.env.TZ || "America/Sao_Paulo" }
+    { timezone: SP_TZ }
   );
   globalAny.__cronFinalizaVencidos__ = true;
 }
@@ -298,7 +291,10 @@ router.post("/", verificarToken, async (req, res) => {
   }
 
   const {
-    data, horario, quadraId, esporteId,
+    data,
+    horario,
+    quadraId,
+    esporteId,
     usuarioId: usuarioIdBody,
     jogadoresIds = [],
     convidadosNomes = [],
@@ -323,14 +319,16 @@ router.post("/", verificarToken, async (req, res) => {
       },
     });
     if (agendamentoExistente) {
-      return res.status(409).json({ erro: "Já existe um agendamento para essa quadra, data e horário" });
+      return res
+        .status(409)
+        .json({ erro: "Já existe um agendamento para essa quadra, data e horário" });
     }
 
     // (2) conflito com PERMANENTE ATIVO — mas RESPEITANDO exceções para a data
     //    - considera apenas permanentes ativos (não cancelados/transferidos)
     //    - considera dataInicio <= data (ou null)
-    const dataISO = toISODateUTC(data);     // "YYYY-MM-DD"
-    const dataUTC00 = toUtc00(dataISO);     // Date em 00:00Z do mesmo dia
+    const dataISO = toISODateUTC(data); // "YYYY-MM-DD"
+    const dataUTC00 = toUtc00(dataISO); // Date em 00:00Z do mesmo dia
 
     const permanentesAtivos = await prisma.agendamentoPermanente.findMany({
       where: {
@@ -347,7 +345,7 @@ router.post("/", verificarToken, async (req, res) => {
       // Há pelo menos um permanente no slot: só bloqueia se NÃO houver exceção na data
       const excecao = await prisma.agendamentoPermanenteCancelamento.findFirst({
         where: {
-          agendamentoPermanenteId: { in: permanentesAtivos.map(p => p.id) },
+          agendamentoPermanenteId: { in: permanentesAtivos.map((p) => p.id) },
           data: dataUTC00,
         },
         select: { id: true },
@@ -436,7 +434,7 @@ router.get("/", async (req, res) => {
     });
 
     // acrescenta campo calculado compatível com o front novo/antigo
-    const resposta = agendamentos.map(a => ({
+    const resposta = agendamentos.map((a) => ({
       ...a,
       quadraLogoUrl: resolveQuadraImg(a.quadra?.imagem) || "/quadra.png",
     }));
@@ -510,7 +508,7 @@ router.get("/me", verificarToken, async (req, res) => {
           id: p.id,
           diaSemana: p.diaSemana as DiaSemana,
           dataInicio: p.dataInicio ?? null,
-          horario: p.horario, // 👈 agora respeita horário
+          horario: p.horario, // 👈 respeita horário em SP
         });
 
         return {
@@ -521,9 +519,9 @@ router.get("/me", verificarToken, async (req, res) => {
           tipoReserva: "PERMANENTE" as const,
           status: p.status,
           logoUrl: quadraLogoUrl,
-          data: null,                 // permanentes não têm uma data fixa
-          diaSemana: p.diaSemana,     // exibir "toda SEGUNDA"
-          proximaData,                // já pulando exceções e respeitando horário
+          data: null, // permanentes não têm uma data fixa
+          diaSemana: p.diaSemana, // exibir "toda SEGUNDA"
+          proximaData, // já pulando exceções e respeitando horário
           quadraNome: p.quadra?.nome ?? "",
           quadraNumero: p.quadra?.numero ?? null,
           quadraLogoUrl,
@@ -646,7 +644,7 @@ router.get("/:id", async (req, res) => {
       usuarioId: agendamento.usuario.id,
       esporte: agendamento.esporte.nome,
       quadra: `${agendamento.quadra.nome} (Nº ${agendamento.quadra.numero})`,
-      jogadores: agendamento.jogadores.map(j => ({ nome: j.nome, email: j.email })),
+      jogadores: agendamento.jogadores.map((j) => ({ nome: j.nome, email: j.email })),
     });
   } catch (err) {
     console.error(err);
@@ -671,8 +669,8 @@ router.post("/cancelar/:id", verificarToken, async (req, res) => {
       where: { id },
       select: {
         id: true,
-        data: true,          // Date (00:00Z do dia local)
-        horario: true,       // "HH:mm"
+        data: true, // Date (00:00Z do dia local)
+        horario: true, // "HH:mm"
         usuarioId: true,
         status: true,
         createdAt: true,
@@ -685,8 +683,9 @@ router.post("/cancelar/:id", verificarToken, async (req, res) => {
       return res.status(409).json({ erro: "Este agendamento não pode ser cancelado." });
     }
 
-    const isAdmin = ["ADMIN_MASTER", "ADMIN_ATENDENTE", "ADMIN_PROFESSORES"]
-      .includes(reqCustom.usuario.usuarioLogadoTipo || "");
+    const isAdmin = ["ADMIN_MASTER", "ADMIN_ATENDENTE", "ADMIN_PROFESSORES"].includes(
+      reqCustom.usuario.usuarioLogadoTipo || ""
+    );
     const isOwner = String(ag.usuarioId) === String(reqCustom.usuario.usuarioLogadoId);
 
     if (!isAdmin && !isOwner) {
@@ -704,12 +703,14 @@ router.post("/cancelar/:id", verificarToken, async (req, res) => {
       // Início do agendamento (local SP)
       // Obs: ag.data está como "00:00Z" do mesmo YYYY-MM-DD que o DIA local pretendido.
       const schedYMD = ag.data.toISOString().slice(0, 10); // "YYYY-MM-DD" do dia local
-      const schedHM = ag.horario;                          // "HH:mm"
+      const schedHM = ag.horario; // "HH:mm"
       const schedMs = msFromLocalYMDHM(schedYMD, schedHM);
 
       // Se já passou, não cancela
       if (schedMs <= nowMs) {
-        return res.status(422).json({ erro: "Não é possível cancelar um agendamento já iniciado ou finalizado." });
+        return res
+          .status(422)
+          .json({ erro: "Não é possível cancelar um agendamento já iniciado ou finalizado." });
       }
 
       const minutesToStart = Math.floor((schedMs - nowMs) / 60000); // quanto falta
@@ -752,7 +753,6 @@ router.post("/cancelar/:id", verificarToken, async (req, res) => {
     return res.status(500).json({ erro: "Erro ao cancelar agendamento." });
   }
 });
-
 
 router.delete("/:id", async (req, res) => {
   const { id } = req.params;
@@ -821,7 +821,7 @@ router.patch("/:id/transferir", async (req, res) => {
         data: {
           data: agendamento.data,
           horario: agendamento.horario,
-          usuarioId: novoUsuarioId,        // dono do novo agendamento
+          usuarioId: novoUsuarioId, // dono do novo agendamento
           quadraId: agendamento.quadraId,
           esporteId: agendamento.esporteId,
           // Apenas o novo usuário como jogador
@@ -844,10 +844,10 @@ router.patch("/:id/transferir", async (req, res) => {
         horario: novoAgendamento.horario,
         usuario: novoAgendamento.usuario
           ? {
-            id: novoAgendamento.usuario.id,
-            nome: novoAgendamento.usuario.nome,
-            email: novoAgendamento.usuario.email,
-          }
+              id: novoAgendamento.usuario.id,
+              nome: novoAgendamento.usuario.nome,
+              email: novoAgendamento.usuario.email,
+            }
           : null,
         jogadores: novoAgendamento.jogadores.map((j) => ({
           id: j.id,
@@ -856,10 +856,10 @@ router.patch("/:id/transferir", async (req, res) => {
         })),
         quadra: novoAgendamento.quadra
           ? {
-            id: novoAgendamento.quadra.id,
-            nome: novoAgendamento.quadra.nome,
-            numero: novoAgendamento.quadra.numero,
-          }
+              id: novoAgendamento.quadra.id,
+              nome: novoAgendamento.quadra.nome,
+              numero: novoAgendamento.quadra.numero,
+            }
           : null,
       },
     });
@@ -899,8 +899,9 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
     }
 
     // 3) Autorização
-    const isAdmin = ["ADMIN_MASTER", "ADMIN_ATENDENTE", "ADMIN_PROFESSORES"]
-      .includes(reqCustom.usuario.usuarioLogadoTipo || "");
+    const isAdmin = ["ADMIN_MASTER", "ADMIN_ATENDENTE", "ADMIN_PROFESSORES"].includes(
+      reqCustom.usuario.usuarioLogadoTipo || ""
+    );
     const isOwner = agendamento.usuarioId === reqCustom.usuario.usuarioLogadoId;
     if (!isAdmin && !isOwner) {
       return res.status(403).json({ erro: "Sem permissão para alterar este agendamento" });
@@ -909,9 +910,9 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
     // 4) Buscar usuários válidos por ID (se houver)
     const usuariosValidos = jogadoresIds.length
       ? await prisma.usuario.findMany({
-        where: { id: { in: jogadoresIds } },
-        select: { id: true },
-      })
+          where: { id: { in: jogadoresIds } },
+          select: { id: true },
+        })
       : [];
 
     if (usuariosValidos.length !== jogadoresIds.length) {
@@ -923,13 +924,15 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
 
     const convidadosCriados: Array<{ id: string }> = [];
     for (const nome of convidadosNomes) {
-      const emailFake = `convidado+${Date.now()}_${Math.random().toString(36).slice(2)}@example.com`;
+      const emailFake = `convidado+${Date.now()}_${Math.random()
+        .toString(36)
+        .slice(2)}@example.com`;
 
       const novo = await prisma.usuario.create({
         data: {
           nome,
           email: emailFake,
-          senha: hashDefault,   // campo senha é obrigatório no seu schema
+          senha: hashDefault, // campo senha é obrigatório no seu schema
           tipo: "CLIENTE",
         },
         select: { id: true },
