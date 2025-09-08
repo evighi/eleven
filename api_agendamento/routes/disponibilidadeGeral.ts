@@ -24,9 +24,9 @@ type UsuarioSelecionado = {
 
 type AgendamentoComUsuario =
   | {
-      id: string;
-      usuario: UsuarioSelecionado;
-    }
+    id: string;
+    usuario: UsuarioSelecionado;
+  }
   | null;
 
 // horário dentro do intervalo de bloqueio [início, fim)
@@ -224,7 +224,7 @@ router.get("/geral", async (req, res) => {
       {} as Record<string, typeof quadrasDisponibilidade[number][]>
     );
 
-    // -------------------- CHURRASQUEIRAS (sem exceções por dia) --------------------
+    // -------------------- CHURRASQUEIRAS (agora comum = data + turno) --------------------
     const churrasqueiras = await prisma.churrasqueira.findMany();
     const turnos: Turno[] = ["DIA", "NOITE"];
 
@@ -232,12 +232,17 @@ router.get("/geral", async (req, res) => {
       churrasqueiras.map(async (churrasqueira) => {
         const disponibilidadesPorTurno = await Promise.all(
           turnos.map(async (turno) => {
+            // PERMANENTE: (diaSemanaFinal, turno, churrasqueira) ativo
+            // Se "data" foi informada (tem 'range'), respeita dataInicio <= data (ou null)
             const per = await prisma.agendamentoPermanenteChurrasqueira.findFirst({
               where: {
+                churrasqueiraId: churrasqueira.id,
                 diaSemana: diaSemanaFinal,
                 turno,
-                churrasqueiraId: churrasqueira.id,
                 status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+                ...(range
+                  ? { OR: [{ dataInicio: null }, { dataInicio: { lte: range.inicio } }] }
+                  : {}),
               },
               select: {
                 id: true,
@@ -245,18 +250,28 @@ router.get("/geral", async (req, res) => {
               },
             });
 
-            const com = await prisma.agendamentoChurrasqueira.findFirst({
-              where: {
-                diaSemana: diaSemanaFinal,
-                turno,
-                churrasqueiraId: churrasqueira.id,
-                status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
-              },
-              select: {
-                id: true,
-                usuario: { select: { nome: true, email: true, celular: true } },
-              },
-            });
+            // COMUM: só dá para checar se "data" foi informada (temos range do dia)
+            let com:
+              | { id: string; usuario: UsuarioSelecionado }
+              | null = null;
+
+            if (range) {
+              const c = await prisma.agendamentoChurrasqueira.findFirst({
+                where: {
+                  churrasqueiraId: churrasqueira.id,
+                  data: { gte: range.inicio, lt: range.fim },
+                  turno,
+                  status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+                },
+                select: {
+                  id: true,
+                  usuario: { select: { nome: true, email: true, celular: true } },
+                },
+              });
+              if (c) {
+                com = { id: c.id, usuario: c.usuario as UsuarioSelecionado };
+              }
+            }
 
             let tipoReserva: "permanente" | "comum" | null = null;
             let usuario: UsuarioSelecionado | null = null;
