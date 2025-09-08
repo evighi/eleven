@@ -20,18 +20,20 @@ interface Usuario {
 }
 
 export default function AgendamentoChurrasqueiraComum() {
-  const [diaSemana, setDiaSemana] = useState('')
-  const [turno, setTurno] = useState('')
-  const [churrasqueirasDisponiveis, setChurrasqueirasDisponiveis] = useState<Churrasqueira[]>([])
-  const [churrasqueiraSelecionada, setChurrasqueiraSelecionada] = useState('')
-  const [mensagem, setMensagem] = useState('')
+  const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
 
-  const [buscaUsuario, setBuscaUsuario] = useState('')
+  const [data, setData] = useState<string>("")
+  const [turno, setTurno] = useState<string>("")
+  const [churrasqueirasDisponiveis, setChurrasqueirasDisponiveis] = useState<Churrasqueira[]>([])
+  const [churrasqueiraSelecionada, setChurrasqueiraSelecionada] = useState<string>("")
+  const [mensagem, setMensagem] = useState<string>("")
+  const [carregandoDisp, setCarregandoDisp] = useState<boolean>(false)
+
+  // Busca de usuário (id + nome) via /usuarios/buscar
+  const [buscaUsuario, setBuscaUsuario] = useState<string>("")
   const [usuariosEncontrados, setUsuariosEncontrados] = useState<Usuario[]>([])
   const [usuarioSelecionado, setUsuarioSelecionado] = useState<Usuario | null>(null)
-
-  const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
-  const diasEnum = ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"]
+  const [buscandoUsuarios, setBuscandoUsuarios] = useState<boolean>(false)
 
   const toImgUrl = (c: Churrasqueira) => {
     const v = c.imagemUrl ?? c.logoUrl ?? c.imagem ?? ''
@@ -41,15 +43,18 @@ export default function AgendamentoChurrasqueiraComum() {
     return `${API_URL}/uploads/churrasqueiras/${v}`
   }
 
+  // Disponibilidade por data + turno
   useEffect(() => {
     const buscar = async () => {
-      if (!diaSemana || !turno) {
+      if (!data || !turno) {
         setChurrasqueirasDisponiveis([])
+        setMensagem('')
         return
       }
+      setCarregandoDisp(true)
       try {
         const res = await axios.get(`${API_URL}/disponibilidadeChurrasqueiras`, {
-          params: { diaSemana, turno },
+          params: { data, turno },
           withCredentials: true,
         })
         const lista: Churrasqueira[] = Array.isArray(res.data) ? res.data : []
@@ -59,42 +64,58 @@ export default function AgendamentoChurrasqueiraComum() {
       } catch (err) {
         console.error(err)
         setMensagem('Erro ao verificar disponibilidade.')
+        setChurrasqueirasDisponiveis([])
+      } finally {
+        setCarregandoDisp(false)
       }
     }
     buscar()
-  }, [diaSemana, turno, API_URL])
+  }, [data, turno, API_URL])
 
+  // Busca usuários (somente id+nome) — debounce + AbortController
   useEffect(() => {
-    const buscar = async () => {
-      if (buscaUsuario.trim().length < 2) {
-        setUsuariosEncontrados([])
-        return
-      }
-      try {
-        const res = await axios.get(`${API_URL}/clientes`, {
-          params: { nome: buscaUsuario.trim() },
-          withCredentials: true,
-        })
-        setUsuariosEncontrados(res.data || [])
-      } catch (err) {
-        console.error(err)
-      }
+    if (buscaUsuario.trim().length < 2) {
+      setUsuariosEncontrados([])
+      return
     }
-    const delay = setTimeout(buscar, 300)
-    return () => clearTimeout(delay)
+    let cancel = false
+    const ctrl = new AbortController()
+    setBuscandoUsuarios(true)
+
+    const t = setTimeout(async () => {
+      try {
+        const r = await fetch(
+          `${API_URL}/usuarios/buscar?nome=${encodeURIComponent(buscaUsuario.trim())}`,
+          { credentials: "include", signal: ctrl.signal }
+        )
+        if (!r.ok) throw new Error("Falha ao buscar usuários")
+        const data = (await r.json()) as Usuario[]
+        if (!cancel) setUsuariosEncontrados(data || [])
+      } catch (e) {
+        if (!cancel) setUsuariosEncontrados([])
+      } finally {
+        if (!cancel) setBuscandoUsuarios(false)
+      }
+    }, 300)
+
+    return () => {
+      cancel = true
+      clearTimeout(t)
+      ctrl.abort()
+    }
   }, [buscaUsuario, API_URL])
 
   const agendar = async () => {
-    if (!churrasqueiraSelecionada || !usuarioSelecionado) {
-      setMensagem('Selecione uma churrasqueira e um usuário.')
+    if (!data || !turno || !churrasqueiraSelecionada || !usuarioSelecionado) {
+      setMensagem('Selecione data, turno, uma churrasqueira e um usuário.')
       return
     }
     try {
       await axios.post(`${API_URL}/agendamentosChurrasqueiras`, {
-        diaSemana,
+        data,
         turno,
         churrasqueiraId: churrasqueiraSelecionada,
-        usuarioId: usuarioSelecionado.id
+        usuarioId: usuarioSelecionado.id,
       }, { withCredentials: true })
       setMensagem('✅ Agendamento realizado com sucesso!')
       setChurrasqueiraSelecionada('')
@@ -105,21 +126,22 @@ export default function AgendamentoChurrasqueiraComum() {
     }
   }
 
+  // min da data = hoje
+  const hoje = new Date()
+  const minDate = new Date(hoje.getTime() - hoje.getTimezoneOffset() * 60000).toISOString().slice(0, 10)
+
   return (
     <div className="max-w-xl mx-auto mt-10 p-6 bg-white shadow rounded-xl">
       <h1 className="text-2xl font-bold mb-4">Agendar Churrasqueira (Comum)</h1>
 
-      <label className="block mb-2">Dia da Semana</label>
-      <select
+      <label className="block mb-2">Data</label>
+      <input
+        type="date"
         className="w-full p-2 border rounded mb-4"
-        value={diaSemana}
-        onChange={(e) => setDiaSemana(e.target.value)}
-      >
-        <option value="">Selecione o dia</option>
-        {diasEnum.map((d) => (
-          <option key={d} value={d}>{d}</option>
-        ))}
-      </select>
+        value={data}
+        min={minDate}
+        onChange={(e) => setData(e.target.value)}
+      />
 
       <label className="block mb-2">Turno</label>
       <select
@@ -141,6 +163,9 @@ export default function AgendamentoChurrasqueiraComum() {
         value={buscaUsuario}
         onChange={(e) => setBuscaUsuario(e.target.value)}
       />
+      {buscandoUsuarios && (
+        <div className="text-xs text-gray-500 mb-1">Buscando…</div>
+      )}
       {usuariosEncontrados.length > 0 && (
         <ul className="border rounded mb-2 max-h-40 overflow-y-auto">
           {usuariosEncontrados.map((u) => (
@@ -160,6 +185,9 @@ export default function AgendamentoChurrasqueiraComum() {
       )}
 
       {/* Lista de churrasqueiras */}
+      {carregandoDisp && (
+        <p className="text-sm text-gray-500 mb-2">Carregando disponibilidade…</p>
+      )}
       {churrasqueirasDisponiveis.length > 0 && (
         <div className="mb-4">
           <h2 className="mb-2 font-semibold">Churrasqueiras Disponíveis</h2>
@@ -198,7 +226,7 @@ export default function AgendamentoChurrasqueiraComum() {
           <button
             className="mt-4 bg-orange-600 text-white px-4 py-2 rounded disabled:opacity-60"
             onClick={agendar}
-            disabled={!churrasqueiraSelecionada || !usuarioSelecionado}
+            disabled={!data || !turno || !churrasqueiraSelecionada || !usuarioSelecionado}
           >
             Confirmar Agendamento
           </button>
