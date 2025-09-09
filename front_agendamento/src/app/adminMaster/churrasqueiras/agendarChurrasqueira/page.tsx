@@ -14,10 +14,7 @@ interface Churrasqueira {
   disponivel?: boolean
 }
 
-interface Usuario {
-  id: string
-  nome: string
-}
+type UsuarioBusca = { id: string; nome: string }
 
 export default function AgendamentoChurrasqueiraComum() {
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
@@ -29,11 +26,14 @@ export default function AgendamentoChurrasqueiraComum() {
   const [mensagem, setMensagem] = useState<string>("")
   const [carregandoDisp, setCarregandoDisp] = useState<boolean>(false)
 
-  // Busca de usuário (id + nome) via /usuarios/buscar
+  // Dono cadastrado (busca)
   const [buscaUsuario, setBuscaUsuario] = useState<string>("")
-  const [usuariosEncontrados, setUsuariosEncontrados] = useState<Usuario[]>([])
-  const [usuarioSelecionado, setUsuarioSelecionado] = useState<Usuario | null>(null)
+  const [usuariosEncontrados, setUsuariosEncontrados] = useState<UsuarioBusca[]>([])
+  const [usuarioSelecionado, setUsuarioSelecionado] = useState<UsuarioBusca | null>(null)
   const [buscandoUsuarios, setBuscandoUsuarios] = useState<boolean>(false)
+
+  // Convidado como dono (nome livre)
+  const [convidadoDonoNome, setConvidadoDonoNome] = useState<string>("")
 
   const toImgUrl = (c: Churrasqueira) => {
     const v = c.imagemUrl ?? c.logoUrl ?? c.imagem ?? ''
@@ -72,58 +72,64 @@ export default function AgendamentoChurrasqueiraComum() {
     buscar()
   }, [data, turno, API_URL])
 
-  // Busca usuários (id+nome) — debounce + AbortController (axios)
+  // Busca usuários (id+nome) — debounce + AbortController em /usuarios/buscar
   useEffect(() => {
-    const q = buscaUsuario.trim();
-
+    const q = buscaUsuario.trim()
     if (q.length < 2) {
-      setUsuariosEncontrados([]);
-      setBuscandoUsuarios(false); // evita spinner preso
-      return;
+      setUsuariosEncontrados([])
+      setBuscandoUsuarios(false)
+      return
     }
 
-    const ctrl = new AbortController();
-    setBuscandoUsuarios(true);
+    const ctrl = new AbortController()
+    setBuscandoUsuarios(true)
 
     const t = setTimeout(async () => {
       try {
-        const { data: lista } = await axios.get<Usuario[]>(
+        const { data: lista } = await axios.get<UsuarioBusca[]>(
           `${API_URL}/clientes`,
           { params: { nome: q }, withCredentials: true, signal: ctrl.signal as any }
-        );
-        setUsuariosEncontrados(Array.isArray(lista) ? lista : []);
+        )
+        setUsuariosEncontrados(Array.isArray(lista) ? lista : [])
       } catch (err: any) {
-        // ignorar cancelamentos
         if (err?.name !== "CanceledError" && err?.code !== "ERR_CANCELED") {
-          console.error("Falha ao buscar usuários:", err);
+          console.error("Falha ao buscar usuários:", err)
         }
-        setUsuariosEncontrados([]);
+        setUsuariosEncontrados([])
       } finally {
-        setBuscandoUsuarios(false);
+        setBuscandoUsuarios(false)
       }
-    }, 300);
+    }, 300)
 
     return () => {
-      clearTimeout(t);
-      ctrl.abort();
-    };
-  }, [buscaUsuario, API_URL]);
+      clearTimeout(t)
+      ctrl.abort()
+    }
+  }, [buscaUsuario, API_URL])
 
   const agendar = async () => {
-    if (!data || !turno || !churrasqueiraSelecionada || !usuarioSelecionado) {
-      setMensagem('Selecione data, turno, uma churrasqueira e um usuário.')
+    if (!data || !turno || !churrasqueiraSelecionada || (!usuarioSelecionado && !convidadoDonoNome.trim())) {
+      setMensagem('Selecione data, turno, uma churrasqueira e um usuário OU preencha o convidado.')
       return
     }
+
+    const body: Record<string, any> = {
+      data,
+      turno,
+      churrasqueiraId: churrasqueiraSelecionada,
+      ...(usuarioSelecionado
+        ? { usuarioId: usuarioSelecionado.id }
+        : { convidadoDonoNome: convidadoDonoNome.trim() }),
+    }
+
     try {
-      await axios.post(`${API_URL}/agendamentosChurrasqueiras`, {
-        data,
-        turno,
-        churrasqueiraId: churrasqueiraSelecionada,
-        usuarioId: usuarioSelecionado.id,
-      }, { withCredentials: true })
+      await axios.post(`${API_URL}/agendamentosChurrasqueiras`, body, { withCredentials: true })
       setMensagem('✅ Agendamento realizado com sucesso!')
       setChurrasqueiraSelecionada('')
       setUsuarioSelecionado(null)
+      setBuscaUsuario('')
+      setUsuariosEncontrados([])
+      setConvidadoDonoNome('')
     } catch (err) {
       console.error(err)
       setMensagem('Erro ao realizar agendamento.')
@@ -133,6 +139,9 @@ export default function AgendamentoChurrasqueiraComum() {
   // min da data = hoje
   const hoje = new Date()
   const minDate = new Date(hoje.getTime() - hoje.getTimezoneOffset() * 60000).toISOString().slice(0, 10)
+
+  const botaoDesabilitado =
+    !data || !turno || !churrasqueiraSelecionada || (!usuarioSelecionado && !convidadoDonoNome.trim())
 
   return (
     <div className="max-w-xl mx-auto mt-10 p-6 bg-white shadow rounded-xl">
@@ -158,35 +167,69 @@ export default function AgendamentoChurrasqueiraComum() {
         <option value="NOITE">Noite</option>
       </select>
 
-      {/* Busca de usuário */}
-      <label className="block mb-1 font-medium">Selecionar Usuário</label>
-      <input
-        type="text"
-        className="w-full p-2 border rounded mb-2"
-        placeholder="Buscar por nome"
-        value={buscaUsuario}
-        onChange={(e) => setBuscaUsuario(e.target.value)}
-      />
-      {buscandoUsuarios && (
-        <div className="text-xs text-gray-500 mb-1">Buscando…</div>
-      )}
-      {usuariosEncontrados.length > 0 && (
-        <ul className="border rounded mb-2 max-h-40 overflow-y-auto">
-          {usuariosEncontrados.map((u) => (
-            <li
-              key={u.id}
-              className="p-2 hover:bg-gray-100 cursor-pointer"
-              onClick={() => { setUsuarioSelecionado(u); setBuscaUsuario(''); setUsuariosEncontrados([]) }}
-            >
-              {u.nome}
-            </li>
-          ))}
-        </ul>
-      )}
+      {/* Dono do agendamento */}
+      <div className="space-y-2 mb-4">
+        <label className="block font-semibold">Dono do agendamento</label>
 
-      {usuarioSelecionado && (
-        <p className="mb-4">👤 Usuário selecionado: <strong>{usuarioSelecionado.nome}</strong></p>
-      )}
+        {/* Busca usuário cadastrado */}
+        <div>
+          <input
+            type="text"
+            className="w-full p-2 border rounded mb-2"
+            placeholder="Buscar usuário por nome"
+            value={buscaUsuario}
+            onChange={(e) => {
+              setBuscaUsuario(e.target.value)
+              setUsuarioSelecionado(null)
+            }}
+          />
+          {buscandoUsuarios && <div className="text-xs text-gray-500 mb-1">Buscando…</div>}
+
+          {usuariosEncontrados.length > 0 && (
+            <ul className="border rounded mb-2 max-h-40 overflow-y-auto">
+              {usuariosEncontrados.map((u) => (
+                <li
+                  key={u.id}
+                  className="p-2 hover:bg-gray-100 cursor-pointer"
+                  onClick={() => {
+                    setUsuarioSelecionado(u)
+                    setBuscaUsuario('')
+                    setUsuariosEncontrados([])
+                    setConvidadoDonoNome('')
+                  }}
+                >
+                  {u.nome}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {usuarioSelecionado && (
+            <p className="text-xs text-green-700">Usuário selecionado: <strong>{usuarioSelecionado.nome}</strong></p>
+          )}
+        </div>
+
+        {/* Convidado dono (alternativa ao usuário cadastrado) */}
+        <div>
+          <input
+            type="text"
+            className="w-full p-2 border rounded"
+            placeholder="Ou informe um convidado como dono (ex.: Nome do Convidado)"
+            value={convidadoDonoNome}
+            onChange={(e) => {
+              setConvidadoDonoNome(e.target.value)
+              if (e.target.value.trim()) {
+                setUsuarioSelecionado(null)
+                setBuscaUsuario('')
+                setUsuariosEncontrados([])
+              }
+            }}
+          />
+          <p className="text-[11px] text-gray-500 mt-1">
+            Preencha <strong>um</strong> dos dois: usuário cadastrado <em>ou</em> convidado dono.
+          </p>
+        </div>
+      </div>
 
       {/* Lista de churrasqueiras */}
       {carregandoDisp && (
@@ -230,7 +273,7 @@ export default function AgendamentoChurrasqueiraComum() {
           <button
             className="mt-4 bg-orange-600 text-white px-4 py-2 rounded disabled:opacity-60"
             onClick={agendar}
-            disabled={!data || !turno || !churrasqueiraSelecionada || !usuarioSelecionado}
+            disabled={botaoDesabilitado}
           >
             Confirmar Agendamento
           </button>

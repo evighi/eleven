@@ -679,13 +679,12 @@ export default function AdminHome() {
                           abrirDetalhes(q, { horario, esporte });
                         }
                       }}
-                      className={`${clsBase} ${
-                        q.bloqueada
+                      className={`${clsBase} ${q.bloqueada
                           ? "border-2 border-red-500 bg-red-50"
                           : q.disponivel
-                          ? "border-2 border-green-500 bg-green-50"
-                          : "border-2 border-gray-500 bg-gray-50"
-                      }`}
+                            ? "border-2 border-green-500 bg-green-50"
+                            : "border-2 border-gray-500 bg-gray-50"
+                        }`}
                     >
                       <p className="font-medium">{q.nome}</p>
                       <p className="text-xs text-gray-700">Quadra {q.numero}</p>
@@ -715,28 +714,32 @@ export default function AdminHome() {
             <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4 mb-6">
               {disponibilidade.churrasqueiras.map((c: ChurrasqueiraDisp) => {
                 const diaInfo = c.disponibilidade.find((t) => t.turno === "DIA");
+                const disponivel = !!diaInfo?.disponivel;
+
                 return (
                   <div
                     key={c.churrasqueiraId + "-dia"}
                     onClick={() =>
-                      !diaInfo?.disponivel &&
+                      !disponivel &&
                       abrirDetalhes(
                         { ...(diaInfo as DetalheItemMin), tipoLocal: "churrasqueira" },
                         { turno: "DIA" }
                       )
                     }
-                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center ${
-                      diaInfo?.disponivel
-                        ? "border-2 border-green-500 bg-green-50 cursor-pointer"
-                        : "border-2 border-red-500 bg-red-50 cursor-pointer"
-                    }`}
+                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${disponivel
+                        ? "border-2 border-green-500 bg-green-50"
+                        : "border-2 border-gray-500 bg-gray-50"
+                      }`}
                   >
                     <p className="font-medium">{c.nome}</p>
-                    <p className="text-xs text-gray-700">Quadra {c.numero}</p>
-                    {!c.disponivel && (
-                      <div>
+                    <p className="text-xs text-gray-700">Churrasqueira {c.numero}</p>
+
+                    {!disponivel && (
+                      <div className="mt-1">
                         <p className="font-bold">{diaInfo?.usuario?.nome}</p>
-                        {c.tipoReserva}
+                        <span className="inline-block text-[11px] px-2 py-0.5 border rounded bg-white/70">
+                          {diaInfo?.tipoReserva === "permanente" ? "Permanente" : "Comum"}
+                        </span>
                       </div>
                     )}
                   </div>
@@ -749,28 +752,32 @@ export default function AdminHome() {
             <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4">
               {disponibilidade.churrasqueiras.map((c: ChurrasqueiraDisp) => {
                 const noiteInfo = c.disponibilidade.find((t) => t.turno === "NOITE");
+                const disponivel = !!noiteInfo?.disponivel;
+
                 return (
                   <div
                     key={c.churrasqueiraId + "-noite"}
                     onClick={() =>
-                      !noiteInfo?.disponivel &&
+                      !disponivel &&
                       abrirDetalhes(
                         { ...(noiteInfo as DetalheItemMin), tipoLocal: "churrasqueira" },
                         { turno: "NOITE" }
                       )
                     }
-                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center ${
-                      noiteInfo?.disponivel
-                        ? "border-2 border-green-500 bg-green-50 cursor-pointer"
-                        : "border-2 border-red-500 bg-red-50 cursor-pointer"
-                    }`}
+                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${disponivel
+                        ? "border-2 border-green-500 bg-green-50"
+                        : "border-2 border-gray-500 bg-gray-50"
+                      }`}
                   >
                     <p className="font-medium">{c.nome}</p>
-                    <p className="text-xs text-gray-700">Quadra {c.numero}</p>
-                    {!c.disponivel && (
-                      <div>
+                    <p className="text-xs text-gray-700">Churrasqueira {c.numero}</p>
+
+                    {!disponivel && (
+                      <div className="mt-1">
                         <p className="font-bold">{noiteInfo?.usuario?.nome}</p>
-                        {c.tipoReserva}
+                        <span className="inline-block text-[11px] px-2 py-0.5 border rounded bg-white/70">
+                          {noiteInfo?.tipoReserva === "permanente" ? "Permanente" : "Comum"}
+                        </span>
                       </div>
                     )}
                   </div>
@@ -978,11 +985,10 @@ export default function AdminHome() {
                             key={d}
                             type="button"
                             onClick={() => setDataExcecaoSelecionada(d)}
-                            className={`px-3 py-2 rounded border text-sm ${
-                              ativo
+                            className={`px-3 py-2 rounded border text-sm ${ativo
                                 ? "border-indigo-600 bg-indigo-50 text-indigo-700"
                                 : "border-gray-300 hover:bg-gray-50"
-                            }`}
+                              }`}
                           >
                             {toDdMm(d)}
                           </button>
@@ -1043,9 +1049,8 @@ export default function AdminHome() {
               {usuariosFiltrados.map((user) => (
                 <li
                   key={user.id}
-                  className={`p-2 cursor-pointer hover:bg-blue-100 ${
-                    usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
-                  }`}
+                  className={`p-2 cursor-pointer hover:bg-blue-100 ${usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
+                    }`}
                   onClick={() => setUsuarioSelecionado(user)}
                 >
                   {user.nome} ({user.email})
@@ -1097,9 +1102,8 @@ export default function AdminHome() {
                 return (
                   <li
                     key={u.id}
-                    className={`p-2 cursor-pointer flex items-center justify-between hover:bg-orange-50 ${
-                      ativo ? "bg-orange-100" : ""
-                    }`}
+                    className={`p-2 cursor-pointer flex items-center justify-between hover:bg-orange-50 ${ativo ? "bg-orange-100" : ""
+                      }`}
                     onClick={() => alternarSelecionado(u.id)}
                   >
                     <span>
