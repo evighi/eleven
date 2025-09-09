@@ -71,7 +71,6 @@ router.post("/", async (req, res) => {
   }
 
   const { data, turno, churrasqueiraId, usuarioId, convidadosNomes = [] } = parsed.data;
-
   const ehAdmin = isAdminTipo(req.usuario.usuarioLogadoTipo);
 
   // 🔑 Resolve DONO:
@@ -88,6 +87,15 @@ router.post("/", async (req, res) => {
   }
 
   try {
+    // 0) churrasqueira existe?
+    const exists = await prisma.churrasqueira.findUnique({
+      where: { id: churrasqueiraId },
+      select: { id: true },
+    });
+    if (!exists) {
+      return res.status(404).json({ erro: "Churrasqueira não encontrada." });
+    }
+
     const dataUTC = toUtc00(data);
 
     // (1) conflito com COMUM (mesmo dia+turno+churrasqueira)

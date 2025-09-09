@@ -65,7 +65,7 @@ export default function AgendamentoChurrasqueiraPermanente() {
     } catch { return false }
   }
 
-  // Disponibilidade: converte diaSemana -> próxima data ISO e consulta /disponibilidadeChurrasqueiras
+  // Disponibilidade: diaSemana -> próxima data ISO
   useEffect(() => {
     const buscar = async () => {
       if (!diaSemana || !turno) {
@@ -96,7 +96,7 @@ export default function AgendamentoChurrasqueiraPermanente() {
     buscar()
   }, [diaSemana, turno, API_URL])
 
-  // Busca usuários (id+nome) — /usuarios/buscar com debounce + AbortController
+  // Buscar usuários
   useEffect(() => {
     const q = buscaUsuario.trim()
     if (q.length < 2) {
@@ -137,7 +137,8 @@ export default function AgendamentoChurrasqueiraPermanente() {
       churrasqueiraId: churrasqueiraSelecionada,
       ...(usuarioSelecionado
         ? { usuarioId: usuarioSelecionado.id }
-        : { convidadoDonoNome: convidadoDonoNome.trim() }),
+        : { convidadosNomes: [convidadoDonoNome.trim()] } // <- chave correta para o backend
+      ),
     }
 
     try {
@@ -148,9 +149,13 @@ export default function AgendamentoChurrasqueiraPermanente() {
       setBuscaUsuario('')
       setUsuariosEncontrados([])
       setConvidadoDonoNome('')
-    } catch (err) {
+    } catch (err: any) {
       console.error(err)
-      setMensagem('Erro ao realizar agendamento permanente.')
+      const msg =
+        err?.response?.data?.erro ||
+        err?.response?.data?.message ||
+        'Erro ao realizar agendamento permanente.'
+      setMensagem(msg)
     }
   }
 

@@ -15,6 +15,10 @@ function toUtc00(isoYYYYMMDD: string) {
   return new Date(`${isoYYYYMMDD}T00:00:00Z`);
 }
 
+const DIA_IDX: Record<DiaSemana, number> = {
+  DOMINGO: 0, SEGUNDA: 1, TERCA: 2, QUARTA: 3, QUINTA: 4, SEXTA: 5, SABADO: 6,
+};
+
 /** Cria um usuário mínimo (tipo CLIENTE) a partir de um nome de convidado */
 async function criarConvidadoComoUsuario(nomeConvidado: string) {
   const cleanName = nomeConvidado.trim().replace(/\s+/g, " ");
@@ -80,8 +84,17 @@ router.post("/", requireAdmin, async (req, res) => {
   } = validacao.data;
 
   try {
-    // Conflito: já existe permanente ativo para esse (churrasqueira, diaSemana, turno)
-    const conflito = await prisma.agendamentoPermanenteChurrasqueira.findFirst({
+    // 0) churrasqueira existe?
+    const exists = await prisma.churrasqueira.findUnique({
+      where: { id: churrasqueiraId },
+      select: { id: true },
+    });
+    if (!exists) {
+      return res.status(404).json({ erro: "Churrasqueira não encontrada." });
+    }
+
+    // (1) Conflito: já existe PERMANENTE ativo para (churrasqueira, diaSemana, turno)
+    const conflitoPermanente = await prisma.agendamentoPermanenteChurrasqueira.findFirst({
       where: {
         diaSemana,
         turno,
@@ -90,11 +103,28 @@ router.post("/", requireAdmin, async (req, res) => {
       },
       select: { id: true },
     });
-
-    if (conflito) {
+    if (conflitoPermanente) {
       return res
         .status(409)
-        .json({ erro: "Já existe um agendamento permanente nesse dia e turno" });
+        .json({ erro: "Já existe um agendamento permanente nesse dia e turno." });
+    }
+
+    // (2) Conflito com COMUM existente no mesmo dia-da-semana e turno
+    // Regra igual à de quadras: se há comum, exigimos 'dataInicio' (para começar depois)
+    const comuns = await prisma.agendamentoChurrasqueira.findMany({
+      where: {
+        churrasqueiraId,
+        turno,
+        status: "CONFIRMADO",
+      },
+      select: { data: true },
+    });
+    const targetIdx = DIA_IDX[diaSemana];
+    const possuiConflitoComum = comuns.some((c) => new Date(c.data).getUTCDay() === targetIdx);
+    if (possuiConflitoComum && !dataInicio) {
+      return res.status(409).json({
+        erro: "Conflito com agendamento comum existente nesse dia da semana e turno. Informe uma dataInicio.",
+      });
     }
 
     // 🔑 Resolve DONO (admin obrigatório nesta rota):
@@ -122,10 +152,10 @@ router.post("/", requireAdmin, async (req, res) => {
       },
     });
 
-    res.status(201).json(novo);
+    return res.status(201).json(novo);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ erro: "Erro ao criar agendamento permanente" });
+    return res.status(500).json({ erro: "Erro ao criar agendamento permanente" });
   }
 });
 
@@ -168,10 +198,10 @@ router.get("/", async (req, res) => {
       },
       orderBy: [{ diaSemana: "asc" }, { turno: "asc" }],
     });
-    res.json(lista);
+    return res.json(lista);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ erro: "Erro ao listar" });
+    return res.status(500).json({ erro: "Erro ao listar" });
   }
 });
 
@@ -206,7 +236,7 @@ router.get(
           .json({ erro: "Agendamento permanente de churrasqueira não encontrado" });
       }
 
-      res.json({
+      return res.json({
         id: agendamento.id,
         tipoReserva: "PERMANENTE",
         diaSemana: agendamento.diaSemana,
@@ -219,7 +249,7 @@ router.get(
       });
     } catch (err) {
       console.error(err);
-      res
+      return res
         .status(500)
         .json({ erro: "Erro ao buscar agendamento permanente de churrasqueira" });
     }
@@ -253,13 +283,13 @@ router.post(
         },
       });
 
-      res.status(200).json({
+      return res.status(200).json({
         message: "Agendamento permanente de churrasqueira cancelado com sucesso.",
         agendamento,
       });
     } catch (error) {
       console.error("Erro ao cancelar agendamento permanente de churrasqueira:", error);
-      res
+      return res
         .status(500)
         .json({ error: "Erro ao cancelar agendamento permanente de churrasqueira." });
     }
@@ -275,10 +305,10 @@ router.delete("/:id", requireAdmin, async (req, res) => {
     await prisma.agendamentoPermanenteChurrasqueira.delete({
       where: { id: req.params.id },
     });
-    res.json({ mensagem: "Agendamento permanente deletado com sucesso" });
+  return res.json({ mensagem: "Agendamento permanente deletado com sucesso" });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ erro: "Erro ao deletar" });
+    return res.status(500).json({ erro: "Erro ao deletar" });
   }
 });
 
