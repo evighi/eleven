@@ -1,6 +1,9 @@
 import { Router } from "express";
 import { PrismaClient, DiaSemana, Turno } from "@prisma/client";
 import { z } from "zod";
+import bcrypt from "bcryptjs";
+import crypto from "crypto";
+
 import verificarToken from "../middleware/authMiddleware";
 import { requireAdmin, requireOwnerByRecord } from "../middleware/acl";
 
@@ -12,11 +15,40 @@ function toUtc00(isoYYYYMMDD: string) {
   return new Date(`${isoYYYYMMDD}T00:00:00Z`);
 }
 
+/** Cria um usuário mínimo (tipo CLIENTE) a partir de um nome de convidado */
+async function criarConvidadoComoUsuario(nomeConvidado: string) {
+  const cleanName = nomeConvidado.trim().replace(/\s+/g, " ");
+  const localPart = cleanName.toLowerCase().replace(/\s+/g, ".");
+  const suffix = crypto.randomBytes(3).toString("hex"); // 6 chars
+  const emailSintetico = `${localPart}+guest.${suffix}@noemail.local`;
+
+  const randomPass = crypto.randomUUID();
+  const hashed = await bcrypt.hash(randomPass, 10);
+
+  const convidado = await prisma.usuario.create({
+    data: {
+      nome: cleanName,
+      email: emailSintetico,
+      senha: hashed,
+      tipo: "CLIENTE",
+      celular: null,
+      cpf: null,
+      nascimento: null,
+    },
+    select: { id: true, nome: true, email: true },
+  });
+
+  return convidado;
+}
+
 const schemaAgendamentoPermanenteChurrasqueira = z.object({
   diaSemana: z.nativeEnum(DiaSemana),
   turno: z.nativeEnum(Turno),
   churrasqueiraId: z.string().uuid(),
-  usuarioId: z.string().uuid(),
+  // Admin pode escolher um usuário existente…
+  usuarioId: z.string().uuid().optional(),
+  // …ou informar um convidado (pega o primeiro nome e cria “usuário convidado”)
+  convidadosNomes: z.array(z.string().trim().min(1)).optional().default([]),
   // Aceita "YYYY-MM-DD" e converte para 00:00Z; opcional
   dataInicio: z
     .string()
@@ -30,8 +62,7 @@ router.use(verificarToken);
 
 /**
  * POST /churrasqueiras/permanentes
- * Criar agendamento permanente de churrasqueira
- * (recomendado: apenas ADMIN)
+ * Criar agendamento permanente de churrasqueira (ADMIN)
  */
 router.post("/", requireAdmin, async (req, res) => {
   const validacao = schemaAgendamentoPermanenteChurrasqueira.safeParse(req.body);
@@ -39,7 +70,14 @@ router.post("/", requireAdmin, async (req, res) => {
     return res.status(400).json({ erro: validacao.error.errors });
   }
 
-  const { diaSemana, turno, churrasqueiraId, usuarioId, dataInicio } = validacao.data;
+  const {
+    diaSemana,
+    turno,
+    churrasqueiraId,
+    usuarioId: usuarioIdBody,
+    convidadosNomes = [],
+    dataInicio,
+  } = validacao.data;
 
   try {
     // Conflito: já existe permanente ativo para esse (churrasqueira, diaSemana, turno)
@@ -54,7 +92,24 @@ router.post("/", requireAdmin, async (req, res) => {
     });
 
     if (conflito) {
-      return res.status(409).json({ erro: "Já existe um agendamento permanente nesse dia e turno" });
+      return res
+        .status(409)
+        .json({ erro: "Já existe um agendamento permanente nesse dia e turno" });
+    }
+
+    // 🔑 Resolve DONO (admin obrigatório nesta rota):
+    // 1) Se veio usuarioId, usa ele
+    // 2) Senão, se veio convidadosNomes[0], cria usuário convidado e usa como dono
+    // 3) Senão, erro
+    let donoId = usuarioIdBody || "";
+    if (!donoId && convidadosNomes.length > 0) {
+      const convidado = await criarConvidadoComoUsuario(convidadosNomes[0]);
+      donoId = convidado.id;
+    }
+    if (!donoId) {
+      return res.status(400).json({
+        erro: "Informe um usuário dono (usuarioId) ou um convidado em convidadosNomes.",
+      });
     }
 
     const novo = await prisma.agendamentoPermanenteChurrasqueira.create({
@@ -62,7 +117,7 @@ router.post("/", requireAdmin, async (req, res) => {
         diaSemana,
         turno,
         churrasqueiraId,
-        usuarioId,
+        usuarioId: donoId,
         dataInicio: dataInicio ?? null,
       },
     });
@@ -87,8 +142,12 @@ router.get("/", async (req, res) => {
     req.usuario.usuarioLogadoTipo
   );
 
-  const usuarioIdParam = typeof req.query.usuarioId === "string" ? req.query.usuarioId : undefined;
-  const churrasqueiraId = typeof req.query.churrasqueiraId === "string" ? req.query.churrasqueiraId : undefined;
+  const usuarioIdParam =
+    typeof req.query.usuarioId === "string" ? req.query.usuarioId : undefined;
+  const churrasqueiraId =
+    typeof req.query.churrasqueiraId === "string"
+      ? req.query.churrasqueiraId
+      : undefined;
 
   const where: any = {
     ...(churrasqueiraId ? { churrasqueiraId } : {}),
@@ -142,7 +201,9 @@ router.get(
       });
 
       if (!agendamento) {
-        return res.status(404).json({ erro: "Agendamento permanente de churrasqueira não encontrado" });
+        return res
+          .status(404)
+          .json({ erro: "Agendamento permanente de churrasqueira não encontrado" });
       }
 
       res.json({
@@ -158,7 +219,9 @@ router.get(
       });
     } catch (err) {
       console.error(err);
-      res.status(500).json({ erro: "Erro ao buscar agendamento permanente de churrasqueira" });
+      res
+        .status(500)
+        .json({ erro: "Erro ao buscar agendamento permanente de churrasqueira" });
     }
   }
 );
@@ -196,7 +259,9 @@ router.post(
       });
     } catch (error) {
       console.error("Erro ao cancelar agendamento permanente de churrasqueira:", error);
-      res.status(500).json({ error: "Erro ao cancelar agendamento permanente de churrasqueira." });
+      res
+        .status(500)
+        .json({ error: "Erro ao cancelar agendamento permanente de churrasqueira." });
     }
   }
 );
@@ -207,7 +272,9 @@ router.post(
  */
 router.delete("/:id", requireAdmin, async (req, res) => {
   try {
-    await prisma.agendamentoPermanenteChurrasqueira.delete({ where: { id: req.params.id } });
+    await prisma.agendamentoPermanenteChurrasqueira.delete({
+      where: { id: req.params.id },
+    });
     res.json({ mensagem: "Agendamento permanente deletado com sucesso" });
   } catch (err) {
     console.error(err);
