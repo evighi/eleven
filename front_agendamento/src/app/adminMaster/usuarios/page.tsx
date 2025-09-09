@@ -7,13 +7,20 @@ interface Usuario {
   id: string
   nome: string
   email: string
-  celular: string
+  celular: string | null
   nascimento: string | null
   cpf: string | null
   tipo: string
 }
 
 const tipos = ["CLIENTE", "ADMIN_MASTER", "ADMIN_ATENDENTE", "ADMIN_PROFESSORES"]
+
+// Collator para ordenar sem diferenciar acentos/maiúsculas
+const collator = new Intl.Collator('pt-BR', { sensitivity: 'base', ignorePunctuation: true })
+
+// fallback para celular
+const mostrarCelular = (cel?: string | null) =>
+  (cel && cel.trim().length > 0) ? cel : '00000000000'
 
 export default function UsuariosAdmin() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([])
@@ -33,7 +40,10 @@ export default function UsuariosAdmin() {
         },
         withCredentials: true,
       })
-      setUsuarios(res.data || [])
+      const lista: Usuario[] = Array.isArray(res.data) ? res.data : []
+      // ordena por nome ignorando acentos/maiúsculas
+      lista.sort((a, b) => collator.compare(a?.nome ?? '', b?.nome ?? ''))
+      setUsuarios(lista)
     } catch (err) {
       console.error(err)
     }
@@ -119,7 +129,8 @@ export default function UsuariosAdmin() {
                 }
               }}
             >
-              <strong>{u.nome}</strong> — {u.email} — <span className="italic">{u.tipo}</span>
+              <strong>{u.nome}</strong> — {mostrarCelular(u.celular)} —{' '}
+              <span className="italic">{u.tipo}</span>
             </div>
 
             {/* Aba de edição */}
@@ -133,7 +144,7 @@ export default function UsuariosAdmin() {
                   <strong>Email:</strong> {usuarioSelecionado.email}
                 </p>
                 <p>
-                  <strong>Celular:</strong> {usuarioSelecionado.celular}
+                  <strong>Celular:</strong> {mostrarCelular(usuarioSelecionado.celular)}
                 </p>
                 <p>
                   <strong>Data de Nascimento:</strong> {formatarData(usuarioSelecionado.nascimento)}
