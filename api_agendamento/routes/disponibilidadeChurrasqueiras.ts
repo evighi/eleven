@@ -17,7 +17,7 @@ function diaSemanaFromUTC00(d: Date): DiaSemana {
 }
 
 /**
- * GET /disponibilidadeChurrasqueiras?data=YYYY-MM-DD&turno=DIA|NOITE[&churrasqueiraId=...]
+ * GET /disponibilidade-churrasqueiras?data=YYYY-MM-DD&turno=DIA|NOITE[&churrasqueiraId=...]
  * Retorna lista de churrasqueiras e se o slot está disponível.
  * - Conflito COMUM: (data, turno, churrasqueiraId) ativo
  * - Conflito PERMANENTE: (diaSemana(data), turno, churrasqueiraId) ativo e dataInicio <= data (ou null)
@@ -41,25 +41,16 @@ router.get("/", async (req, res) => {
 
   try {
     // Filtra 1 churrasqueira específica, se vier na query; senão busca todas
-    const selectChurras = {
-      id: true,
-      nome: true,
-      numero: true,
-      imagem: true,
-      imagemUrl: true,
-      logoUrl: true,
-    } as const;
-
     const churrasqueiras = churrasqueiraId
-      ? await prisma.churrasqueira.findMany({ where: { id: churrasqueiraId }, select: selectChurras })
-      : await prisma.churrasqueira.findMany({ select: selectChurras });
+      ? await prisma.churrasqueira.findMany({ where: { id: churrasqueiraId } })
+      : await prisma.churrasqueira.findMany();
 
     const resultado = await Promise.all(
-      churrasqueiras.map(async (ch) => {
+      churrasqueiras.map(async (churrasqueira) => {
         // Conflito PERMANENTE (ativo e respeitando dataInicio <= data)
         const conflitoPermanente = await prisma.agendamentoPermanenteChurrasqueira.findFirst({
           where: {
-            churrasqueiraId: ch.id,
+            churrasqueiraId: churrasqueira.id,
             diaSemana,
             turno,
             status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
@@ -71,7 +62,7 @@ router.get("/", async (req, res) => {
         // Conflito COMUM (data exata + turno)
         const conflitoComum = await prisma.agendamentoChurrasqueira.findFirst({
           where: {
-            churrasqueiraId: ch.id,
+            churrasqueiraId: churrasqueira.id,
             data: dataUTC,
             turno,
             status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
@@ -80,14 +71,9 @@ router.get("/", async (req, res) => {
         });
 
         return {
-          churrasqueiraId: ch.id,
-          nome: ch.nome,
-          numero: ch.numero,
-          // ⬇️ campos para o frontend montar a imagem (AppImage)
-          imagem: ch.imagem,
-          imagemUrl: ch.imagemUrl,
-          logoUrl: ch.logoUrl,
-          // disponibilidade
+          churrasqueiraId: churrasqueira.id,
+          nome: churrasqueira.nome,
+          numero: churrasqueira.numero,
           disponivel: !conflitoPermanente && !conflitoComum,
           conflitoPermanente: Boolean(conflitoPermanente),
           conflitoComum: Boolean(conflitoComum),
