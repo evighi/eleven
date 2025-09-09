@@ -35,14 +35,6 @@ export default function AgendamentoChurrasqueiraComum() {
   // Convidado como dono (nome livre)
   const [convidadoDonoNome, setConvidadoDonoNome] = useState<string>("")
 
-  const toImgUrl = (c: Churrasqueira) => {
-    const v = c.imagemUrl ?? c.logoUrl ?? c.imagem ?? ''
-    if (!v) return '/churrasqueira.png'
-    if (/^https?:\/\//i.test(v)) return v
-    if (v.startsWith('/uploads/')) return `${API_URL}${v}`
-    return `${API_URL}/uploads/churrasqueiras/${v}`
-  }
-
   // Disponibilidade por data + turno
   useEffect(() => {
     const buscar = async () => {
@@ -119,7 +111,7 @@ export default function AgendamentoChurrasqueiraComum() {
       churrasqueiraId: churrasqueiraSelecionada,
       ...(usuarioSelecionado
         ? { usuarioId: usuarioSelecionado.id }
-        : { convidadosNomes: [convidadoDonoNome.trim()] } // <- chave esperada pelo backend
+        : { convidadosNomes: [convidadoDonoNome.trim()] }
       ),
     }
 
@@ -248,7 +240,6 @@ export default function AgendamentoChurrasqueiraComum() {
 
           <div className="grid grid-cols-2 gap-3">
             {churrasqueirasDisponiveis.map((c) => {
-              const img = toImgUrl(c)
               const isActive = churrasqueiraSelecionada === String(c.churrasqueiraId)
               return (
                 <button
@@ -259,7 +250,8 @@ export default function AgendamentoChurrasqueiraComum() {
                 >
                   <div className="relative w-full aspect-[4/3] rounded overflow-hidden bg-white border mb-2">
                     <AppImage
-                      src={img}
+                      src={c.imagemUrl ?? c.logoUrl ?? c.imagem ?? undefined}
+                      legacyDir="churrasqueiras"
                       alt={c.nome}
                       fill
                       className="object-cover"
