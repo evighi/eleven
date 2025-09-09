@@ -72,7 +72,7 @@ export default function AgendamentoChurrasqueiraComum() {
     buscar()
   }, [data, turno, API_URL])
 
-  // Busca usuários (id+nome) — debounce + AbortController em /usuarios/buscar
+  // Busca usuários (id+nome) — debounce + AbortController
   useEffect(() => {
     const q = buscaUsuario.trim()
     if (q.length < 2) {
@@ -119,7 +119,8 @@ export default function AgendamentoChurrasqueiraComum() {
       churrasqueiraId: churrasqueiraSelecionada,
       ...(usuarioSelecionado
         ? { usuarioId: usuarioSelecionado.id }
-        : { convidadoDonoNome: convidadoDonoNome.trim() }),
+        : { convidadosNomes: [convidadoDonoNome.trim()] } // <- chave esperada pelo backend
+      ),
     }
 
     try {
@@ -130,9 +131,13 @@ export default function AgendamentoChurrasqueiraComum() {
       setBuscaUsuario('')
       setUsuariosEncontrados([])
       setConvidadoDonoNome('')
-    } catch (err) {
+    } catch (err: any) {
       console.error(err)
-      setMensagem('Erro ao realizar agendamento.')
+      const msg =
+        err?.response?.data?.erro ||
+        err?.response?.data?.message ||
+        'Erro ao realizar agendamento.'
+      setMensagem(msg)
     }
   }
 
@@ -205,7 +210,9 @@ export default function AgendamentoChurrasqueiraComum() {
           )}
 
           {usuarioSelecionado && (
-            <p className="text-xs text-green-700">Usuário selecionado: <strong>{usuarioSelecionado.nome}</strong></p>
+            <p className="text-xs text-green-700">
+              Usuário selecionado: <strong>{usuarioSelecionado.nome}</strong>
+            </p>
           )}
         </div>
 

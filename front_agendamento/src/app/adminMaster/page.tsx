@@ -775,7 +775,7 @@ export default function AdminHome() {
                     {!disponivel && (
                       <div className="mt-1">
                         <p className="font-bold">{noiteInfo?.usuario?.nome}</p>
-                        <span className="inline-block text-[11px] px-2 py-0.5 border rounded bg-white/70">
+                        <span className="inline-block text-[11px] px-2 py-0.5 rounded bg-white/70">
                           {noiteInfo?.tipoReserva === "permanente" ? "Permanente" : "Comum"}
                         </span>
                       </div>
