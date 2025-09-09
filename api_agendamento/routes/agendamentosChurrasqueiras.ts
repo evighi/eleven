@@ -1,8 +1,11 @@
 import { Router } from "express";
 import { PrismaClient, Turno, DiaSemana } from "@prisma/client";
 import { z } from "zod";
+import bcrypt from "bcryptjs";
+import crypto from "crypto";
+
 import verificarToken from "../middleware/authMiddleware";
-import { requireOwnerByRecord } from "../middleware/acl";
+import { requireOwnerByRecord, isAdmin as isAdminTipo } from "../middleware/acl";
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -19,18 +22,46 @@ function diaSemanaFromUTC00(d: Date): DiaSemana {
   return DIAS[d.getUTCDay()];
 }
 
+/** Cria um usuário mínimo a partir do nome do convidado (mesma lógica das quadras) */
+async function criarConvidadoComoUsuario(nomeConvidado: string) {
+  const cleanName = nomeConvidado.trim().replace(/\s+/g, " ");
+  const localPart = cleanName.toLowerCase().replace(/\s+/g, ".");
+  const suffix = crypto.randomBytes(3).toString("hex"); // 6 chars
+  const emailSintetico = `${localPart}+guest.${suffix}@noemail.local`;
+
+  const randomPass = crypto.randomUUID();
+  const hashed = await bcrypt.hash(randomPass, 10);
+
+  const convidado = await prisma.usuario.create({
+    data: {
+      nome: cleanName,
+      email: emailSintetico,
+      senha: hashed,
+      tipo: "CLIENTE",
+      celular: null,
+      cpf: null,
+      nascimento: null,
+    },
+    select: { id: true, nome: true, email: true },
+  });
+
+  return convidado;
+}
+
 const schemaAgendamentoChurrasqueira = z.object({
   data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   turno: z.nativeEnum(Turno),
   churrasqueiraId: z.string().uuid(),
-  // admin pode passar; cliente usa o id do token
+  // Admin pode escolher o dono via usuário existente…
   usuarioId: z.string().uuid().optional(),
+  // …ou informar um convidado (pega o primeiro nome e cria “usuário convidado”)
+  convidadosNomes: z.array(z.string().trim().min(1)).optional().default([]),
 });
 
 // 🔒 todas as rotas exigem estar logado
 router.use(verificarToken);
 
-// POST /churrasqueiras/agendamentos  (criar comum por data+turno)
+// POST /agendamentosChurrasqueiras  (criar COMUM por data+turno)
 router.post("/", async (req, res) => {
   if (!req.usuario) return res.status(401).json({ erro: "Não autenticado" });
 
@@ -39,9 +70,22 @@ router.post("/", async (req, res) => {
     return res.status(400).json({ erro: parsed.error.format() });
   }
 
-  const { data, turno, churrasqueiraId, usuarioId } = parsed.data;
-  const isAdmin = ["ADMIN_MASTER","ADMIN_ATENDENTE","ADMIN_PROFESSORES"].includes(req.usuario.usuarioLogadoTipo);
-  const donoId = (isAdmin && usuarioId) ? usuarioId : req.usuario.usuarioLogadoId;
+  const { data, turno, churrasqueiraId, usuarioId, convidadosNomes = [] } = parsed.data;
+
+  const ehAdmin = isAdminTipo(req.usuario.usuarioLogadoTipo);
+
+  // 🔑 Resolve DONO:
+  // - Cliente: sempre para si (ignora usuarioId/convidadosNomes)
+  // - Admin: usa usuarioId; se não vier, cria convidado a partir de convidadosNomes[0]
+  let donoId = req.usuario.usuarioLogadoId;
+  if (ehAdmin) {
+    if (usuarioId) {
+      donoId = usuarioId;
+    } else if (convidadosNomes.length > 0) {
+      const convidado = await criarConvidadoComoUsuario(convidadosNomes[0]);
+      donoId = convidado.id;
+    }
+  }
 
   try {
     const dataUTC = toUtc00(data);
@@ -97,7 +141,7 @@ router.post("/", async (req, res) => {
   }
 });
 
-// GET /churrasqueiras/agendamentos?data=YYYY-MM-DD&churrasqueiraId=...
+// GET /agendamentosChurrasqueiras?data=YYYY-MM-DD&churrasqueiraId=...
 router.get("/", async (req, res) => {
   if (!req.usuario) return res.status(401).json({ erro: "Não autenticado" });
 
@@ -110,8 +154,8 @@ router.get("/", async (req, res) => {
     where.data = toUtc00(qData);
   }
 
-  const isAdmin = ["ADMIN_MASTER","ADMIN_ATENDENTE","ADMIN_PROFESSORES"].includes(req.usuario.usuarioLogadoTipo);
-  if (!isAdmin) {
+  const ehAdmin = isAdminTipo(req.usuario.usuarioLogadoTipo);
+  if (!ehAdmin) {
     where.usuarioId = req.usuario.usuarioLogadoId;
   } else if (typeof req.query.usuarioId === "string") {
     where.usuarioId = req.query.usuarioId;
@@ -133,7 +177,7 @@ router.get("/", async (req, res) => {
   }
 });
 
-// GET /churrasqueiras/agendamentos/:id  (dono ou admin)
+// GET /agendamentosChurrasqueiras/:id  (dono ou admin)
 router.get(
   "/:id",
   requireOwnerByRecord(async (req) => {
@@ -170,7 +214,7 @@ router.get(
   }
 );
 
-// POST /churrasqueiras/agendamentos/cancelar/:id  (dono ou admin)
+// POST /agendamentosChurrasqueiras/cancelar/:id  (dono ou admin)
 router.post(
   "/cancelar/:id",
   requireOwnerByRecord(async (req) => {
@@ -195,7 +239,7 @@ router.post(
   }
 );
 
-// DELETE /churrasqueiras/agendamentos/:id  (dono ou admin)
+// DELETE /agendamentosChurrasqueiras/:id  (dono ou admin)
 router.delete(
   "/:id",
   requireOwnerByRecord(async (req) => {
