@@ -232,8 +232,8 @@ router.get("/geral", async (req, res) => {
       churrasqueiras.map(async (churrasqueira) => {
         const disponibilidadesPorTurno = await Promise.all(
           turnos.map(async (turno) => {
-            // PERMANENTE: (diaSemanaFinal, turno, churrasqueira) ativo
-            // Se "data" foi informada (tem 'range'), respeita dataInicio <= data (ou null)
+            // PERMANENTE: ativo no dia/turno. Se "data" veio (range),
+            // respeita dataInicio <= data E ignora se houver exceção nesse dia.
             const per = await prisma.agendamentoPermanenteChurrasqueira.findFirst({
               where: {
                 churrasqueiraId: churrasqueira.id,
@@ -241,7 +241,11 @@ router.get("/geral", async (req, res) => {
                 turno,
                 status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
                 ...(range
-                  ? { OR: [{ dataInicio: null }, { dataInicio: { lte: range.inicio } }] }
+                  ? {
+                    OR: [{ dataInicio: null }, { dataInicio: { lte: range.inicio } }],
+                    // 👇 linha que faz desconsiderar o permanente quando há exceção para a data
+                    cancelamentos: { none: { data: { gte: range.inicio, lt: range.fim } } },
+                  }
                   : {}),
               },
               select: {
@@ -250,11 +254,8 @@ router.get("/geral", async (req, res) => {
               },
             });
 
-            // COMUM: só dá para checar se "data" foi informada (temos range do dia)
-            let com:
-              | { id: string; usuario: UsuarioSelecionado }
-              | null = null;
-
+            // COMUM: só checa se "data" foi informada
+            let com: { id: string; usuario: UsuarioSelecionado } | null = null;
             if (range) {
               const c = await prisma.agendamentoChurrasqueira.findFirst({
                 where: {
@@ -268,9 +269,7 @@ router.get("/geral", async (req, res) => {
                   usuario: { select: { nome: true, email: true, celular: true } },
                 },
               });
-              if (c) {
-                com = { id: c.id, usuario: c.usuario as UsuarioSelecionado };
-              }
+              if (c) com = { id: c.id, usuario: c.usuario as UsuarioSelecionado };
             }
 
             let tipoReserva: "permanente" | "comum" | null = null;

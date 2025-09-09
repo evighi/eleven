@@ -3,6 +3,7 @@ import { PrismaClient, DiaSemana, Turno } from "@prisma/client";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
+import { addDays, addMonths, startOfDay } from "date-fns";
 
 import verificarToken from "../middleware/authMiddleware";
 import { requireAdmin, requireOwnerByRecord } from "../middleware/acl";
@@ -14,9 +15,18 @@ const router = Router();
 function toUtc00(isoYYYYMMDD: string) {
   return new Date(`${isoYYYYMMDD}T00:00:00Z`);
 }
+function toISODateUTC(d: Date) {
+  return d.toISOString().slice(0, 10);
+}
 
 const DIA_IDX: Record<DiaSemana, number> = {
-  DOMINGO: 0, SEGUNDA: 1, TERCA: 2, QUARTA: 3, QUINTA: 4, SEXTA: 5, SABADO: 6,
+  DOMINGO: 0,
+  SEGUNDA: 1,
+  TERCA: 2,
+  QUARTA: 3,
+  QUINTA: 4,
+  SEXTA: 5,
+  SABADO: 6,
 };
 
 /** Cria um usuário mínimo (tipo CLIENTE) a partir de um nome de convidado */
@@ -123,7 +133,8 @@ router.post("/", requireAdmin, async (req, res) => {
     const possuiConflitoComum = comuns.some((c) => new Date(c.data).getUTCDay() === targetIdx);
     if (possuiConflitoComum && !dataInicio) {
       return res.status(409).json({
-        erro: "Conflito com agendamento comum existente nesse dia da semana e turno. Informe uma dataInicio.",
+        erro:
+          "Conflito com agendamento comum existente nesse dia da semana e turno. Informe uma dataInicio.",
       });
     }
 
@@ -257,8 +268,157 @@ router.get(
 );
 
 /**
+ * ✅ NOVO — GET /churrasqueiras/permanentes/:id/datas-excecao
+ * Lista datas elegíveis para registrar exceção (um dia cancelado).
+ */
+router.get(
+  "/:id/datas-excecao",
+  requireOwnerByRecord(async (req) => {
+    const r = await prisma.agendamentoPermanenteChurrasqueira.findUnique({
+      where: { id: req.params.id },
+      select: { usuarioId: true },
+    });
+    return r?.usuarioId ?? null;
+  }),
+  async (req, res) => {
+    const { id } = req.params;
+    const meses = Number(req.query.meses ?? "1");
+    const clampMeses = Number.isFinite(meses) && meses > 0 && meses <= 6 ? meses : 1;
+
+    try {
+      const perm = await prisma.agendamentoPermanenteChurrasqueira.findUnique({
+        where: { id },
+        select: { id: true, diaSemana: true, dataInicio: true, status: true },
+      });
+      if (!perm) return res.status(404).json({ erro: "Agendamento permanente não encontrado" });
+      if (["CANCELADO", "TRANSFERIDO"].includes(perm.status)) {
+        return res.status(400).json({ erro: "Agendamento permanente não está ativo." });
+      }
+
+      const hoje = startOfDay(new Date());
+      const base = perm.dataInicio ? startOfDay(new Date(perm.dataInicio)) : hoje;
+      const inicioJanela = base > hoje ? base : hoje;
+      const fimJanela = startOfDay(addMonths(inicioJanela, clampMeses));
+
+      const targetIdx = DIA_IDX[perm.diaSemana as DiaSemana];
+      const curIdx = inicioJanela.getDay();
+      const delta = (targetIdx - curIdx + 7) % 7;
+      let d = addDays(inicioJanela, delta);
+
+      const todas: string[] = [];
+      while (d < fimJanela) {
+        if (!perm.dataInicio || d >= startOfDay(new Date(perm.dataInicio))) {
+          todas.push(toISODateUTC(d));
+        }
+        d = addDays(d, 7);
+      }
+
+      const jaCanceladas = await prisma.agendamentoPermanenteChurrasqueiraCancelamento.findMany({
+        where: { agendamentoPermanenteChurrasqueiraId: id, data: { gte: inicioJanela, lt: fimJanela } },
+        select: { data: true },
+      });
+      const jaCanceladasSet = new Set(jaCanceladas.map((c) => toISODateUTC(new Date(c.data))));
+      const elegiveis = todas.filter((iso) => !jaCanceladasSet.has(iso));
+
+      return res.json({
+        permanenteId: perm.id,
+        inicioJanela: toISODateUTC(inicioJanela),
+        fimJanela: toISODateUTC(fimJanela),
+        diaSemana: perm.diaSemana,
+        turno: undefined, // informação já está no recurso principal; mantemos simples
+        datas: elegiveis,
+        jaCanceladas: Array.from(jaCanceladasSet),
+      });
+    } catch (e) {
+      console.error("Erro em GET /:id/datas-excecao", e);
+      return res.status(500).json({ erro: "Erro ao listar datas para exceção" });
+    }
+  }
+);
+
+/**
+ * ✅ NOVO — POST /churrasqueiras/permanentes/:id/cancelar-dia
+ * Registra uma exceção para UMA data específica da recorrência.
+ */
+router.post(
+  "/:id/cancelar-dia",
+  requireOwnerByRecord(async (req) => {
+    const r = await prisma.agendamentoPermanenteChurrasqueira.findUnique({
+      where: { id: req.params.id },
+      select: { usuarioId: true },
+    });
+    return r?.usuarioId ?? null;
+  }),
+  async (req, res) => {
+    const { id } = req.params;
+
+    const schema = z.object({
+      data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), // "YYYY-MM-DD"
+      motivo: z.string().trim().max(200).optional(),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ erro: parsed.error.format() });
+
+    const { data: iso, motivo } = parsed.data;
+
+    try {
+      const perm = await prisma.agendamentoPermanenteChurrasqueira.findUnique({
+        where: { id },
+        select: { id: true, usuarioId: true, diaSemana: true, dataInicio: true, status: true },
+      });
+      if (!perm) return res.status(404).json({ erro: "Agendamento permanente não encontrado" });
+      if (["CANCELADO", "TRANSFERIDO"].includes(perm.status)) {
+        return res.status(400).json({ erro: "Agendamento permanente não está ativo." });
+      }
+
+      const dataUTC = toUtc00(iso);
+
+      // data >= dataInicio (se existir)
+      if (perm.dataInicio && startOfDay(dataUTC) < startOfDay(new Date(perm.dataInicio))) {
+        return res.status(400).json({ erro: "Data anterior ao início do agendamento permanente." });
+      }
+
+      // dia da semana confere
+      const idx = dataUTC.getUTCDay();
+      if (idx !== DIA_IDX[perm.diaSemana as DiaSemana]) {
+        return res.status(400).json({ erro: "Data não corresponde ao dia da semana do permanente." });
+      }
+
+      // evitar duplicidade
+      const jaExiste = await prisma.agendamentoPermanenteChurrasqueiraCancelamento.findFirst({
+        where: { agendamentoPermanenteChurrasqueiraId: id, data: dataUTC },
+        select: { id: true },
+      });
+      if (jaExiste) {
+        return res.status(409).json({ erro: "Esta data já está marcada como exceção para este permanente." });
+      }
+
+      const novo = await prisma.agendamentoPermanenteChurrasqueiraCancelamento.create({
+        data: {
+          agendamentoPermanenteChurrasqueiraId: id,
+          data: dataUTC,
+          motivo: motivo ?? null,
+          criadoPorId: req.usuario!.usuarioLogadoId, // ⚠️ do token
+        },
+      });
+
+      return res.status(201).json({
+        id: novo.id,
+        agendamentoPermanenteChurrasqueiraId: id,
+        data: toISODateUTC(new Date(novo.data)),
+        motivo: novo.motivo ?? null,
+        criadoPorId: novo.criadoPorId,
+      });
+    } catch (e) {
+      console.error("Erro em POST /:id/cancelar-dia", e);
+      return res.status(500).json({ erro: "Erro ao registrar exceção do permanente" });
+    }
+  }
+);
+
+/**
  * POST /churrasqueiras/permanentes/cancelar/:id
- * Dono ou Admin
+ * Dono ou Admin — encerra a recorrência
  */
 router.post(
   "/cancelar/:id",
@@ -305,7 +465,7 @@ router.delete("/:id", requireAdmin, async (req, res) => {
     await prisma.agendamentoPermanenteChurrasqueira.delete({
       where: { id: req.params.id },
     });
-  return res.json({ mensagem: "Agendamento permanente deletado com sucesso" });
+    return res.json({ mensagem: "Agendamento permanente deletado com sucesso" });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ erro: "Erro ao deletar" });
