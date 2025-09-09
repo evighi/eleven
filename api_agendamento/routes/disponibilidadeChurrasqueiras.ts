@@ -17,10 +17,11 @@ function diaSemanaFromUTC00(d: Date): DiaSemana {
 }
 
 /**
- * GET /disponibilidade-churrasqueiras?data=YYYY-MM-DD&turno=DIA|NOITE[&churrasqueiraId=...]
+ * GET /disponibilidadeChurrasqueiras?data=YYYY-MM-DD&turno=DIA|NOITE[&churrasqueiraId=...]
  * Retorna lista de churrasqueiras e se o slot está disponível.
  * - Conflito COMUM: (data, turno, churrasqueiraId) ativo
  * - Conflito PERMANENTE: (diaSemana(data), turno, churrasqueiraId) ativo e dataInicio <= data (ou null)
+ *   **mas ignora se houver exceção registrada para essa data**
  */
 router.get("/", async (req, res) => {
   const dataStr = typeof req.query.data === "string" ? req.query.data : undefined;
@@ -48,6 +49,7 @@ router.get("/", async (req, res) => {
     const resultado = await Promise.all(
       churrasqueiras.map(async (churrasqueira) => {
         // Conflito PERMANENTE (ativo e respeitando dataInicio <= data)
+        // ✅ ignora se existir uma exceção (cancelamento) exatamente nessa data
         const conflitoPermanente = await prisma.agendamentoPermanenteChurrasqueira.findFirst({
           where: {
             churrasqueiraId: churrasqueira.id,
@@ -55,6 +57,7 @@ router.get("/", async (req, res) => {
             turno,
             status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
             OR: [{ dataInicio: null }, { dataInicio: { lte: dataUTC } }],
+            cancelamentos: { none: { data: dataUTC } }, // << AQUI: exceção impede o bloqueio
           },
           select: { id: true },
         });
@@ -74,6 +77,11 @@ router.get("/", async (req, res) => {
           churrasqueiraId: churrasqueira.id,
           nome: churrasqueira.nome,
           numero: churrasqueira.numero,
+          // campos de imagem (se tiver no schema/db; se não tiver imagemUrl/logoUrl, retornam null)
+          imagem: churrasqueira.imagem ?? null,
+          imagemUrl: (churrasqueira as any).imagemUrl ?? null,
+          logoUrl: (churrasqueira as any).logoUrl ?? null,
+
           disponivel: !conflitoPermanente && !conflitoComum,
           conflitoPermanente: Boolean(conflitoPermanente),
           conflitoComum: Boolean(conflitoComum),

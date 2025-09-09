@@ -71,6 +71,9 @@ model Usuario {
   agendamentosPermanenteChurrasqueiraCancelados   AgendamentoPermanenteChurrasqueira[] @relation("AgendamentoPermanenteChurrasqueiraCanceladoPor")
   agendamentosPermanenteChurrasqueiraTransferidos AgendamentoPermanenteChurrasqueira[] @relation("AgendamentoPermanenteChurrasqueiraTransferidoPor")
 
+  // NOVO: quem cria cancelamentos (exceções) dos permanentes de churrasqueira
+  permanentesChurrasqueiraCancelamentosCriados AgendamentoPermanenteChurrasqueiraCancelamento[] @relation("UsuarioCriouCancelamentoPermanenteChurrasqueira")
+
   bloqueiosFeitos BloqueioQuadra[] @relation("UsuarioBloqueios")
 
   createdAt DateTime @default(now())
@@ -182,7 +185,7 @@ model AgendamentoPermanente {
   transferidoPor   Usuario? @relation("AgendamentoPermanenteTransferidoPor", fields: [transferidoPorId], references: [id])
   transferidoPorId String?
 
-  // NOVO: exceções por data (cancelar só um dia)
+  // exceções por data (cancelar só um dia) — QUADRA
   cancelamentos AgendamentoPermanenteCancelamento[]
 
   createdAt DateTime @default(now())
@@ -192,7 +195,7 @@ model AgendamentoPermanente {
 model AgendamentoChurrasqueira {
   id String @id @default(uuid())
 
-  // ✅ comum por data (mantém Turno)
+  // comum por data (mantém Turno)
   data  DateTime
   turno Turno
 
@@ -238,10 +241,13 @@ model AgendamentoPermanenteChurrasqueira {
   transferidoPor   Usuario? @relation("AgendamentoPermanenteChurrasqueiraTransferidoPor", fields: [transferidoPorId], references: [id])
   transferidoPorId String?
 
+  // NOVO: exceções por data (um dia cancelado na recorrência) — CHURRASQUEIRA
+  cancelamentos AgendamentoPermanenteChurrasqueiraCancelamento[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // ✅ bom ter essa unique para impedir duplicatas
+  // evita duplicatas
   @@unique([churrasqueiraId, diaSemana, turno], map: "uniq_perm_churra_slot")
 }
 
@@ -262,6 +268,7 @@ model BloqueioQuadra {
   updatedAt DateTime @updatedAt
 }
 
+// Exceção (um dia) — QUADRA
 model AgendamentoPermanenteCancelamento {
   id                      String   @id @default(uuid())
   agendamentoPermanenteId String
@@ -270,10 +277,25 @@ model AgendamentoPermanenteCancelamento {
   criadoPorId             String?
   createdAt               DateTime @default(now())
 
-  // relations
   permanente AgendamentoPermanente @relation(fields: [agendamentoPermanenteId], references: [id], onDelete: Cascade)
   criadoPor  Usuario?              @relation("UsuarioCriouCancelamentoPermanente", fields: [criadoPorId], references: [id])
 
   @@unique([agendamentoPermanenteId, data])
   @@index([agendamentoPermanenteId, data])
+}
+
+// NOVO: Exceção (um dia) — CHURRASQUEIRA
+model AgendamentoPermanenteChurrasqueiraCancelamento {
+  id                                    String   @id @default(uuid())
+  agendamentoPermanenteChurrasqueiraId String
+  data                                  DateTime
+  motivo                                String?
+  criadoPorId                           String?
+  createdAt                             DateTime @default(now())
+
+  permanente AgendamentoPermanenteChurrasqueira @relation(fields: [agendamentoPermanenteChurrasqueiraId], references: [id], onDelete: Cascade)
+  criadoPor  Usuario?                            @relation("UsuarioCriouCancelamentoPermanenteChurrasqueira", fields: [criadoPorId], references: [id])
+
+  @@unique([agendamentoPermanenteChurrasqueiraId, data])
+  @@index([agendamentoPermanenteChurrasqueiraId, data])
 }

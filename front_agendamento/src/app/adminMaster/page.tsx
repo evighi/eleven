@@ -311,7 +311,7 @@ export default function AdminHome() {
         tipoReserva: item.tipoReserva,
         agendamentoId,
         tipoLocal,
-        // novos se for permanente de quadra (o backend manda isso):
+        // backend de quadra e churrasqueira retornam diaSemana/dataInicio para permanentes
         diaSemana: (res.data as any)?.diaSemana ?? null,
         dataInicio:
           (res.data as any)?.dataInicio
@@ -328,10 +328,10 @@ export default function AdminHome() {
   /** Decide qual modal abrir quando clicar em "Cancelar Agendamento" */
   const abrirFluxoCancelamento = () => {
     if (!agendamentoSelecionado) return;
-    const { tipoReserva, tipoLocal } = agendamentoSelecionado;
+    const { tipoReserva } = agendamentoSelecionado;
 
-    // Se for permanente de QUADRA -> mostrar opções (sempre x apenas 1 dia)
-    if (tipoReserva === "permanente" && tipoLocal === "quadra") {
+    // Para qualquer permanente (quadra OU churrasqueira), mostrar opções
+    if (tipoReserva === "permanente") {
       setMostrarOpcoesCancelamento(true);
     } else {
       // fluxo antigo: confirmação simples
@@ -387,8 +387,8 @@ export default function AdminHome() {
       agendamentoSelecionado.diaSemana,
       data || todayStrSP(),
       agendamentoSelecionado.dataInicio || null,
-      6,      // quantidade
-      true    // incluir a própria base, se for o mesmo dia da semana
+      6, // quantidade
+      true // incluir a própria base, se for o mesmo dia da semana
     );
 
     setDatasExcecao(lista);
@@ -397,16 +397,23 @@ export default function AdminHome() {
     setMostrarOpcoesCancelamento(false);
   };
 
-  /** Confirma a exceção chamando o endpoint POST /agendamentosPermanentes/:id/cancelar-dia */
+  /** Confirma a exceção chamando o endpoint POST correto (quadra/churrasqueira) */
   const confirmarExcecao = async () => {
     if (!agendamentoSelecionado?.agendamentoId || !dataExcecaoSelecionada) return;
     try {
       setPostandoExcecao(true);
+
+      const rota =
+        agendamentoSelecionado.tipoLocal === "churrasqueira"
+          ? `agendamentosPermanentesChurrasqueiras/${agendamentoSelecionado.agendamentoId}/cancelar-dia`
+          : `agendamentosPermanentes/${agendamentoSelecionado.agendamentoId}/cancelar-dia`;
+
       await axios.post(
-        `${API_URL}/agendamentosPermanentes/${agendamentoSelecionado.agendamentoId}/cancelar-dia`,
+        `${API_URL}/${rota}`,
         { data: dataExcecaoSelecionada, usuarioId: (usuario as any)?.id },
         { withCredentials: true }
       );
+
       alert("Exceção criada com sucesso (cancelado somente este dia).");
       setMostrarExcecaoModal(false);
       setAgendamentoSelecionado(null);
@@ -679,12 +686,13 @@ export default function AdminHome() {
                           abrirDetalhes(q, { horario, esporte });
                         }
                       }}
-                      className={`${clsBase} ${q.bloqueada
+                      className={`${clsBase} ${
+                        q.bloqueada
                           ? "border-2 border-red-500 bg-red-50"
                           : q.disponivel
-                            ? "border-2 border-green-500 bg-green-50"
-                            : "border-2 border-gray-500 bg-gray-50"
-                        }`}
+                          ? "border-2 border-green-500 bg-green-50"
+                          : "border-2 border-gray-500 bg-gray-50"
+                      }`}
                     >
                       <p className="font-medium">{q.nome}</p>
                       <p className="text-xs text-gray-700">Quadra {q.numero}</p>
@@ -726,10 +734,11 @@ export default function AdminHome() {
                         { turno: "DIA" }
                       )
                     }
-                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${disponivel
+                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${
+                      disponivel
                         ? "border-2 border-green-500 bg-green-50"
                         : "border-2 border-gray-500 bg-gray-50"
-                      }`}
+                    }`}
                   >
                     <p className="font-medium">{c.nome}</p>
                     <p className="text-xs text-gray-700">Churrasqueira {c.numero}</p>
@@ -764,10 +773,11 @@ export default function AdminHome() {
                         { turno: "NOITE" }
                       )
                     }
-                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${disponivel
+                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${
+                      disponivel
                         ? "border-2 border-green-500 bg-green-50"
                         : "border-2 border-gray-500 bg-gray-50"
-                      }`}
+                    }`}
                   >
                     <p className="font-medium">{c.nome}</p>
                     <p className="text-xs text-gray-700">Churrasqueira {c.numero}</p>
@@ -906,7 +916,7 @@ export default function AdminHome() {
               </div>
             )}
 
-            {/* Opções para PERMANENTE de QUADRA */}
+            {/* Opções para AGENDAMENTO PERMANENTE */}
             {mostrarOpcoesCancelamento && (
               <div className="absolute inset-0 bg-black bg-opacity-80 flex flex-col items-center justify-center p-4 rounded-xl border shadow-lg z-50">
                 <div className="bg-white rounded-lg p-4 w-full">
@@ -985,10 +995,11 @@ export default function AdminHome() {
                             key={d}
                             type="button"
                             onClick={() => setDataExcecaoSelecionada(d)}
-                            className={`px-3 py-2 rounded border text-sm ${ativo
+                            className={`px-3 py-2 rounded border text-sm ${
+                              ativo
                                 ? "border-indigo-600 bg-indigo-50 text-indigo-700"
                                 : "border-gray-300 hover:bg-gray-50"
-                              }`}
+                            }`}
                           >
                             {toDdMm(d)}
                           </button>
@@ -1049,8 +1060,9 @@ export default function AdminHome() {
               {usuariosFiltrados.map((user) => (
                 <li
                   key={user.id}
-                  className={`p-2 cursor-pointer hover:bg-blue-100 ${usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
-                    }`}
+                  className={`p-2 cursor-pointer hover:bg-blue-100 ${
+                    usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
+                  }`}
                   onClick={() => setUsuarioSelecionado(user)}
                 >
                   {user.nome} ({user.email})
@@ -1102,8 +1114,9 @@ export default function AdminHome() {
                 return (
                   <li
                     key={u.id}
-                    className={`p-2 cursor-pointer flex items-center justify-between hover:bg-orange-50 ${ativo ? "bg-orange-100" : ""
-                      }`}
+                    className={`p-2 cursor-pointer flex items-center justify-between hover:bg-orange-50 ${
+                      ativo ? "bg-orange-100" : ""
+                    }`}
                     onClick={() => alternarSelecionado(u.id)}
                   >
                     <span>
@@ -1201,7 +1214,9 @@ export default function AdminHome() {
             <h3 className="text-lg font-semibold mb-3">Confirmar agendamento</h3>
             <p className="text-sm text-gray-700 mb-4">
               Deseja agendar <b>{preReserva.esporte}</b> na{" "}
-              <b>{preReserva.quadraNome} (nº {preReserva.quadraNumero})</b>
+              <b>
+                {preReserva.quadraNome} (nº {preReserva.quadraNumero})
+              </b>
               <br />
               em <b>{preReserva.data}</b> às <b>{preReserva.horario}</b>?
             </p>
