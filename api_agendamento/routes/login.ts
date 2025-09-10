@@ -3,13 +3,16 @@ import { PrismaClient, TipoUsuario } from "@prisma/client";
 import { Router } from "express";
 import bcrypt from "bcrypt";
 
+// ➕ utilitários já existentes no projeto
+import { enviarCodigoEmail } from "../utils/enviarEmail";
+import { gerarCodigoVerificacao } from "../utils/gerarCodigo";
+
 const prisma = new PrismaClient();
 const router = Router();
 
 const JWT_KEY = process.env.JWT_KEY as string;
 const isProd = process.env.NODE_ENV === "production";
 
-// POST /login
 router.post("/", async (req, res) => {
   try {
     let { email, senha } = req.body as { email?: string; senha?: string };
@@ -18,10 +21,8 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ erro: "Informe e-mail e senha." });
     }
 
-    // normaliza e-mail para evitar confusão de caixa
     email = email.trim().toLowerCase();
 
-    // busca apenas o necessário
     const usuario = await prisma.usuario.findUnique({
       where: { email },
       select: {
@@ -34,21 +35,39 @@ router.post("/", async (req, res) => {
       },
     });
 
-    if (!usuario) {
-      // mensagem explícita
-      return res.status(404).json({ erro: "E-mail não cadastrado." });
-    }
+    if (!usuario) return res.status(404).json({ erro: "E-mail não cadastrado." });
 
+    // 🔒 Auto-REENVIO se for CLIENTE e não verificado
     if (usuario.tipo === TipoUsuario.CLIENTE && !usuario.verificado) {
-      return res.status(403).json({
-        erro: "E-mail não confirmado. Verifique seu e-mail antes de entrar.",
-      });
+      try {
+        const codigo = gerarCodigoVerificacao();
+        const expira = new Date(Date.now() + 30 * 60 * 1000); // 30min
+
+        await prisma.usuario.update({
+          where: { id: usuario.id },
+          data: { codigoEmail: codigo, expiraEm: expira },
+        });
+
+        await enviarCodigoEmail(usuario.email, codigo);
+
+        return res.status(403).json({
+          erro: "E-mail não confirmado. Enviamos um novo código para o seu e-mail.",
+          code: "EMAIL_NAO_CONFIRMADO",
+          resent: true,
+        });
+      } catch (e) {
+        console.error("Falha no auto-reenvio:", e);
+        return res.status(403).json({
+          erro:
+            "E-mail não confirmado. Não foi possível reenviar o código agora, tente novamente.",
+          code: "EMAIL_NAO_CONFIRMADO",
+          resent: false,
+        });
+      }
     }
 
     const senhaValida = await bcrypt.compare(senha, usuario.senha);
-    if (!senhaValida) {
-      return res.status(401).json({ erro: "Senha incorreta." });
-    }
+    if (!senhaValida) return res.status(401).json({ erro: "Senha incorreta." });
 
     const token = jwt.sign(
       {
@@ -60,12 +79,11 @@ router.post("/", async (req, res) => {
       { expiresIn: "1h" }
     );
 
-    // cookie httpOnly com o token
     res.cookie("auth_token", token, {
       httpOnly: true,
       secure: isProd,
-      sameSite: "strict", // mude para "lax" se front e API estiverem em subdomínios diferentes
-      maxAge: 60 * 60 * 1000, // 1h
+      sameSite: "strict",
+      maxAge: 60 * 60 * 1000,
       path: "/",
     });
 
