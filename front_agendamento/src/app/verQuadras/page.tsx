@@ -262,7 +262,7 @@ export default function VerQuadrasPage() {
       if (cancelTarget.tipo === "COMUM") {
         // comum -> rota com regra 12h/15min
         await axios.post(
-          `${API_URL}/agendamentos/cancelar-cliente/${cancelTarget.id}`,
+          `${API_URL}/agendamentos/cancelar/${cancelTarget.id}`,
           {},
           { withCredentials: true }
         );
