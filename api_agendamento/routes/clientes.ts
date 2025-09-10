@@ -55,19 +55,70 @@ router.post("/registrar", async (req, res) => {
   const errosSenha = validaSenha(validacao.data.senha);
   if (errosSenha.length > 0) return res.status(400).json({ erro: errosSenha.join("; ") });
 
-  const { nome, email, celular, cpf, nascimento, senha } = validacao.data;
-  const codigo = gerarCodigoVerificacao();
-  const hash = bcrypt.hashSync(senha, 12);
-  const expira = new Date(Date.now() + 30 * 60 * 1000); // 30min
+  // normaliza e prepara dados
+  const nome = validacao.data.nome.trim();
+  const email = validacao.data.email.trim().toLowerCase();
+  const celular = validacao.data.celular.trim();
+  const cpf = validacao.data.cpf.trim();
+  const nascimento = new Date(validacao.data.nascimento);
+  const hash = bcrypt.hashSync(validacao.data.senha, 12);
 
   try {
+    // 1) Checa e-mail previamente
+    const existenteEmail = await prisma.usuario.findUnique({
+      where: { email },
+      select: { id: true, verificado: true, tipo: true, email: true },
+    });
+
+    if (existenteEmail) {
+      // E-mail já usado
+      if (existenteEmail.tipo === TipoUsuario.CLIENTE && !existenteEmail.verificado) {
+        // Reenvia um novo código e retorna 202 (Accepted)
+        const novoCodigo = gerarCodigoVerificacao();
+        const expira = new Date(Date.now() + 30 * 60 * 1000); // 30min
+
+        await prisma.usuario.update({
+          where: { id: existenteEmail.id },
+          data: { codigoEmail: novoCodigo, expiraEm: expira },
+        });
+
+        try {
+          await enviarCodigoEmail(existenteEmail.email, novoCodigo);
+        } catch (e) {
+          return res.status(500).json({ erro: "Erro ao reenviar e-mail de verificação" });
+        }
+
+        return res.status(202).json({
+          reenviado: true,
+          mensagem:
+            "Este e-mail já possui cadastro, mas ainda não foi verificado. Enviamos um novo código.",
+        });
+      }
+
+      // Já verificado (ou não-cliente): conflito direto
+      return res.status(409).json({ erro: "E-mail já cadastrado" });
+    }
+
+    // 2) Checa CPF previamente (evita depender só do P2002)
+    const existenteCpf = await prisma.usuario.findFirst({
+      where: { cpf },
+      select: { id: true },
+    });
+    if (existenteCpf) {
+      return res.status(409).json({ erro: "CPF já cadastrado" });
+    }
+
+    // 3) Cria usuário + envia código
+    const codigo = gerarCodigoVerificacao();
+    const expira = new Date(Date.now() + 30 * 60 * 1000); // 30min
+
     const novo = await prisma.usuario.create({
       data: {
         nome,
-        email: email.trim().toLowerCase(),
+        email,
         celular,
         cpf,
-        nascimento: new Date(nascimento),
+        nascimento,
         senha: hash,
         tipo: TipoUsuario.CLIENTE,
         verificado: false,
@@ -80,6 +131,7 @@ router.post("/registrar", async (req, res) => {
     try {
       await enviarCodigoEmail(novo.email, codigo);
     } catch (e) {
+      // rollback se falhar envio
       await prisma.usuario.delete({ where: { id: novo.id } });
       return res.status(500).json({ erro: "Erro ao enviar email de verificação" });
     }
@@ -88,7 +140,16 @@ router.post("/registrar", async (req, res) => {
       .status(201)
       .json({ mensagem: "Código enviado. Verifique seu e-mail para validar." });
   } catch (error: any) {
+    // fallback (ex.: corrida até o unique do banco)
     if (error?.code === "P2002") {
+      // Podemos tentar ler qual campo conflitou (email/cpf) em error.meta?.target
+      const target: string[] | undefined = (error as any)?.meta?.target;
+      if (target?.some((t) => t.toLowerCase().includes("email"))) {
+        return res.status(409).json({ erro: "E-mail já cadastrado" });
+      }
+      if (target?.some((t) => t.toLowerCase().includes("cpf"))) {
+        return res.status(409).json({ erro: "CPF já cadastrado" });
+      }
       return res.status(409).json({ erro: "E-mail ou CPF já cadastrado" });
     }
     console.error(error);
