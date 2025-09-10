@@ -14,7 +14,6 @@ const inputBase =
 const inputCode =
   "w-12 h-12 text-center text-lg font-semibold border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500";
 
-// ===== Tipos =====
 type Inputs = {
   firstName: string;
   lastName: string;
@@ -62,6 +61,10 @@ export default function Cadastro() {
   const [codigo, setCodigo] = useState<string[]>(Array(6).fill(""));
   const [carregando, setCarregando] = useState(false);
 
+  // Reenvio de código
+  const [reenviando, setReenviando] = useState(false);
+  const [cooldown, setCooldown] = useState(0); // segundos
+
   const dadosClienteRef = useRef<BackendPayload | null>(null);
 
   // Termos
@@ -69,17 +72,82 @@ export default function Cadastro() {
   const [termsCanBeAccepted, setTermsCanBeAccepted] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
 
+  // ===== Helpers OTP =====
+  const focusInput = (idx: number) => {
+    const el = document.getElementById(`codigo-${idx}`) as HTMLInputElement | null;
+    el?.focus();
+    el?.select?.();
+  };
+
+  useEffect(() => {
+    if (emailParaVerificar) {
+      // entrou no passo OTP
+      setCodigo(Array(6).fill(""));
+      setCooldown(60); // trava 60s para novo reenvio
+      // foca no primeiro campo
+      setTimeout(() => focusInput(0), 50);
+    }
+  }, [emailParaVerificar]);
+
+  // Countdown do botão "Reenviar"
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setInterval(() => setCooldown((s) => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(t);
+  }, [cooldown]);
+
   const handleCodeChange = (index: number, value: string) => {
-    if (!/^[0-9]?$/.test(value)) return;
+    // apenas dígito
+    if (!/^\d?$/.test(value)) return;
+
     const novo = [...codigo];
     novo[index] = value;
     setCodigo(novo);
-    const next = document.getElementById(`codigo-${index + 1}`) as HTMLInputElement | null;
-    if (value && next) next.focus();
+
+    // vai para o próximo quando digita
+    if (value && index < 5) focusInput(index + 1);
   };
 
+  const handleCodeKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    const key = e.key;
+    if (key === "Backspace") {
+      if (!codigo[index] && index > 0) {
+        // se já está vazio, volta para o anterior
+        e.preventDefault();
+        const novo = [...codigo];
+        novo[index - 1] = "";
+        setCodigo(novo);
+        focusInput(index - 1);
+      }
+      return;
+    }
+    if (key === "ArrowLeft" && index > 0) {
+      e.preventDefault();
+      focusInput(index - 1);
+    }
+    if (key === "ArrowRight" && index < 5) {
+      e.preventDefault();
+      focusInput(index + 1);
+    }
+  };
+
+  const handleCodePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    const text = e.clipboardData.getData("text") || "";
+    const digits = (text.match(/\d/g) || []).slice(0, 6);
+    if (digits.length === 0) return;
+    e.preventDefault();
+    const novo = Array(6)
+      .fill("")
+      .map((_, i) => digits[i] ?? "");
+    setCodigo(novo);
+    // foca no último preenchido
+    const last = Math.min(5, Math.max(0, digits.length - 1));
+    setTimeout(() => focusInput(last), 0);
+  };
+
+  // ===== Validações =====
   const validaSenhaFront = useCallback(() => {
-    // regra: mínimo 6 e pelo menos 1 maiúscula
+    // mínimo 6 e pelo menos 1 maiúscula
     return /^(?=.*[A-Z]).{6,}$/.test(senhaValue || "");
   }, [senhaValue]);
 
@@ -89,6 +157,32 @@ export default function Cadastro() {
       .trim();
   }
 
+  // ===== Reenvio (manual) =====
+  const handleReenviarCodigo = async () => {
+    if (!emailParaVerificar) return;
+    if (cooldown > 0 || reenviando) return;
+    setReenviando(true);
+    try {
+      const r = await fetch(`${process.env.NEXT_PUBLIC_URL_API}/clientes/reenviar-codigo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailParaVerificar }),
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        toast.error(body?.erro || "Falha ao reenviar código");
+      } else {
+        toast.success(body?.mensagem || "Código reenviado!");
+        setCooldown(60);
+      }
+    } catch {
+      toast.error("Falha de conexão ao reenviar");
+    } finally {
+      setReenviando(false);
+    }
+  };
+
+  // ===== Submit cadastro =====
   async function cadastraCliente(data: Inputs) {
     if (!acceptedTerms) {
       toast.error("Você precisa ler e aceitar os Termos e Condições.");
@@ -126,17 +220,47 @@ export default function Cadastro() {
         body: JSON.stringify(dadosParaEnvio),
       });
 
-      const resposta = await res.json();
+      const raw = await res.text();
+      let resposta: any = null;
+      try {
+        resposta = raw ? JSON.parse(raw) : null;
+      } catch {
+        /* ignore */
+      }
 
       if (res.ok) {
-        toast.success(resposta.mensagem || "Código enviado para o e-mail!");
-        setEmailParaVerificar(data.email);
+        // 201 (criado) ou 202 (reenviado por já existir não verificado)
+        if (res.status === 202) {
+          toast.success(
+            resposta?.mensagem ||
+              "Este e-mail já existia sem verificação. Reenviamos um novo código."
+          );
+        } else {
+          toast.success(resposta?.mensagem || "Código enviado para o e-mail!");
+        }
+
+        setEmailParaVerificar(dadosParaEnvio.email);
         dadosClienteRef.current = dadosParaEnvio;
         reset();
         setAcceptedTerms(false);
         setTermsCanBeAccepted(false);
+        return;
+      }
+
+      // Tratamento de erros
+      const errMsg: string = resposta?.erro || resposta?.message || "Erro ao cadastrar.";
+      if (res.status === 409) {
+        if (/cpf/i.test(errMsg)) {
+          toast.error("CPF já cadastrado.");
+        } else if (/e-?mail/i.test(errMsg) || /email/i.test(errMsg)) {
+          toast.error("E-mail já cadastrado. Faça login para continuar.");
+        } else {
+          toast.error(errMsg);
+        }
+      } else if (res.status === 400) {
+        toast.error(errMsg);
       } else {
-        toast.error(resposta.erro || "Erro ao cadastrar.");
+        toast.error(errMsg || "Não foi possível concluir o cadastro.");
       }
     } catch {
       toast.error("Erro de conexão ao cadastrar");
@@ -145,23 +269,35 @@ export default function Cadastro() {
     }
   }
 
+  // ===== Submit verificação =====
   async function verificarEmail(e: React.FormEvent) {
     e.preventDefault();
-    setCarregando(true);
 
+    const code = codigo.join("");
+    if (!/^\d{6}$/.test(code)) {
+      toast.error("Informe os 6 dígitos do código.");
+      focusInput(codigo.findIndex((c) => !c) || 0);
+      return;
+    }
+
+    setCarregando(true);
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_URL_API}/clientes/validar-email`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: emailParaVerificar, codigo: codigo.join("") }),
+        body: JSON.stringify({ email: emailParaVerificar, codigo: code }),
       });
+
+      const body = await res.json().catch(() => ({}));
 
       if (res.ok) {
         toast.success("E-mail verificado com sucesso!");
         router.push("/login");
       } else {
-        const erro = await res.json();
-        toast.error(erro?.erro ?? "Erro ao verificar e-mail");
+        const msg = body?.erro || "Erro ao verificar e-mail";
+        toast.error(msg);
+        // sugestão: se expirado, habilitar reenvio imediatamente
+        if (/expirad/i.test(String(msg))) setCooldown(0);
       }
     } catch {
       toast.error("Erro de conexão ao verificar e-mail");
@@ -218,7 +354,7 @@ export default function Cadastro() {
               <Campo label="CPF">
                 <input
                   className={inputBase}
-                  placeholder="Insira o seu CPF"
+                  placeholder="Insira o seu CPF (apenas números)"
                   {...register("cpf", {
                     required: "CPF é obrigatório",
                     pattern: { value: /^\d{11}$/, message: "CPF deve conter exatamente 11 números" },
@@ -241,7 +377,7 @@ export default function Cadastro() {
               <Campo label="Celular">
                 <input
                   className={inputBase}
-                  placeholder="Insira o telefone"
+                  placeholder="Insira o telefone (apenas números)"
                   {...register("celular", { required: true })}
                 />
               </Campo>
@@ -311,7 +447,7 @@ export default function Cadastro() {
 
               <button
                 type="submit"
-                disabled={!canSubmit}
+                disabled={!(!carregando && acceptedTerms)}
                 className="mt-1 w-full rounded-md bg-orange-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-orange-400/60"
               >
                 {carregando ? (
@@ -324,13 +460,16 @@ export default function Cadastro() {
               </button>
             </form>
           ) : (
-            // Etapa de verificação do e-mail
+            // ===== Etapa de verificação do e-mail (OTP) =====
             <form onSubmit={verificarEmail} className="space-y-4">
               <p className="text-center text-sm text-gray-600">
                 Insira o código enviado para <strong>{emailParaVerificar}</strong>
               </p>
 
-              <div className="flex justify-between gap-2">
+              <div
+                className="flex justify-between gap-2"
+                onPaste={handleCodePaste}
+              >
                 {codigo.map((value, index) => (
                   <input
                     key={index}
@@ -340,9 +479,37 @@ export default function Cadastro() {
                     maxLength={1}
                     value={value}
                     onChange={(e) => handleCodeChange(index, e.target.value)}
+                    onKeyDown={(e) => handleCodeKeyDown(index, e)}
                     className={inputCode}
                   />
                 ))}
+              </div>
+
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => {
+                    // trocar e-mail (voltar para o formulário)
+                    setEmailParaVerificar("");
+                    setCodigo(Array(6).fill(""));
+                  }}
+                  className="text-sm text-gray-600 hover:underline"
+                >
+                  Trocar e-mail
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleReenviarCodigo}
+                  disabled={reenviando || cooldown > 0}
+                  className="text-sm text-orange-600 hover:underline disabled:text-gray-400"
+                >
+                  {reenviando
+                    ? "Reenviando…"
+                    : cooldown > 0
+                    ? `Reenviar código (${cooldown}s)`
+                    : "Reenviar código"}
+                </button>
               </div>
 
               <button
