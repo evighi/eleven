@@ -2,17 +2,14 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/context/AuthStore";
 import { UsuarioLogadoItf } from "@/utils/types/UsuarioLogadoItf";
 
-type Inputs = {
-  email: string;
-  senha: string;
-};
+type Inputs = { email: string; senha: string };
 
 export default function Login() {
   const {
@@ -20,89 +17,71 @@ export default function Login() {
     handleSubmit,
     formState: { isSubmitting },
     setValue,
+    getValues,
   } = useForm<Inputs>({ defaultValues: { email: "", senha: "" } });
 
   const { logaUsuario } = useAuthStore();
   const router = useRouter();
 
-  // Prefill opcional do último e-mail usado
+  // UI de verificação
+  const [needsVerification, setNeedsVerification] = useState(false);
+  const [codigo, setCodigo] = useState("");
+  const [confirmando, setConfirmando] = useState(false);
+  const [reenviando, setReenviando] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+
   useEffect(() => {
     const last = typeof window !== "undefined" ? localStorage.getItem("lastEmail") : null;
     if (last) setValue("email", last);
   }, [setValue]);
 
+  const API = process.env.NEXT_PUBLIC_URL_API;
+
   async function verificaLogin(data: Inputs) {
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_URL_API}/login`, {
+      const response = await fetch(`${API}/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include", // necessário p/ cookie httpOnly
-        body: JSON.stringify({
-          email: data.email,
-          senha: data.senha,
-          manter: true, // sempre persistente
-        }),
+        credentials: "include",
+        body: JSON.stringify({ email: data.email, senha: data.senha, manter: true }),
       });
 
-      // Lemos o corpo uma única vez (pode ser JSON ou texto)
       const raw = await response.text();
       let body: any = null;
       try {
         body = raw ? JSON.parse(raw) : null;
-      } catch {
-        /* ignore */
-      }
-      const serverMsg: string | undefined = body?.erro || body?.message;
+      } catch {}
 
       if (!response.ok) {
-        switch (response.status) {
-          case 404:
-            toast.error("E-mail não cadastrado.");
-            break;
-          case 401:
-            toast.error("Senha incorreta.");
-            break;
-          case 403:
-            toast.error(serverMsg || "E-mail não confirmado. Verifique seu e-mail.");
-            break;
-          case 429:
-            toast.error(serverMsg || "Muitas tentativas. Tente novamente em alguns minutos.");
-            break;
-          default:
-            toast.error(serverMsg || "Não foi possível fazer login. Tente novamente.");
+        // Trata cenários comuns
+        if (response.status === 404) toast.error("E-mail não cadastrado.");
+        else if (response.status === 401) toast.error("Senha incorreta.");
+        else if (response.status === 403 && body?.code === "EMAIL_NAO_CONFIRMADO") {
+          // 🚀 Backend já reenviou o código — mostramos tela de verificação
+          setNeedsVerification(true);
+          toast.message(body?.erro || "E-mail não confirmado. Enviamos um novo código.");
+          // cooldown visual para evitar spam de reenvio
+          setCooldown(30);
+          const t = setInterval(() => {
+            setCooldown((s) => {
+              if (s <= 1) clearInterval(t);
+              return s - 1;
+            });
+          }, 1000);
+        } else {
+          toast.error(body?.erro || "Não foi possível fazer login.");
         }
         return;
       }
 
-      // Sucesso
       const dados: Omit<UsuarioLogadoItf, "token"> = body ?? {};
       logaUsuario({ ...dados, token: "" });
 
-      // Sempre lembrar o e-mail (não armazene senha)
       try {
         localStorage.setItem("lastEmail", data.email);
-      } catch {
-        /* ignore */
-      }
+      } catch {}
 
-      // Tentar salvar credencial (se suportado pelo browser)
-      try {
-        // @ts-ignore - tipos do Credential Management API podem não existir
-        if ("credentials" in navigator && "PasswordCredential" in window) {
-          // @ts-ignore
-          const cred = new window.PasswordCredential({
-            id: data.email,
-            password: data.senha,
-            name: dados?.nome ?? data.email,
-          });
-          // @ts-ignore
-          await navigator.credentials.store(cred);
-        }
-      } catch {
-        /* ok se não suportar */
-      }
-
-      // Redireciona por tipo
+      // Redirect por perfil
       switch (dados.tipo) {
         case "CLIENTE":
           router.push("/");
@@ -124,10 +103,64 @@ export default function Login() {
     }
   }
 
+  async function confirmarCodigo() {
+    const { email, senha } = getValues();
+    if (!/^\d{6}$/.test(codigo)) {
+      toast.error("Digite o código de 6 dígitos.");
+      return;
+    }
+    try {
+      setConfirmando(true);
+      const resp = await fetch(`${API}/clientes/validar-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, codigo }),
+      });
+      const body = await resp.json();
+      if (!resp.ok) {
+        toast.error(body?.erro || "Código inválido/expirado.");
+        return;
+      }
+      toast.success("E-mail confirmado! Fazendo login...");
+      setNeedsVerification(false);
+      setCodigo("");
+      // tenta login novamente automaticamente
+      await verificaLogin({ email, senha });
+    } catch {
+      toast.error("Falha ao confirmar o código.");
+    } finally {
+      setConfirmando(false);
+    }
+  }
+
+  async function reenviarCodigo() {
+    const { email } = getValues();
+    if (cooldown > 0) return;
+    try {
+      setReenviando(true);
+      await fetch(`${API}/clientes/reenviar-codigo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      toast.message("Se existir conta, reenviamos o código. Verifique caixa de entrada/spam.");
+      setCooldown(30);
+      const t = setInterval(() => {
+        setCooldown((s) => {
+          if (s <= 1) clearInterval(t);
+          return s - 1;
+        });
+      }, 1000);
+    } catch {
+      toast.error("Não foi possível reenviar o código agora.");
+    } finally {
+      setReenviando(false);
+    }
+  }
+
   return (
     <main className="flex items-center justify-center min-h-screen bg-gray-100">
       <div className="w-full max-w-sm p-6 rounded-md text-center">
-        {/* Logo */}
         <div className="mb-6">
           <Image
             src="/logoelevenhor.png"
@@ -139,7 +172,6 @@ export default function Login() {
           />
         </div>
 
-        {/* Formulário com autofill habilitado */}
         <form onSubmit={handleSubmit(verificaLogin)} className="space-y-4 text-left" autoComplete="on">
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-gray-700">
@@ -205,8 +237,44 @@ export default function Login() {
             {isSubmitting ? "Entrando..." : "Entrar"}
           </button>
         </form>
+
+        {/* 🔐 Bloco de VERIFICAÇÃO aparece quando backend retornou EMAIL_NAO_CONFIRMADO */}
+        {needsVerification && (
+          <div className="mt-6 p-4 border rounded bg-white text-left">
+            <p className="text-sm text-gray-700 mb-3">
+              Enviamos um novo código de verificação para o seu e-mail. Digite-o abaixo.
+            </p>
+
+            <div className="flex gap-2">
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="\d{6}"
+                maxLength={6}
+                value={codigo}
+                onChange={(e) => setCodigo(e.target.value.replace(/\D/g, ""))}
+                placeholder="Código de 6 dígitos"
+                className="flex-1 border rounded p-2"
+              />
+              <button
+                onClick={confirmarCodigo}
+                disabled={confirmando || codigo.length !== 6}
+                className="px-3 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60"
+              >
+                {confirmando ? "Confirmando..." : "Confirmar"}
+              </button>
+            </div>
+
+            <button
+              onClick={reenviarCodigo}
+              disabled={reenviando || cooldown > 0}
+              className="mt-3 text-sm text-blue-600 hover:underline disabled:text-gray-400"
+            >
+              {reenviando ? "Reenviando..." : cooldown > 0 ? `Reenviar em ${cooldown}s` : "Reenviar código"}
+            </button>
+          </div>
+        )}
       </div>
     </main>
   );
 }
-
