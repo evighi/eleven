@@ -113,6 +113,7 @@ router.post("/", async (req, res) => {
     }
 
     // (2) conflito com PERMANENTE (mesmo diaSemana+turno+churrasqueira e dataInicio <= data)
+    // ⚠️ Só bloqueia se NÃO houver exceção (cancelamento) exatamente nessa data
     const diaSemana = diaSemanaFromUTC00(dataUTC);
     const conflitoPerm = await prisma.agendamentoPermanenteChurrasqueira.findFirst({
       where: {
@@ -121,9 +122,11 @@ router.post("/", async (req, res) => {
         turno,
         status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
         OR: [{ dataInicio: null }, { dataInicio: { lte: dataUTC } }],
+        cancelamentos: { none: { data: dataUTC } }, // 👈 considera exceções
       },
       select: { id: true },
     });
+
     if (conflitoPerm) {
       return res.status(409).json({ erro: "Turno ocupado por agendamento permanente." });
     }
