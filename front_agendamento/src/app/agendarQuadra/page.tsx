@@ -891,15 +891,14 @@ export default function AgendarQuadraCliente() {
                   const pressed = pressEsporteId === String(e.id);
                   return (
                     <button
+                      type="button"
                       key={e.id}
                       disabled={navLock}
                       className={`rounded-xl border text-center px-2 py-3 text-[12px] leading-tight transition
-                        active:scale-[0.98]
-                        ${ativo ? "bg-orange-50 border-orange-400 text-orange-700" : "bg-gray-50 border-gray-200 text-gray-700"}
-                        ${navLock ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}
-                        ${pressed ? "ring-2 ring-orange-500 animate-pulse" : ""}
-                      `}
-                      onClick={() => {
+                ${ativo ? "bg-orange-50 border-orange-400 text-orange-700" : "bg-gray-50 border-gray-200 text-gray-700"}
+                ${navLock ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}
+                ${pressed ? "ring-2 ring-orange-500 animate-pulse" : ""}`}
+                      onPointerUp={() => {
                         if (navLock) return;
                         setMsg("");
                         setPressEsporteId(String(e.id));
@@ -914,7 +913,7 @@ export default function AgendarQuadraCliente() {
                           src={e.logoUrl || "/icons/ball.png"}
                           alt={e.nome}
                           fill
-                          className="object-contain"
+                          className="object-contain pointer-events-none select-none"
                           fallbackSrc="/icons/ball.png"
                         />
                       </div>
@@ -936,9 +935,10 @@ export default function AgendarQuadraCliente() {
                   const pressed = pressDiaISO === d.iso;
                   return (
                     <button
+                      type="button"
                       key={d.iso}
                       disabled={navLock}
-                      onClick={() => {
+                      onPointerUp={() => {
                         if (navLock) return;
                         setMsg("");
                         setPressDiaISO(d.iso);
@@ -947,11 +947,10 @@ export default function AgendarQuadraCliente() {
                           setStep(3);
                         }, () => setPressDiaISO(null));
                       }}
-                      className={`min-w-[110px] rounded-xl border px-2 py-2 text-[12px] text-center transition active:scale-[0.98]
-                        ${ativo ? "bg-orange-100 border-orange-500 text-orange-700" : "bg-gray-100 border-gray-200 text-gray-700"}
-                        ${navLock ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}
-                        ${pressed ? "ring-2 ring-orange-500 animate-pulse" : ""}
-                      `}
+                      className={`min-w-[110px] rounded-xl border px-2 py-2 text-[12px] text-center transition
+                ${ativo ? "bg-orange-100 border-orange-500 text-orange-700" : "bg-gray-100 border-gray-200 text-gray-700"}
+                ${navLock ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}
+                ${pressed ? "ring-2 ring-orange-500 animate-pulse" : ""}`}
                     >
                       <div className="text-[11px]">{d.mes}</div>
                       <div className="text-lg font-bold">{String(d.d).padStart(2, "0")}</div>
@@ -978,13 +977,13 @@ export default function AgendarQuadraCliente() {
                   const enabled = horariosMap[h] === true;
                   return (
                     <button
+                      type="button"
                       key={h}
-                      onClick={() => enabled && setHorario(h)}
+                      onPointerUp={() => enabled && setHorario(h)}
                       disabled={!enabled || navLock}
-                      className={`rounded-md px-2 py-2 text-sm border transition active:scale-[0.98]
-                        ${ativo ? "bg-orange-100 border-orange-500 text-orange-700" : "bg-gray-100 border-gray-200 text-gray-700"}
-                        ${enabled && !navLock ? "cursor-pointer" : "opacity-50 cursor-not-allowed"}
-                      `}
+                      className={`rounded-md px-2 py-2 text-sm border transition
+                ${ativo ? "bg-orange-100 border-orange-500 text-orange-700" : "bg-gray-100 border-gray-200 text-gray-700"}
+                ${enabled && !navLock ? "cursor-pointer" : "opacity-50 cursor-not-allowed"}`}
                     >
                       {h}
                     </button>
@@ -1019,27 +1018,27 @@ export default function AgendarQuadraCliente() {
                   const src = q.logoUrl || "/quadra.png";
                   return (
                     <button
+                      type="button"
                       key={q.quadraId}
                       disabled={navLock}
-                      onClick={() => {
+                      onPointerUp={() => {
                         if (navLock) return;
                         setPressQuadraId(String(q.quadraId));
                         flashAdvance(`Quadra ${q.numero} - ${q.nome}`, () => {
                           avancarQuadraDireto(String(q.quadraId));
                         }, () => setPressQuadraId(null));
                       }}
-                      className={`rounded-xl border p-3 transition flex flex-col items-center text-center active:scale-[0.98]
-                        ${ativo ? "bg-orange-50 border-orange-500" : "bg-gray-50 border-gray-200 hover:border-gray-300"}
-                        ${navLock ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}
-                        ${pressed ? "ring-2 ring-orange-500 animate-pulse" : ""}
-                      `}
+                      className={`rounded-xl border p-3 transition flex flex-col items-center text-center
+                ${ativo ? "bg-orange-50 border-orange-500" : "bg-gray-50 border-gray-200 hover:border-gray-300"}
+                ${navLock ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}
+                ${pressed ? "ring-2 ring-orange-500 animate-pulse" : ""}`}
                     >
-                      <div className="relative w-full h-15 md:h-32 overflow-hidden flex items-center justify-center mb-2">
+                      <div className="relative w-full h-24 md:h-32 overflow-hidden flex items-center justify-center mb-2">
                         <AppImage
                           src={src || "/quadra.png"}
                           alt={q.nome}
                           fill
-                          className="object-contain"
+                          className="object-contain pointer-events-none select-none"
                           fallbackSrc="/quadra.png"
                         />
                       </div>
@@ -1176,7 +1175,7 @@ export default function AgendarQuadraCliente() {
                   src="/icons/realizada.png"
                   alt=""
                   fill
-                  className="object-contain"
+                  className="object-contain pointer-events-none select-none"
                   priority
                 />
               </div>
