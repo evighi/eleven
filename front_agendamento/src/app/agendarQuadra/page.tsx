@@ -831,7 +831,7 @@ export default function AgendarQuadraCliente() {
 
   /* ========= Render ========= */
   return (
-    <main className="min-h-screen bg-[#f5f5f5]">
+    <main className="min-h-screen bg-[#f5f5f5] touch-manipulation">
       <header className="bg-gradient-to-b from-orange-600 to-orange-600 text-white px-4 py-5">
         <div className="max-w-sm mx-auto flex items-center gap-3">
           <button
@@ -894,11 +894,30 @@ export default function AgendarQuadraCliente() {
                       type="button"
                       key={e.id}
                       disabled={navLock}
-                      className={`rounded-xl border text-center px-2 py-3 text-[12px] leading-tight transition
+                      className={`rounded-xl border text-center px-2 py-3 text-[12px] leading-tight transition select-none touch-manipulation
                 ${ativo ? "bg-orange-50 border-orange-400 text-orange-700" : "bg-gray-50 border-gray-200 text-gray-700"}
                 ${navLock ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}
                 ${pressed ? "ring-2 ring-orange-500 animate-pulse" : ""}`}
                       onPointerUp={() => {
+                        if (navLock) return;
+                        setMsg("");
+                        setPressEsporteId(String(e.id));
+                        flashAdvance(`Esporte: ${e.nome}`, () => {
+                          setEsporteId(String(e.id));
+                          setStep(2);
+                        }, () => setPressEsporteId(null));
+                      }}
+                      onTouchEnd={(ev) => {
+                        ev.preventDefault(); ev.stopPropagation();
+                        if (navLock) return;
+                        setMsg("");
+                        setPressEsporteId(String(e.id));
+                        flashAdvance(`Esporte: ${e.nome}`, () => {
+                          setEsporteId(String(e.id));
+                          setStep(2);
+                        }, () => setPressEsporteId(null));
+                      }}
+                      onClick={() => {
                         if (navLock) return;
                         setMsg("");
                         setPressEsporteId(String(e.id));
@@ -938,6 +957,10 @@ export default function AgendarQuadraCliente() {
                       type="button"
                       key={d.iso}
                       disabled={navLock}
+                      className={`min-w-[110px] rounded-xl border px-2 py-2 text-[12px] text-center transition select-none touch-manipulation
+                ${ativo ? "bg-orange-100 border-orange-500 text-orange-700" : "bg-gray-100 border-gray-200 text-gray-700"}
+                ${navLock ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}
+                ${pressed ? "ring-2 ring-orange-500 animate-pulse" : ""}`}
                       onPointerUp={() => {
                         if (navLock) return;
                         setMsg("");
@@ -947,10 +970,25 @@ export default function AgendarQuadraCliente() {
                           setStep(3);
                         }, () => setPressDiaISO(null));
                       }}
-                      className={`min-w-[110px] rounded-xl border px-2 py-2 text-[12px] text-center transition
-                ${ativo ? "bg-orange-100 border-orange-500 text-orange-700" : "bg-gray-100 border-gray-200 text-gray-700"}
-                ${navLock ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}
-                ${pressed ? "ring-2 ring-orange-500 animate-pulse" : ""}`}
+                      onTouchEnd={(ev) => {
+                        ev.preventDefault(); ev.stopPropagation();
+                        if (navLock) return;
+                        setMsg("");
+                        setPressDiaISO(d.iso);
+                        flashAdvance(`Dia: ${formatarDiaCurto(d.iso)}`, () => {
+                          setDiaISO(d.iso);
+                          setStep(3);
+                        }, () => setPressDiaISO(null));
+                      }}
+                      onClick={() => {
+                        if (navLock) return;
+                        setMsg("");
+                        setPressDiaISO(d.iso);
+                        flashAdvance(`Dia: ${formatarDiaCurto(d.iso)}`, () => {
+                          setDiaISO(d.iso);
+                          setStep(3);
+                        }, () => setPressDiaISO(null));
+                      }}
                     >
                       <div className="text-[11px]">{d.mes}</div>
                       <div className="text-lg font-bold">{String(d.d).padStart(2, "0")}</div>
@@ -975,15 +1013,18 @@ export default function AgendarQuadraCliente() {
                 {HORARIOS.map((h) => {
                   const ativo = horario === h;
                   const enabled = horariosMap[h] === true;
+                  const choose = () => { if (enabled && !navLock) setHorario(h); };
                   return (
                     <button
                       type="button"
                       key={h}
-                      onPointerUp={() => enabled && setHorario(h)}
                       disabled={!enabled || navLock}
-                      className={`rounded-md px-2 py-2 text-sm border transition
+                      className={`rounded-md px-2 py-2 text-sm border transition select-none touch-manipulation
                 ${ativo ? "bg-orange-100 border-orange-500 text-orange-700" : "bg-gray-100 border-gray-200 text-gray-700"}
                 ${enabled && !navLock ? "cursor-pointer" : "opacity-50 cursor-not-allowed"}`}
+                      onPointerUp={choose}
+                      onTouchEnd={(ev) => { ev.preventDefault(); ev.stopPropagation(); choose(); }}
+                      onClick={choose}
                     >
                       {h}
                     </button>
@@ -1016,22 +1057,25 @@ export default function AgendarQuadraCliente() {
                   const ativo = String(quadraId) === String(q.quadraId);
                   const pressed = pressQuadraId === String(q.quadraId);
                   const src = q.logoUrl || "/quadra.png";
+                  const chooseQuadra = () => {
+                    if (navLock) return;
+                    setPressQuadraId(String(q.quadraId));
+                    flashAdvance(`Quadra ${q.numero} - ${q.nome}`, () => {
+                      avancarQuadraDireto(String(q.quadraId));
+                    }, () => setPressQuadraId(null));
+                  };
                   return (
                     <button
                       type="button"
                       key={q.quadraId}
                       disabled={navLock}
-                      onPointerUp={() => {
-                        if (navLock) return;
-                        setPressQuadraId(String(q.quadraId));
-                        flashAdvance(`Quadra ${q.numero} - ${q.nome}`, () => {
-                          avancarQuadraDireto(String(q.quadraId));
-                        }, () => setPressQuadraId(null));
-                      }}
-                      className={`rounded-xl border p-3 transition flex flex-col items-center text-center
+                      className={`rounded-xl border p-3 transition flex flex-col items-center text-center select-none touch-manipulation
                 ${ativo ? "bg-orange-50 border-orange-500" : "bg-gray-50 border-gray-200 hover:border-gray-300"}
                 ${navLock ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}
                 ${pressed ? "ring-2 ring-orange-500 animate-pulse" : ""}`}
+                      onPointerUp={chooseQuadra}
+                      onTouchEnd={(ev) => { ev.preventDefault(); ev.stopPropagation(); chooseQuadra(); }}
+                      onClick={chooseQuadra}
                     >
                       <div className="relative w-full h-24 md:h-32 overflow-hidden flex items-center justify-center mb-2">
                         <AppImage
@@ -1110,8 +1154,10 @@ export default function AgendarQuadraCliente() {
               <div className="mt-2 space-y-2">
                 <button
                   type="button"
+                  onPointerUp={addRegisteredField}
+                  onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); addRegisteredField(); }}
                   onClick={addRegisteredField}
-                  className="w-full rounded-md bg-[#f3f3f3] hover:bg-[#ececec] text-[12px] font-semibold text-gray-700 px-3 py-2 text-left cursor-pointer"
+                  className="w-full rounded-md bg-[#f3f3f3] hover:bg-[#ececec] text-[12px] font-semibold text-gray-700 px-3 py-2 text-left cursor-pointer select-none touch-manipulation"
                 >
                   <span className="inline-block mr-2 text-orange-600">+</span>
                   Adicionar jogador cadastrado
@@ -1119,8 +1165,10 @@ export default function AgendarQuadraCliente() {
 
                 <button
                   type="button"
+                  onPointerUp={addGuestField}
+                  onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); addGuestField(); }}
                   onClick={addGuestField}
-                  className="w-full rounded-md bg-[#f3f3f3] hover:bg-[#ececec] text-[12px] font-semibold text-gray-700 px-3 py-2 text-left cursor-pointer"
+                  className="w-full rounded-md bg-[#f3f3f3] hover:bg-[#ececec] text-[12px] font-semibold text-gray-700 px-3 py-2 text-left cursor-pointer select-none touch-manipulation"
                 >
                   <span className="inline-block mr-2 text-orange-600">+</span>
                   Adicionar convidado (sem cadastro)
