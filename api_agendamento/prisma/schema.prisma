@@ -216,7 +216,6 @@ model AgendamentoChurrasqueira {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([churrasqueiraId, data, turno]) // evita dupla-reserva no mesmo slot
   @@index([usuarioId])
   @@index([churrasqueiraId, data])
 }
