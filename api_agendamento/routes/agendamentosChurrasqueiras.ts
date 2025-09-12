@@ -21,6 +21,13 @@ function toUtc00(isoYYYYMMDD: string) {
 function diaSemanaFromUTC00(d: Date): DiaSemana {
   return DIAS[d.getUTCDay()];
 }
+// Janela UTC [início, fim) para o dia (evita problemas de TZ/precision)
+function getUtcDayRange(isoYYYYMMDD: string) {
+  const inicio = toUtc00(isoYYYYMMDD);
+  const fim = new Date(inicio);
+  fim.setUTCDate(fim.getUTCDate() + 1);
+  return { inicio, fim };
+}
 
 /** Cria um usuário mínimo a partir do nome do convidado (mesma lógica das quadras) */
 async function criarConvidadoComoUsuario(nomeConvidado: string) {
@@ -97,6 +104,8 @@ router.post("/", async (req, res) => {
     }
 
     const dataUTC = toUtc00(data);
+    const { inicio, fim } = getUtcDayRange(data);
+    const diaSemana = diaSemanaFromUTC00(dataUTC);
 
     // (1) conflito com COMUM (mesmo dia+turno+churrasqueira)
     const conflitoComum = await prisma.agendamentoChurrasqueira.findFirst({
@@ -113,8 +122,7 @@ router.post("/", async (req, res) => {
     }
 
     // (2) conflito com PERMANENTE (mesmo diaSemana+turno+churrasqueira e dataInicio <= data)
-    // ⚠️ Só bloqueia se NÃO houver exceção (cancelamento) exatamente nessa data
-    const diaSemana = diaSemanaFromUTC00(dataUTC);
+    //    ⚠️ Só bloqueia se NÃO houver exceção (cancelamento) exatamente nessa data
     const conflitoPerm = await prisma.agendamentoPermanenteChurrasqueira.findFirst({
       where: {
         churrasqueiraId,
@@ -122,7 +130,8 @@ router.post("/", async (req, res) => {
         turno,
         status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
         OR: [{ dataInicio: null }, { dataInicio: { lte: dataUTC } }],
-        cancelamentos: { none: { data: dataUTC } }, // 👈 considera exceções
+        // usar janela [início, fim) evita problemas de TZ/precision
+        cancelamentos: { none: { data: { gte: inicio, lt: fim } } },
       },
       select: { id: true },
     });
