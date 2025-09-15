@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import Spinner from "@/components/Spinner";
 import { useAuthStore } from "@/context/AuthStore";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 /* =========================
    Tipos da rota /disponibilidadeGeral/dia
@@ -142,8 +142,9 @@ export default function TodosHorariosPage() {
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
   const { usuario } = useAuthStore();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
-  const [data, setData] = useState<string>(""); // init via useEffect
+  const [data, setData] = useState<string>(""); // será inicializada pelo query param
   const [horas, setHoras] = useState<string[]>([]);
   const [esportes, setEsportes] = useState<Record<string, EsporteBlock> | null>(null);
   const [erro, setErro] = useState("");
@@ -194,10 +195,12 @@ export default function TodosHorariosPage() {
     quadraNumero: number;
   } | null>(null);
 
-  // init data
+  // 🔹 Inicializa a data a partir do query param (?data=YYYY-MM-DD) ou usa hoje
   useEffect(() => {
-    setData(todayStrSP());
-  }, []);
+    const q = searchParams.get("data");
+    const isISO = q && /^\d{4}-\d{2}-\d{2}$/.test(q);
+    setData(isISO ? q! : todayStrSP());
+  }, [searchParams]);
 
   const carregar = useCallback(
     async (d: string) => {
@@ -677,7 +680,11 @@ export default function TodosHorariosPage() {
           type="date"
           className="border p-2 rounded-lg w-full"
           value={data}
-          onChange={(e) => setData(e.target.value)}
+          onChange={(e) => {
+            const v = e.target.value;
+            setData(v);
+            router.replace(`/adminMaster/todosHorarios?data=${v}`, { scroll: false });
+          }}
         />
       </div>
 
