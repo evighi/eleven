@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { PrismaClient, DiaSemana } from "@prisma/client";
+import { PrismaClient, DiaSemana, Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { z } from "zod";
@@ -389,7 +389,18 @@ router.post("/", verificarToken, async (req, res) => {
     });
 
     return res.status(201).json(novoAgendamento);
-  } catch (err) {
+  } catch (err: any) {
+    // 🧱 Concorrência: outro usuário confirmou o mesmo slot entre sua checagem e o create()
+    // Prisma lança P2002 (unique) e, em alguns casos de SQL bruto, pode vir 23505 (Postgres)
+    if (
+      (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") ||
+      err?.code === "23505"
+    ) {
+      return res
+        .status(409)
+        .json({ erro: "Este horário acabou de ser reservado por outra pessoa. Escolha outra quadra." });
+    }
+
     console.error("Erro ao criar agendamento", err);
     return res.status(500).json({ erro: "Erro ao criar agendamento" });
   }
@@ -844,10 +855,10 @@ router.patch("/:id/transferir", async (req, res) => {
         horario: novoAgendamento.horario,
         usuario: novoAgendamento.usuario
           ? {
-              id: novoAgendamento.usuario.id,
-              nome: novoAgendamento.usuario.nome,
-              email: novoAgendamento.usuario.email,
-            }
+            id: novoAgendamento.usuario.id,
+            nome: novoAgendamento.usuario.nome,
+            email: novoAgendamento.usuario.email,
+          }
           : null,
         jogadores: novoAgendamento.jogadores.map((j) => ({
           id: j.id,
@@ -856,10 +867,10 @@ router.patch("/:id/transferir", async (req, res) => {
         })),
         quadra: novoAgendamento.quadra
           ? {
-              id: novoAgendamento.quadra.id,
-              nome: novoAgendamento.quadra.nome,
-              numero: novoAgendamento.quadra.numero,
-            }
+            id: novoAgendamento.quadra.id,
+            nome: novoAgendamento.quadra.nome,
+            numero: novoAgendamento.quadra.numero,
+          }
           : null,
       },
     });
@@ -910,9 +921,9 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
     // 4) Buscar usuários válidos por ID (se houver)
     const usuariosValidos = jogadoresIds.length
       ? await prisma.usuario.findMany({
-          where: { id: { in: jogadoresIds } },
-          select: { id: true },
-        })
+        where: { id: { in: jogadoresIds } },
+        select: { id: true },
+      })
       : [];
 
     if (usuariosValidos.length !== jogadoresIds.length) {
