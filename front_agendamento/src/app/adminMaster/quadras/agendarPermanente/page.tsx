@@ -269,7 +269,7 @@ export default function CadastrarPermanente() {
 
       setTimeout(() => {
         const params = new URLSearchParams({ data: redirectYmd });
-        router.push(`/adminMaster/quadras/todosHorarios?${params.toString()}`);
+        router.push(`/adminMaster/todosHorarios?${params.toString()}`);
       }, 350);
     } catch (error) {
       console.error(error);
