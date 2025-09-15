@@ -69,8 +69,7 @@ export default function Cadastro() {
 
   // Termos
   const [showTerms, setShowTerms] = useState(false);
-  const [termsCanBeAccepted, setTermsCanBeAccepted] = useState(false);
-  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [termsRead, setTermsRead] = useState(false); // vira true após abrir e rolar até o fim
 
   // ===== Helpers OTP =====
   const focusInput = (idx: number) => {
@@ -184,8 +183,9 @@ export default function Cadastro() {
 
   // ===== Submit cadastro =====
   async function cadastraCliente(data: Inputs) {
-    if (!acceptedTerms) {
-      toast.error("Você precisa ler e aceitar os Termos e Condições.");
+    if (!termsRead) {
+      toast.error("Para avançar, é necessário ler os Termos e Condições.");
+      setShowTerms(true);
       return;
     }
     if (data.senha !== data.confirmarSenha) {
@@ -242,8 +242,7 @@ export default function Cadastro() {
         setEmailParaVerificar(dadosParaEnvio.email);
         dadosClienteRef.current = dadosParaEnvio;
         reset();
-        setAcceptedTerms(false);
-        setTermsCanBeAccepted(false);
+        setTermsRead(false);
         return;
       }
 
@@ -305,8 +304,6 @@ export default function Cadastro() {
       setCarregando(false);
     }
   }
-
-  const canSubmit = !carregando && acceptedTerms;
 
   return (
     <main className="min-h-screen bg-gray-100 py-6">
@@ -377,9 +374,27 @@ export default function Cadastro() {
               <Campo label="Celular">
                 <input
                   className={inputBase}
-                  placeholder="Insira o telefone (apenas números)"
-                  {...register("celular", { required: true })}
+                  inputMode="numeric"
+                  autoComplete="tel"
+                  maxLength={11}
+                  placeholder="Insira o telefone"
+                  {...register("celular", {
+                    required: "Celular é obrigatório",
+                    setValueAs: (v) => (v ? String(v).replace(/\D/g, "") : ""),
+                    pattern: {
+                      value: /^\d{10,11}$/,
+                      message: "Digite seu telefone",
+                    },
+                  })}
+                  onInput={(e) => {
+                    const el = e.currentTarget;
+                    const digits = el.value.replace(/\D/g, "");
+                    if (el.value !== digits) el.value = digits;
+                  }}
                 />
+                {errors.celular && (
+                  <p className="mt-1 text-[12px] text-red-600">{String(errors.celular.message)}</p>
+                )}
               </Campo>
 
               {/* Senhas */}
@@ -420,34 +435,16 @@ export default function Cadastro() {
                   <span className="underline">Ler Termos e Condições</span>
                 </button>
 
-                <label className="flex items-start gap-2 text-[13px] text-gray-700">
-                  <input
-                    type="checkbox"
-                    className="mt-0.5"
-                    disabled={!termsCanBeAccepted}
-                    checked={acceptedTerms}
-                    onChange={(e) => setAcceptedTerms(e.target.checked)}
-                  />
-                  <span>
-                    Eu li e aceito os{" "}
-                    <button
-                      type="button"
-                      onClick={() => setShowTerms(true)}
-                      className="text-orange-600 underline hover:text-orange-700"
-                    >
-                      Termos e Condições
-                    </button>
-                    .
-                  </span>
-                </label>
-                {!termsCanBeAccepted && (
-                  <p className="text-[12px] text-gray-500">Leia os termos para habilitar o avanço.</p>
-                )}
+                <p className="text-[12px] text-gray-600">
+                  {termsRead
+                    ? "Leitura concluída ✅"
+                    : "Você precisa abrir e rolar os Termos até o fim para continuar."}
+                </p>
               </div>
 
               <button
                 type="submit"
-                disabled={!(!carregando && acceptedTerms)}
+                disabled={carregando}
                 className="mt-1 w-full rounded-md bg-orange-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-orange-400/60"
               >
                 {carregando ? (
@@ -466,10 +463,7 @@ export default function Cadastro() {
                 Insira o código enviado para <strong>{emailParaVerificar}</strong>
               </p>
 
-              <div
-                className="flex justify-between gap-2"
-                onPaste={handleCodePaste}
-              >
+              <div className="flex justify-between gap-2" onPaste={handleCodePaste}>
                 {codigo.map((value, index) => (
                   <input
                     key={index}
@@ -543,7 +537,7 @@ export default function Cadastro() {
         <TermsModal
           onClose={() => setShowTerms(false)}
           onAccept={() => {
-            setTermsCanBeAccepted(true);
+            setTermsRead(true);
             setShowTerms(false);
           }}
         />
