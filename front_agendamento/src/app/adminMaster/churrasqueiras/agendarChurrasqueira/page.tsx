@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import axios from 'axios'
 import AppImage from "@/components/AppImage";
+import { useSearchParams } from 'next/navigation'
 
 interface Churrasqueira {
   churrasqueiraId: string
@@ -18,6 +19,7 @@ type UsuarioBusca = { id: string; nome: string }
 
 export default function AgendamentoChurrasqueiraComum() {
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
+  const searchParams = useSearchParams();
 
   const [data, setData] = useState<string>("")
   const [turno, setTurno] = useState<string>("")
@@ -34,6 +36,23 @@ export default function AgendamentoChurrasqueiraComum() {
 
   // Convidado como dono (nome livre)
   const [convidadoDonoNome, setConvidadoDonoNome] = useState<string>("")
+
+  // 🔹 Lê query params e pré-preenche a tela
+  useEffect(() => {
+    const qData = searchParams.get('data')
+    const qTurno = searchParams.get('turno')
+    const qChurras = searchParams.get('churrasqueiraId')
+
+    if (qData && /^\d{4}-\d{2}-\d{2}$/.test(qData)) {
+      setData(qData)
+    }
+    if (qTurno && (qTurno === 'DIA' || qTurno === 'NOITE')) {
+      setTurno(qTurno)
+    }
+    if (qChurras) {
+      setChurrasqueiraSelecionada(String(qChurras))
+    }
+  }, [searchParams])
 
   // Disponibilidade por data + turno
   useEffect(() => {
