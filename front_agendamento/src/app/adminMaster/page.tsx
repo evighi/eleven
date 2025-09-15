@@ -103,7 +103,6 @@ interface AgendamentoSelecionado {
   tipoReserva: TipoReserva;
   agendamentoId: string;
   tipoLocal: TipoLocal;
-  // novos (para exceção):
   diaSemana?: string | null;
   dataInicio?: string | null; // YYYY-MM-DD
 }
@@ -114,7 +113,7 @@ interface UsuarioLista {
   email?: string;
 }
 
-/** Novo: pré-reserva para confirmar agendar comum */
+/** Pré-reserva para confirmação (quadra) */
 type PreReserva = {
   data: string;
   horario: string;
@@ -123,7 +122,15 @@ type PreReserva = {
   quadraNome: string;
   quadraNumero: number;
 };
-/* ============================================= */
+
+/** Pré-reserva para confirmação (churrasqueira) */
+type PreReservaChurras = {
+  data: string;
+  turno: Turno;
+  churrasqueiraId: string;
+  churrasqueiraNome: string;
+  churrasqueiraNumero: number;
+};
 
 /** Map DiaSemana -> index JS */
 const DIA_IDX: Record<string, number> = {
@@ -160,22 +167,19 @@ function gerarProximasDatasDiaSemana(
   incluirBase = true
 ): string[] {
   const target = DIA_IDX[diaSemana] ?? 0;
-
-  // Base em SP (início do dia)
   const baseIso = (baseYmd || todayStrSP()) + "T00:00:00-03:00";
   const start = new Date(baseIso);
   start.setHours(0, 0, 0, 0);
 
-  // Respeita dataInicio (se for mais à frente que a base)
   if (dataInicio) {
     const di = new Date(`${dataInicio}T00:00:00-03:00`);
     di.setHours(0, 0, 0, 0);
     if (di > start) start.setTime(di.getTime());
   }
 
-  const startDow = start.getDay(); // 0..6
-  let delta = (target - startDow + 7) % 7; // 0 significa “mesmo dia da semana”
-  if (delta === 0 && !incluirBase) delta = 7; // pular para a próxima semana se não quiser incluir a base
+  const startDow = start.getDay();
+  let delta = (target - startDow + 7) % 7;
+  if (delta === 0 && !incluirBase) delta = 7;
 
   const first = new Date(start);
   first.setDate(first.getDate() + delta);
@@ -202,7 +206,7 @@ export default function AdminHome() {
     useState<AgendamentoSelecionado | null>(null);
   const [loadingDetalhes, setLoadingDetalhes] = useState<boolean>(false);
 
-  const [confirmarCancelamento, setConfirmarCancelamento] = useState(false); // fluxo antigo
+  const [confirmarCancelamento, setConfirmarCancelamento] = useState(false);
   const [loadingCancelamento, setLoadingCancelamento] = useState(false);
   const [loadingTransferencia, setLoadingTransferencia] = useState(false);
 
@@ -233,9 +237,13 @@ export default function AdminHome() {
   const [carregandoJogadores, setCarregandoJogadores] = useState(false);
   const [addingPlayers, setAddingPlayers] = useState(false);
 
-  // Novo: confirmação para agendar comum quando quadra está livre
+  // Confirmação para agendar (quadra livre)
   const [mostrarConfirmaAgendar, setMostrarConfirmaAgendar] = useState(false);
   const [preReserva, setPreReserva] = useState<PreReserva | null>(null);
+
+  // Confirmação para agendar (churrasqueira livre)
+  const [mostrarConfirmaChurras, setMostrarConfirmaChurras] = useState(false);
+  const [preReservaChurras, setPreReservaChurras] = useState<PreReservaChurras | null>(null);
 
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
   const { usuario } = useAuthStore();
@@ -265,7 +273,7 @@ export default function AdminHome() {
     }
   }, [API_URL, data, horario, isAllowed]);
 
-  // 🔧 Inicializa data/horário (SP)
+  // Inicializa data/horário (SP)
   useEffect(() => {
     setData(todayStrSP());
     setHorario(hourStrSP());
@@ -311,7 +319,6 @@ export default function AdminHome() {
         tipoReserva: item.tipoReserva,
         agendamentoId,
         tipoLocal,
-        // backend de quadra e churrasqueira retornam diaSemana/dataInicio para permanentes
         diaSemana: (res.data as any)?.diaSemana ?? null,
         dataInicio:
           (res.data as any)?.dataInicio
@@ -329,17 +336,14 @@ export default function AdminHome() {
   const abrirFluxoCancelamento = () => {
     if (!agendamentoSelecionado) return;
     const { tipoReserva } = agendamentoSelecionado;
-
-    // Para qualquer permanente (quadra OU churrasqueira), mostrar opções
     if (tipoReserva === "permanente") {
       setMostrarOpcoesCancelamento(true);
     } else {
-      // fluxo antigo: confirmação simples
       setConfirmarCancelamento(true);
     }
   };
 
-  // Cancelar (POST) — usado no fluxo antigo e também no "para sempre"
+  // Cancelar (POST)
   const cancelarAgendamento = async () => {
     if (!agendamentoSelecionado) return;
     setLoadingCancelamento(true);
@@ -381,16 +385,13 @@ export default function AdminHome() {
       alert("Não foi possível identificar o dia da semana deste permanente.");
       return;
     }
-
-    // agora: só 6 datas e inclui a base (data selecionada)
     const lista = gerarProximasDatasDiaSemana(
       agendamentoSelecionado.diaSemana,
       data || todayStrSP(),
       agendamentoSelecionado.dataInicio || null,
-      6, // quantidade
-      true // incluir a própria base, se for o mesmo dia da semana
+      6,
+      true
     );
-
     setDatasExcecao(lista);
     setDataExcecaoSelecionada(null);
     setMostrarExcecaoModal(true);
@@ -402,7 +403,6 @@ export default function AdminHome() {
     if (!agendamentoSelecionado?.agendamentoId || !dataExcecaoSelecionada) return;
     try {
       setPostandoExcecao(true);
-
       const rota =
         agendamentoSelecionado.tipoLocal === "churrasqueira"
           ? `agendamentosPermanentesChurrasqueiras/${agendamentoSelecionado.agendamentoId}/cancelar-dia`
@@ -429,7 +429,7 @@ export default function AdminHome() {
   };
 
   // Buscar usuários (transferência)
-  const [abrirModalTransferenciaState] = useState(false); // placeholder (não alterar comportamento)
+  const [abrirModalTransferenciaState] = useState(false); // placeholder
   const buscarUsuarios = useCallback(
     async (termo: string) => {
       if (termo.trim().length === 0) {
@@ -554,7 +554,6 @@ export default function AdminHome() {
 
     try {
       setAddingPlayers(true);
-
       await axios.patch(
         `${API_URL}/agendamentos/${agendamentoSelecionado.agendamentoId}/jogadores`,
         {
@@ -565,12 +564,10 @@ export default function AdminHome() {
       );
 
       alert("Jogadores adicionados com sucesso!");
-
       setJogadoresSelecionadosIds([]);
       setConvidadosPendentes([]);
       setConvidadoNome("");
       setAbrirModalJogadores(false);
-
       buscarDisponibilidade();
     } catch (e) {
       console.error(e);
@@ -580,7 +577,7 @@ export default function AdminHome() {
     }
   };
 
-  // ====== NOVO: confirmação para agendar comum quando quadra está livre ======
+  // ====== CONFIRMAÇÃO (quadra) ======
   const abrirConfirmacaoAgendar = (info: PreReserva) => {
     setPreReserva(info);
     setMostrarConfirmaAgendar(true);
@@ -594,9 +591,23 @@ export default function AdminHome() {
       esporte: preReserva.esporte, // troque para esporteId se necessário
       quadraId: preReserva.quadraId,
     }).toString();
-
-    // ajuste o caminho se seu agendarcomum estiver em outro diretório
     router.push(`/adminMaster/quadras/agendarComum?${qs}`);
+  };
+
+  // ====== CONFIRMAÇÃO (churrasqueira) — NOVO ======
+  const abrirConfirmacaoChurras = (info: PreReservaChurras) => {
+    setPreReservaChurras(info);
+    setMostrarConfirmaChurras(true);
+  };
+
+  const irParaAgendarChurrasqueira = () => {
+    if (!preReservaChurras) return;
+    const qs = new URLSearchParams({
+      data: preReservaChurras.data,
+      turno: preReservaChurras.turno,
+      churrasqueiraId: preReservaChurras.churrasqueiraId,
+    }).toString();
+    router.push(`/adminMaster/churrasqueiras/agendarChurrasqueira?${qs}`);
   };
 
   return (
@@ -632,10 +643,9 @@ export default function AdminHome() {
           </select>
         </div>
 
-        {/* Botão que leva para a página "todosHorarios" */}
         <div className="sm:ml-auto">
           <Link
-            href={`/adminMaster/todosHorarios`}
+            href={`/adminMaster/todosHorarios?data=${data || todayStrSP()}`}
             className="inline-flex items-center justify-center px-4 py-2 rounded-lg font-semibold bg-orange-600 hover:bg-orange-700 text-white cursor-pointer"
           >
             Ver todos os horários
@@ -663,7 +673,7 @@ export default function AdminHome() {
 
               <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4">
                 {disponibilidade.quadras[esporte].map((q: DisponQuadra) => {
-                  const clickable = !q.bloqueada; // bloqueada não clica
+                  const clickable = !q.bloqueada;
                   const clsBase =
                     "p-3 rounded-lg text-center shadow-sm flex flex-col justify-center " +
                     (clickable ? "cursor-pointer" : "cursor-not-allowed");
@@ -727,13 +737,22 @@ export default function AdminHome() {
                 return (
                   <div
                     key={c.churrasqueiraId + "-dia"}
-                    onClick={() =>
-                      !disponivel &&
-                      abrirDetalhes(
-                        { ...(diaInfo as DetalheItemMin), tipoLocal: "churrasqueira" },
-                        { turno: "DIA" }
-                      )
-                    }
+                    onClick={() => {
+                      if (disponivel) {
+                        abrirConfirmacaoChurras({
+                          data,
+                          turno: "DIA",
+                          churrasqueiraId: c.churrasqueiraId,
+                          churrasqueiraNome: c.nome,
+                          churrasqueiraNumero: c.numero,
+                        });
+                      } else {
+                        abrirDetalhes(
+                          { ...(diaInfo as DetalheItemMin), tipoLocal: "churrasqueira" },
+                          { turno: "DIA" }
+                        );
+                      }
+                    }}
                     className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${
                       disponivel
                         ? "border-2 border-green-500 bg-green-50"
@@ -766,13 +785,22 @@ export default function AdminHome() {
                 return (
                   <div
                     key={c.churrasqueiraId + "-noite"}
-                    onClick={() =>
-                      !disponivel &&
-                      abrirDetalhes(
-                        { ...(noiteInfo as DetalheItemMin), tipoLocal: "churrasqueira" },
-                        { turno: "NOITE" }
-                      )
-                    }
+                    onClick={() => {
+                      if (disponivel) {
+                        abrirConfirmacaoChurras({
+                          data,
+                          turno: "NOITE",
+                          churrasqueiraId: c.churrasqueiraId,
+                          churrasqueiraNome: c.nome,
+                          churrasqueiraNumero: c.numero,
+                        });
+                      } else {
+                        abrirDetalhes(
+                          { ...(noiteInfo as DetalheItemMin), tipoLocal: "churrasqueira" },
+                          { turno: "NOITE" }
+                        );
+                      }
+                    }}
                     className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${
                       disponivel
                         ? "border-2 border-green-500 bg-green-50"
@@ -866,7 +894,6 @@ export default function AdminHome() {
                 </div>
               )}
 
-            {/* Transferir (somente comum/quadra) */}
             {agendamentoSelecionado.tipoReserva === "comum" &&
               agendamentoSelecionado.tipoLocal === "quadra" && (
                 <button
@@ -1207,7 +1234,7 @@ export default function AdminHome() {
         </div>
       )}
 
-      {/* NOVO MODAL: Confirmar agendamento comum (quadra livre) */}
+      {/* MODAL: Confirmar agendamento (quadra livre) */}
       {mostrarConfirmaAgendar && preReserva && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[70]">
           <div className="bg-white p-5 rounded-lg shadow-lg w-[340px]">
@@ -1218,7 +1245,7 @@ export default function AdminHome() {
                 {preReserva.quadraNome} (nº {preReserva.quadraNumero})
               </b>
               <br />
-              em <b>{preReserva.data}</b> às <b>{preReserva.horario}</b>?
+              em <b>{toDdMm(preReserva.data)}</b> às <b>{preReserva.horario}</b>?
             </p>
             <div className="flex gap-2 justify-end">
               <button
@@ -1230,6 +1257,37 @@ export default function AdminHome() {
               <button
                 onClick={irParaAgendarComum}
                 className="px-3 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700"
+              >
+                Sim, agendar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Confirmar agendamento (churrasqueira livre) — NOVO */}
+      {mostrarConfirmaChurras && preReservaChurras && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[70]">
+          <div className="bg-white p-5 rounded-lg shadow-lg w-[360px]">
+            <h3 className="text-lg font-semibold mb-3">Confirmar agendamento</h3>
+            <p className="text-sm text-gray-700 mb-4">
+              Deseja agendar a{" "}
+              <b>
+                {preReservaChurras.churrasqueiraNome} (nº {preReservaChurras.churrasqueiraNumero})
+              </b>
+              <br />
+              em <b>{toDdMm(preReservaChurras.data)}</b> no turno <b>{preReservaChurras.turno}</b>?
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setMostrarConfirmaChurras(false)}
+                className="px-3 py-2 rounded bg-gray-300 hover:bg-gray-400"
+              >
+                Não
+              </button>
+              <button
+                onClick={irParaAgendarChurrasqueira}
+                className="px-3 py-2 rounded bg-orange-600 text-white hover:bg-orange-700"
               >
                 Sim, agendar
               </button>
