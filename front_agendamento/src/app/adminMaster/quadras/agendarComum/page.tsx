@@ -231,7 +231,7 @@ export default function AgendamentoComum() {
       // redirect (mantém o toast visível)
       const params = new URLSearchParams({ data })
       setTimeout(() => {
-        router.push(`/adminMaster/quadras/todosHorarios?${params.toString()}`)
+        router.push(`/adminMaster/todosHorarios?${params.toString()}`)
       }, 350)
     } catch (error) {
       console.error(error)
