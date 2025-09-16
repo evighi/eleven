@@ -897,7 +897,7 @@ export default function AgendarQuadraCliente() {
             <div className="flex items-center justify-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
               {isConcurrencyErr && (
                 /* 🔁 Ajuste o caminho do seu ícone aqui */
-                <img src="/public/icon_recemmarcada.png" alt="" className="w-4 h-4" />
+                <img src="/icon_recemmarcada.png" alt="" className="w-4 h-4" />
               )}
               <span>{msg}</span>
             </div>
