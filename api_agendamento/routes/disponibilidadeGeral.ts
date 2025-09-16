@@ -24,9 +24,9 @@ type UsuarioSelecionado = {
 
 type AgendamentoComUsuario =
   | {
-      id: string;
-      usuario: UsuarioSelecionado;
-    }
+    id: string;
+    usuario: UsuarioSelecionado;
+  }
   | null;
 
 // horário dentro do intervalo de bloqueio [início, fim)
@@ -245,18 +245,27 @@ router.get("/geral", async (req, res) => {
               },
             });
 
-            const com = await prisma.agendamentoChurrasqueira.findFirst({
-              where: {
-                diaSemana: diaSemanaFinal,
-                turno,
-                churrasqueiraId: churrasqueira.id,
-                status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
-              },
-              select: {
-                id: true,
-                usuario: { select: { nome: true, email: true, celular: true } },
-              },
-            });
+            // depois (✅ usa data + turno para comum; se não veio "data", não dá pra checar comum)
+            let com: { id: string; usuario: UsuarioSelecionado } | null = null;
+
+            if (range) {
+              com = await prisma.agendamentoChurrasqueira.findFirst({
+                where: {
+                  data: { gte: range.inicio, lt: range.fim }, // ✅ filtra pelo dia específico
+                  turno,
+                  churrasqueiraId: churrasqueira.id,
+                  status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+                },
+                select: {
+                  id: true,
+                  // ⬇️ ajuste o nome da relação conforme seu schema:
+                  usuario: { select: { nome: true, email: true, celular: true } },
+                  // Se der erro aqui, troque por:
+                  // user: { select: { nome: true, email: true, celular: true } },
+                  // ou o nome correto no seu schema.
+                },
+              });
+            }
 
             let tipoReserva: "permanente" | "comum" | null = null;
             let usuario: UsuarioSelecionado | null = null;

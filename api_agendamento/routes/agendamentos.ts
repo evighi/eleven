@@ -1,31 +1,65 @@
-import { Router, Request } from "express";
-import { PrismaClient, DiaSemana } from "@prisma/client";
+import { Router } from "express";
+import { PrismaClient, DiaSemana, Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { z } from "zod";
 import { startOfDay, addDays, getDay } from "date-fns";
-import cron from "node-cron";
+import cron from "node-cron"; // ⏰ cron para finalizar vencidos
 import verificarToken from "../middleware/authMiddleware";
-import { requireAdmin, requireOwnerByRecord, isAdmin as isAdminTipo } from "../middleware/acl";
 import { r2PublicUrl } from "../src/lib/r2";
 
 // Mapa DiaSemana -> número JS (0=Dom..6=Sáb)
 const DIA_IDX: Record<DiaSemana, number> = {
-  DOMINGO: 0, SEGUNDA: 1, TERCA: 2, QUARTA: 3, QUINTA: 4, SEXTA: 5, SABADO: 6,
+  DOMINGO: 0,
+  SEGUNDA: 1,
+  TERCA: 2,
+  QUARTA: 3,
+  QUINTA: 4,
+  SEXTA: 5,
+  SABADO: 6,
 };
+
+// ================= Helpers de horário local (America/Sao_Paulo) =================
+const SP_TZ = process.env.TZ || "America/Sao_Paulo";
+
+function localYMD(d: Date, tz = SP_TZ) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d); // "YYYY-MM-DD"
+}
+
+function localHM(d: Date, tz = SP_TZ) {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: tz,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(d); // "HH:mm"
+}
+
+// Constrói um "timestamp" em milissegundos em uma linha do tempo local (codificada como UTC)
+function msFromLocalYMDHM(ymd: string, hm: string) {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const [hh, mm] = hm.split(":").map(Number);
+  return Date.UTC(y, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0, 0, 0);
+}
 
 // Próxima data (YYYY-MM-DD, UTC) para um DiaSemana, respeitando dataInicio opcional
 function nextDateISOForDiaSemana(dia: DiaSemana, minDate?: Date | null) {
   const hoje = new Date();
   const base = minDate && minDate > hoje ? minDate : hoje;
-  const cur = base.getDay();
-  const target = DIA_IDX[dia] ?? 0;
-  const delta = (target - cur + 7) % 7;
+  const cur = base.getDay(); // 0..6
+  const target = DIA_IDX[dia] ?? 0; // 0..6
+  const delta = (target - cur + 7) % 7; // 0..6
   const d = startOfDay(addDays(base, delta));
   return d.toISOString().slice(0, 10);
 }
 
 function getUtcDayRange(dateStr?: string) {
+  // Se o front informou "YYYY-MM-DD", respeitamos esse dia
   if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
     const base = dateStr.slice(0, 10);
     const inicio = new Date(`${base}T00:00:00Z`);
@@ -33,22 +67,37 @@ function getUtcDayRange(dateStr?: string) {
     fim.setUTCDate(fim.getUTCDate() + 1);
     return { inicio, fim };
   }
+
+  // Caso contrário, usamos o DIA LOCAL (America/Sao_Paulo) para gerar os boundaries em UTC
   const { hojeUTC00, amanhaUTC00 } = getStoredUtcBoundaryForLocalDay(new Date());
   return { inicio: hojeUTC00, fim: amanhaUTC00 };
 }
 
-/** Boundaries em UTC para o "dia local" America/Sao_Paulo */
+/**
+ * ⚠️ IMPORTANTE SOBRE O CAMPO `data`:
+ * No POST você manda "YYYY-MM-DD", que o Node interpreta como MEIA-NOITE EM UTC daquele dia.
+ * Portanto, no banco o campo `data` representa "00:00 UTC do dia pretendido".
+ * Para comparar com "hoje" local, converta o dia local para esse MESMO formato:
+ *   Date.UTC(anoLocal, mesLocal, diaLocal, 0, 0, 0) => boundary correto para consultas.
+ */
+// Força o dia local em America/Sao_Paulo e devolve os limites em UTC [início, fim)
 function getStoredUtcBoundaryForLocalDay(dLocal = new Date()) {
   const fmt = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Sao_Paulo",
-    year: "numeric", month: "2-digit", day: "2-digit",
+    timeZone: SP_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
   });
   const [y, m, d] = fmt.format(dLocal).split("-").map(Number);
+
+  // 00:00:00 UTC do mesmo YYYY-MM-DD (é exatamente como você salva no banco)
   const hojeUTC00 = new Date(Date.UTC(y, m - 1, d, 0, 0, 0));
   const amanhaUTC00 = new Date(Date.UTC(y, m - 1, d + 1, 0, 0, 0));
+
   return { hojeUTC00, amanhaUTC00 };
 }
 
+// helpers de imagem (R2/legado/url absoluta)
 function resolveQuadraImg(imagem?: string | null) {
   if (!imagem) return null;
   const isHttp = /^https?:\/\//i.test(imagem);
@@ -58,18 +107,24 @@ function resolveQuadraImg(imagem?: string | null) {
     if (url) return url;
   }
   if (isHttp) return imagem;
-  const base = process.env.APP_URL ? `${process.env.APP_URL}/uploads/quadras/` : `/uploads/quadras/`;
+  const base = process.env.APP_URL
+    ? `${process.env.APP_URL}/uploads/quadras/`
+    : `/uploads/quadras/`;
   return `${base}${imagem}`;
 }
-function toISODateUTC(d: Date) { return d.toISOString().slice(0, 10); }
-function toUtc00(isoYYYYMMDD: string) { return new Date(`${isoYYYYMMDD}T00:00:00Z`); }
+
+// 🔧 helpers extras p/ tratar datas em UTC 00
+function toISODateUTC(d: Date) {
+  return d.toISOString().slice(0, 10); // "YYYY-MM-DD"
+}
+function toUtc00(isoYYYYMMDD: string) {
+  return new Date(`${isoYYYYMMDD}T00:00:00Z`);
+}
 
 const prisma = new PrismaClient();
 const router = Router();
 
-<<<<<<< Updated upstream
-/** ===== Helpers de domínio ===== */
-=======
+/** ===== Helpers de domínio/RBAC ===== */
 const isAdminRole = (t?: string) =>
   ["ADMIN_MASTER", "ADMIN_ATENDENTE", "ADMIN_PROFESSORES"].includes(t || "");
 
@@ -77,95 +132,125 @@ const isAdminRole = (t?: string) =>
  * Calcula a PRÓXIMA data (YYYY-MM-DD) para um permanente,
  * PULANDO as datas já marcadas como exceção e CONSIDERANDO o horário.
  */
->>>>>>> Stashed changes
 async function proximaDataPermanenteSemExcecao(p: {
-  id: string; diaSemana: DiaSemana; dataInicio: Date | null;
+  id: string;
+  diaSemana: DiaSemana;
+  dataInicio: Date | null;
+  horario: string; // "HH:mm"
 }): Promise<string> {
-  const hoje = new Date();
-  const base = p.dataInicio && p.dataInicio > hoje ? p.dataInicio : hoje;
-  const cur = base.getDay();
-  const target = DIA_IDX[p.diaSemana] ?? 0;
+  const agora = new Date();
+
+  // base: hoje ou dataInicio se estiver no futuro
+  const base = p.dataInicio && p.dataInicio > agora ? p.dataInicio : agora;
+
+  const cur = base.getDay(); // 0..6 (local)
+  const target = DIA_IDX[p.diaSemana] ?? 0; // 0..6
   const delta = (target - cur + 7) % 7;
+
   let tentativa = startOfDay(addDays(base, delta));
 
-<<<<<<< Updated upstream
-=======
   // Se a tentativa é "hoje" no calendário local, respeitar o horário:
   const tentativaEhHojeLocal = localYMD(tentativa) === localYMD(agora); // ambos em SP
-  const agoraHHMM = localHM(agora); // "HH:mm" em SP
-  if (tentativaEhHojeLocal && agoraHHMM >= p.horario) {
-    // já passou o horário de hoje -> pula uma semana
-    tentativa = addDays(tentativa, 7);
+  if (tentativaEhHojeLocal) {
+    const agoraHHMM = localHM(agora); // "HH:mm" em SP
+    if (agoraHHMM >= p.horario) {
+      // já passou o horário de hoje -> pula uma semana
+      tentativa = addDays(tentativa, 7);
+    }
   }
 
   // Limite de segurança de 120 iterações (~2 anos)
->>>>>>> Stashed changes
   for (let i = 0; i < 120; i++) {
-    const iso = toISODateUTC(tentativa);
+    const iso = toISODateUTC(tentativa); // "YYYY-MM-DD"
     const exc = await prisma.agendamentoPermanenteCancelamento.findFirst({
-      where: { agendamentoPermanenteId: p.id, data: toUtc00(iso) }, select: { id: true },
+      where: {
+        agendamentoPermanenteId: p.id,
+        data: toUtc00(iso), // comparar sempre em 00:00Z
+      },
+      select: { id: true },
     });
-    if (!exc) return iso;
+
+    if (!exc) return iso; // achou uma ocorrência sem exceção
+
+    // pula 1 semana
     tentativa = addDays(tentativa, 7);
   }
+
+  // fallback defensivo
   return toISODateUTC(tentativa);
 }
 
-async function criarConvidadoComoUsuario(nomeConvidado: string) {
-  const cleanName = nomeConvidado.trim().replace(/\s+/g, " ");
-  const localPart = cleanName.toLowerCase().replace(/\s+/g, ".");
-  const suffix = crypto.randomBytes(3).toString("hex");
-  const emailSintetico = `${localPart}+guest.${suffix}@noemail.local`;
-  const randomPass = crypto.randomUUID();
-  const hashed = await bcrypt.hash(randomPass, 10);
-  const convidado = await prisma.usuario.create({
-    data: { nome: cleanName, email: emailSintetico, senha: hashed, tipo: "CLIENTE", celular: null, cpf: null, nascimento: null },
-    select: { id: true, nome: true, email: true },
-  });
-  return convidado;
-}
-
-const diasEnum = ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"];
 const addJogadoresSchema = z.object({
   jogadoresIds: z.array(z.string().uuid()).optional().default([]),
   convidadosNomes: z.array(z.string().trim().min(1)).optional().default([]),
 });
+
+// Validação do corpo (flexível p/ admin ou cliente)
 const agendamentoSchema = z.object({
   data: z.coerce.date(),
   horario: z.string().min(1),
   quadraId: z.string().uuid(),
   esporteId: z.string().uuid(),
-  usuarioId: z.string().uuid().optional(), // só admin pode usar
+  // admin pode mandar; cliente não precisa mandar (vem do token)
+  usuarioId: z.string().uuid().optional(),
   jogadoresIds: z.array(z.string().uuid()).optional().default([]),
   convidadosNomes: z.array(z.string().trim().min(1)).optional().default([]),
 });
 
-/** ===== Cron de finalização ===== */
+async function criarConvidadoComoUsuario(nomeConvidado: string) {
+  const cleanName = nomeConvidado.trim().replace(/\s+/g, " ");
+  const localPart = cleanName.toLowerCase().replace(/\s+/g, ".");
+  const suffix = crypto.randomBytes(3).toString("hex"); // 6 chars para unicidade
+  const emailSintetico = `${localPart}+guest.${suffix}@noemail.local`;
+
+  const randomPass = crypto.randomUUID();
+  const hashed = await bcrypt.hash(randomPass, 10);
+
+  const convidado = await prisma.usuario.create({
+    data: {
+      nome: cleanName,
+      email: emailSintetico,
+      senha: hashed,
+      tipo: "CLIENTE",
+      celular: null,
+      cpf: null,
+      nascimento: null,
+    },
+    select: { id: true, nome: true, email: true },
+  });
+
+  return convidado;
+}
+
+const diasEnum = ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"];
+
+/**
+ * ⛳ Finaliza agendamentos CONFIRMADOS cujo dia/horário já passaram.
+ * Regras:
+ *  1) data < HOJE(UTC00 do dia local)  -> FINALIZADO
+ *  2) HOJE <= data < AMANHÃ (utc00) e horario < HH:mm ATUAL LOCAL(SP) -> FINALIZADO
+ * Obs: 'horario' no formato 'HH:mm' permite comparação lexicográfica.
+ */
 async function finalizarAgendamentosVencidos() {
   const agora = new Date();
+
+  // Limites do dia LOCAL (SP) codificados em UTC 00:00 — compatíveis com como "data" é salva
   const { hojeUTC00, amanhaUTC00 } = getStoredUtcBoundaryForLocalDay(agora);
-<<<<<<< Updated upstream
-  const hh = String(agora.getHours()).padStart(2, "0");
-  const mm = String(agora.getMinutes()).padStart(2, "0");
-  const agoraHHMM = `${hh}:${mm}`;
-  await prisma.agendamento.updateMany({ where: { status: "CONFIRMADO", data: { lt: hojeUTC00 } }, data: { status: "FINALIZADO" } });
-  await prisma.agendamento.updateMany({
-    where: { status: "CONFIRMADO", data: { gte: hojeUTC00, lt: amanhaUTC00 }, horario: { lt: agoraHHMM } },
-    data: { status: "FINALIZADO" },
-  });
-=======
 
   // HORA ATUAL NO FUSO DE SP — NÃO usar getHours()/getMinutes()
   const agoraHHMM = localHM(agora, SP_TZ); // "HH:mm"
 
   // 1) Qualquer dia anterior a hoje
-  await prisma.agendamento.updateMany({
-    where: { status: "CONFIRMADO", data: { lt: hojeUTC00 } },
+  const r1 = await prisma.agendamento.updateMany({
+    where: {
+      status: "CONFIRMADO",
+      data: { lt: hojeUTC00 },
+    },
     data: { status: "FINALIZADO" },
   });
 
   // 2) Hoje, mas com horário já passado
-  await prisma.agendamento.updateMany({
+  const r2 = await prisma.agendamento.updateMany({
     where: {
       status: "CONFIRMADO",
       data: { gte: hojeUTC00, lt: amanhaUTC00 },
@@ -173,37 +258,38 @@ async function finalizarAgendamentosVencidos() {
     },
     data: { status: "FINALIZADO" },
   });
->>>>>>> Stashed changes
+
+  if (process.env.NODE_ENV !== "production") {
+    console.log(
+      `[finalizarAgendamentosVencidos] < hoje=${r1.count} | hoje<${agoraHHMM}=${r2.count} (boundaries: ${hojeUTC00.toISOString()} .. ${amanhaUTC00.toISOString()})`
+    );
+  }
 }
+
+// Agenda o job (evita duplicar no hot-reload em DEV)
 const globalAny = global as any;
 if (!globalAny.__cronFinalizaVencidos__) {
-  cron.schedule("1 * * * *", () => { finalizarAgendamentosVencidos().catch((e) => console.error("Cron erro:", e)); },
-    { timezone: process.env.TZ || "America/Sao_Paulo" });
+  cron.schedule(
+    "1 * * * *",
+    () => {
+      finalizarAgendamentosVencidos().catch((e) =>
+        console.error("Cron finalizarAgendamentosVencidos erro:", e)
+      );
+    },
+    { timezone: SP_TZ }
+  );
   globalAny.__cronFinalizaVencidos__ = true;
 }
 
-<<<<<<< Updated upstream
-/** ======= 🔒 Todas as rotas exigem login ======= */
-router.use(verificarToken);
-
-/** CREATE — cliente cria p/ si; admin pode criar p/ outro usuarioId */
-router.post("/", async (req, res) => {
-=======
 /** ================== ROTAS ================== */
 
-// Criar agendamento (cliente + admin)
+// Criar agendamento (cliente + admin). Admin pode setar usuarioId.
 router.post("/", verificarToken, async (req, res) => {
->>>>>>> Stashed changes
   const parsed = agendamentoSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ erro: parsed.error.format() });
-  if (!req.usuario) return res.status(401).json({ erro: "Não autenticado" });
+  if (!parsed.success) {
+    return res.status(400).json({ erro: parsed.error.format() });
+  }
 
-<<<<<<< Updated upstream
-  const { data, horario, quadraId, esporteId, jogadoresIds = [], convidadosNomes = [] } = parsed.data;
-  const admin = isAdminTipo(req.usuario.usuarioLogadoTipo);
-  const usuarioIdBody = parsed.data.usuarioId;
-  const usuarioIdDono = admin && usuarioIdBody ? usuarioIdBody : req.usuario.usuarioLogadoId;
-=======
   const reqCustom = req as typeof req & {
     usuario?: { usuarioLogadoId: string; usuarioLogadoTipo?: string };
   };
@@ -223,22 +309,19 @@ router.post("/", verificarToken, async (req, res) => {
     convidadosNomes = [],
   } = parsed.data;
 
-  // ✅ cliente não define usuarioId; admin pode
+  // cliente não define usuarioId; admin pode
   const usuarioIdDono = isAdmin && usuarioIdBody
     ? usuarioIdBody
     : reqCustom.usuario.usuarioLogadoId;
->>>>>>> Stashed changes
 
   try {
+    // ── checagens de conflito ───────────────────────────────────────────────────
     const diaSemanaEnum = diasEnum[getDay(data)] as DiaSemana;
     const dataInicio = startOfDay(data);
     const dataFim = addDays(dataInicio, 1);
 
-    // conflito comum
+    // (1) conflito com comum existente no MESMO dia/horário/quadra (não cancelado/transferido)
     const agendamentoExistente = await prisma.agendamento.findFirst({
-<<<<<<< Updated upstream
-      where: { quadraId, horario, data: { gte: dataInicio, lt: dataFim }, status: { notIn: ["CANCELADO", "TRANSFERIDO"] } },
-=======
       where: {
         quadraId,
         horario,
@@ -252,7 +335,7 @@ router.post("/", verificarToken, async (req, res) => {
         .json({ erro: "Já existe um agendamento para essa quadra, data e horário" });
     }
 
-    // (2) conflito com PERMANENTE ATIVO — mas RESPEITANDO exceções para a data
+    // (2) conflito com PERMANENTE ATIVO — respeitando exceções
     const dataISO = toISODateUTC(data); // "YYYY-MM-DD"
     const dataUTC00 = toUtc00(dataISO); // Date em 00:00Z do mesmo dia
 
@@ -264,66 +347,58 @@ router.post("/", verificarToken, async (req, res) => {
         status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
         OR: [{ dataInicio: null }, { dataInicio: { lte: dataUTC00 } }],
       },
->>>>>>> Stashed changes
       select: { id: true },
     });
-    if (agendamentoExistente) return res.status(409).json({ erro: "Já existe um agendamento para essa quadra, data e horário" });
 
-    // conflito permanente (sem exceção)
-    const dataISO = toISODateUTC(data);
-    const dataUTC00 = toUtc00(dataISO);
-    const permanentesAtivos = await prisma.agendamentoPermanente.findMany({
-      where: { diaSemana: diaSemanaEnum, horario, quadraId, status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
-        OR: [{ dataInicio: null }, { dataInicio: { lte: dataUTC00 } }] },
-      select: { id: true },
-    });
     if (permanentesAtivos.length > 0) {
       const excecao = await prisma.agendamentoPermanenteCancelamento.findFirst({
-        where: { agendamentoPermanenteId: { in: permanentesAtivos.map(p => p.id) }, data: dataUTC00 }, select: { id: true },
+        where: {
+          agendamentoPermanenteId: { in: permanentesAtivos.map((p) => p.id) },
+          data: dataUTC00,
+        },
+        select: { id: true },
       });
-<<<<<<< Updated upstream
-      if (!excecao) return res.status(409).json({ erro: "Horário ocupado por um agendamento permanente" });
-=======
 
       if (!excecao) {
         return res.status(409).json({ erro: "Horário ocupado por um agendamento permanente" });
       }
->>>>>>> Stashed changes
     }
 
-    // convidados
+    // ── cria usuários mínimos para cada convidado ───────────────────────────────
     const convidadosCriadosIds: string[] = [];
     for (const nome of convidadosNomes) {
       const convidado = await criarConvidadoComoUsuario(nome);
       convidadosCriadosIds.push(convidado.id);
     }
-    const connectIds = Array.from(new Set<string>([usuarioIdDono, ...jogadoresIds, ...convidadosCriadosIds])).map((id) => ({ id }));
 
-<<<<<<< Updated upstream
-=======
     // ── monta todos os jogadores: dono + cadastrados + convidados (sem duplicar) ─
     const connectIds = Array.from(
       new Set<string>([usuarioIdDono, ...jogadoresIds, ...convidadosCriadosIds])
     ).map((id) => ({ id }));
 
-    // ── cria agendamento ────────────────────────────────────────────────────────
->>>>>>> Stashed changes
+    // ── cria agendamento já conectando jogadores ───────────────────────────────
     const novoAgendamento = await prisma.agendamento.create({
-      data: { data, horario, quadraId, esporteId, usuarioId: usuarioIdDono, status: "CONFIRMADO", jogadores: { connect: connectIds } },
+      data: {
+        data,
+        horario,
+        quadraId,
+        esporteId,
+        usuarioId: usuarioIdDono,
+        status: "CONFIRMADO",
+        jogadores: { connect: connectIds },
+      },
       include: {
         jogadores: { select: { id: true, nome: true, email: true } },
         usuario: { select: { id: true, nome: true, email: true } },
-        quadra: { select: { id: true, nome: true, numero: true, imagem: true } },
+        quadra: { select: { id: true, nome: true, numero: true } },
         esporte: { select: { id: true, nome: true } },
       },
     });
 
     return res.status(201).json(novoAgendamento);
-<<<<<<< Updated upstream
-  } catch (err) {
-=======
   } catch (err: any) {
-    // Concorrência (slot acabou de ser pego)
+    // 🧱 Concorrência: outro usuário confirmou o mesmo slot entre sua checagem e o create()
+    // Prisma lança P2002 (unique) e, em alguns casos de SQL bruto, pode vir 23505 (Postgres)
     if (
       (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") ||
       err?.code === "23505"
@@ -333,37 +408,11 @@ router.post("/", verificarToken, async (req, res) => {
         .json({ erro: "Este horário acabou de ser reservado por outra pessoa. Escolha outra quadra." });
     }
 
->>>>>>> Stashed changes
     console.error("Erro ao criar agendamento", err);
     return res.status(500).json({ erro: "Erro ao criar agendamento" });
   }
 });
 
-<<<<<<< Updated upstream
-/** LIST — admin vê todos; cliente vê só os dele */
-router.get("/", async (req, res) => {
-  if (!req.usuario) return res.status(401).json({ erro: "Não autenticado" });
-
-  const { data, quadraId, usuarioId } = req.query;
-  try {
-    const admin = isAdminTipo(req.usuario.usuarioLogadoTipo);
-    const where: any = { ...(quadraId ? { quadraId: String(quadraId) } : {}) };
-
-    if (admin) {
-      if (usuarioId) where.usuarioId = String(usuarioId);
-    } else {
-      // força filtro próprio e ignora query de usuarioId
-      where.usuarioId = req.usuario.usuarioLogadoId;
-    }
-
-    if (typeof data === "string" && /^\d{4}-\d{2}-\d{2}$/.test(data)) {
-      const { inicio, fim } = getUtcDayRange(data);
-      where.data = { gte: inicio, lt: fim };
-    } else if (data) {
-      where.data = new Date(String(data));
-    }
-
-=======
 // GET /agendamentos  (admin: todos; cliente: só os dele — dono ou jogador)
 router.get("/", verificarToken, async (req, res) => {
   const reqCustom = req as typeof req & {
@@ -400,25 +449,28 @@ router.get("/", verificarToken, async (req, res) => {
   }
 
   try {
->>>>>>> Stashed changes
     const agendamentos = await prisma.agendamento.findMany({
       where,
       include: {
-        quadra: { select: { id: true, nome: true, numero: true, tipoCamera: true, imagem: true } },
-        usuario: { select: { id: true, nome: true, email: true } },
-        jogadores: { select: { id: true, nome: true, email: true } },
-        esporte: { select: { id: true, nome: true } },
+        quadra: {
+          select: { id: true, nome: true, numero: true, tipoCamera: true, imagem: true },
+        },
+        usuario: {
+          select: { id: true, nome: true, email: true },
+        },
+        jogadores: {
+          select: { id: true, nome: true, email: true },
+        },
+        esporte: {
+          select: { id: true, nome: true },
+        },
       },
       orderBy: [{ data: "asc" }, { horario: "asc" }],
     });
 
-<<<<<<< Updated upstream
-    const resposta = agendamentos.map(a => ({
-=======
     const sanitizeEmail = (email?: string | null) => (isAdmin ? email : undefined);
 
     const resposta = agendamentos.map((a) => ({
->>>>>>> Stashed changes
       ...a,
       usuario: a.usuario
         ? { ...a.usuario, email: sanitizeEmail(a.usuario.email) }
@@ -434,23 +486,22 @@ router.get("/", verificarToken, async (req, res) => {
   }
 });
 
-<<<<<<< Updated upstream
-/** GET /agendamentos/me — mantém (já exige login pelo use) */
-router.get("/me", async (req, res) => {
-=======
-// GET /agendamentos/me  -> comuns CONFIRMADOS + permanentes ATIVOS
+// GET /agendamentos/me  -> comuns CONFIRMADOS + permanentes ATIVOS (próxima data respeita horário/exceções)
 router.get("/me", verificarToken, async (req, res) => {
   const reqCustom = req as typeof req & {
     usuario?: { usuarioLogadoId: string; usuarioLogadoNome?: string; usuarioLogadoTipo?: string };
   };
   if (!reqCustom.usuario) return res.status(401).json({ erro: "Não autenticado" });
 
->>>>>>> Stashed changes
   try {
-    const usuarioId = req.usuario!.usuarioLogadoId;
+    const usuarioId = reqCustom.usuario.usuarioLogadoId;
 
+    // 1) Comuns CONFIRMADOS onde o usuário é dono ou jogador
     const comunsConfirmados = await prisma.agendamento.findMany({
-      where: { status: "CONFIRMADO", OR: [{ usuarioId }, { jogadores: { some: { id: usuarioId } } }] },
+      where: {
+        status: "CONFIRMADO",
+        OR: [{ usuarioId }, { jogadores: { some: { id: usuarioId } } }],
+      },
       include: {
         quadra: { select: { id: true, nome: true, numero: true, imagem: true } },
         esporte: { select: { id: true, nome: true } },
@@ -461,70 +512,65 @@ router.get("/me", verificarToken, async (req, res) => {
     const respComuns = comunsConfirmados.map((a) => {
       const quadraLogoUrl = resolveQuadraImg(a.quadra?.imagem) || "/quadra.png";
       return {
-        id: a.id, nome: a.esporte?.nome ?? "Quadra",
+        id: a.id,
+        nome: a.esporte?.nome ?? "Quadra",
         local: a.quadra ? `${a.quadra.nome} - Nº ${a.quadra.numero}` : "",
-<<<<<<< Updated upstream
-        horario: a.horario, tipoReserva: "COMUM" as const, status: a.status,
-        logoUrl: quadraLogoUrl, data: a.data.toISOString().slice(0, 10),
-        quadraNome: a.quadra?.nome ?? "", quadraNumero: a.quadra?.numero ?? null, quadraLogoUrl, esporteNome: a.esporte?.nome ?? "",
-=======
         horario: a.horario,
         tipoReserva: "COMUM" as const,
         status: a.status,
         logoUrl: quadraLogoUrl,
-        data: a.data.toISOString().slice(0, 10),
+        data: a.data.toISOString().slice(0, 10), // data efetiva do comum
         quadraNome: a.quadra?.nome ?? "",
         quadraNumero: a.quadra?.numero ?? null,
         quadraLogoUrl,
         esporteNome: a.esporte?.nome ?? "",
->>>>>>> Stashed changes
       };
     });
 
+    // 2) Permanentes ATIVOS onde o usuário é dono
     const permanentes = await prisma.agendamentoPermanente.findMany({
-      where: { usuarioId, status: { notIn: ["CANCELADO", "TRANSFERIDO"] } },
-      include: { quadra: { select: { id: true, nome: true, numero: true, imagem: true } }, esporte: { select: { id: true, nome: true } } },
+      where: {
+        usuarioId,
+        status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+      },
+      include: {
+        quadra: { select: { id: true, nome: true, numero: true, imagem: true } },
+        esporte: { select: { id: true, nome: true } },
+      },
       orderBy: [{ diaSemana: "asc" }, { horario: "asc" }],
     });
 
+    // pega próxima data pulando exceções E respeitando horário (hoje antes/depois)
     const respPermanentes = await Promise.all(
       permanentes.map(async (p) => {
         const quadraLogoUrl = resolveQuadraImg(p.quadra?.imagem) || "/quadra.png";
-<<<<<<< Updated upstream
-        const proximaData = await proximaDataPermanenteSemExcecao({ id: p.id, diaSemana: p.diaSemana as DiaSemana, dataInicio: p.dataInicio ?? null });
-=======
         const proximaData = await proximaDataPermanenteSemExcecao({
           id: p.id,
           diaSemana: p.diaSemana as DiaSemana,
           dataInicio: p.dataInicio ?? null,
-          horario: p.horario,
+          horario: p.horario, // 👈 respeita horário em SP
         });
 
->>>>>>> Stashed changes
         return {
-          id: p.id, nome: p.esporte?.nome ?? "Quadra",
+          id: p.id,
+          nome: p.esporte?.nome ?? "Quadra",
           local: p.quadra ? `${p.quadra.nome} - Nº ${p.quadra.numero}` : "",
-<<<<<<< Updated upstream
-          horario: p.horario, tipoReserva: "PERMANENTE" as const, status: p.status,
-          logoUrl: quadraLogoUrl, data: null, diaSemana: p.diaSemana, proximaData,
-          quadraNome: p.quadra?.nome ?? "", quadraNumero: p.quadra?.numero ?? null, quadraLogoUrl, esporteNome: p.esporte?.nome ?? "",
-=======
           horario: p.horario,
           tipoReserva: "PERMANENTE" as const,
           status: p.status,
           logoUrl: quadraLogoUrl,
-          data: null,
-          diaSemana: p.diaSemana,
-          proximaData,
+          data: null, // permanentes não têm uma data fixa
+          diaSemana: p.diaSemana, // exibir "toda SEGUNDA"
+          proximaData, // já pulando exceções e respeitando horário
           quadraNome: p.quadra?.nome ?? "",
           quadraNumero: p.quadra?.numero ?? null,
           quadraLogoUrl,
           esporteNome: p.esporte?.nome ?? "",
->>>>>>> Stashed changes
         };
       })
     );
 
+    // 3) Junta e ordena por (data|proximaData) + horário
     const tudo = [...respComuns, ...respPermanentes].sort((a: any, b: any) => {
       const da = a.data || a.proximaData || "";
       const db = b.data || b.proximaData || "";
@@ -539,14 +585,22 @@ router.get("/me", verificarToken, async (req, res) => {
   }
 });
 
-/** Transferidos do usuário logado (já autenticado pelo use) */
-router.get("/transferidos/me", async (req, res) => {
+// 🔎 Lista transferências feitas pelo usuário logado + "para quem" foi transferido
+router.get("/transferidos/me", verificarToken, async (req, res) => {
+  const reqCustom = req as typeof req & {
+    usuario?: { usuarioLogadoId: string; usuarioLogadoTipo?: string };
+  };
+  if (!reqCustom.usuario) return res.status(401).json({ erro: "Não autenticado" });
+
   try {
-    const usuarioId = req.usuario!.usuarioLogadoId;
+    const usuarioId = reqCustom.usuario.usuarioLogadoId;
 
     const transferidos = await prisma.agendamento.findMany({
       where: { usuarioId, status: "TRANSFERIDO" },
-      include: { quadra: { select: { id: true, nome: true, numero: true, imagem: true } }, esporte: { select: { id: true, nome: true } } },
+      include: {
+        quadra: { select: { id: true, nome: true, numero: true, imagem: true } },
+        esporte: { select: { id: true, nome: true } },
+      },
       orderBy: [{ data: "desc" }, { horario: "desc" }],
     });
 
@@ -554,24 +608,17 @@ router.get("/transferidos/me", async (req, res) => {
       transferidos.map(async (t) => {
         const novo = await prisma.agendamento.findFirst({
           where: {
-            id: { not: t.id }, data: t.data, horario: t.horario,
-            quadraId: t.quadraId, esporteId: t.esporteId, status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+            id: { not: t.id },
+            data: t.data,
+            horario: t.horario,
+            quadraId: t.quadraId,
+            esporteId: t.esporteId,
+            status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
           },
           include: { usuario: { select: { id: true, nome: true, email: true } } },
         });
 
         const quadraLogoUrl = resolveQuadraImg(t.quadra?.imagem);
-<<<<<<< Updated upstream
-        return {
-          id: t.id, data: t.data.toISOString().slice(0, 10), horario: t.horario, status: t.status,
-          quadraNome: t.quadra?.nome ?? "", quadraNumero: t.quadra?.numero ?? null, quadraImagem: t.quadra?.imagem ?? null, quadraLogoUrl,
-          esporteNome: t.esporte?.nome ?? "", transferidoPara: novo?.usuario ? { id: novo.usuario.id, nome: novo.usuario.nome, email: novo.usuario.email } : null,
-=======
-
-        // mascarar email do "novo dono" (não-admin)
-        const novoUsuario = novo?.usuario
-          ? { id: novo.usuario.id, nome: novo.usuario.nome, email: undefined as string | undefined }
-          : null;
 
         return {
           id: t.id,
@@ -583,8 +630,9 @@ router.get("/transferidos/me", async (req, res) => {
           quadraImagem: t.quadra?.imagem ?? null,
           quadraLogoUrl,
           esporteNome: t.esporte?.nome ?? "",
-          transferidoPara: novoUsuario,
->>>>>>> Stashed changes
+          transferidoPara: novo?.usuario
+            ? { id: novo.usuario.id, nome: novo.usuario.nome, email: undefined }
+            : null,
           novoAgendamentoId: novo?.id ?? null,
         };
       })
@@ -597,11 +645,7 @@ router.get("/transferidos/me", async (req, res) => {
   }
 });
 
-<<<<<<< Updated upstream
-/** Finaliza vencidos — somente ADMIN (manual) */
-router.post("/_finaliza-vencidos", requireAdmin, async (_req, res) => {
-=======
-// 🚀 Rota manual para finalizar vencidos (restringida)
+// 🚀 Rota manual para finalizar vencidos (restrita a admin)
 router.post("/_finaliza-vencidos", verificarToken, async (req, res) => {
   const reqCustom = req as typeof req & {
     usuario?: { usuarioLogadoTipo?: string };
@@ -611,36 +655,15 @@ router.post("/_finaliza-vencidos", verificarToken, async (req, res) => {
     return res.status(403).json({ erro: "Acesso negado" });
   }
 
->>>>>>> Stashed changes
   try {
     await finalizarAgendamentosVencidos();
-    return res.json({ ok: true });
+    res.json({ ok: true });
   } catch (e) {
     console.error(e);
-    return res.status(500).json({ erro: "Falha ao finalizar vencidos" });
+    res.status(500).json({ erro: "Falha ao finalizar vencidos" });
   }
 });
 
-<<<<<<< Updated upstream
-/** Detalhes de um agendamento — dono ou admin */
-router.get(
-  "/:id",
-  requireOwnerByRecord(async (req) => {
-    const reg = await prisma.agendamento.findUnique({ where: { id: req.params.id }, select: { usuarioId: true } });
-    return reg?.usuarioId ?? null;
-  }),
-  async (req, res) => {
-    const { id } = req.params;
-    try {
-      const agendamento = await prisma.agendamento.findUnique({
-        where: { id },
-        include: {
-          usuario: { select: { id: true, nome: true, email: true } },
-          jogadores: { select: { id: true, nome: true, email: true } },
-          quadra: { select: { nome: true, numero: true } },
-          esporte: { select: { nome: true } },
-        },
-=======
 // 📄 Detalhes de um agendamento comum (admin, dono ou jogador)
 router.get("/:id", verificarToken, async (req, res) => {
   const reqCustom = req as typeof req & {
@@ -692,7 +715,7 @@ router.get("/:id", verificarToken, async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ erro: "Erro ao buscar agendamento" });
+    return res.status(500).json({ erro: "Erro ao buscar agendamento" });
   }
 });
 
@@ -708,12 +731,13 @@ router.post("/cancelar/:id", verificarToken, async (req, res) => {
   }
 
   try {
+    // carrega campos necessários
     const ag = await prisma.agendamento.findUnique({
       where: { id },
       select: {
         id: true,
-        data: true,
-        horario: true,
+        data: true, // Date (00:00Z do dia local)
+        horario: true, // "HH:mm"
         usuarioId: true,
         status: true,
         createdAt: true,
@@ -735,25 +759,30 @@ router.post("/cancelar/:id", verificarToken, async (req, res) => {
 
     // ===== Regra de tempo (para CLIENTE/dono) =====
     if (!isAdmin) {
+      // Agora (local SP)
       const now = new Date();
       const nowYMD = localYMD(now);
       const nowHM = localHM(now);
       const nowMs = msFromLocalYMDHM(nowYMD, nowHM);
 
-      const schedYMD = ag.data.toISOString().slice(0, 10);
-      const schedHM = ag.horario;
+      // Início do agendamento (local SP)
+      // Obs: ag.data está como "00:00Z" do mesmo YYYY-MM-DD que o DIA local pretendido.
+      const schedYMD = ag.data.toISOString().slice(0, 10); // "YYYY-MM-DD" do dia local
+      const schedHM = ag.horario; // "HH:mm"
       const schedMs = msFromLocalYMDHM(schedYMD, schedHM);
 
+      // Se já passou, não cancela
       if (schedMs <= nowMs) {
         return res
           .status(422)
           .json({ erro: "Não é possível cancelar um agendamento já iniciado ou finalizado." });
       }
 
-      const minutesToStart = Math.floor((schedMs - nowMs) / 60000);
+      const minutesToStart = Math.floor((schedMs - nowMs) / 60000); // quanto falta
       const canBy12h = minutesToStart >= 12 * 60;
 
       if (!canBy12h) {
+        // Janela de graça de 15 minutos a partir da CRIAÇÃO, válida sempre que < 12h para o início
         const createdYMD = localYMD(ag.createdAt);
         const createdHM = localHM(ag.createdAt);
         const createdMs = msFromLocalYMDHM(createdYMD, createdHM);
@@ -770,6 +799,7 @@ router.post("/cancelar/:id", verificarToken, async (req, res) => {
       }
     }
 
+    // Efetiva o cancelamento (idempotência simples: só atualiza se ainda não cancelado)
     const atualizado = await prisma.agendamento.update({
       where: { id },
       data: {
@@ -788,7 +818,7 @@ router.post("/cancelar/:id", verificarToken, async (req, res) => {
   }
 });
 
-// Delete (admin-only)
+// Deletar (apenas admin)
 router.delete("/:id", verificarToken, async (req, res) => {
   const reqCustom = req as typeof req & {
     usuario?: { usuarioLogadoTipo?: string };
@@ -807,10 +837,10 @@ router.delete("/:id", verificarToken, async (req, res) => {
     }
 
     await prisma.agendamento.delete({ where: { id } });
-    res.json({ message: "Agendamento deletado com sucesso" });
+    return res.json({ message: "Agendamento deletado com sucesso" });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ erro: "Erro ao deletar agendamento" });
+    return res.status(500).json({ erro: "Erro ao deletar agendamento" });
   }
 });
 
@@ -832,6 +862,7 @@ router.patch("/:id/transferir", verificarToken, async (req, res) => {
   }
 
   try {
+    // 1) busca agendamento original + info necessária
     const agendamento = await prisma.agendamento.findUnique({
       where: { id },
       include: { jogadores: true },
@@ -845,11 +876,16 @@ router.patch("/:id/transferir", verificarToken, async (req, res) => {
       return res.status(403).json({ erro: "Sem permissão para transferir este agendamento" });
     }
 
-    const novoUsuario = await prisma.usuario.findUnique({ where: { id: novoUsuarioId } });
+    // 2) valida novo usuário
+    const novoUsuario = await prisma.usuario.findUnique({
+      where: { id: novoUsuarioId },
+    });
     if (!novoUsuario) {
       return res.status(404).json({ erro: "Novo usuário não encontrado" });
     }
 
+    // 3) transação: marca original como TRANSFERIDO + zera jogadores,
+    //    e cria o novo com apenas o novo usuário na lista de jogadores
     const [_, novoAgendamento] = await prisma.$transaction([
       prisma.agendamento.update({
         where: { id },
@@ -865,12 +901,17 @@ router.patch("/:id/transferir", verificarToken, async (req, res) => {
         data: {
           data: agendamento.data,
           horario: agendamento.horario,
-          usuarioId: novoUsuarioId,
+          usuarioId: novoUsuarioId, // dono do novo agendamento
           quadraId: agendamento.quadraId,
           esporteId: agendamento.esporteId,
+          // Apenas o novo usuário como jogador
           jogadores: { connect: [{ id: novoUsuarioId }] },
         },
-        include: { usuario: true, jogadores: true, quadra: true },
+        include: {
+          usuario: true,
+          jogadores: true,
+          quadra: true,
+        },
       }),
     ]);
 
@@ -925,6 +966,7 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
   }
 
   try {
+    // 2) Carrega agendamento
     const agendamento = await prisma.agendamento.findUnique({
       where: { id },
       include: { jogadores: { select: { id: true } } },
@@ -937,12 +979,14 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
       return res.status(400).json({ erro: "Não é possível alterar jogadores deste agendamento" });
     }
 
+    // 3) Autorização
     const isAdmin = isAdminRole(reqCustom.usuario.usuarioLogadoTipo);
     const isOwner = agendamento.usuarioId === reqCustom.usuario.usuarioLogadoId;
     if (!isAdmin && !isOwner) {
       return res.status(403).json({ erro: "Sem permissão para alterar este agendamento" });
     }
 
+    // 4) Buscar usuários válidos por ID (se houver)
     const usuariosValidos = jogadoresIds.length
       ? await prisma.usuario.findMany({
           where: { id: { in: jogadoresIds } },
@@ -954,6 +998,7 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
       return res.status(400).json({ erro: "Um ou mais jogadores não existem" });
     }
 
+    // 5) Criar “convidados” (usuarios mínimos) e coletar IDs
     const hashDefault = await bcrypt.hash("convidado123", 10);
 
     const convidadosCriados: Array<{ id: string }> = [];
@@ -970,227 +1015,30 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
           tipo: "CLIENTE",
         },
         select: { id: true },
->>>>>>> Stashed changes
       });
-      if (!agendamento) return res.status(404).json({ erro: "Agendamento não encontrado" });
-      return res.json({
-        id: agendamento.id,
-        tipoReserva: "COMUM",
-        dia: agendamento.data.toISOString().split("T")[0],
-        horario: agendamento.horario,
-        usuario: agendamento.usuario.nome,
-        usuarioId: agendamento.usuario.id,
-        esporte: agendamento.esporte.nome,
-        quadra: `${agendamento.quadra.nome} (Nº ${agendamento.quadra.numero})`,
-        jogadores: agendamento.jogadores.map(j => ({ nome: j.nome, email: j.email })),
-      });
-    } catch (err) {
-      console.error(err);
-      return res.status(500).json({ erro: "Erro ao buscar agendamento" });
+
+      convidadosCriados.push({ id: novo.id });
     }
-  }
-);
 
-<<<<<<< Updated upstream
-/** Cancelar — dono ou admin; usa id do token como canceladoPorId; bloqueia status inválidos/passado */
-router.post(
-  "/cancelar/:id",
-  requireOwnerByRecord(async (req) => {
-    const reg = await prisma.agendamento.findUnique({ where: { id: req.params.id }, select: { usuarioId: true } });
-    return reg?.usuarioId ?? null;
-  }),
-  async (req, res) => {
-    const { id } = req.params;
-    try {
-      const ag = await prisma.agendamento.findUnique({ where: { id } });
-      if (!ag) return res.status(404).json({ erro: "Agendamento não encontrado" });
-=======
+    // 6) Evitar duplicatas (IDs já conectados no agendamento)
     const jaConectados = new Set(agendamento.jogadores.map((j) => j.id));
->>>>>>> Stashed changes
 
-      if (["CANCELADO", "TRANSFERIDO", "FINALIZADO"].includes(ag.status)) {
-        return res.status(400).json({ erro: "Agendamento não pode ser cancelado nesse status" });
-      }
+    const idsNovosExistentes = usuariosValidos
+      .map((u) => u.id)
+      .filter((uid) => !jaConectados.has(uid));
 
-      // (opcional) bloquear cancelamento no passado
-      const agora = new Date();
-      const { hojeUTC00, amanhaUTC00 } = getStoredUtcBoundaryForLocalDay(agora);
-      const hh = String(agora.getHours()).padStart(2, "0"), mm = String(agora.getMinutes()).padStart(2, "0");
-      const agoraHHMM = `${hh}:${mm}`;
-      const isPast = ag.data < hojeUTC00 || (ag.data >= hojeUTC00 && ag.data < amanhaUTC00 && ag.horario < agoraHHMM);
-      if (isPast) return res.status(400).json({ erro: "Não é possível cancelar um agendamento passado" });
+    const idsConvidados = convidadosCriados.map((c) => c.id);
 
-<<<<<<< Updated upstream
-      const atualizado = await prisma.agendamento.update({
-=======
+    // Se não há nada novo, retorna o agendamento atual
     if (idsNovosExistentes.length === 0 && idsConvidados.length === 0) {
       const atual = await prisma.agendamento.findUnique({
->>>>>>> Stashed changes
         where: { id },
-        data: { status: "CANCELADO", canceladoPorId: req.usuario!.usuarioLogadoId },
-      });
-      return res.json({ mensagem: "Agendamento cancelado com sucesso.", agendamento: atualizado });
-    } catch (error) {
-      console.error("Erro ao cancelar agendamento:", error);
-      return res.status(500).json({ erro: "Erro ao cancelar agendamento." });
-    }
-  }
-);
-
-/** Delete — dono ou admin */
-router.delete(
-  "/:id",
-  requireOwnerByRecord(async (req) => {
-    const reg = await prisma.agendamento.findUnique({ where: { id: req.params.id }, select: { usuarioId: true } });
-    return reg?.usuarioId ?? null;
-  }),
-  async (req, res) => {
-    const { id } = req.params;
-    try {
-      const agendamento = await prisma.agendamento.findUnique({ where: { id } });
-      if (!agendamento) return res.status(404).json({ erro: "Agendamento não encontrado" });
-      await prisma.agendamento.delete({ where: { id } });
-      return res.json({ mensagem: "Agendamento deletado com sucesso" });
-    } catch (err) {
-      console.error(err);
-      return res.status(500).json({ erro: "Erro ao deletar agendamento" });
-    }
-  }
-);
-
-/** Transferir — dono ou admin; define transferidoPorId pelo token */
-router.patch(
-  "/:id/transferir",
-  requireOwnerByRecord(async (req) => {
-    const reg = await prisma.agendamento.findUnique({ where: { id: req.params.id }, select: { usuarioId: true } });
-    return reg?.usuarioId ?? null;
-  }),
-  async (req, res) => {
-    const { id } = req.params;
-    const bodySchema = z.object({ novoUsuarioId: z.string().uuid() });
-    const parsed = bodySchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ erro: "Dados inválidos", detalhes: parsed.error.errors });
-
-    const { novoUsuarioId } = parsed.data;
-
-    try {
-      const agendamento = await prisma.agendamento.findUnique({ where: { id }, include: { jogadores: true } });
-      if (!agendamento) return res.status(404).json({ erro: "Agendamento não encontrado" });
-      if (["CANCELADO", "TRANSFERIDO", "FINALIZADO"].includes(agendamento.status)) {
-        return res.status(400).json({ erro: "Este agendamento não pode ser transferido" });
-      }
-      if (novoUsuarioId === agendamento.usuarioId) {
-        return res.status(400).json({ erro: "Novo usuário é o mesmo dono atual" });
-      }
-
-      const novoUsuario = await prisma.usuario.findUnique({ where: { id: novoUsuarioId }, select: { id: true } });
-      if (!novoUsuario) return res.status(404).json({ erro: "Novo usuário não encontrado" });
-
-      const [agendamentoOriginalAtualizado, novoAgendamento] = await prisma.$transaction([
-        prisma.agendamento.update({
-          where: { id },
-          data: { status: "TRANSFERIDO", transferidoPorId: req.usuario!.usuarioLogadoId, jogadores: { set: [] } },
-          include: { jogadores: true },
-        }),
-        prisma.agendamento.create({
-          data: {
-            data: agendamento.data, horario: agendamento.horario,
-            usuarioId: novoUsuarioId, quadraId: agendamento.quadraId, esporteId: agendamento.esporteId,
-            jogadores: { connect: [{ id: novoUsuarioId }] },
-          },
-          include: { usuario: true, jogadores: true, quadra: true },
-        }),
-      ]);
-
-      return res.status(200).json({
-        mensagem: "Agendamento transferido com sucesso",
-        agendamentoOriginalId: id,
-        novoAgendamento: {
-          id: novoAgendamento.id,
-          data: novoAgendamento.data,
-          horario: novoAgendamento.horario,
-          usuario: novoAgendamento.usuario ? { id: novoAgendamento.usuario.id, nome: novoAgendamento.usuario.nome, email: novoAgendamento.usuario.email } : null,
-          jogadores: novoAgendamento.jogadores.map((j) => ({ id: j.id, nome: j.nome, email: j.email })),
-          quadra: novoAgendamento.quadra ? { id: novoAgendamento.quadra.id, nome: novoAgendamento.quadra.nome, numero: novoAgendamento.quadra.numero } : null,
-        },
-      });
-    } catch (error) {
-      console.error("Erro ao transferir agendamento:", error);
-      return res.status(500).json({ erro: "Erro ao transferir agendamento" });
-    }
-  }
-);
-
-/** Jogadores — dono ou admin; usa helper de convidado seguro */
-router.patch(
-  "/:id/jogadores",
-  requireOwnerByRecord(async (req) => {
-    const reg = await prisma.agendamento.findUnique({ where: { id: req.params.id }, select: { usuarioId: true } });
-    return reg?.usuarioId ?? null;
-  }),
-  async (req, res) => {
-    const parsed = addJogadoresSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ erro: parsed.error.format() });
-    const { jogadoresIds, convidadosNomes } = parsed.data;
-    const { id } = req.params;
-
-    try {
-      const agendamento = await prisma.agendamento.findUnique({
-        where: { id }, include: { jogadores: { select: { id: true } } },
-      });
-      if (!agendamento) return res.status(404).json({ erro: "Agendamento não encontrado" });
-      if (["CANCELADO", "TRANSFERIDO"].includes(agendamento.status)) {
-        return res.status(400).json({ erro: "Não é possível alterar jogadores deste agendamento" });
-      }
-
-      const usuariosValidos = jogadoresIds.length
-        ? await prisma.usuario.findMany({ where: { id: { in: jogadoresIds } }, select: { id: true } })
-        : [];
-
-      if (usuariosValidos.length !== jogadoresIds.length) {
-        return res.status(400).json({ erro: "Um ou mais jogadores não existem" });
-      }
-
-      const convidadosCriados: Array<{ id: string }> = [];
-      for (const nome of convidadosNomes) {
-        const convidado = await criarConvidadoComoUsuario(nome);
-        convidadosCriados.push({ id: convidado.id });
-      }
-
-      const jaConectados = new Set(agendamento.jogadores.map((j) => j.id));
-      const idsNovosExistentes = usuariosValidos.map((u) => u.id).filter((uid) => !jaConectados.has(uid));
-      const idsConvidados = convidadosCriados.map((c) => c.id);
-
-      if (idsNovosExistentes.length === 0 && idsConvidados.length === 0) {
-        const atual = await prisma.agendamento.findUnique({
-          where: { id }, include: { usuario: true, jogadores: true, quadra: true, esporte: true },
-        });
-        return res.json(atual);
-      }
-
-      const atualizado = await prisma.agendamento.update({
-        where: { id },
-        data: { jogadores: { connect: [...idsNovosExistentes.map((jid) => ({ id: jid })), ...idsConvidados.map((jid) => ({ id: jid }))] } },
         include: { usuario: true, jogadores: true, quadra: true, esporte: true },
       });
-
-      return res.json({
-        id: atualizado.id,
-        data: atualizado.data,
-        horario: atualizado.horario,
-        status: atualizado.status,
-        usuario: atualizado.usuario ? { id: atualizado.usuario.id, nome: atualizado.usuario.nome, email: atualizado.usuario.email } : null,
-        jogadores: atualizado.jogadores.map((j) => ({ id: j.id, nome: j.nome, email: j.email })),
-        quadra: atualizado.quadra ? { id: atualizado.quadra.id, nome: atualizado.quadra.nome, numero: atualizado.quadra.numero } : null,
-        esporte: atualizado.esporte ? { id: atualizado.esporte.id, nome: atualizado.esporte.nome } : null,
-      });
-    } catch (err) {
-      console.error("Erro ao adicionar jogadores:", err);
-      return res.status(500).json({ erro: "Erro ao adicionar jogadores ao agendamento" });
+      return res.json(atual);
     }
-<<<<<<< Updated upstream
-=======
 
+    // 7) Conecta tudo de uma vez
     const atualizado = await prisma.agendamento.update({
       where: { id },
       data: {
@@ -1229,8 +1077,7 @@ router.patch(
   } catch (err) {
     console.error("Erro ao adicionar jogadores:", err);
     return res.status(500).json({ erro: "Erro ao adicionar jogadores ao agendamento" });
->>>>>>> Stashed changes
   }
-);
+});
 
 export default router;
