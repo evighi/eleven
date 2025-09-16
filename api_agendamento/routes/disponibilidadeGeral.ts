@@ -111,14 +111,6 @@ router.get("/geral", async (req, res) => {
             horario: horario as string,
             diaSemana: diaSemanaFinal,
             status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
-            ...(range
-              ? {
-                // respeita dataInicio (só vale se já começou)
-                OR: [{ dataInicio: null }, { dataInicio: { lte: range.inicio } }],
-                // ignora se houver exceção exatamente nessa data
-                cancelamentos: { none: { data: { gte: range.inicio, lt: range.fim } } },
-              }
-              : {}),
           },
           select: {
             id: true,
@@ -127,10 +119,27 @@ router.get("/geral", async (req, res) => {
         });
 
         if (per) {
-          conflitoPermanente = {
-            id: per.id,
-            usuario: per.usuario as UsuarioSelecionado,
-          };
+          if (range) {
+            const temExcecao = await prisma.agendamentoPermanenteCancelamento.findFirst({
+              where: {
+                agendamentoPermanenteId: per.id,
+                data: { gte: range.inicio, lt: range.fim },
+              },
+              select: { id: true },
+            });
+            if (!temExcecao) {
+              conflitoPermanente = {
+                id: per.id,
+                usuario: per.usuario as UsuarioSelecionado,
+              };
+            }
+          } else {
+            // sem data específica, mantenha o conflito
+            conflitoPermanente = {
+              id: per.id,
+              usuario: per.usuario as UsuarioSelecionado,
+            };
+          }
         }
 
         // 2) Comum (só dá pra checar se "data" foi informada)
@@ -215,7 +224,7 @@ router.get("/geral", async (req, res) => {
       {} as Record<string, typeof quadrasDisponibilidade[number][]>
     );
 
-    // -------------------- CHURRASQUEIRAS (agora comum = data + turno) --------------------
+    // -------------------- CHURRASQUEIRAS (sem exceções por dia) --------------------
     const churrasqueiras = await prisma.churrasqueira.findMany();
     const turnos: Turno[] = ["DIA", "NOITE"];
 
@@ -223,21 +232,12 @@ router.get("/geral", async (req, res) => {
       churrasqueiras.map(async (churrasqueira) => {
         const disponibilidadesPorTurno = await Promise.all(
           turnos.map(async (turno) => {
-            // PERMANENTE: ativo no dia/turno. Se "data" veio (range),
-            // respeita dataInicio <= data E ignora se houver exceção nesse dia.
             const per = await prisma.agendamentoPermanenteChurrasqueira.findFirst({
               where: {
-                churrasqueiraId: churrasqueira.id,
                 diaSemana: diaSemanaFinal,
                 turno,
+                churrasqueiraId: churrasqueira.id,
                 status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
-                ...(range
-                  ? {
-                    OR: [{ dataInicio: null }, { dataInicio: { lte: range.inicio } }],
-                    // 👇 linha que faz desconsiderar o permanente quando há exceção para a data
-                    cancelamentos: { none: { data: { gte: range.inicio, lt: range.fim } } },
-                  }
-                  : {}),
               },
               select: {
                 id: true,
@@ -245,22 +245,26 @@ router.get("/geral", async (req, res) => {
               },
             });
 
-            // COMUM: só checa se "data" foi informada
+            // depois (✅ usa data + turno para comum; se não veio "data", não dá pra checar comum)
             let com: { id: string; usuario: UsuarioSelecionado } | null = null;
+
             if (range) {
-              const c = await prisma.agendamentoChurrasqueira.findFirst({
+              com = await prisma.agendamentoChurrasqueira.findFirst({
                 where: {
-                  churrasqueiraId: churrasqueira.id,
-                  data: { gte: range.inicio, lt: range.fim },
+                  data: { gte: range.inicio, lt: range.fim }, // ✅ filtra pelo dia específico
                   turno,
+                  churrasqueiraId: churrasqueira.id,
                   status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
                 },
                 select: {
                   id: true,
+                  // ⬇️ ajuste o nome da relação conforme seu schema:
                   usuario: { select: { nome: true, email: true, celular: true } },
+                  // Se der erro aqui, troque por:
+                  // user: { select: { nome: true, email: true, celular: true } },
+                  // ou o nome correto no seu schema.
                 },
               });
-              if (c) com = { id: c.id, usuario: c.usuario as UsuarioSelecionado };
             }
 
             let tipoReserva: "permanente" | "comum" | null = null;
@@ -335,13 +339,11 @@ router.get("/dia", async (req, res) => {
       orderBy: { numero: "asc" },
     });
 
+    // Permanentes do dia-da-semana, removendo os que têm exceção no dia
     const permanentes = await prisma.agendamentoPermanente.findMany({
       where: {
         diaSemana: diaSemanaFinal,
         status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
-        // só considera o permanente se já começou até a data do "dia"
-        OR: [{ dataInicio: null }, { dataInicio: { lte: inicio } }],
-        // e ignora se houver exceção nessa data
         cancelamentos: { none: { data: { gte: inicio, lt: fim } } },
       },
       select: {

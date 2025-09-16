@@ -124,6 +124,10 @@ function toUtc00(isoYYYYMMDD: string) {
 const prisma = new PrismaClient();
 const router = Router();
 
+/** ===== Helpers de domínio/RBAC ===== */
+const isAdminRole = (t?: string) =>
+  ["ADMIN_MASTER", "ADMIN_ATENDENTE", "ADMIN_PROFESSORES"].includes(t || "");
+
 /**
  * Calcula a PRÓXIMA data (YYYY-MM-DD) para um permanente,
  * PULANDO as datas já marcadas como exceção e CONSIDERANDO o horário.
@@ -277,6 +281,9 @@ if (!globalAny.__cronFinalizaVencidos__) {
   globalAny.__cronFinalizaVencidos__ = true;
 }
 
+/** ================== ROTAS ================== */
+
+// Criar agendamento (cliente + admin). Admin pode setar usuarioId.
 router.post("/", verificarToken, async (req, res) => {
   const parsed = agendamentoSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -284,11 +291,13 @@ router.post("/", verificarToken, async (req, res) => {
   }
 
   const reqCustom = req as typeof req & {
-    usuario?: { usuarioLogadoId: string };
+    usuario?: { usuarioLogadoId: string; usuarioLogadoTipo?: string };
   };
   if (!reqCustom.usuario) {
     return res.status(401).json({ erro: "Não autenticado" });
   }
+
+  const isAdmin = isAdminRole(reqCustom.usuario.usuarioLogadoTipo);
 
   const {
     data,
@@ -300,8 +309,10 @@ router.post("/", verificarToken, async (req, res) => {
     convidadosNomes = [],
   } = parsed.data;
 
-  // dono = quem veio no body (admin) OU o usuário do token (cliente)
-  const usuarioIdDono = usuarioIdBody || reqCustom.usuario.usuarioLogadoId;
+  // cliente não define usuarioId; admin pode
+  const usuarioIdDono = isAdmin && usuarioIdBody
+    ? usuarioIdBody
+    : reqCustom.usuario.usuarioLogadoId;
 
   try {
     // ── checagens de conflito ───────────────────────────────────────────────────
@@ -324,9 +335,7 @@ router.post("/", verificarToken, async (req, res) => {
         .json({ erro: "Já existe um agendamento para essa quadra, data e horário" });
     }
 
-    // (2) conflito com PERMANENTE ATIVO — mas RESPEITANDO exceções para a data
-    //    - considera apenas permanentes ativos (não cancelados/transferidos)
-    //    - considera dataInicio <= data (ou null)
+    // (2) conflito com PERMANENTE ATIVO — respeitando exceções
     const dataISO = toISODateUTC(data); // "YYYY-MM-DD"
     const dataUTC00 = toUtc00(dataISO); // Date em 00:00Z do mesmo dia
 
@@ -342,7 +351,6 @@ router.post("/", verificarToken, async (req, res) => {
     });
 
     if (permanentesAtivos.length > 0) {
-      // Há pelo menos um permanente no slot: só bloqueia se NÃO houver exceção na data
       const excecao = await prisma.agendamentoPermanenteCancelamento.findFirst({
         where: {
           agendamentoPermanenteId: { in: permanentesAtivos.map((p) => p.id) },
@@ -354,7 +362,6 @@ router.post("/", verificarToken, async (req, res) => {
       if (!excecao) {
         return res.status(409).json({ erro: "Horário ocupado por um agendamento permanente" });
       }
-      // se tiver exceção, está liberado para criar o comum
     }
 
     // ── cria usuários mínimos para cada convidado ───────────────────────────────
@@ -406,25 +413,42 @@ router.post("/", verificarToken, async (req, res) => {
   }
 });
 
-router.get("/", async (req, res) => {
-  const { data, quadraId, usuarioId } = req.query;
+// GET /agendamentos  (admin: todos; cliente: só os dele — dono ou jogador)
+router.get("/", verificarToken, async (req, res) => {
+  const reqCustom = req as typeof req & {
+    usuario?: { usuarioLogadoId: string; usuarioLogadoTipo?: string };
+  };
+  if (!reqCustom.usuario) return res.status(401).json({ erro: "Não autenticado" });
+
+  const isAdmin = isAdminRole(reqCustom.usuario.usuarioLogadoTipo);
+
+  // filtros opcionais
+  const { data, quadraId, usuarioId } = req.query as {
+    data?: string;
+    quadraId?: string;
+    usuarioId?: string;
+  };
+
+  // monta where de forma flexível
+  const where: any = {};
+  if (quadraId) where.quadraId = String(quadraId);
+
+  // filtro de data
+  if (typeof data === "string" && /^\d{4}-\d{2}-\d{2}$/.test(data)) {
+    const { inicio, fim } = getUtcDayRange(data);
+    where.data = { gte: inicio, lt: fim };
+  } else if (data) {
+    where.data = new Date(String(data));
+  }
+
+  if (isAdmin) {
+    if (usuarioId) where.usuarioId = String(usuarioId);
+  } else {
+    const userId = reqCustom.usuario.usuarioLogadoId;
+    where.OR = [{ usuarioId: userId }, { jogadores: { some: { id: userId } } }];
+  }
 
   try {
-    // monta where de forma flexível
-    const where: any = {
-      ...(quadraId ? { quadraId: String(quadraId) } : {}),
-      ...(usuarioId ? { usuarioId: String(usuarioId) } : {}),
-    };
-
-    // se vier "data=YYYY-MM-DD", filtra o dia inteiro (00:00..00:00) em UTC com base no dia local
-    if (typeof data === "string" && /^\d{4}-\d{2}-\d{2}$/.test(data)) {
-      const { inicio, fim } = getUtcDayRange(data);
-      where.data = { gte: inicio, lt: fim };
-    } else if (data) {
-      // fallback antigo (não recomendado, mas mantém compat)
-      where.data = new Date(String(data));
-    }
-
     const agendamentos = await prisma.agendamento.findMany({
       where,
       include: {
@@ -444,20 +468,25 @@ router.get("/", async (req, res) => {
       orderBy: [{ data: "asc" }, { horario: "asc" }],
     });
 
-    // acrescenta campo calculado compatível com o front novo/antigo
+    const sanitizeEmail = (email?: string | null) => (isAdmin ? email : undefined);
+
     const resposta = agendamentos.map((a) => ({
       ...a,
+      usuario: a.usuario
+        ? { ...a.usuario, email: sanitizeEmail(a.usuario.email) }
+        : a.usuario,
+      jogadores: a.jogadores.map((j) => ({ ...j, email: sanitizeEmail(j.email) })),
       quadraLogoUrl: resolveQuadraImg(a.quadra?.imagem) || "/quadra.png",
     }));
 
-    res.json(resposta);
+    return res.json(resposta);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ erro: "Erro ao buscar agendamentos" });
+    return res.status(500).json({ erro: "Erro ao buscar agendamentos" });
   }
 });
 
-// GET /agendamentos/me  -> TODOS os "comuns" CONFIRMADOS + permanentes ATIVOS (próxima data pula exceções e respeita horário)
+// GET /agendamentos/me  -> comuns CONFIRMADOS + permanentes ATIVOS (próxima data respeita horário/exceções)
 router.get("/me", verificarToken, async (req, res) => {
   const reqCustom = req as typeof req & {
     usuario?: { usuarioLogadoId: string; usuarioLogadoNome?: string; usuarioLogadoTipo?: string };
@@ -602,7 +631,7 @@ router.get("/transferidos/me", verificarToken, async (req, res) => {
           quadraLogoUrl,
           esporteNome: t.esporte?.nome ?? "",
           transferidoPara: novo?.usuario
-            ? { id: novo.usuario.id, nome: novo.usuario.nome, email: novo.usuario.email }
+            ? { id: novo.usuario.id, nome: novo.usuario.nome, email: undefined }
             : null,
           novoAgendamentoId: novo?.id ?? null,
         };
@@ -616,8 +645,16 @@ router.get("/transferidos/me", verificarToken, async (req, res) => {
   }
 });
 
-// 🚀 Rota manual para finalizar vencidos (útil em DEV/homolog)
-router.post("/_finaliza-vencidos", async (_req, res) => {
+// 🚀 Rota manual para finalizar vencidos (restrita a admin)
+router.post("/_finaliza-vencidos", verificarToken, async (req, res) => {
+  const reqCustom = req as typeof req & {
+    usuario?: { usuarioLogadoTipo?: string };
+  };
+  if (!reqCustom.usuario) return res.status(401).json({ erro: "Não autenticado" });
+  if (!isAdminRole(reqCustom.usuario.usuarioLogadoTipo)) {
+    return res.status(403).json({ erro: "Acesso negado" });
+  }
+
   try {
     await finalizarAgendamentosVencidos();
     res.json({ ok: true });
@@ -627,8 +664,15 @@ router.post("/_finaliza-vencidos", async (_req, res) => {
   }
 });
 
-// 📄 Detalhes de um agendamento comum
-router.get("/:id", async (req, res) => {
+// 📄 Detalhes de um agendamento comum (admin, dono ou jogador)
+router.get("/:id", verificarToken, async (req, res) => {
+  const reqCustom = req as typeof req & {
+    usuario?: { usuarioLogadoId: string; usuarioLogadoTipo?: string };
+  };
+  if (!reqCustom.usuario) return res.status(401).json({ erro: "Não autenticado" });
+
+  const isAdmin = isAdminRole(reqCustom.usuario.usuarioLogadoTipo);
+  const userId = reqCustom.usuario.usuarioLogadoId;
   const { id } = req.params;
 
   try {
@@ -646,20 +690,32 @@ router.get("/:id", async (req, res) => {
       return res.status(404).json({ erro: "Agendamento não encontrado" });
     }
 
-    res.json({
+    const isOwner = agendamento.usuario?.id === userId;
+    const isPlayer = agendamento.jogadores.some((j) => j.id === userId);
+
+    if (!isAdmin && !isOwner && !isPlayer) {
+      return res.status(403).json({ erro: "Sem permissão para ver este agendamento" });
+    }
+
+    const sanitizeEmail = (email?: string | null) => (isAdmin ? email : undefined);
+
+    return res.json({
       id: agendamento.id,
       tipoReserva: "COMUM",
       dia: agendamento.data.toISOString().split("T")[0],
       horario: agendamento.horario,
-      usuario: agendamento.usuario.nome,
-      usuarioId: agendamento.usuario.id,
-      esporte: agendamento.esporte.nome,
-      quadra: `${agendamento.quadra.nome} (Nº ${agendamento.quadra.numero})`,
-      jogadores: agendamento.jogadores.map((j) => ({ nome: j.nome, email: j.email })),
+      usuario: agendamento.usuario?.nome,
+      usuarioId: agendamento.usuario?.id,
+      esporte: agendamento.esporte?.nome,
+      quadra: `${agendamento.quadra?.nome} (Nº ${agendamento.quadra?.numero})`,
+      jogadores: agendamento.jogadores.map((j) => ({
+        nome: j.nome,
+        email: sanitizeEmail(j.email),
+      })),
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ erro: "Erro ao buscar agendamento" });
+    return res.status(500).json({ erro: "Erro ao buscar agendamento" });
   }
 });
 
@@ -694,9 +750,7 @@ router.post("/cancelar/:id", verificarToken, async (req, res) => {
       return res.status(409).json({ erro: "Este agendamento não pode ser cancelado." });
     }
 
-    const isAdmin = ["ADMIN_MASTER", "ADMIN_ATENDENTE", "ADMIN_PROFESSORES"].includes(
-      reqCustom.usuario.usuarioLogadoTipo || ""
-    );
+    const isAdmin = isAdminRole(reqCustom.usuario.usuarioLogadoTipo);
     const isOwner = String(ag.usuarioId) === String(reqCustom.usuario.usuarioLogadoId);
 
     if (!isAdmin && !isOwner) {
@@ -751,7 +805,6 @@ router.post("/cancelar/:id", verificarToken, async (req, res) => {
       data: {
         status: "CANCELADO",
         canceladoPorId: reqCustom.usuario.usuarioLogadoId,
-        // canceladoEm: new Date(), // use se existir a coluna
       },
     });
 
@@ -765,30 +818,42 @@ router.post("/cancelar/:id", verificarToken, async (req, res) => {
   }
 });
 
-router.delete("/:id", async (req, res) => {
+// Deletar (apenas admin)
+router.delete("/:id", verificarToken, async (req, res) => {
+  const reqCustom = req as typeof req & {
+    usuario?: { usuarioLogadoTipo?: string };
+  };
+  if (!reqCustom.usuario) return res.status(401).json({ erro: "Não autenticado" });
+  if (!isAdminRole(reqCustom.usuario.usuarioLogadoTipo)) {
+    return res.status(403).json({ erro: "Apenas administradores podem deletar agendamentos" });
+  }
+
   const { id } = req.params;
 
   try {
-    const agendamento = await prisma.agendamento.findUnique({
-      where: { id },
-    });
-
+    const agendamento = await prisma.agendamento.findUnique({ where: { id } });
     if (!agendamento) {
       return res.status(404).json({ erro: "Agendamento não encontrado" });
     }
 
-    await prisma.agendamento.delete({
-      where: { id },
-    });
-
-    res.json({ message: "Agendamento deletado com sucesso" });
+    await prisma.agendamento.delete({ where: { id } });
+    return res.json({ message: "Agendamento deletado com sucesso" });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ erro: "Erro ao deletar agendamento" });
+    return res.status(500).json({ erro: "Erro ao deletar agendamento" });
   }
 });
 
-router.patch("/:id/transferir", async (req, res) => {
+// Transferir (admin ou dono)
+router.patch("/:id/transferir", verificarToken, async (req, res) => {
+  const reqCustom = req as typeof req & {
+    usuario?: { usuarioLogadoId: string; usuarioLogadoTipo?: string };
+  };
+  if (!reqCustom.usuario) return res.status(401).json({ erro: "Não autenticado" });
+
+  const isAdmin = isAdminRole(reqCustom.usuario.usuarioLogadoTipo);
+  const userId = reqCustom.usuario.usuarioLogadoId;
+
   const { id } = req.params;
   const { novoUsuarioId, transferidoPorId } = req.body;
 
@@ -806,6 +871,11 @@ router.patch("/:id/transferir", async (req, res) => {
       return res.status(404).json({ erro: "Agendamento não encontrado" });
     }
 
+    const isOwner = agendamento.usuarioId === userId;
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({ erro: "Sem permissão para transferir este agendamento" });
+    }
+
     // 2) valida novo usuário
     const novoUsuario = await prisma.usuario.findUnique({
       where: { id: novoUsuarioId },
@@ -816,13 +886,12 @@ router.patch("/:id/transferir", async (req, res) => {
 
     // 3) transação: marca original como TRANSFERIDO + zera jogadores,
     //    e cria o novo com apenas o novo usuário na lista de jogadores
-    const [agendamentoOriginalAtualizado, novoAgendamento] = await prisma.$transaction([
+    const [_, novoAgendamento] = await prisma.$transaction([
       prisma.agendamento.update({
         where: { id },
         data: {
           status: "TRANSFERIDO",
-          transferidoPorId: transferidoPorId ?? null,
-          // ZERA os jogadores do agendamento antigo
+          transferidoPorId: transferidoPorId ?? userId,
           jogadores: { set: [] },
         },
         include: { jogadores: true },
@@ -855,22 +924,22 @@ router.patch("/:id/transferir", async (req, res) => {
         horario: novoAgendamento.horario,
         usuario: novoAgendamento.usuario
           ? {
-            id: novoAgendamento.usuario.id,
-            nome: novoAgendamento.usuario.nome,
-            email: novoAgendamento.usuario.email,
-          }
+              id: novoAgendamento.usuario.id,
+              nome: novoAgendamento.usuario.nome,
+              email: isAdmin ? novoAgendamento.usuario.email : undefined,
+            }
           : null,
         jogadores: novoAgendamento.jogadores.map((j) => ({
           id: j.id,
           nome: j.nome,
-          email: j.email,
+          email: isAdmin ? j.email : undefined,
         })),
         quadra: novoAgendamento.quadra
           ? {
-            id: novoAgendamento.quadra.id,
-            nome: novoAgendamento.quadra.nome,
-            numero: novoAgendamento.quadra.numero,
-          }
+              id: novoAgendamento.quadra.id,
+              nome: novoAgendamento.quadra.nome,
+              numero: novoAgendamento.quadra.numero,
+            }
           : null,
       },
     });
@@ -880,6 +949,7 @@ router.patch("/:id/transferir", async (req, res) => {
   }
 });
 
+// Adicionar jogadores (admin ou dono)
 router.patch("/:id/jogadores", verificarToken, async (req, res) => {
   const parsed = addJogadoresSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -910,9 +980,7 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
     }
 
     // 3) Autorização
-    const isAdmin = ["ADMIN_MASTER", "ADMIN_ATENDENTE", "ADMIN_PROFESSORES"].includes(
-      reqCustom.usuario.usuarioLogadoTipo || ""
-    );
+    const isAdmin = isAdminRole(reqCustom.usuario.usuarioLogadoTipo);
     const isOwner = agendamento.usuarioId === reqCustom.usuario.usuarioLogadoId;
     if (!isAdmin && !isOwner) {
       return res.status(403).json({ erro: "Sem permissão para alterar este agendamento" });
@@ -921,9 +989,9 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
     // 4) Buscar usuários válidos por ID (se houver)
     const usuariosValidos = jogadoresIds.length
       ? await prisma.usuario.findMany({
-        where: { id: { in: jogadoresIds } },
-        select: { id: true },
-      })
+          where: { id: { in: jogadoresIds } },
+          select: { id: true },
+        })
       : [];
 
     if (usuariosValidos.length !== jogadoresIds.length) {
@@ -990,9 +1058,17 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
       horario: atualizado.horario,
       status: atualizado.status,
       usuario: atualizado.usuario
-        ? { id: atualizado.usuario.id, nome: atualizado.usuario.nome, email: atualizado.usuario.email }
+        ? {
+            id: atualizado.usuario.id,
+            nome: atualizado.usuario.nome,
+            email: isAdmin ? atualizado.usuario.email : undefined,
+          }
         : null,
-      jogadores: atualizado.jogadores.map((j) => ({ id: j.id, nome: j.nome, email: j.email })),
+      jogadores: atualizado.jogadores.map((j) => ({
+        id: j.id,
+        nome: j.nome,
+        email: isAdmin ? j.email : undefined,
+      })),
       quadra: atualizado.quadra
         ? { id: atualizado.quadra.id, nome: atualizado.quadra.nome, numero: atualizado.quadra.numero }
         : null,
