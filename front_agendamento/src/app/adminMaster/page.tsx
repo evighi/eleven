@@ -37,7 +37,7 @@ type TipoLocal = "quadra" | "churrasqueira";
 interface UsuarioRef {
   id?: string;
   nome?: string;
-  email?: string;
+  celular?: string | null;
 }
 
 interface DisponQuadra {
@@ -110,7 +110,7 @@ interface AgendamentoSelecionado {
 interface UsuarioLista {
   id: string;
   nome: string;
-  email?: string;
+  celular?: string | null;
 }
 
 /** Pré-reserva para confirmação (quadra) */
@@ -429,7 +429,6 @@ export default function AdminHome() {
   };
 
   // Buscar usuários (transferência)
-  const [abrirModalTransferenciaState] = useState(false); // placeholder
   const buscarUsuarios = useCallback(
     async (termo: string) => {
       if (termo.trim().length === 0) {
@@ -708,9 +707,14 @@ export default function AdminHome() {
                       <p className="text-xs text-gray-700">Quadra {q.numero}</p>
                       {q.bloqueada && <div className="text-red-600 font-bold">Bloqueada</div>}
                       {!q.disponivel && (
-                        <div>
+                        <div className="mt-1">
                           <p className="font-bold">{q.usuario?.nome}</p>
-                          {q.tipoReserva}
+                          {q.usuario?.celular && (
+                            <p className="text-[11px] text-gray-700">{q.usuario.celular}</p>
+                          )}
+                          <span className="inline-block text-[11px] mt-1 px-2 py-0.5 rounded bg-white/70">
+                            {q.tipoReserva === "permanente" ? "Permanente" : "Comum"}
+                          </span>
                         </div>
                       )}
                     </div>
@@ -765,6 +769,9 @@ export default function AdminHome() {
                     {!disponivel && (
                       <div className="mt-1">
                         <p className="font-bold">{diaInfo?.usuario?.nome}</p>
+                        {diaInfo?.usuario?.celular && (
+                          <p className="text-[11px] text-gray-700">{diaInfo.usuario.celular}</p>
+                        )}
                         <span className="inline-block text-[11px] px-2 py-0.5 rounded bg-white/70">
                           {diaInfo?.tipoReserva === "permanente" ? "Permanente" : "Comum"}
                         </span>
@@ -813,6 +820,9 @@ export default function AdminHome() {
                     {!disponivel && (
                       <div className="mt-1">
                         <p className="font-bold">{noiteInfo?.usuario?.nome}</p>
+                        {noiteInfo?.usuario?.celular && (
+                          <p className="text-[11px] text-gray-700">{noiteInfo.usuario.celular}</p>
+                        )}
                         <span className="inline-block text-[11px] px-2 py-0.5 rounded bg-white/70">
                           {noiteInfo?.tipoReserva === "permanente" ? "Permanente" : "Comum"}
                         </span>
@@ -856,7 +866,12 @@ export default function AdminHome() {
               </p>
             )}
             <p>
-              <strong>Usuário:</strong> {agendamentoSelecionado.usuario as string}
+              <strong>Usuário:</strong>{" "}
+              {typeof agendamentoSelecionado.usuario === "string"
+                ? agendamentoSelecionado.usuario
+                : [agendamentoSelecionado.usuario?.nome, agendamentoSelecionado.usuario?.celular]
+                    .filter(Boolean)
+                    .join(" — ")}
             </p>
             {agendamentoSelecionado.esporte && (
               <p>
@@ -1069,7 +1084,7 @@ export default function AdminHome() {
             <input
               type="text"
               className="border p-2 rounded w-full mb-3"
-              placeholder="Digite nome ou email do usuário"
+              placeholder="Digite o nome do usuário"
               value={buscaUsuario}
               onChange={(e) => setBuscaUsuario(e.target.value)}
               autoFocus
@@ -1091,8 +1106,10 @@ export default function AdminHome() {
                     usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
                   }`}
                   onClick={() => setUsuarioSelecionado(user)}
+                  title={user.celular || ""}
                 >
-                  {user.nome} ({user.email})
+                  {user.nome}
+                  {user.celular ? ` (${user.celular})` : ""}
                 </li>
               ))}
             </ul>
@@ -1127,7 +1144,7 @@ export default function AdminHome() {
             <input
               type="text"
               className="border p-2 rounded w-full mb-3"
-              placeholder="Buscar por nome ou e-mail"
+              placeholder="Buscar por nome"
               value={buscaJogador}
               onChange={(e) => setBuscaJogador(e.target.value)}
               autoFocus
@@ -1145,9 +1162,11 @@ export default function AdminHome() {
                       ativo ? "bg-orange-100" : ""
                     }`}
                     onClick={() => alternarSelecionado(u.id)}
+                    title={u.celular || ""}
                   >
                     <span>
-                      {u.nome} ({u.email})
+                      {u.nome}
+                      {u.celular ? ` (${u.celular})` : ""}
                     </span>
                     <input type="checkbox" readOnly checked={ativo} />
                   </li>
