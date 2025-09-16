@@ -4,6 +4,7 @@ import axios from "axios";
 import { useAuthStore } from "@/context/AuthStore";
 import Spinner from "@/components/Spinner";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 /** Helpers de data/hora em America/Sao_Paulo */
 const SP_TZ = "America/Sao_Paulo";
@@ -102,7 +103,6 @@ interface AgendamentoSelecionado {
   tipoReserva: TipoReserva;
   agendamentoId: string;
   tipoLocal: TipoLocal;
-  // novos (para exceção):
   diaSemana?: string | null;
   dataInicio?: string | null; // YYYY-MM-DD
 }
@@ -112,7 +112,25 @@ interface UsuarioLista {
   nome: string;
   email?: string;
 }
-/* ============================================= */
+
+/** Pré-reserva para confirmação (quadra) */
+type PreReserva = {
+  data: string;
+  horario: string;
+  esporte: string; // se seu agendarcomum espera ID, troque para esporteId
+  quadraId: string;
+  quadraNome: string;
+  quadraNumero: number;
+};
+
+/** Pré-reserva para confirmação (churrasqueira) */
+type PreReservaChurras = {
+  data: string;
+  turno: Turno;
+  churrasqueiraId: string;
+  churrasqueiraNome: string;
+  churrasqueiraNumero: number;
+};
 
 /** Map DiaSemana -> index JS */
 const DIA_IDX: Record<string, number> = {
@@ -135,12 +153,12 @@ function toYmdSP(d: Date) {
   }).format(d);
 }
 
-/** Próximas datas do mesmo dia-da-semana.
- * - Inclui a própria base (se cair no mesmo dia da semana).
- * - Respeita dataInicio (se vier).
- * - Gera 'quantidade' ocorrências, de 7 em 7 dias.
- * - Tudo calculado em fuso de São Paulo.
- */
+function toDdMm(isoYmd: string) {
+  const [y, m, d] = isoYmd.split("-");
+  return `${d}-${m}`;
+}
+
+/** Próximas datas do mesmo dia-da-semana. */
 function gerarProximasDatasDiaSemana(
   diaSemana: string,
   baseYmd?: string | null,
@@ -149,22 +167,19 @@ function gerarProximasDatasDiaSemana(
   incluirBase = true
 ): string[] {
   const target = DIA_IDX[diaSemana] ?? 0;
-
-  // Base em SP (início do dia)
   const baseIso = (baseYmd || todayStrSP()) + "T00:00:00-03:00";
   const start = new Date(baseIso);
   start.setHours(0, 0, 0, 0);
 
-  // Respeita dataInicio (se for mais à frente que a base)
   if (dataInicio) {
     const di = new Date(`${dataInicio}T00:00:00-03:00`);
     di.setHours(0, 0, 0, 0);
     if (di > start) start.setTime(di.getTime());
   }
 
-  const startDow = start.getDay(); // 0..6
-  let delta = (target - startDow + 7) % 7; // 0 significa “mesmo dia da semana”
-  if (delta === 0 && !incluirBase) delta = 7; // pular para a próxima semana se não quiser incluir a base
+  const startDow = start.getDay();
+  let delta = (target - startDow + 7) % 7;
+  if (delta === 0 && !incluirBase) delta = 7;
 
   const first = new Date(start);
   first.setDate(first.getDate() + delta);
@@ -178,8 +193,9 @@ function gerarProximasDatasDiaSemana(
   return out;
 }
 
-
 export default function AdminHome() {
+  const router = useRouter();
+
   const [data, setData] = useState("");
   const [horario, setHorario] = useState("");
 
@@ -190,15 +206,15 @@ export default function AdminHome() {
     useState<AgendamentoSelecionado | null>(null);
   const [loadingDetalhes, setLoadingDetalhes] = useState<boolean>(false);
 
-  const [confirmarCancelamento, setConfirmarCancelamento] = useState(false); // fluxo antigo
+  const [confirmarCancelamento, setConfirmarCancelamento] = useState(false);
   const [loadingCancelamento, setLoadingCancelamento] = useState(false);
   const [loadingTransferencia, setLoadingTransferencia] = useState(false);
 
-  // NOVO: opções p/ permanente
+  // Opções p/ permanente
   const [mostrarOpcoesCancelamento, setMostrarOpcoesCancelamento] = useState(false);
   const [confirmarCancelamentoForever, setConfirmarCancelamentoForever] = useState(false);
 
-  // NOVO: exceção (cancelar 1 dia)
+  // Exceção (cancelar 1 dia)
   const [mostrarExcecaoModal, setMostrarExcecaoModal] = useState(false);
   const [datasExcecao, setDatasExcecao] = useState<string[]>([]);
   const [dataExcecaoSelecionada, setDataExcecaoSelecionada] = useState<string | null>(null);
@@ -220,6 +236,14 @@ export default function AdminHome() {
   const [convidadosPendentes, setConvidadosPendentes] = useState<string[]>([]);
   const [carregandoJogadores, setCarregandoJogadores] = useState(false);
   const [addingPlayers, setAddingPlayers] = useState(false);
+
+  // Confirmação para agendar (quadra livre)
+  const [mostrarConfirmaAgendar, setMostrarConfirmaAgendar] = useState(false);
+  const [preReserva, setPreReserva] = useState<PreReserva | null>(null);
+
+  // Confirmação para agendar (churrasqueira livre)
+  const [mostrarConfirmaChurras, setMostrarConfirmaChurras] = useState(false);
+  const [preReservaChurras, setPreReservaChurras] = useState<PreReservaChurras | null>(null);
 
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
   const { usuario } = useAuthStore();
@@ -249,7 +273,7 @@ export default function AdminHome() {
     }
   }, [API_URL, data, horario, isAllowed]);
 
-  // 🔧 Inicializa data/horário (SP)
+  // Inicializa data/horário (SP)
   useEffect(() => {
     setData(todayStrSP());
     setHorario(hourStrSP());
@@ -295,7 +319,6 @@ export default function AdminHome() {
         tipoReserva: item.tipoReserva,
         agendamentoId,
         tipoLocal,
-        // novos se for permanente de quadra (o backend manda isso):
         diaSemana: (res.data as any)?.diaSemana ?? null,
         dataInicio:
           (res.data as any)?.dataInicio
@@ -312,18 +335,15 @@ export default function AdminHome() {
   /** Decide qual modal abrir quando clicar em "Cancelar Agendamento" */
   const abrirFluxoCancelamento = () => {
     if (!agendamentoSelecionado) return;
-    const { tipoReserva, tipoLocal } = agendamentoSelecionado;
-
-    // Se for permanente de QUADRA -> mostrar opções (sempre x apenas 1 dia)
-    if (tipoReserva === "permanente" && tipoLocal === "quadra") {
+    const { tipoReserva } = agendamentoSelecionado;
+    if (tipoReserva === "permanente") {
       setMostrarOpcoesCancelamento(true);
     } else {
-      // fluxo antigo: confirmação simples
       setConfirmarCancelamento(true);
     }
   };
 
-  // Cancelar (POST) — usado no fluxo antigo e também no "para sempre"
+  // Cancelar (POST)
   const cancelarAgendamento = async () => {
     if (!agendamentoSelecionado) return;
     setLoadingCancelamento(true);
@@ -359,18 +379,18 @@ export default function AdminHome() {
     }
   };
 
-  /** Abrir modal de exceção (cancelar apenas 1 dia) */
+  // Abrir modal de exceção (cancelar apenas 1 dia)
   const abrirExcecao = () => {
     if (!agendamentoSelecionado?.diaSemana) {
       alert("Não foi possível identificar o dia da semana deste permanente.");
       return;
     }
-    // Gera lista local de próximas datas (30 dias), respeitando dataInicio
     const lista = gerarProximasDatasDiaSemana(
       agendamentoSelecionado.diaSemana,
       data || todayStrSP(),
       agendamentoSelecionado.dataInicio || null,
-      30
+      6,
+      true
     );
     setDatasExcecao(lista);
     setDataExcecaoSelecionada(null);
@@ -378,16 +398,22 @@ export default function AdminHome() {
     setMostrarOpcoesCancelamento(false);
   };
 
-  /** Confirma a exceção chamando o endpoint POST /agendamentosPermanentes/:id/excecoes */
+  /** Confirma a exceção chamando o endpoint POST correto (quadra/churrasqueira) */
   const confirmarExcecao = async () => {
     if (!agendamentoSelecionado?.agendamentoId || !dataExcecaoSelecionada) return;
     try {
       setPostandoExcecao(true);
+      const rota =
+        agendamentoSelecionado.tipoLocal === "churrasqueira"
+          ? `agendamentosPermanentesChurrasqueiras/${agendamentoSelecionado.agendamentoId}/cancelar-dia`
+          : `agendamentosPermanentes/${agendamentoSelecionado.agendamentoId}/cancelar-dia`;
+
       await axios.post(
-        `${API_URL}/agendamentosPermanentes/${agendamentoSelecionado.agendamentoId}/cancelar-dia`,
+        `${API_URL}/${rota}`,
         { data: dataExcecaoSelecionada, usuarioId: (usuario as any)?.id },
         { withCredentials: true }
       );
+
       alert("Exceção criada com sucesso (cancelado somente este dia).");
       setMostrarExcecaoModal(false);
       setAgendamentoSelecionado(null);
@@ -395,19 +421,15 @@ export default function AdminHome() {
     } catch (e: any) {
       console.error(e);
       const raw = e?.response?.data?.erro ?? e?.response?.data?.message ?? e?.message;
-      const msg =
-        typeof raw === "string"
-          ? raw
-          : JSON.stringify(raw); // evita [object Object]
+      const msg = typeof raw === "string" ? raw : JSON.stringify(raw);
       alert(msg);
     } finally {
       setPostandoExcecao(false);
     }
   };
 
-
   // Buscar usuários (transferência)
-  const [abrirModalTransferenciaState] = useState(false); // placeholder (não alterar comportamento)
+  const [abrirModalTransferenciaState] = useState(false); // placeholder
   const buscarUsuarios = useCallback(
     async (termo: string) => {
       if (termo.trim().length === 0) {
@@ -532,7 +554,6 @@ export default function AdminHome() {
 
     try {
       setAddingPlayers(true);
-
       await axios.patch(
         `${API_URL}/agendamentos/${agendamentoSelecionado.agendamentoId}/jogadores`,
         {
@@ -543,12 +564,10 @@ export default function AdminHome() {
       );
 
       alert("Jogadores adicionados com sucesso!");
-
       setJogadoresSelecionadosIds([]);
       setConvidadosPendentes([]);
       setConvidadoNome("");
       setAbrirModalJogadores(false);
-
       buscarDisponibilidade();
     } catch (e) {
       console.error(e);
@@ -556,6 +575,39 @@ export default function AdminHome() {
     } finally {
       setAddingPlayers(false);
     }
+  };
+
+  // ====== CONFIRMAÇÃO (quadra) ======
+  const abrirConfirmacaoAgendar = (info: PreReserva) => {
+    setPreReserva(info);
+    setMostrarConfirmaAgendar(true);
+  };
+
+  const irParaAgendarComum = () => {
+    if (!preReserva) return;
+    const qs = new URLSearchParams({
+      data: preReserva.data,
+      horario: preReserva.horario,
+      esporte: preReserva.esporte, // troque para esporteId se necessário
+      quadraId: preReserva.quadraId,
+    }).toString();
+    router.push(`/adminMaster/quadras/agendarComum?${qs}`);
+  };
+
+  // ====== CONFIRMAÇÃO (churrasqueira) — NOVO ======
+  const abrirConfirmacaoChurras = (info: PreReservaChurras) => {
+    setPreReservaChurras(info);
+    setMostrarConfirmaChurras(true);
+  };
+
+  const irParaAgendarChurrasqueira = () => {
+    if (!preReservaChurras) return;
+    const qs = new URLSearchParams({
+      data: preReservaChurras.data,
+      turno: preReservaChurras.turno,
+      churrasqueiraId: preReservaChurras.churrasqueiraId,
+    }).toString();
+    router.push(`/adminMaster/churrasqueiras/agendarChurrasqueira?${qs}`);
   };
 
   return (
@@ -591,10 +643,9 @@ export default function AdminHome() {
           </select>
         </div>
 
-        {/* Botão que leva para a página "todosHorarios" */}
         <div className="sm:ml-auto">
           <Link
-            href={`/adminMaster/todosHorarios`}
+            href={`/adminMaster/todosHorarios?data=${data || todayStrSP()}`}
             className="inline-flex items-center justify-center px-4 py-2 rounded-lg font-semibold bg-orange-600 hover:bg-orange-700 text-white cursor-pointer"
           >
             Ver todos os horários
@@ -621,28 +672,50 @@ export default function AdminHome() {
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4">
-                {disponibilidade.quadras[esporte].map((q: DisponQuadra) => (
-                  <div
-                    key={q.quadraId}
-                    onClick={() => !q.disponivel && abrirDetalhes(q, { horario, esporte })}
-                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${q.bloqueada
-                      ? "border-2 border-red-500 bg-red-50"
-                      : q.disponivel
-                        ? "border-2 border-green-500 bg-green-50"
-                        : "border-2 border-gray-500 bg-gray-50"
+                {disponibilidade.quadras[esporte].map((q: DisponQuadra) => {
+                  const clickable = !q.bloqueada;
+                  const clsBase =
+                    "p-3 rounded-lg text-center shadow-sm flex flex-col justify-center " +
+                    (clickable ? "cursor-pointer" : "cursor-not-allowed");
+
+                  return (
+                    <div
+                      key={q.quadraId}
+                      onClick={() => {
+                        if (q.bloqueada) return;
+                        if (q.disponivel) {
+                          abrirConfirmacaoAgendar({
+                            data,
+                            horario,
+                            esporte,
+                            quadraId: q.quadraId,
+                            quadraNome: q.nome,
+                            quadraNumero: q.numero,
+                          });
+                        } else {
+                          abrirDetalhes(q, { horario, esporte });
+                        }
+                      }}
+                      className={`${clsBase} ${
+                        q.bloqueada
+                          ? "border-2 border-red-500 bg-red-50"
+                          : q.disponivel
+                          ? "border-2 border-green-500 bg-green-50"
+                          : "border-2 border-gray-500 bg-gray-50"
                       }`}
-                  >
-                    <p className="font-medium">{q.nome}</p>
-                    <p className="text-xs text-gray-700">Quadra {q.numero}</p>
-                    {q.bloqueada && <div className="text-red-600 font-bold">Bloqueada</div>}
-                    {!q.disponivel && (
-                      <div>
-                        <p className="font-bold">{q.usuario?.nome}</p>
-                        {q.tipoReserva}
-                      </div>
-                    )}
-                  </div>
-                ))}
+                    >
+                      <p className="font-medium">{q.nome}</p>
+                      <p className="text-xs text-gray-700">Quadra {q.numero}</p>
+                      {q.bloqueada && <div className="text-red-600 font-bold">Bloqueada</div>}
+                      {!q.disponivel && (
+                        <div>
+                          <p className="font-bold">{q.usuario?.nome}</p>
+                          {q.tipoReserva}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           ))}
@@ -659,27 +732,42 @@ export default function AdminHome() {
             <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4 mb-6">
               {disponibilidade.churrasqueiras.map((c: ChurrasqueiraDisp) => {
                 const diaInfo = c.disponibilidade.find((t) => t.turno === "DIA");
+                const disponivel = !!diaInfo?.disponivel;
+
                 return (
                   <div
                     key={c.churrasqueiraId + "-dia"}
-                    onClick={() =>
-                      !diaInfo?.disponivel &&
-                      abrirDetalhes(
-                        { ...(diaInfo as DetalheItemMin), tipoLocal: "churrasqueira" },
-                        { turno: "DIA" }
-                      )
-                    }
-                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${diaInfo?.disponivel
-                      ? "border-2 border-green-500 bg-green-50"
-                      : "border-2 border-red-500 bg-red-50"
-                      }`}
+                    onClick={() => {
+                      if (disponivel) {
+                        abrirConfirmacaoChurras({
+                          data,
+                          turno: "DIA",
+                          churrasqueiraId: c.churrasqueiraId,
+                          churrasqueiraNome: c.nome,
+                          churrasqueiraNumero: c.numero,
+                        });
+                      } else {
+                        abrirDetalhes(
+                          { ...(diaInfo as DetalheItemMin), tipoLocal: "churrasqueira" },
+                          { turno: "DIA" }
+                        );
+                      }
+                    }}
+                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${
+                      disponivel
+                        ? "border-2 border-green-500 bg-green-50"
+                        : "border-2 border-gray-500 bg-gray-50"
+                    }`}
                   >
                     <p className="font-medium">{c.nome}</p>
-                    <p className="text-xs text-gray-700">Quadra {c.numero}</p>
-                    {!c.disponivel && (
-                      <div>
+                    <p className="text-xs text-gray-700">Churrasqueira {c.numero}</p>
+
+                    {!disponivel && (
+                      <div className="mt-1">
                         <p className="font-bold">{diaInfo?.usuario?.nome}</p>
-                        {c.tipoReserva}
+                        <span className="inline-block text-[11px] px-2 py-0.5 rounded bg-white/70">
+                          {diaInfo?.tipoReserva === "permanente" ? "Permanente" : "Comum"}
+                        </span>
                       </div>
                     )}
                   </div>
@@ -692,27 +780,42 @@ export default function AdminHome() {
             <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4">
               {disponibilidade.churrasqueiras.map((c: ChurrasqueiraDisp) => {
                 const noiteInfo = c.disponibilidade.find((t) => t.turno === "NOITE");
+                const disponivel = !!noiteInfo?.disponivel;
+
                 return (
                   <div
                     key={c.churrasqueiraId + "-noite"}
-                    onClick={() =>
-                      !noiteInfo?.disponivel &&
-                      abrirDetalhes(
-                        { ...(noiteInfo as DetalheItemMin), tipoLocal: "churrasqueira" },
-                        { turno: "NOITE" }
-                      )
-                    }
-                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${noiteInfo?.disponivel
-                      ? "border-2 border-green-500 bg-green-50"
-                      : "border-2 border-red-500 bg-red-50"
-                      }`}
+                    onClick={() => {
+                      if (disponivel) {
+                        abrirConfirmacaoChurras({
+                          data,
+                          turno: "NOITE",
+                          churrasqueiraId: c.churrasqueiraId,
+                          churrasqueiraNome: c.nome,
+                          churrasqueiraNumero: c.numero,
+                        });
+                      } else {
+                        abrirDetalhes(
+                          { ...(noiteInfo as DetalheItemMin), tipoLocal: "churrasqueira" },
+                          { turno: "NOITE" }
+                        );
+                      }
+                    }}
+                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${
+                      disponivel
+                        ? "border-2 border-green-500 bg-green-50"
+                        : "border-2 border-gray-500 bg-gray-50"
+                    }`}
                   >
                     <p className="font-medium">{c.nome}</p>
-                    <p className="text-xs text-gray-700">Quadra {c.numero}</p>
-                    {!c.disponivel && (
-                      <div>
+                    <p className="text-xs text-gray-700">Churrasqueira {c.numero}</p>
+
+                    {!disponivel && (
+                      <div className="mt-1">
                         <p className="font-bold">{noiteInfo?.usuario?.nome}</p>
-                        {c.tipoReserva}
+                        <span className="inline-block text-[11px] px-2 py-0.5 rounded bg-white/70">
+                          {noiteInfo?.tipoReserva === "permanente" ? "Permanente" : "Comum"}
+                        </span>
                       </div>
                     )}
                   </div>
@@ -791,7 +894,6 @@ export default function AdminHome() {
                 </div>
               )}
 
-            {/* Transferir (somente comum/quadra) */}
             {agendamentoSelecionado.tipoReserva === "comum" &&
               agendamentoSelecionado.tipoLocal === "quadra" && (
                 <button
@@ -841,7 +943,7 @@ export default function AdminHome() {
               </div>
             )}
 
-            {/* NOVO: Opções para PERMANENTE de QUADRA */}
+            {/* Opções para AGENDAMENTO PERMANENTE */}
             {mostrarOpcoesCancelamento && (
               <div className="absolute inset-0 bg-black bg-opacity-80 flex flex-col items-center justify-center p-4 rounded-xl border shadow-lg z-50">
                 <div className="bg-white rounded-lg p-4 w-full">
@@ -875,7 +977,7 @@ export default function AdminHome() {
               </div>
             )}
 
-            {/* NOVO: Confirmação "para sempre" */}
+            {/* Confirmação "para sempre" */}
             {confirmarCancelamentoForever && (
               <div className="absolute inset-0 bg-black bg-opacity-80 flex flex-col items-center justify-center p-4 rounded-xl border shadow-lg z-50">
                 <p className="text-center text-white mb-4">
@@ -899,13 +1001,13 @@ export default function AdminHome() {
               </div>
             )}
 
-            {/* NOVO: Modal de EXCEÇÃO (cancelar apenas 1 dia) */}
+            {/* Modal de EXCEÇÃO (cancelar apenas 1 dia) */}
             {mostrarExcecaoModal && (
               <div className="absolute inset-0 bg-black bg-opacity-80 flex items-center justify-center p-4 rounded-xl z-50">
                 <div className="bg-white rounded-lg p-4 w-full max-w-sm">
                   <h3 className="text-lg font-semibold mb-2">Cancelar apenas 1 dia</h3>
                   <p className="text-sm text-gray-600 mb-3">
-                    Selecione uma data (próximos {Math.min(30, datasExcecao.length)} dias que caem em{" "}
+                    Selecione uma data (próximas {datasExcecao.length} datas que caem em{" "}
                     {agendamentoSelecionado?.diaSemana ?? "-"}).
                   </p>
 
@@ -920,12 +1022,13 @@ export default function AdminHome() {
                             key={d}
                             type="button"
                             onClick={() => setDataExcecaoSelecionada(d)}
-                            className={`px-3 py-2 rounded border text-sm ${ativo
-                              ? "border-indigo-600 bg-indigo-50 text-indigo-700"
-                              : "border-gray-300 hover:bg-gray-50"
-                              }`}
+                            className={`px-3 py-2 rounded border text-sm ${
+                              ativo
+                                ? "border-indigo-600 bg-indigo-50 text-indigo-700"
+                                : "border-gray-300 hover:bg-gray-50"
+                            }`}
                           >
-                            {d}
+                            {toDdMm(d)}
                           </button>
                         );
                       })}
@@ -984,8 +1087,9 @@ export default function AdminHome() {
               {usuariosFiltrados.map((user) => (
                 <li
                   key={user.id}
-                  className={`p-2 cursor-pointer hover:bg-blue-100 ${usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
-                    }`}
+                  className={`p-2 cursor-pointer hover:bg-blue-100 ${
+                    usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
+                  }`}
                   onClick={() => setUsuarioSelecionado(user)}
                 >
                   {user.nome} ({user.email})
@@ -1037,8 +1141,9 @@ export default function AdminHome() {
                 return (
                   <li
                     key={u.id}
-                    className={`p-2 cursor-pointer flex items-center justify-between hover:bg-orange-50 ${ativo ? "bg-orange-100" : ""
-                      }`}
+                    className={`p-2 cursor-pointer flex items-center justify-between hover:bg-orange-50 ${
+                      ativo ? "bg-orange-100" : ""
+                    }`}
                     onClick={() => alternarSelecionado(u.id)}
                   >
                     <span>
@@ -1123,6 +1228,68 @@ export default function AdminHome() {
                 className="px-4 py-2 rounded bg-orange-600 text-white hover:bg-orange-700 disabled:bg-orange-300"
               >
                 {addingPlayers ? "Adicionando..." : "Adicionar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Confirmar agendamento (quadra livre) */}
+      {mostrarConfirmaAgendar && preReserva && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[70]">
+          <div className="bg-white p-5 rounded-lg shadow-lg w-[340px]">
+            <h3 className="text-lg font-semibold mb-3">Confirmar agendamento</h3>
+            <p className="text-sm text-gray-700 mb-4">
+              Deseja agendar <b>{preReserva.esporte}</b> na{" "}
+              <b>
+                {preReserva.quadraNome} (nº {preReserva.quadraNumero})
+              </b>
+              <br />
+              em <b>{toDdMm(preReserva.data)}</b> às <b>{preReserva.horario}</b>?
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setMostrarConfirmaAgendar(false)}
+                className="px-3 py-2 rounded bg-gray-300 hover:bg-gray-400"
+              >
+                Não
+              </button>
+              <button
+                onClick={irParaAgendarComum}
+                className="px-3 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700"
+              >
+                Sim, agendar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Confirmar agendamento (churrasqueira livre) — NOVO */}
+      {mostrarConfirmaChurras && preReservaChurras && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[70]">
+          <div className="bg-white p-5 rounded-lg shadow-lg w-[360px]">
+            <h3 className="text-lg font-semibold mb-3">Confirmar agendamento</h3>
+            <p className="text-sm text-gray-700 mb-4">
+              Deseja agendar a{" "}
+              <b>
+                {preReservaChurras.churrasqueiraNome} (nº {preReservaChurras.churrasqueiraNumero})
+              </b>
+              <br />
+              em <b>{toDdMm(preReservaChurras.data)}</b> no turno <b>{preReservaChurras.turno}</b>?
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setMostrarConfirmaChurras(false)}
+                className="px-3 py-2 rounded bg-gray-300 hover:bg-gray-400"
+              >
+                Não
+              </button>
+              <button
+                onClick={irParaAgendarChurrasqueira}
+                className="px-3 py-2 rounded bg-orange-600 text-white hover:bg-orange-700"
+              >
+                Sim, agendar
               </button>
             </div>
           </div>

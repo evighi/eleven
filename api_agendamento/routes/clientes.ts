@@ -6,16 +6,12 @@ import { isValid } from "date-fns";
 import { enviarCodigoEmail } from "../utils/enviarEmail";
 import { gerarCodigoVerificacao } from "../utils/gerarCodigo";
 
-// 🔐 Middlewares
 import verificarToken from "../middleware/authMiddleware";
 import { requireAdmin, requireSelfOrAdminParam, isAdmin } from "../middleware/acl";
 
 const prisma = new PrismaClient();
 const router = Router();
 
-/** ---------------------------------------------------
- * Helpers: seleção segura (nunca retornar senha/codigo)
- * --------------------------------------------------- */
 const baseUserSelect = {
   id: true,
   nome: true,
@@ -27,9 +23,6 @@ const baseUserSelect = {
   tipo: true,
 } as const;
 
-/** -----------------------------
- * Schemas
- * ----------------------------- */
 const clienteSchema = z.object({
   nome: z.string().min(3),
   email: z.string().email(),
@@ -48,11 +41,9 @@ function validaSenha(senha: string) {
   return erros;
 }
 
-/** -----------------------------
- * Públicos
- * ----------------------------- */
+/** =============== Públicos =============== */
 
-// POST /clientes/registrar  (cria como CLIENTE)
+// POST /clientes/registrar
 router.post("/registrar", async (req, res) => {
   const validacao = clienteSchema.safeParse(req.body);
   if (!validacao.success) {
@@ -62,33 +53,85 @@ router.post("/registrar", async (req, res) => {
   }
 
   const errosSenha = validaSenha(validacao.data.senha);
-  if (errosSenha.length > 0) {
-    return res.status(400).json({ erro: errosSenha.join("; ") });
-  }
+  if (errosSenha.length > 0) return res.status(400).json({ erro: errosSenha.join("; ") });
 
-  const { nome, email, celular, cpf, nascimento, senha } = validacao.data;
-  const codigo = gerarCodigoVerificacao();
-  const hash = bcrypt.hashSync(senha, 12);
+  // normaliza e prepara dados
+  const nome = validacao.data.nome.trim();
+  const email = validacao.data.email.trim().toLowerCase();
+  const celular = validacao.data.celular.trim();
+  const cpf = validacao.data.cpf.trim();
+  const nascimento = new Date(validacao.data.nascimento);
+  const hash = bcrypt.hashSync(validacao.data.senha, 12);
 
   try {
+    // 1) Checa e-mail previamente
+    const existenteEmail = await prisma.usuario.findUnique({
+      where: { email },
+      select: { id: true, verificado: true, tipo: true, email: true },
+    });
+
+    if (existenteEmail) {
+      // E-mail já usado
+      if (existenteEmail.tipo === TipoUsuario.CLIENTE && !existenteEmail.verificado) {
+        // Reenvia um novo código e retorna 202 (Accepted)
+        const novoCodigo = gerarCodigoVerificacao();
+        const expira = new Date(Date.now() + 30 * 60 * 1000); // 30min
+
+        await prisma.usuario.update({
+          where: { id: existenteEmail.id },
+          data: { codigoEmail: novoCodigo, expiraEm: expira },
+        });
+
+        try {
+          await enviarCodigoEmail(existenteEmail.email, novoCodigo);
+        } catch (e) {
+          return res.status(500).json({ erro: "Erro ao reenviar e-mail de verificação" });
+        }
+
+        return res.status(202).json({
+          reenviado: true,
+          mensagem:
+            "Este e-mail já possui cadastro, mas ainda não foi verificado. Enviamos um novo código.",
+        });
+      }
+
+      // Já verificado (ou não-cliente): conflito direto
+      return res.status(409).json({ erro: "E-mail já cadastrado" });
+    }
+
+    // 2) Checa CPF previamente (evita depender só do P2002)
+    const existenteCpf = await prisma.usuario.findFirst({
+      where: { cpf },
+      select: { id: true },
+    });
+    if (existenteCpf) {
+      return res.status(409).json({ erro: "CPF já cadastrado" });
+    }
+
+    // 3) Cria usuário + envia código
+    const codigo = gerarCodigoVerificacao();
+    const expira = new Date(Date.now() + 30 * 60 * 1000); // 30min
+
     const novo = await prisma.usuario.create({
       data: {
         nome,
         email,
         celular,
         cpf,
-        nascimento: new Date(nascimento),
+        nascimento,
         senha: hash,
         tipo: TipoUsuario.CLIENTE,
         verificado: false,
         codigoEmail: codigo,
+        expiraEm: expira,
       },
-      select: { id: true, email: true }, // só o necessário
+      select: { id: true, email: true },
     });
 
     try {
-      await enviarCodigoEmail(email, codigo);
+      await enviarCodigoEmail(novo.email, codigo);
     } catch (e) {
+      // rollback se falhar envio
       await prisma.usuario.delete({ where: { id: novo.id } });
       return res.status(500).json({ erro: "Erro ao enviar email de verificação" });
     }
@@ -97,7 +140,16 @@ router.post("/registrar", async (req, res) => {
       .status(201)
       .json({ mensagem: "Código enviado. Verifique seu e-mail para validar." });
   } catch (error: any) {
+    // fallback (ex.: corrida até o unique do banco)
     if (error?.code === "P2002") {
+      // Podemos tentar ler qual campo conflitou (email/cpf) em error.meta?.target
+      const target: string[] | undefined = (error as any)?.meta?.target;
+      if (target?.some((t) => t.toLowerCase().includes("email"))) {
+        return res.status(409).json({ erro: "E-mail já cadastrado" });
+      }
+      if (target?.some((t) => t.toLowerCase().includes("cpf"))) {
+        return res.status(409).json({ erro: "CPF já cadastrado" });
+      }
       return res.status(409).json({ erro: "E-mail ou CPF já cadastrado" });
     }
     console.error(error);
@@ -105,25 +157,33 @@ router.post("/registrar", async (req, res) => {
   }
 });
 
-// POST /clientes/validar-email (checa só clientes)
+// POST /clientes/validar-email
 router.post("/validar-email", async (req, res) => {
-  const { email, codigo } = req.body;
-  if (!email || !codigo) {
-    return res.status(400).json({ erro: "E-mail e código são obrigatórios" });
-  }
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const codigo = String(req.body?.codigo || "").trim();
+
+  if (!email || !codigo) return res.status(400).json({ erro: "E-mail e código são obrigatórios" });
 
   try {
     const cliente = await prisma.usuario.findFirst({
       where: { email, tipo: TipoUsuario.CLIENTE },
+      select: { id: true, verificado: true, codigoEmail: true, expiraEm: true },
     });
 
     if (!cliente) return res.status(404).json({ erro: "Cliente não encontrado" });
     if (cliente.verificado) return res.status(400).json({ erro: "E-mail já foi verificado" });
-    if (cliente.codigoEmail !== codigo) return res.status(400).json({ erro: "Código inválido" });
+
+    if (!cliente.codigoEmail || cliente.codigoEmail !== codigo) {
+      return res.status(400).json({ erro: "Código inválido" });
+    }
+
+    if (!cliente.expiraEm || new Date() > cliente.expiraEm) {
+      return res.status(400).json({ erro: "Código expirado. Solicite reenvio." });
+    }
 
     await prisma.usuario.update({
       where: { id: cliente.id },
-      data: { verificado: true, codigoEmail: null },
+      data: { verificado: true, codigoEmail: null, expiraEm: null },
     });
 
     return res.json({ mensagem: "E-mail verificado com sucesso!" });
@@ -133,11 +193,39 @@ router.post("/validar-email", async (req, res) => {
   }
 });
 
-/** -----------------------------
- * Protegidos
- * ----------------------------- */
+// (Opcional) POST /clientes/reenviar-codigo
+router.post("/reenviar-codigo", async (req, res) => {
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  if (!email) return res.status(400).json({ erro: "E-mail inválido" });
 
-// GET /clientes -> SOMENTE ADMIN
+  try {
+    const user = await prisma.usuario.findUnique({
+      where: { email },
+      select: { id: true, verificado: true, tipo: true, email: true },
+    });
+
+    // responde sempre OK para não vazar existência
+    if (!user || user.verificado || user.tipo !== "CLIENTE") {
+      return res.json({ ok: true, mensagem: "Se existir conta, reenvio efetuado." });
+    }
+
+    const codigo = gerarCodigoVerificacao();
+    const expira = new Date(Date.now() + 30 * 60 * 1000);
+    await prisma.usuario.update({
+      where: { id: user.id },
+      data: { codigoEmail: codigo, expiraEm: expira },
+    });
+
+    await enviarCodigoEmail(user.email, codigo);
+    return res.json({ ok: true, mensagem: "Código reenviado." });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ erro: "Falha ao reenviar código" });
+  }
+});
+
+/** =============== Protegidos =============== */
+
 router.get("/", verificarToken, requireAdmin, async (req, res) => {
   try {
     const { nome, tipos } = req.query as { nome?: string; tipos?: string };
@@ -169,14 +257,22 @@ router.get("/", verificarToken, requireAdmin, async (req, res) => {
   }
 });
 
-// GET /clientes/:id -> DONO OU ADMIN
+const updateSelfSchema = z.object({
+  nome: z.string().min(3).optional(),
+  celular: z.string().min(10).optional(),
+  nascimento: z.string().optional(),
+});
+const updateAdminSchema = updateSelfSchema.extend({
+  tipo: z.nativeEnum(TipoUsuario).optional(),
+  verificado: z.boolean().optional(),
+});
+
 router.get("/:id", verificarToken, requireSelfOrAdminParam("id"), async (req, res) => {
   try {
     const usuario = await prisma.usuario.findUnique({
       where: { id: req.params.id },
       select: baseUserSelect,
     });
-
     if (!usuario) return res.status(404).json({ erro: "Usuário não encontrado" });
     return res.json(usuario);
   } catch (error) {
@@ -185,21 +281,9 @@ router.get("/:id", verificarToken, requireSelfOrAdminParam("id"), async (req, re
   }
 });
 
-// PATCH /clientes/:id -> DONO OU ADMIN
-const updateSelfSchema = z.object({
-  nome: z.string().min(3).optional(),
-  celular: z.string().min(10).optional(),
-  nascimento: z.string().optional(), // será validada se vier
-});
-const updateAdminSchema = updateSelfSchema.extend({
-  tipo: z.nativeEnum(TipoUsuario).optional(),
-  verificado: z.boolean().optional(),
-});
-
 router.patch("/:id", verificarToken, requireSelfOrAdminParam("id"), async (req, res) => {
   try {
     const admin = isAdmin(req.usuario?.usuarioLogadoTipo);
-
     const parsed = (admin ? updateAdminSchema : updateSelfSchema).safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ erro: parsed.error.errors.map((e) => e.message).join("; ") });
@@ -212,7 +296,6 @@ router.patch("/:id", verificarToken, requireSelfOrAdminParam("id"), async (req, 
       data.nascimento = d;
     }
 
-    // Obs: email/cpf/senha idealmente têm fluxos próprios.
     const atualizado = await prisma.usuario.update({
       where: { id: req.params.id },
       data,
@@ -226,7 +309,6 @@ router.patch("/:id", verificarToken, requireSelfOrAdminParam("id"), async (req, 
   }
 });
 
-// DELETE /clientes/:id -> SOMENTE ADMIN (self-delete: se quiser, a gente habilita depois)
 router.delete("/:id", verificarToken, requireAdmin, async (req, res) => {
   try {
     await prisma.usuario.delete({ where: { id: req.params.id } });

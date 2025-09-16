@@ -3,24 +3,30 @@
 import { useEffect, useState } from 'react'
 import axios from 'axios'
 import Spinner from '@/components/Spinner'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { toast } from 'sonner'
 
 type Esporte = { id: number | string; nome: string }
 type Usuario = { id: number | string; nome: string }
 type Quadra = { quadraId: number | string; nome: string; numero: number }
 type DisponibilidadeQuadra = Quadra & { disponivel: boolean }
 
+type Feedback = { kind: 'success' | 'error' | 'info'; text: string }
+
 export default function AgendamentoComum() {
   const API_URL = process.env.NEXT_PUBLIC_URL_API || 'http://localhost:3001'
+  const searchParams = useSearchParams()
+  const router = useRouter()
 
   const [data, setData] = useState<string>('')
   const [esportes, setEsportes] = useState<Esporte[]>([])
-  const [esporteSelecionado, setEsporteSelecionado] = useState<string>('')
+  const [esporteSelecionado, setEsporteSelecionado] = useState<string>('') // sempre guarda o ID
   const [horario, setHorario] = useState<string>('')
 
   const [quadrasDisponiveis, setQuadrasDisponiveis] = useState<Quadra[]>([])
   const [quadraSelecionada, setQuadraSelecionada] = useState<string>('')
 
-  const [mensagem, setMensagem] = useState<string>('')
+  const [feedback, setFeedback] = useState<Feedback | null>(null)
 
   // busca/seleção de jogadores cadastrados
   const [buscaUsuario, setBuscaUsuario] = useState<string>('')
@@ -33,13 +39,49 @@ export default function AgendamentoComum() {
   // feedback do submit
   const [salvando, setSalvando] = useState<boolean>(false)
 
+  // --- guardar o parâmetro de esporte (pode vir id OU nome) para mapear quando esportes carregarem
+  const [esporteParam, setEsporteParam] = useState<string>('')
+
+  // ler params vindos da Home e pré-preencher
+  useEffect(() => {
+    const d = searchParams.get('data')
+    const h = searchParams.get('horario')
+    const q = searchParams.get('quadraId')
+    const e = searchParams.get('esporteId') || searchParams.get('esporte') // aceita id OU nome
+
+    if (d) setData(d)
+    if (h) setHorario(h)
+    if (q) setQuadraSelecionada(q)
+    if (e) setEsporteParam(e)
+  }, [searchParams])
+
   // Esportes
   useEffect(() => {
     axios
       .get<Esporte[]>(`${API_URL}/esportes`, { withCredentials: true })
       .then((res) => setEsportes(res.data || []))
-      .catch((err) => console.error(err))
+      .catch((err) => {
+        console.error(err)
+        setFeedback({ kind: 'error', text: 'Falha ao carregar esportes.' })
+      })
   }, [API_URL])
+
+  // quando a lista de esportes chegar, mapeia o param (id ou nome) para o ID correto
+  useEffect(() => {
+    if (!esportes.length || !esporteParam) return
+
+    // tenta por ID
+    const byId = esportes.find((e) => String(e.id) === String(esporteParam))
+    if (byId) {
+      setEsporteSelecionado(String(byId.id))
+      return
+    }
+    // tenta por NOME (case-insensitive)
+    const byName = esportes.find(
+      (e) => e.nome?.trim().toLowerCase() === esporteParam.trim().toLowerCase()
+    )
+    if (byName) setEsporteSelecionado(String(byName.id))
+  }, [esportes, esporteParam])
 
   // Disponibilidade
   useEffect(() => {
@@ -48,6 +90,7 @@ export default function AgendamentoComum() {
         setQuadrasDisponiveis([])
         return
       }
+      setFeedback(null)
 
       try {
         const { data: disp } = await axios.get<DisponibilidadeQuadra[]>(
@@ -63,10 +106,14 @@ export default function AgendamentoComum() {
           .map(({ quadraId, nome, numero }) => ({ quadraId, nome, numero }))
 
         setQuadrasDisponiveis(filtradas)
-        setMensagem(filtradas.length === 0 ? 'Nenhuma quadra disponível.' : '')
+        if (filtradas.length === 0) {
+          setFeedback({ kind: 'info', text: 'Nenhuma quadra disponível para este horário.' })
+        } else {
+          setFeedback(null)
+        }
       } catch (err) {
         console.error(err)
-        setMensagem('Erro ao verificar disponibilidade.')
+        setFeedback({ kind: 'error', text: 'Erro ao verificar disponibilidade.' })
       }
     }
 
@@ -82,13 +129,10 @@ export default function AgendamentoComum() {
       }
 
       try {
-        const { data } = await axios.get<Usuario[]>(
-          `${API_URL}/clientes`,
-          {
-            params: { nome: buscaUsuario },
-            withCredentials: true,
-          }
-        )
+        const { data } = await axios.get<Usuario[]>(`${API_URL}/clientes`, {
+          params: { nome: buscaUsuario },
+          withCredentials: true,
+        })
         setUsuariosEncontrados(data || [])
       } catch (err) {
         console.error(err)
@@ -105,17 +149,36 @@ export default function AgendamentoComum() {
     )
     setBuscaUsuario('')
     setUsuariosEncontrados([])
+    setFeedback(null)
   }
 
   const removerJogador = (id: number | string) => {
     setJogadores((prev) => prev.filter((j) => String(j.id) !== String(id)))
   }
 
+  function mensagemErroAxios(error: any): string {
+    if (axios.isAxiosError(error)) {
+      const status = error.response?.status
+      const data = error.response?.data as any
+      const serverMsg =
+        (data && (data.erro || data.message || data.msg)) ? String(data.erro || data.message || data.msg) : ''
+
+      if (status === 409) return serverMsg || 'Conflito: horário já reservado.'
+      if (status === 400 || status === 422) return serverMsg || 'Requisição inválida.'
+      if (status === 401) return 'Não autorizado.'
+      return serverMsg || 'Falha ao realizar agendamento.'
+    }
+    return 'Falha ao realizar agendamento.'
+  }
+
   const agendar = async () => {
-    setMensagem('')
+    setFeedback(null)
 
     if (!quadraSelecionada || (jogadores.length === 0 && ownerGuestNome.trim() === '')) {
-      setMensagem('Selecione uma quadra e pelo menos um jogador, ou informe um convidado como dono.')
+      setFeedback({
+        kind: 'error',
+        text: 'Selecione uma quadra e pelo menos um jogador, ou informe um convidado como dono.'
+      })
       return
     }
 
@@ -134,11 +197,9 @@ export default function AgendamentoComum() {
     setSalvando(true)
     try {
       // 1) cria o agendamento
-      const { data: novo } = await axios.post(
-        `${API_URL}/agendamentos`,
-        payload,
-        { withCredentials: true }
-      )
+      const { data: novo } = await axios.post(`${API_URL}/agendamentos`, payload, {
+        withCredentials: true,
+      })
 
       // 2) se tiver “convidado dono”, transfere titularidade
       if (ownerGuestNome.trim()) {
@@ -157,36 +218,77 @@ export default function AgendamentoComum() {
         }
       }
 
-      setMensagem('✅ Agendamento realizado com sucesso!')
+      // sucesso: feedback visual + toast + redirecionar para todosHorarios no mesmo dia
+      setFeedback({ kind: 'success', text: 'Agendamento realizado com sucesso!' })
+      toast.success('Agendamento realizado com sucesso!')
+
+      // limpa seleções
       setQuadraSelecionada('')
       setQuadrasDisponiveis([])
       setJogadores([])
       setOwnerGuestNome('')
+
+      // redirect (mantém o toast visível)
+      const params = new URLSearchParams({ data })
+      setTimeout(() => {
+        router.push(`/adminMaster/todosHorarios?${params.toString()}`)
+      }, 350)
     } catch (error) {
       console.error(error)
-      setMensagem('Erro ao realizar agendamento.')
+      setFeedback({ kind: 'error', text: mensagemErroAxios(error) })
+      toast.error(mensagemErroAxios(error))
     } finally {
       setSalvando(false)
     }
   }
 
+  const horas = [
+    '07:00','08:00','09:00','10:00','11:00','12:00','13:00',
+    '14:00','15:00','16:00','17:00','18:00','19:00',
+    '20:00','21:00','22:00','23:00'
+  ]
+
+  const alertClasses =
+    feedback?.kind === 'success'
+      ? 'border-green-200 bg-green-50 text-green-800'
+      : feedback?.kind === 'error'
+      ? 'border-red-200 bg-red-50 text-red-800'
+      : 'border-sky-200 bg-sky-50 text-sky-800'
+
   return (
     <div className="max-w-xl mx-auto mt-10 p-6 bg-white shadow rounded-xl">
       <h1 className="text-2xl font-bold mb-4">Agendar Quadra Comum</h1>
+
+      {/* ALERTA */}
+      {feedback && (
+        <div
+          className={`mb-4 rounded-md border px-3 py-2 text-sm ${alertClasses}`}
+          role={feedback.kind === 'error' ? 'alert' : 'status'}
+          aria-live={feedback.kind === 'error' ? 'assertive' : 'polite'}
+        >
+          {feedback.text}
+        </div>
+      )}
 
       <label className="block mb-2">Data</label>
       <input
         type="date"
         className="w-full p-2 border rounded mb-4"
         value={data}
-        onChange={(e) => setData(e.target.value)}
+        onChange={(e) => {
+          setData(e.target.value)
+          setFeedback(null)
+        }}
       />
 
       <label className="block mb-2">Esporte</label>
       <select
         className="w-full p-2 border rounded mb-4"
         value={esporteSelecionado}
-        onChange={(e) => setEsporteSelecionado(e.target.value)}
+        onChange={(e) => {
+          setEsporteSelecionado(e.target.value)
+          setFeedback(null)
+        }}
       >
         <option value="">Selecione um esporte</option>
         {esportes.map((e) => (
@@ -200,14 +302,13 @@ export default function AgendamentoComum() {
       <select
         className="w-full p-2 border rounded mb-4"
         value={horario}
-        onChange={(e) => setHorario(e.target.value)}
+        onChange={(e) => {
+          setHorario(e.target.value)
+          setFeedback(null)
+        }}
       >
         <option value="">Selecione um horário</option>
-        {[
-          '08:00','09:00','10:00','11:00','12:00','13:00',
-          '14:00','15:00','16:00','17:00','18:00','19:00',
-          '20:00','21:00','22:00','23:00'
-        ].map((h) => (
+        {horas.map((h) => (
           <option key={h} value={h}>{h}</option>
         ))}
       </select>
@@ -287,7 +388,10 @@ export default function AgendamentoComum() {
                     ? 'bg-green-600 text-white'
                     : 'bg-gray-100'
                 }`}
-                onClick={() => setQuadraSelecionada(String(q.quadraId))}
+                onClick={() => {
+                  setQuadraSelecionada(String(q.quadraId))
+                  setFeedback(null)
+                }}
               >
                 {q.nome} - {q.numero}
               </button>
@@ -311,12 +415,6 @@ export default function AgendamentoComum() {
             )}
           </button>
         </div>
-      )}
-
-      {mensagem && (
-        <p className="mt-4 text-center text-sm text-red-600" aria-live="polite">
-          {mensagem}
-        </p>
       )}
     </div>
   )

@@ -3,7 +3,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, addDays } from "date-fns";
+import { toast } from "sonner";
 
 type QuadraDisponivel = {
   quadraId: string;
@@ -18,8 +19,38 @@ type Esporte = { id: string; nome: string };
 type UsuarioBusca = { id: string; nome: string; email?: string | null };
 type ProximasDatasResp = { proximasDatasDisponiveis: string[]; dataUltimoConflito: string | null };
 
+type Feedback = { kind: "success" | "error" | "info"; text: string };
+
 const diasEnum = ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"] as const;
 const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
+
+const DIA_IDX: Record<(typeof diasEnum)[number], number> = {
+  DOMINGO: 0,
+  SEGUNDA: 1,
+  TERCA: 2,
+  QUARTA: 3,
+  QUINTA: 4,
+  SEXTA: 5,
+  SABADO: 6,
+};
+
+// próxima data (YYYY-MM-DD) para o dia da semana escolhido;
+// se for o mesmo dia, considera o horário: se já passou, pula p/ semana seguinte.
+function proximaDataParaDiaSemana(diaSemana: string, horario?: string): string {
+  const target = DIA_IDX[diaSemana as (typeof diasEnum)[number]] ?? 0;
+  const now = new Date();
+  let delta = (target - now.getDay() + 7) % 7;
+
+  if (delta === 0 && horario && /^\d{2}:\d{2}$/.test(horario)) {
+    const [hh, mm] = horario.split(":").map(Number);
+    const passou =
+      now.getHours() > hh || (now.getHours() === hh && now.getMinutes() >= (mm ?? 0));
+    if (passou) delta = 7;
+  }
+
+  const d = addDays(now, delta);
+  return format(d, "yyyy-MM-dd");
+}
 
 export default function CadastrarPermanente() {
   const router = useRouter();
@@ -47,18 +78,19 @@ export default function CadastrarPermanente() {
   const [dataUltimoConflito, setDataUltimoConflito] = useState<string | null>(null);
   const [proximasDatasDisponiveis, setProximasDatasDisponiveis] = useState<string[]>([]);
 
-  // Spinner do botão
+  // UI
   const [submitting, setSubmitting] = useState(false);
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
 
-  // Esportes
+  /* ===== Esportes ===== */
   useEffect(() => {
     axios
       .get<Esporte[]>(`${API_URL}/esportes`, { withCredentials: true })
       .then((res) => setEsportes(res.data))
-      .catch(console.error);
+      .catch(() => setFeedback({ kind: "error", text: "Falha ao carregar esportes." }));
   }, []);
 
-  // Disponibilidade (permanente)
+  /* ===== Disponibilidade (permanente) ===== */
   useEffect(() => {
     if (!esporteId || !horario || diaSemana === "") {
       setQuadras([]);
@@ -69,6 +101,7 @@ export default function CadastrarPermanente() {
       return;
     }
 
+    setFeedback(null);
     axios
       .get<QuadraDisponivel[]>(`${API_URL}/disponibilidade`, {
         params: { diaSemana, horario, esporteId },
@@ -92,10 +125,11 @@ export default function CadastrarPermanente() {
         setDataInicio("");
         setDataUltimoConflito(null);
         setProximasDatasDisponiveis([]);
+        setFeedback({ kind: "error", text: "Erro ao buscar disponibilidade." });
       });
   }, [esporteId, horario, diaSemana]);
 
-  // Próximas datas quando há conflito comum
+  /* ===== Próximas datas quando há conflito comum ===== */
   useEffect(() => {
     if (!diaSemana || !horario || !quadraId) {
       setProximasDatasDisponiveis([]);
@@ -105,7 +139,8 @@ export default function CadastrarPermanente() {
     }
 
     const quadraSelecionada = quadras.find((q) => q.quadraId === quadraId);
-    const deveBuscarDatas = quadraSelecionada?.conflitoComum && !quadraSelecionada?.conflitoPermanente;
+    const deveBuscarDatas =
+      quadraSelecionada?.conflitoComum && !quadraSelecionada?.conflitoPermanente;
 
     if (!deveBuscarDatas) {
       setProximasDatasDisponiveis([]);
@@ -123,16 +158,23 @@ export default function CadastrarPermanente() {
         setProximasDatasDisponiveis(res.data.proximasDatasDisponiveis);
         setDataUltimoConflito(res.data.dataUltimoConflito);
         setDataInicio("");
+        if (res.data.proximasDatasDisponiveis.length === 0) {
+          setFeedback({
+            kind: "info",
+            text: "Sem datas futuras disponíveis para iniciar este permanente.",
+          });
+        }
       })
       .catch((err) => {
         console.error(err);
         setProximasDatasDisponiveis([]);
         setDataUltimoConflito(null);
         setDataInicio("");
+        setFeedback({ kind: "error", text: "Erro ao consultar próximas datas." });
       });
   }, [diaSemana, horario, quadraId, quadras]);
 
-  // Busca usuários (apenas com a lista aberta)
+  /* ===== Busca usuários (apenas com a lista aberta) ===== */
   useEffect(() => {
     let cancel = false;
     const run = async () => {
@@ -165,17 +207,38 @@ export default function CadastrarPermanente() {
     };
   }, [busca, listaAberta]);
 
+  function mensagemErroAxios(error: any): string {
+    if (axios.isAxiosError(error)) {
+      const status = error.response?.status;
+      const data = error.response?.data as any;
+      const serverMsg =
+        data && (data.erro || data.message || data.msg)
+          ? String(data.erro || data.message || data.msg)
+          : "";
+
+      if (status === 409) return serverMsg || "Conflito: horário já reservado.";
+      if (status === 400 || status === 422) return serverMsg || "Requisição inválida.";
+      if (status === 401) return "Não autorizado.";
+      return serverMsg || "Falha ao cadastrar permanente.";
+    }
+    return "Falha ao cadastrar permanente.";
+  }
+
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setFeedback(null);
 
     // precisa de um dono: usuarioId OU convidadoDonoNome
     if (!usuarioId && convidadoDonoNome.trim() === "") {
-      alert("Informe um usuário (selecionando da lista) OU um convidado como dono.");
+      setFeedback({
+        kind: "error",
+        text: "Informe um usuário (selecionando da lista) OU um convidado como dono.",
+      });
       return;
     }
 
     if (existeAgendamentoComum && proximasDatasDisponiveis.length > 0 && !dataInicio) {
-      alert("Por favor, selecione uma data de início válida.");
+      setFeedback({ kind: "error", text: "Selecione uma data de início válida." });
       return;
     }
 
@@ -184,35 +247,72 @@ export default function CadastrarPermanente() {
       esporteId,
       quadraId,
       horario,
-      ...(usuarioId
-        ? { usuarioId }
-        : { convidadosNomes: [convidadoDonoNome.trim()] }), // ← conforme o back
+      ...(usuarioId ? { usuarioId } : { convidadosNomes: [convidadoDonoNome.trim()] }),
       ...(existeAgendamentoComum ? { dataInicio } : {}),
     };
 
     try {
       setSubmitting(true);
       await axios.post(`${API_URL}/agendamentosPermanentes`, body, { withCredentials: true });
-      alert("Agendamento permanente cadastrado com sucesso!");
-      router.push("/adminMaster/quadras");
+
+      setFeedback({ kind: "success", text: "Agendamento permanente cadastrado com sucesso!" });
+      toast.success("Agendamento permanente cadastrado com sucesso!");
+
+      // decide a data para abrir em todosHorarios:
+      const redirectYmd =
+        (existeAgendamentoComum && dataInicio) || proximaDataParaDiaSemana(diaSemana, horario);
+
+      // limpar campos principais
+      setUsuarioId("");
+      setConvidadoDonoNome("");
+      setQuadraId("");
+
+      setTimeout(() => {
+        const params = new URLSearchParams({ data: redirectYmd });
+        router.push(`/adminMaster/todosHorarios?${params.toString()}`);
+      }, 350);
     } catch (error) {
       console.error(error);
-      alert("Erro ao cadastrar permanente");
+      const msg = mensagemErroAxios(error);
+      setFeedback({ kind: "error", text: msg });
+      toast.error(msg);
     } finally {
       setSubmitting(false);
     }
   };
 
+  const alertClasses =
+    feedback?.kind === "success"
+      ? "border-green-200 bg-green-50 text-green-800"
+      : feedback?.kind === "error"
+      ? "border-red-200 bg-red-50 text-red-800"
+      : "border-sky-200 bg-sky-50 text-sky-800";
+
   return (
     <div className="max-w-md mx-auto mt-10 p-6 bg-white rounded shadow">
       <h1 className="text-2xl font-bold mb-6">Cadastrar Permanente</h1>
+
+      {/* ALERTA */}
+      {feedback && (
+        <div
+          className={`mb-4 rounded-md border px-3 py-2 text-sm ${alertClasses}`}
+          role={feedback.kind === "error" ? "alert" : "status"}
+          aria-live={feedback.kind === "error" ? "assertive" : "polite"}
+        >
+          {feedback.text}
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Dia da Semana */}
         <div>
           <label className="block font-semibold mb-1">Dia da Semana</label>
           <select
             value={diaSemana}
-            onChange={(e) => setDiaSemana(e.target.value)}
+            onChange={(e) => {
+              setDiaSemana(e.target.value);
+              setFeedback(null);
+            }}
             className="w-full border rounded p-2"
             required
           >
@@ -230,7 +330,10 @@ export default function CadastrarPermanente() {
           <label className="block font-semibold mb-1">Esporte</label>
           <select
             value={esporteId}
-            onChange={(e) => setEsporteId(e.target.value)}
+            onChange={(e) => {
+              setEsporteId(e.target.value);
+              setFeedback(null);
+            }}
             className="w-full border rounded p-2"
             required
           >
@@ -248,7 +351,10 @@ export default function CadastrarPermanente() {
           <label className="block font-semibold mb-1">Horário</label>
           <select
             value={horario}
-            onChange={(e) => setHorario(e.target.value)}
+            onChange={(e) => {
+              setHorario(e.target.value);
+              setFeedback(null);
+            }}
             className="w-full border rounded p-2"
             required
           >
@@ -270,7 +376,10 @@ export default function CadastrarPermanente() {
           <label className="block font-semibold mb-1">Quadra</label>
           <select
             value={quadraId}
-            onChange={(e) => setQuadraId(e.target.value)}
+            onChange={(e) => {
+              setQuadraId(e.target.value);
+              setFeedback(null);
+            }}
             className="w-full border rounded p-2"
             required
             disabled={!quadras.length}
@@ -307,6 +416,7 @@ export default function CadastrarPermanente() {
                 setBusca(e.target.value);
                 setUsuarioId("");
                 setListaAberta(true);
+                setFeedback(null);
               }}
               onFocus={() => setListaAberta(true)}
               placeholder="Buscar usuário por nome ou e-mail"
@@ -360,6 +470,7 @@ export default function CadastrarPermanente() {
                   setUsuariosEncontrados([]);
                   setListaAberta(false);
                 }
+                setFeedback(null);
               }}
               placeholder="Ou informe um convidado como dono (nome e telefone opcional)"
               className="w-full border rounded p-2"
@@ -402,7 +513,7 @@ export default function CadastrarPermanente() {
           type="submit"
           disabled={submitting}
           className={`w-full text-white font-semibold py-2 px-4 rounded mt-4 transition
-            ${submitting ? "bg-orange-400 cursor-not-allowed" : "bg-orange-500 hover:bg-orange-600"}`}
+            ${submitting ? "bg-orange-400 cursor-not-allowed" : "bg-orange-600 hover:bg-orange-700"}`}
         >
           {submitting ? (
             <span className="inline-flex items-center gap-2">

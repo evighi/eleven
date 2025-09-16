@@ -60,22 +60,24 @@ export default function EditarInformacoesPage() {
       setCarregandoPerfil(true);
       setMsg("");
       try {
+        // 1) quem está logado
         const rMe = await axios.get<Me>(`${API_URL}/usuarios/me`, {
           withCredentials: true,
         });
         setMe(rMe.data);
 
+        // 2) pega os dados completos do próprio cliente (owner/admin)
         try {
-          const rCli = await axios.get<Cliente[]>(
-            `${API_URL}/clientes`,
-            { withCredentials: true, params: { nome: rMe.data.nome } }
+          const rCli = await axios.get<Cliente>(
+            `${API_URL}/clientes/${rMe.data.id}`,
+            { withCredentials: true }
           );
 
-          const candidato = (rCli.data || []).find(c => String(c.id) === String(rMe.data.id));
-          const completo: Cliente = candidato || { id: rMe.data.id, nome: rMe.data.nome, tipo: rMe.data.tipo };
+          const completo = rCli.data;
           setDados(completo);
           setCelular(completo.celular || "");
-        } catch {
+        } catch (e) {
+          // fallback silencioso: mantém o mínimo para a tela não "quebrar"
           setDados({ id: rMe.data.id, nome: rMe.data.nome, tipo: rMe.data.tipo } as Cliente);
           setCelular("");
         }
@@ -151,11 +153,10 @@ export default function EditarInformacoesPage() {
         <div className="mx-auto max-w-sm bg-white rounded-2xl shadow-md p-4 space-y-3">
           {msg && (
             <div
-              className={`text-center text-[13px] rounded-md px-3 py-2 ${
-                msg.toLowerCase().includes("sucesso")
+              className={`text-center text-[13px] rounded-md px-3 py-2 ${msg.toLowerCase().includes("sucesso")
                   ? "bg-green-50 text-green-700"
                   : "bg-red-50 text-red-700"
-              }`}
+                }`}
             >
               {msg}
             </div>
@@ -221,10 +222,9 @@ export default function EditarInformacoesPage() {
                 onClick={salvar}
                 disabled={!celularValido || !houveMudanca || salvando}
                 className={`w-full rounded-lg px-4 py-2 font-semibold text-white transition
-                  ${
-                    !celularValido || !houveMudanca || salvando
-                      ? "bg-orange-400/60 cursor-not-allowed"
-                      : "bg-orange-600 hover:bg-orange-700"
+                  ${!celularValido || !houveMudanca || salvando
+                    ? "bg-orange-400/60 cursor-not-allowed"
+                    : "bg-orange-600 hover:bg-orange-700"
                   }`}
               >
                 {salvando ? (

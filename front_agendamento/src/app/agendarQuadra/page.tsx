@@ -1,3 +1,4 @@
+
 "use client";
 
 import {
@@ -43,14 +44,14 @@ type Player = {
   kind: PlayerKind;
   value: string;
   userId?: string;
-  // campos antigos (mantidos para compat)
+  // compat
   open?: boolean;
   search?: string;
   loading?: boolean;
   results?: { id: string; nome: string; email?: string }[];
 };
 
-type UsuarioBusca = { id: string; nome: string; email?: string | null };
+type UsuarioBusca = { id: string; nome: string };
 
 type ReservaPayloadBase = {
   data: string;
@@ -72,7 +73,6 @@ const HORARIOS = [
   "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00", "23:00",
 ] as const;
 
-// Helpers de data/hora no fuso de São Paulo
 const SP_TZ = "America/Sao_Paulo";
 const todayIsoSP = new Intl.DateTimeFormat("en-CA", {
   timeZone: SP_TZ,
@@ -89,9 +89,16 @@ const hourNowSP = parseInt(
   10
 );
 
+function dateFromIsoSP(isoYmd: string) {
+  return new Date(`${isoYmd}T00:00:00-03:00`);
+}
+
+const DOW_MIXED = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+const DOW_UPPER = ["DOMINGO", "SEGUNDA", "TERÇA", "QUARTA", "QUINTA", "SEXTA", "SÁBADO"];
+
 function diasProximos(qtd = 7) {
-  const out: { iso: string; d: number; mes: string; wd: string }[] = [];
-  const wd = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+  const out: { iso: string; d: number; mes: string; wdShort: string; wdFull: string }[] = [];
+  const wdShort = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
   const meses = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"];
 
   const base = new Date();
@@ -99,7 +106,15 @@ function diasProximos(qtd = 7) {
     const dt = new Date(base);
     dt.setDate(base.getDate() + i);
     const iso = isoLocalDate(dt);
-    out.push({ iso, d: dt.getDate(), mes: meses[dt.getMonth()], wd: wd[dt.getDay()] });
+    const sp = dateFromIsoSP(iso);
+    const dow = sp.getDay();
+    out.push({
+      iso,
+      d: dt.getDate(),
+      mes: meses[dt.getMonth()],
+      wdShort: wdShort[dow],
+      wdFull: DOW_MIXED[dow],
+    });
   }
   return out;
 }
@@ -109,6 +124,13 @@ function formatarDia(iso: string) {
   const [y, m, d] = iso.split("-");
   return `${d}/${m}/${y}`;
 }
+function formatarDiaCurto(iso: string) {
+  if (!iso) return "";
+  const sp = dateFromIsoSP(iso);
+  const dow = sp.getDay();
+  const [y, m, d] = iso.split("-");
+  return `${DOW_UPPER[dow]} ${d}/${m}`;
+}
 
 function cryptoRandom() {
   if (typeof crypto !== "undefined") {
@@ -117,9 +139,61 @@ function cryptoRandom() {
   }
   return Math.random().toString(36).slice(2);
 }
-
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
+}
+
+/* =========================================================
+   Helpers do stepper (caminho de rato)
+========================================================= */
+function firstWord(s?: string) {
+  if (!s) return "";
+  return s.trim().split(/\s+/)[0] || "";
+}
+
+function StepTrail({
+  items,
+  currentStep,
+  onJump,
+}: {
+  items: { step: number; hint: string; value?: string | null }[];
+  currentStep: number;
+  onJump: (s: number) => void;
+}) {
+  return (
+    <div className="max-w-sm mx-auto mt-3 mb-4">
+      <div className="flex items-center gap-2 overflow-x-auto">
+        {items.map((it, i) => {
+          const isCurrent = it.step === currentStep;
+          const isDone = it.step < currentStep;
+          const label = (it.value && String(it.value)) || it.hint;
+
+          const base =
+            "whitespace-nowrap rounded-full border px-3 py-1 text-[12px] font-semibold transition";
+
+          const cls = isCurrent
+            ? "bg-orange-600 border-orange-600 text-white"
+            : isDone
+              ? "bg-gray-300 border-gray-400 text-gray-900"
+              : "bg-gray-100 border-gray-300 text-gray-700";
+
+          return (
+            <div key={it.step} className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => (isDone ? onJump(it.step) : undefined)}
+                className={`${base} ${cls} ${isDone ? "cursor-pointer hover:brightness-95" : "cursor-default"}`}
+                title={isDone ? "Voltar para este passo" : undefined}
+              >
+                {label}
+              </button>
+              {i < items.length - 1 && <span className="text-gray-400">›</span>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 /* =========================================================
@@ -130,7 +204,6 @@ function initialsFromName(nome?: string) {
   const [a = "", b = ""] = nome.trim().split(/\s+/);
   return (a[0] || "").concat(b[0] || "").toUpperCase();
 }
-
 function AvatarCircle({ label }: { label?: string }) {
   return (
     <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-200 text-[12px] font-semibold text-gray-600">
@@ -176,32 +249,52 @@ function UserPicker({
   }, []);
 
   useEffect(() => {
-    if (!open || term.trim().length < 2) {
+    if (!open) {
       setResults([]);
       return;
     }
 
-    let cancel = false;
+    const q = term.trim();
+    if (q.length < 2) {
+      setResults([]);
+      return;
+    }
+
+    const controller = new AbortController();
     setLoading(true);
+
     const t = setTimeout(async () => {
       try {
-        const res = await axios.get<UsuarioBusca[]>(`${apiUrl}/clientes`, {
-          params: { nome: term.trim() },
-          withCredentials: true,
-        });
-        if (!cancel) {
-          const lista = (res.data || []).filter((u) => !excludeIds.includes(u.id));
-          setResults(lista);
+        const { data } = await axios.get<UsuarioBusca[]>(
+          `${apiUrl}/usuarios/buscar`,
+          {
+            params: {
+              q,
+              limit: 10,
+              // opcional: por padrão o back já filtra CLIENTE,
+              // mas se quiser incluir admins em alguma tela interna:
+              // tipos: "CLIENTE,ADMIN_ATENDENTE,ADMIN_PROFESSORES"
+            },
+            withCredentials: true,
+            signal: controller.signal,
+          }
+        );
+
+        const lista = (data || []).filter((u) => !excludeIds.includes(u.id));
+        setResults(lista);
+      } catch (err: any) {
+        if (!controller.signal.aborted) {
+          setResults([]);
         }
-      } catch {
-        if (!cancel) setResults([]);
       } finally {
-        if (!cancel) setLoading(false);
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
       }
     }, 300);
 
     return () => {
-      cancel = true;
+      controller.abort();
       clearTimeout(t);
     };
   }, [open, term, apiUrl, excludeIds]);
@@ -264,10 +357,9 @@ function UserPicker({
                       setOpen(false);
                     }}
                   >
-                    <AvatarCircle label={u.nome || u.email || ""} />
+                    <AvatarCircle label={u.nome || ""} />
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-medium text-gray-800">{u.nome}</div>
-                      {u.email && <div className="truncate text-[11px] text-gray-500">{u.email}</div>}
+                      <div className="truncate text-sm font-medium text-orange-600">{u.nome}</div>
                     </div>
                   </button>
                 </li>
@@ -377,9 +469,9 @@ export default function AgendarQuadraCliente() {
       const candidate = e.logoUrl || e.imagem || "";
       const normalized =
         candidate &&
-        !/^(https?:|data:|blob:)/i.test(candidate) &&
-        !candidate.startsWith("/") &&
-        !candidate.includes("/")
+          !/^(https?:|data:|blob:)/i.test(candidate) &&
+          !candidate.startsWith("/") &&
+          !candidate.includes("/")
           ? `/uploads/esportes/${candidate}`
           : candidate;
 
@@ -394,9 +486,9 @@ export default function AgendarQuadraCliente() {
       const candidate = q.logoUrl || q.imagem || q.arquivo || "";
       const normalized =
         candidate &&
-        !/^(https?:|data:|blob:)/i.test(String(candidate)) &&
-        !String(candidate).startsWith("/") &&
-        !String(candidate).includes("/")
+          !/^(https?:|data:|blob:)/i.test(String(candidate)) &&
+          !String(candidate).startsWith("/") &&
+          !String(candidate).includes("/")
           ? `/uploads/quadras/${candidate}`
           : String(candidate);
 
@@ -427,11 +519,32 @@ export default function AgendarQuadraCliente() {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
 
+  // ======== feedback/tap lock ========
+  const [navLock, setNavLock] = useState(false);
+  const [autoMsg, setAutoMsg] = useState<string | null>(null);
+  const [pressEsporteId, setPressEsporteId] = useState<string | null>(null);
+  const [pressDiaISO, setPressDiaISO] = useState<string | null>(null);
+  const [pressQuadraId, setPressQuadraId] = useState<string | null>(null);
+
+  const flashAdvance = (msg: string, run: () => void, after?: () => void) => {
+    setNavLock(true);
+    setAutoMsg(msg);
+    // pequeno atraso para mostrar o estado pressionado
+    setTimeout(() => {
+      run();
+      // mantém o lock por um curto período para o usuário perceber o feedback
+      setTimeout(() => {
+        setNavLock(false);
+        setAutoMsg(null);
+        after?.();
+      }, 350);
+    }, 80);
+  };
+
   // ======== JOGADORES (opcional) ========
   const [players, setPlayers] = useState<Player[]>([]);
   const guestRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
-  // inicia players com dono + um campo "com cadastro"
   useEffect(() => {
     const ownerName = usuario?.nome ?? "";
     const base: Player[] = [
@@ -441,16 +554,12 @@ export default function AgendarQuadraCliente() {
     setPlayers(base);
   }, [usuario?.nome]);
 
-  // helpers jogador
   const updatePlayer = (id: string, patch: Partial<Player>) =>
     setPlayers((cur) => cur.map((p) => (p.id === id ? { ...p, ...patch } : p)));
-
   const removePlayer = (id: string) =>
     setPlayers((cur) => cur.filter((p) => p.id !== id || p.kind === "owner"));
-
   const addRegisteredField = () =>
     setPlayers((cur) => [...cur, { id: cryptoRandom(), kind: "registered", value: "" }]);
-
   const addGuestField = () =>
     setPlayers((cur) => [...cur, { id: cryptoRandom(), kind: "guest", value: "" }]);
 
@@ -461,7 +570,6 @@ export default function AgendarQuadraCliente() {
   }, [esportes, esporteId]);
 
   /* ========= Carregamentos ========= */
-  // 1) Esportes
   useEffect(() => {
     if (isChecking) return;
     const loadEsportes = async () => {
@@ -483,7 +591,6 @@ export default function AgendarQuadraCliente() {
     loadEsportes();
   }, [isChecking, buildEsporteLogo, API_URL]);
 
-  // 2) Logos das quadras
   useEffect(() => {
     if (isChecking) return;
     const loadQuadras = async () => {
@@ -504,7 +611,6 @@ export default function AgendarQuadraCliente() {
     loadQuadras();
   }, [isChecking, buildQuadraLogo, API_URL]);
 
-  // 3) Mapa de horários
   useEffect(() => {
     if (isChecking) return;
     setHorario("");
@@ -556,7 +662,6 @@ export default function AgendarQuadraCliente() {
     };
   }, [API_URL, esporteId, diaISO, isChecking]);
 
-  // 4) Lista de quadras disponíveis
   useEffect(() => {
     if (isChecking) return;
     const buscar = async () => {
@@ -587,29 +692,44 @@ export default function AgendarQuadraCliente() {
     buscar();
   }, [API_URL, diaISO, horario, esporteId, quadraLogos, isChecking]);
 
+  /* ======= Rótulos do stepper ======= */
+  const esporteNome = useMemo(
+    () => esportes.find((e) => String(e.id) === String(esporteId))?.nome || "",
+    [esportes, esporteId]
+  );
+  const quadraSel = useMemo(
+    () => quadras.find((q) => String(q.quadraId) === String(quadraId)),
+    [quadras, quadraId]
+  );
+  const trailItems = useMemo(
+    () => [
+      { step: 1, hint: "Escolha o esporte", value: esporteId ? firstWord(esporteNome) : null },
+      { step: 2, hint: "Selecione o dia", value: diaISO ? formatarDiaCurto(diaISO) : null },
+      { step: 3, hint: "Selecione o horário", value: horario || null },
+      {
+        step: 4,
+        hint: "Escolha a quadra",
+        value: quadraSel ? `${quadraSel.numero} - ${quadraSel.nome}` : null,
+      },
+      { step: 5, hint: isVoleiSelected ? "Jogadores (pulado)" : "Jogadores (opcional)", value: null },
+      { step: 6, hint: "Confirmar", value: null },
+    ],
+    [esporteId, esporteNome, diaISO, horario, quadraSel, isVoleiSelected]
+  );
+
   /* ========= Navegação ========= */
-  const confirmarEsporte = () => {
-    if (!esporteId) return setMsg("Selecione um esporte.");
-    setMsg("");
-    setStep(2);
-  };
-  const confirmarDia = () => {
-    if (!diaISO) return setMsg("Selecione um dia.");
-    setMsg("");
-    setStep(3);
-  };
   const confirmarHorario = () => {
     if (!horario) return setMsg("Selecione um horário.");
     setMsg("");
     setStep(4);
   };
-  const avancarQuadra = () => {
-    if (!quadraId) return setMsg("Selecione uma quadra.");
+
+  const avancarQuadraDireto = (id: string) => {
+    setQuadraId(id);
     setMsg("");
-    setStep(isVoleiSelected ? 6 : 5); // vôlei pula jogadores como já era antes
+    setStep(isVoleiSelected ? 6 : 5);
   };
 
-  // Etapa de jogadores agora é OPCIONAL (sem validação de quantidade)
   const confirmarJogadores = () => {
     setMsg("");
     setStep(6);
@@ -645,7 +765,6 @@ export default function AgendarQuadraCliente() {
 
     const base: ReservaPayloadBase = { data: diaISO, horario, esporteId, quadraId, tipoReserva: "COMUM" };
 
-    // Sempre opcional: se tiver jogadores, envia; se não tiver, segue sem eles.
     const jogadoresIds = players
       .filter((p) => p.kind === "registered" && p.userId)
       .map((p) => String(p.userId));
@@ -729,7 +848,26 @@ export default function AgendarQuadraCliente() {
         </div>
       </header>
 
-      <section className="px-4 py-4">
+      {step < 7 && (
+        <StepTrail
+          items={trailItems}
+          currentStep={step}
+          onJump={(s) => {
+            if (s < step && !navLock) setStep(s as Step);
+          }}
+        />
+      )}
+
+      <section className="px-4 py-4 relative">
+        {/* Chip flutuante de feedback */}
+        {navLock && (
+          <div className="fixed inset-x-0 top-3 z-50 flex justify-center px-4 pointer-events-none">
+            <div className="flex items-center gap-2 bg-black/70 text-white text-xs px-3 py-1 rounded-full shadow">
+              <Spinner size="w-4 h-4" /> <span>{autoMsg ?? "Avançando..."}</span>
+            </div>
+          </div>
+        )}
+
         <div className="max-w-sm mx-auto space-y-4">
           {msg && <div className="text-center text-sm text-red-600">{msg}</div>}
 
@@ -751,20 +889,32 @@ export default function AgendarQuadraCliente() {
               <div className="grid grid-cols-4 gap-3">
                 {esportes.map((e) => {
                   const ativo = String(esporteId) === String(e.id);
+                  const pressed = pressEsporteId === String(e.id);
                   return (
                     <button
+                      type="button"
                       key={e.id}
-                      className={`rounded-xl border text-center px-2 py-3 text-[12px] leading-tight
-                        ${ativo ? "bg-orange-50 border-orange-400 text-orange-700" : "bg-gray-50 border-gray-200 text-gray-700"}
-                      `}
-                      onClick={() => setEsporteId(String(e.id))}
+                      disabled={navLock}
+                      className={`rounded-xl border text-center px-2 py-3 text-[12px] leading-tight transition
+                ${ativo ? "bg-orange-50 border-orange-400 text-orange-700" : "bg-gray-50 border-gray-200 text-gray-700"}
+                ${navLock ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}
+                ${pressed ? "ring-2 ring-orange-500 animate-pulse" : ""}`}
+                      onPointerUp={() => {
+                        if (navLock) return;
+                        setMsg("");
+                        setPressEsporteId(String(e.id));
+                        flashAdvance(`Esporte: ${e.nome}`, () => {
+                          setEsporteId(String(e.id));
+                          setStep(2);
+                        }, () => setPressEsporteId(null));
+                      }}
                     >
                       <div className="mx-auto mb-2 w-9 h-9 rounded-full bg-gray-200 overflow-hidden relative flex items-center justify-center">
                         <AppImage
                           src={e.logoUrl || "/icons/ball.png"}
                           alt={e.nome}
                           fill
-                          className="object-contain"
+                          className="object-contain pointer-events-none select-none"
                           fallbackSrc="/icons/ball.png"
                         />
                       </div>
@@ -773,9 +923,6 @@ export default function AgendarQuadraCliente() {
                   );
                 })}
               </div>
-              <Btn className="mt-4 cursor-pointer" onClick={confirmarEsporte}>
-                Confirmar
-              </Btn>
             </Card>
           )}
 
@@ -786,24 +933,33 @@ export default function AgendarQuadraCliente() {
               <div className="flex gap-2 overflow-x-auto pb-1">
                 {dias.map((d) => {
                   const ativo = diaISO === d.iso;
+                  const pressed = pressDiaISO === d.iso;
                   return (
                     <button
+                      type="button"
                       key={d.iso}
-                      onClick={() => setDiaISO(d.iso)}
-                      className={`min-w-[90px] rounded-xl border px-2 py-2 text-[12px] text-center
-                        ${ativo ? "bg-orange-100 border-orange-500 text-orange-700" : "bg-gray-100 border-gray-200 text-gray-700"}
-                      `}
+                      disabled={navLock}
+                      onPointerUp={() => {
+                        if (navLock) return;
+                        setMsg("");
+                        setPressDiaISO(d.iso);
+                        flashAdvance(`Dia: ${formatarDiaCurto(d.iso)}`, () => {
+                          setDiaISO(d.iso);
+                          setStep(3);
+                        }, () => setPressDiaISO(null));
+                      }}
+                      className={`min-w-[110px] rounded-xl border px-2 py-2 text-[12px] text-center transition
+                ${ativo ? "bg-orange-100 border-orange-500 text-orange-700" : "bg-gray-100 border-gray-200 text-gray-700"}
+                ${navLock ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}
+                ${pressed ? "ring-2 ring-orange-500 animate-pulse" : ""}`}
                     >
                       <div className="text-[11px]">{d.mes}</div>
                       <div className="text-lg font-bold">{String(d.d).padStart(2, "0")}</div>
-                      <div className="text-[11px]">{d.wd}</div>
+                      <div className="text-[11px]">{d.wdFull}</div>
                     </button>
                   );
                 })}
               </div>
-              <Btn className="mt-4 cursor-pointer" onClick={confirmarDia}>
-                Avançar
-              </Btn>
             </Card>
           )}
 
@@ -822,20 +978,20 @@ export default function AgendarQuadraCliente() {
                   const enabled = horariosMap[h] === true;
                   return (
                     <button
+                      type="button"
                       key={h}
-                      onClick={() => enabled && setHorario(h)}
-                      disabled={!enabled}
-                      className={`rounded-md px-2 py-2 text-sm border
-                        ${ativo ? "bg-orange-100 border-orange-500 text-orange-700" : "bg-gray-100 border-gray-200 text-gray-700"}
-                        ${enabled ? "" : "opacity-50 cursor-not-allowed"}
-                      `}
+                      onPointerUp={() => enabled && setHorario(h)}
+                      disabled={!enabled || navLock}
+                      className={`rounded-md px-2 py-2 text-sm border transition
+                ${ativo ? "bg-orange-100 border-orange-500 text-orange-700" : "bg-gray-100 border-gray-200 text-gray-700"}
+                ${enabled && !navLock ? "cursor-pointer" : "opacity-50 cursor-not-allowed"}`}
                     >
                       {h}
                     </button>
                   );
                 })}
               </div>
-              <Btn className="mt-4 cursor-pointer" onClick={confirmarHorario} disabled={!horario}>
+              <Btn className="mt-4 cursor-pointer" onClick={confirmarHorario} disabled={!horario || navLock}>
                 Confirmar
               </Btn>
             </Card>
@@ -859,21 +1015,31 @@ export default function AgendarQuadraCliente() {
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                 {quadras.map((q) => {
                   const ativo = String(quadraId) === String(q.quadraId);
+                  const pressed = pressQuadraId === String(q.quadraId);
                   const src = q.logoUrl || "/quadra.png";
                   return (
                     <button
+                      type="button"
                       key={q.quadraId}
-                      onClick={() => setQuadraId(String(q.quadraId))}
+                      disabled={navLock}
+                      onPointerUp={() => {
+                        if (navLock) return;
+                        setPressQuadraId(String(q.quadraId));
+                        flashAdvance(`Quadra ${q.numero} - ${q.nome}`, () => {
+                          avancarQuadraDireto(String(q.quadraId));
+                        }, () => setPressQuadraId(null));
+                      }}
                       className={`rounded-xl border p-3 transition flex flex-col items-center text-center
-              ${ativo ? "bg-orange-50 border-orange-500" : "bg-gray-50 border-gray-200 hover:border-gray-300"}
-            `}
+                ${ativo ? "bg-orange-50 border-orange-500" : "bg-gray-50 border-gray-200 hover:border-gray-300"}
+                ${navLock ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}
+                ${pressed ? "ring-2 ring-orange-500 animate-pulse" : ""}`}
                     >
-                      <div className="relative w-full h-15 md:h-32 overflow-hidden flex items-center justify-center mb-2">
+                      <div className="relative w-full h-24 md:h-32 overflow-hidden flex items-center justify-center mb-2">
                         <AppImage
                           src={src || "/quadra.png"}
                           alt={q.nome}
                           fill
-                          className="object-contain"
+                          className="object-contain pointer-events-none select-none"
                           fallbackSrc="/quadra.png"
                         />
                       </div>
@@ -884,9 +1050,7 @@ export default function AgendarQuadraCliente() {
                 })}
               </div>
 
-              <Btn className="mt-4 cursor-pointer" onClick={avancarQuadra}>
-                Avançar
-              </Btn>
+              {/* botão Avançar removido */}
             </Card>
           )}
 
@@ -933,7 +1097,7 @@ export default function AgendarQuadraCliente() {
                         inputRef={(el) => {
                           guestRefs.current[p.id] = el;
                         }}
-                        onDebouncedCommit={() => {}}
+                        onDebouncedCommit={() => { }}
                         onBlurCommit={(val) => {
                           updatePlayer(p.id, { value: val });
                         }}
@@ -964,7 +1128,7 @@ export default function AgendarQuadraCliente() {
                 </button>
               </div>
 
-              <Btn className="mt-4 cursor-pointer" onClick={confirmarJogadores}>
+              <Btn className="mt-4 cursor-pointer" onClick={confirmarJogadores} disabled={navLock}>
                 Confirmar
               </Btn>
             </Card>
@@ -975,18 +1139,16 @@ export default function AgendarQuadraCliente() {
             <Card>
               <p className="text-[13px] font-semibold text-gray-600 mb-3">Confirmar Reserva:</p>
 
-              <Resumo label="Escolha o Dia:" valor={formatarDia(diaISO)} onChange={() => setStep(2)} />
+              <Resumo label="Escolha o Dia:" valor={formatarDiaCurto(diaISO)} onChange={() => setStep(2)} />
               <Resumo label="Escolha o Horário:" valor={horario} onChange={() => setStep(3)} />
               <Resumo
                 label="Escolha o Esporte:"
-                valor={esportes.find((e) => String(e.id) === String(esporteId))?.nome || ""}
+                valor={esporteNome}
                 onChange={() => setStep(1)}
               />
               <Resumo
                 label="Escolha a Quadra:"
-                valor={`${
-                  quadras.find((q) => String(q.quadraId) === String(quadraId))?.nome || ""
-                } - Quadra ${quadras.find((q) => String(q.quadraId) === String(quadraId))?.numero || ""}`}
+                valor={`${quadraSel?.numero ?? ""} - ${quadraSel?.nome ?? ""}`}
                 onChange={() => setStep(4)}
               />
               <Resumo
@@ -1000,7 +1162,7 @@ export default function AgendarQuadraCliente() {
                 onChange={() => setStep(5)}
               />
 
-              <Btn className="mt-2 cursor-pointer" onClick={realizarReserva} disabled={loading}>
+              <Btn className="mt-2 cursor-pointer" onClick={realizarReserva} disabled={loading || navLock}>
                 {loading ? "Enviando..." : "Realizar Reserva"}
               </Btn>
             </Card>
@@ -1014,7 +1176,7 @@ export default function AgendarQuadraCliente() {
                   src="/icons/realizada.png"
                   alt=""
                   fill
-                  className="object-contain"
+                  className="object-contain pointer-events-none select-none"
                   priority
                 />
               </div>

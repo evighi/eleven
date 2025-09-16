@@ -50,6 +50,10 @@ type AgendamentoCard = {
   dia: string;   // "dd/mm" ou "Quarta"
   hora: string;
   tipo: TipoReserva;
+
+  // usados só para ordenação/seleção
+  nextISO: string | null; // "YYYY-MM-DD"
+  sortTs: number;         // timestamp do próximo evento (SP)
 };
 
 export default function Home() {
@@ -65,6 +69,7 @@ export default function Home() {
 
   const [nomeUsuario, setNomeUsuario] = useState("Usuário");
   const [agendamentos, setAgendamentos] = useState<AgendamentoCard[]>([]);
+  const [totalProximos, setTotalProximos] = useState<number>(0);
   const [carregando, setCarregando] = useState(false);
   const HABILITAR_TRANSFERENCIA = false;
 
@@ -86,6 +91,53 @@ export default function Home() {
   const prettyDiaSemana = (d?: AgendamentoAPI["diaSemana"]) =>
     d ? d.charAt(0) + d.slice(1).toLowerCase() : "";
 
+  /** timestamp em UTC considerando o fuso de SP (-03:00) */
+  function tsFromSP(ymd: string, hora: string) {
+    // hora esperado "HH:mm"
+    const safeHora = /^\d{2}:\d{2}$/.test(hora) ? hora : "00:00";
+    return new Date(`${ymd}T${safeHora}:00-03:00`).getTime();
+  }
+
+  // 🔹 Fallback local p/ permanentes quando o back NÃO mandar `proximaData`
+  function proximaDataLocalQuandoFaltar(
+    diaSemana?: AgendamentoAPI["diaSemana"],
+    horario?: string
+  ) {
+    if (!diaSemana) return null;
+
+    const DIA_IDX: Record<NonNullable<AgendamentoAPI["diaSemana"]>, number> = {
+      DOMINGO: 0, SEGUNDA: 1, TERCA: 2, QUARTA: 3, QUINTA: 4, SEXTA: 5, SABADO: 6,
+    };
+
+    const tz = "America/Sao_Paulo";
+    const now = new Date();
+
+    const cur = now.getDay(); // 0..6
+    const target = DIA_IDX[diaSemana];
+    let delta = (target - cur + 7) % 7;
+
+    // só compara horário se vier "HH:mm"
+    const hasHM = typeof horario === "string" && /^\d{2}:\d{2}$/.test(horario);
+    if (delta === 0 && hasHM) {
+      const hmNow = new Intl.DateTimeFormat("en-GB", {
+        timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false,
+      }).format(now); // "HH:mm"
+      if (hmNow >= horario) {
+        delta = 7; // hoje já passou o horário -> próxima semana
+      }
+    }
+
+    const d = new Date(now);
+    d.setDate(d.getDate() + delta);
+
+    // "YYYY-MM-DD" no fuso de SP
+    const ymd = new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(d);
+
+    return ymd;
+  }
+
   const normalizar = useCallback(
     (raw: AgendamentoAPI): AgendamentoCard => {
       const logo = raw.quadraLogoUrl ?? raw.logoUrl ?? null;
@@ -100,13 +152,20 @@ export default function Home() {
         if (m?.[1]) numero = m[1];
       }
 
-      // dia: COMUM -> dd/mm; PERMANENTE -> proximaData(dd/mm) ou nome do dia
-      const dia =
+      // Define a data ISO usada para exibição e ordenação:
+      // - COMUM: usa `data`
+      // - PERMANENTE: usa `proximaData`; se não vier, calcula localmente
+      const nextISO =
         raw.tipoReserva === "COMUM"
-          ? paraDDMM(raw.data)
-          : raw.proximaData
-            ? paraDDMM(raw.proximaData)
-            : prettyDiaSemana(raw.diaSemana);
+          ? (raw.data ?? null)
+          : (raw.proximaData ?? proximaDataLocalQuandoFaltar(raw.diaSemana, raw.horario) ?? null);
+
+      const sortTs = nextISO ? tsFromSP(nextISO, raw.horario) : Number.POSITIVE_INFINITY;
+
+      const dia =
+        nextISO
+          ? paraDDMM(nextISO)
+          : prettyDiaSemana(raw.diaSemana);
 
       return {
         id: raw.id,
@@ -117,6 +176,8 @@ export default function Home() {
         dia,
         hora: raw.horario,
         tipo: raw.tipoReserva,
+        nextISO,
+        sortTs,
       };
     },
     [paraDDMM]
@@ -129,30 +190,23 @@ export default function Home() {
       setCarregando(true);
       try {
         const res = await axios.get<AgendamentoAPI[]>(`${API_URL}/agendamentos/me`, {
-          withCredentials: true, // não precisa passar ?data
+          withCredentials: true,
         });
 
-        // back já traz: comuns CONFIRMADOS + permanentes ativos
+        // normaliza
         const list = (res.data || []).map(normalizar);
 
-        // ordenar por data (dd/mm primeiro) + hora
-        list.sort((a, b) => {
-          const isDDMM = (s: string) => /^\d{2}\/\d{2}$/.test(s);
-          const aDD = isDDMM(a.dia), bDD = isDDMM(b.dia);
-          if (aDD && bDD) {
-            const [ad, am] = a.dia.split("/").map(Number);
-            const [bd, bm] = b.dia.split("/").map(Number);
-            if (am !== bm) return am - bm;
-            if (ad !== bd) return ad - bd;
-          } else if (aDD !== bDD) {
-            return aDD ? -1 : 1; // datas vêm antes de "Quarta"
-          }
-          return a.hora.localeCompare(b.hora);
-        });
+        // só próximos (>= agora)
+        const agora = Date.now();
+        const futuras = list
+          .filter((a) => a.sortTs !== Number.POSITIVE_INFINITY && a.sortTs >= agora)
+          .sort((a, b) => a.sortTs - b.sortTs);
 
-        setAgendamentos(list);
+        setTotalProximos(futuras.length);
+        setAgendamentos(futuras.slice(0, 2)); // << mostra só os 2 mais próximos
       } catch {
         setAgendamentos([]);
+        setTotalProximos(0);
       } finally {
         setCarregando(false);
       }
@@ -180,7 +234,9 @@ export default function Home() {
             Bem vindo(a), {nomeUsuario}!
           </h1>
           <p className="text-sm md:text-base text-white/85">
-            Você tem {agendamentos.length} agendamento{agendamentos.length === 1 ? "" : "s"}.
+            Você tem {totalProximos} agendamento{totalProximos === 1 ? "" : "s"} futuro
+            {totalProximos === 1 ? "" : "s"}.
+            {totalProximos > 2 ? " Mostrando os 2 mais próximos." : ""}
           </p>
         </div>
       </header>
@@ -198,8 +254,8 @@ export default function Home() {
               </div>
             )}
 
-            {!carregando && agendamentos.length === 0 && (
-              <p className="text-sm text-gray-500">Você não tem agendamentos.</p>
+            {!carregando && totalProximos === 0 && (
+              <p className="text-sm text-gray-500">Você não tem agendamentos futuros.</p>
             )}
 
             <div className="space-y-3">
@@ -233,8 +289,8 @@ export default function Home() {
                       <span
                         className={`text-[10px] px-2 py-[2px] rounded-full ${
                           a.tipo === "PERMANENTE"
-                            ? "bg-gray-200 text-gray-800"     // cinza para permanentes
-                            : "bg-orange-100 text-orange-700" // laranja para comuns
+                            ? "bg-gray-200 text-gray-800"
+                            : "bg-orange-100 text-orange-700"
                         }`}
                         title={a.tipo === "PERMANENTE" ? "Agendamento permanente" : "Agendamento comum"}
                       >
