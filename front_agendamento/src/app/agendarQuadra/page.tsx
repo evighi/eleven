@@ -1,4 +1,3 @@
-
 "use client";
 
 import {
@@ -519,6 +518,9 @@ export default function AgendarQuadraCliente() {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
 
+  // flag para estilizar mensagem quando for erro de concorrência
+  const [isConcurrencyErr, setIsConcurrencyErr] = useState<boolean>(false);
+
   // ======== feedback/tap lock ========
   const [navLock, setNavLock] = useState(false);
   const [autoMsg, setAutoMsg] = useState<string | null>(null);
@@ -617,6 +619,7 @@ export default function AgendarQuadraCliente() {
     setQuadraId("");
     setQuadras([]);
     setMsg("");
+    setIsConcurrencyErr(false);
 
     let alive = true;
     const fetchHorarios = async () => {
@@ -667,6 +670,7 @@ export default function AgendarQuadraCliente() {
     const buscar = async () => {
       setQuadras([]);
       setMsg("");
+      setIsConcurrencyErr(false);
       if (!diaISO || !horario || !esporteId) return;
       setLoading(true);
       try {
@@ -721,17 +725,20 @@ export default function AgendarQuadraCliente() {
   const confirmarHorario = () => {
     if (!horario) return setMsg("Selecione um horário.");
     setMsg("");
+    setIsConcurrencyErr(false);
     setStep(4);
   };
 
   const avancarQuadraDireto = (id: string) => {
     setQuadraId(id);
     setMsg("");
+    setIsConcurrencyErr(false);
     setStep(isVoleiSelected ? 6 : 5);
   };
 
   const confirmarJogadores = () => {
     setMsg("");
+    setIsConcurrencyErr(false);
     setStep(6);
   };
 
@@ -782,12 +789,29 @@ export default function AgendarQuadraCliente() {
 
     setLoading(true);
     setMsg("");
+    setIsConcurrencyErr(false);
     try {
       await axios.post(`${API_URL}/agendamentos`, payload, { withCredentials: true });
       setStep(7);
     } catch (e: unknown) {
       console.error(e);
-      setMsg(toErrorMessage(e));
+
+      // Detecta especificamente o erro de concorrência para mensagem/ícone custom
+      const ax: any = e;
+      const raw = ax?.response?.data?.erro || ax?.response?.data?.message || "";
+      const strip = (s: string) =>
+        String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+      const isConcurrency =
+        strip(raw).includes("acabou de ser reservado por outra pessoa");
+
+      if (isConcurrency) {
+        setIsConcurrencyErr(true);
+        setMsg("Quadra marcada para outro usuário, escolha outra quadra.");
+      } else {
+        setIsConcurrencyErr(false);
+        setMsg(toErrorMessage(e));
+      }
     } finally {
       setLoading(false);
     }
@@ -869,7 +893,15 @@ export default function AgendarQuadraCliente() {
         )}
 
         <div className="max-w-sm mx-auto space-y-4">
-          {msg && <div className="text-center text-sm text-red-600">{msg}</div>}
+          {msg && (
+            <div className="flex items-center justify-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+              {isConcurrencyErr && (
+                /* 🔁 Ajuste o caminho do seu ícone aqui */
+                <img src="/public/icon_recemmarcada.png" alt="" className="w-4 h-4" />
+              )}
+              <span>{msg}</span>
+            </div>
+          )}
 
           {/* STEP 1 - Esporte */}
           {step === 1 && (
@@ -902,6 +934,7 @@ export default function AgendarQuadraCliente() {
                       onPointerUp={() => {
                         if (navLock) return;
                         setMsg("");
+                        setIsConcurrencyErr(false);
                         setPressEsporteId(String(e.id));
                         flashAdvance(`Esporte: ${e.nome}`, () => {
                           setEsporteId(String(e.id));
@@ -942,6 +975,7 @@ export default function AgendarQuadraCliente() {
                       onPointerUp={() => {
                         if (navLock) return;
                         setMsg("");
+                        setIsConcurrencyErr(false);
                         setPressDiaISO(d.iso);
                         flashAdvance(`Dia: ${formatarDiaCurto(d.iso)}`, () => {
                           setDiaISO(d.iso);
