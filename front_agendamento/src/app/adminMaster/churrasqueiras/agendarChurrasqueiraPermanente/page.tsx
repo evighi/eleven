@@ -13,7 +13,9 @@ interface Churrasqueira {
   logoUrl?: string | null
   disponivel?: boolean
 }
-type UsuarioBusca = { id: string; nome: string }
+
+// Agora também esperamos o celular (telefone)
+type UsuarioBusca = { id: string; nome: string; celular?: string | null }
 
 export default function AgendamentoChurrasqueiraPermanente() {
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001"
@@ -96,7 +98,7 @@ export default function AgendamentoChurrasqueiraPermanente() {
     buscar()
   }, [diaSemana, turno, API_URL])
 
-  // Buscar usuários
+  // Buscar usuários (nome + celular)
   useEffect(() => {
     const q = buscaUsuario.trim()
     if (q.length < 2) {
@@ -137,7 +139,7 @@ export default function AgendamentoChurrasqueiraPermanente() {
       churrasqueiraId: churrasqueiraSelecionada,
       ...(usuarioSelecionado
         ? { usuarioId: usuarioSelecionado.id }
-        : { convidadosNomes: [convidadoDonoNome.trim()] } // <- chave correta para o backend
+        : { convidadosNomes: [convidadoDonoNome.trim()] } // chave esperada pelo backend
       ),
     }
 
@@ -216,14 +218,21 @@ export default function AgendamentoChurrasqueiraPermanente() {
                     setUsuariosEncontrados([])
                     setConvidadoDonoNome('')
                   }}
+                  title={u.celular || ""}
                 >
-                  {u.nome}
+                  <div className="font-medium">{u.nome}</div>
+                  {u.celular && <div className="text-xs text-gray-600">{u.celular}</div>}
                 </li>
               ))}
             </ul>
           )}
           {usuarioSelecionado && (
-            <p className="text-xs text-green-700">Usuário selecionado: <strong>{usuarioSelecionado.nome}</strong></p>
+            <p className="text-xs text-green-700">
+              Usuário selecionado: <strong>{usuarioSelecionado.nome}</strong>
+              {usuarioSelecionado.celular ? (
+                <> — <span className="text-gray-700">{usuarioSelecionado.celular}</span></>
+              ) : null}
+            </p>
           )}
         </div>
 

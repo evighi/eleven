@@ -16,7 +16,10 @@ type QuadraDisponivel = {
 };
 
 type Esporte = { id: string; nome: string };
-type UsuarioBusca = { id: string; nome: string; email?: string | null };
+
+// 👇 agora esperamos celular (telefone) no resultado da busca
+type UsuarioBusca = { id: string; nome: string; celular?: string | null };
+
 type ProximasDatasResp = { proximasDatasDisponiveis: string[]; dataUltimoConflito: string | null };
 
 type Feedback = { kind: "success" | "error" | "info"; text: string };
@@ -174,7 +177,7 @@ export default function CadastrarPermanente() {
       });
   }, [diaSemana, horario, quadraId, quadras]);
 
-  /* ===== Busca usuários (apenas com a lista aberta) ===== */
+  /* ===== Busca usuários (apenas com a lista aberta) — agora recebendo celular ===== */
   useEffect(() => {
     let cancel = false;
     const run = async () => {
@@ -419,7 +422,7 @@ export default function CadastrarPermanente() {
                 setFeedback(null);
               }}
               onFocus={() => setListaAberta(true)}
-              placeholder="Buscar usuário por nome ou e-mail"
+              placeholder="Buscar usuário por nome"
               className="w-full border rounded p-2"
             />
 
@@ -439,9 +442,10 @@ export default function CadastrarPermanente() {
                       setListaAberta(false);
                       setConvidadoDonoNome("");
                     }}
+                    title={u.celular || ""}
                   >
                     <div className="font-medium text-gray-800">{u.nome}</div>
-                    {u.email && <div className="text-xs text-gray-500">{u.email}</div>}
+                    {u.celular && <div className="text-xs text-gray-500">{u.celular}</div>}
                   </li>
                 ))}
               </ul>

@@ -7,7 +7,14 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 
 type Esporte = { id: number | string; nome: string }
-type Usuario = { id: number | string; nome: string }
+
+// Agora traz também o celular (telefone)
+type Usuario = {
+  id: number | string
+  nome: string
+  celular?: string | null
+}
+
 type Quadra = { quadraId: number | string; nome: string; numero: number }
 type DisponibilidadeQuadra = Quadra & { disponivel: boolean }
 
@@ -28,12 +35,12 @@ export default function AgendamentoComum() {
 
   const [feedback, setFeedback] = useState<Feedback | null>(null)
 
-  // busca/seleção de jogadores cadastrados
+  // busca/seleção de jogadores cadastrados (agora com telefone)
   const [buscaUsuario, setBuscaUsuario] = useState<string>('')
   const [usuariosEncontrados, setUsuariosEncontrados] = useState<Usuario[]>([])
   const [jogadores, setJogadores] = useState<Usuario[]>([])
 
-  // convidado como DONO (opcional, só nome)
+  // convidado como DONO (opcional, nome e telefone em texto livre)
   const [ownerGuestNome, setOwnerGuestNome] = useState<string>('')
 
   // feedback do submit
@@ -120,7 +127,7 @@ export default function AgendamentoComum() {
     buscarDisponibilidade()
   }, [API_URL, data, esporteSelecionado, horario])
 
-  // Busca de usuários cadastrados
+  // Busca de usuários cadastrados — agora esperamos { id, nome, celular }
   useEffect(() => {
     const buscar = async () => {
       if (buscaUsuario.trim().length < 2) {
@@ -133,6 +140,7 @@ export default function AgendamentoComum() {
           params: { nome: buscaUsuario },
           withCredentials: true,
         })
+        // Back padronizado deve devolver nome + celular (telefone).
         setUsuariosEncontrados(data || [])
       } catch (err) {
         console.error(err)
@@ -337,14 +345,16 @@ export default function AgendamentoComum() {
         />
 
         {usuariosEncontrados.length > 0 && (
-          <ul className="border rounded mb-2 max-h-40 overflow-y-auto">
+          <ul className="border rounded mb-2 max-h-60 overflow-y-auto divide-y">
             {usuariosEncontrados.map((u) => (
               <li
                 key={String(u.id)}
                 className="p-2 hover:bg-gray-100 cursor-pointer"
                 onClick={() => adicionarJogador(u)}
+                title={u.celular || ''}
               >
-                {u.nome}
+                <div className="font-medium">{u.nome}</div>
+                {u.celular && <div className="text-xs text-gray-600">{u.celular}</div>}
               </li>
             ))}
           </ul>
@@ -358,8 +368,9 @@ export default function AgendamentoComum() {
                 <li
                   key={String(j.id)}
                   className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm flex items-center gap-2"
+                  title={j.celular || ''}
                 >
-                  {j.nome}
+                  {j.nome}{j.celular ? ` (${j.celular})` : ''}
                   <button
                     onClick={() => removerJogador(j.id)}
                     className="ml-1 text-red-500"

@@ -15,7 +15,8 @@ interface Churrasqueira {
   disponivel?: boolean
 }
 
-type UsuarioBusca = { id: string; nome: string }
+// Agora esperamos também o celular (telefone)
+type UsuarioBusca = { id: string; nome: string; celular?: string | null }
 
 export default function AgendamentoChurrasqueiraComum() {
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
@@ -83,7 +84,7 @@ export default function AgendamentoChurrasqueiraComum() {
     buscar()
   }, [data, turno, API_URL])
 
-  // Busca usuários (id+nome) — debounce + AbortController
+  // Busca usuários (id + nome + celular) — debounce + AbortController
   useEffect(() => {
     const q = buscaUsuario.trim()
     if (q.length < 2) {
@@ -213,8 +214,10 @@ export default function AgendamentoChurrasqueiraComum() {
                     setUsuariosEncontrados([])
                     setConvidadoDonoNome('')
                   }}
+                  title={u.celular || ""}
                 >
-                  {u.nome}
+                  <div className="font-medium">{u.nome}</div>
+                  {u.celular && <div className="text-xs text-gray-600">{u.celular}</div>}
                 </li>
               ))}
             </ul>
@@ -223,6 +226,9 @@ export default function AgendamentoChurrasqueiraComum() {
           {usuarioSelecionado && (
             <p className="text-xs text-green-700">
               Usuário selecionado: <strong>{usuarioSelecionado.nome}</strong>
+              {usuarioSelecionado.celular ? (
+                <> — <span className="text-gray-700">{usuarioSelecionado.celular}</span></>
+              ) : null}
             </p>
           )}
         </div>
@@ -232,7 +238,7 @@ export default function AgendamentoChurrasqueiraComum() {
           <input
             type="text"
             className="w-full p-2 border rounded"
-            placeholder="Ou informe um convidado como dono (ex.: Nome do Convidado)"
+            placeholder="Ou informe convidado dono (ex.: João — 53 99127-8304)"
             value={convidadoDonoNome}
             onChange={(e) => {
               setConvidadoDonoNome(e.target.value)
