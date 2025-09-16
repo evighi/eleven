@@ -13,6 +13,16 @@ const router = Router();
 const JWT_KEY = process.env.JWT_KEY as string;
 const isProd = process.env.NODE_ENV === "production";
 
+/**
+ * ✅ Sessão de 60 dias
+ * Se quiser usar outro prazo, mude SESSION_DAYS.
+ * Opcional: defina COOKIE_DOMAIN=.seu-dominio.com.br para compartilhar entre subdomínios.
+ */
+const SESSION_DAYS = 60;
+const JWT_EXPIRES_IN = `${SESSION_DAYS}d`;
+const COOKIE_MAX_AGE_MS = SESSION_DAYS * 24 * 60 * 60 * 1000;
+const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN; // ex.: ".elevensportsoficial.com.br" (opcional)
+
 router.post("/", async (req, res) => {
   try {
     let { email, senha } = req.body as { email?: string; senha?: string };
@@ -69,6 +79,7 @@ router.post("/", async (req, res) => {
     const senhaValida = await bcrypt.compare(senha, usuario.senha);
     if (!senhaValida) return res.status(401).json({ erro: "Senha incorreta." });
 
+    // 🔑 JWT válido por 60 dias
     const token = jwt.sign(
       {
         usuarioLogadoId: usuario.id,
@@ -76,15 +87,18 @@ router.post("/", async (req, res) => {
         usuarioLogadoTipo: usuario.tipo,
       },
       JWT_KEY,
-      { expiresIn: "1h" }
+      { expiresIn: JWT_EXPIRES_IN }
     );
 
+    // 🍪 Cookie httpOnly persistido por 60 dias no dispositivo
     res.cookie("auth_token", token, {
       httpOnly: true,
-      secure: isProd,
-      sameSite: "strict",
-      maxAge: 60 * 60 * 1000,
+      secure: isProd,           // true em produção (HTTPS)
+      sameSite: "strict",       // se front e API estiverem em domínios diferentes, use "none"
+      // sameSite: "none",      // <- use isso se forem domínios diferentes + HTTPS
+      maxAge: COOKIE_MAX_AGE_MS,
       path: "/",
+      ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}), // ex.: ".elevensportsoficial.com.br"
     });
 
     return res.status(200).json({
@@ -104,7 +118,9 @@ router.post("/logout", (req, res) => {
     httpOnly: true,
     secure: isProd,
     sameSite: "strict",
+    // sameSite: "none", // se tiver usado "none" no set
     path: "/",
+    ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
   });
   return res.json({ mensagem: "Logout realizado com sucesso" });
 });
