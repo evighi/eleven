@@ -469,15 +469,24 @@ router.get("/", verificarToken, async (req, res) => {
     });
 
     const sanitizeEmail = (email?: string | null) => (isAdmin ? email : undefined);
+    const loggedId = reqCustom.usuario.usuarioLogadoId;
 
-    const resposta = agendamentos.map((a) => ({
-      ...a,
-      usuario: a.usuario
-        ? { ...a.usuario, email: sanitizeEmail(a.usuario.email) }
-        : a.usuario,
-      jogadores: a.jogadores.map((j) => ({ ...j, email: sanitizeEmail(j.email) })),
-      quadraLogoUrl: resolveQuadraImg(a.quadra?.imagem) || "/quadra.png",
-    }));
+    const resposta = agendamentos.map((a) => {
+      const euSouDono = String(a.usuarioId) === String(loggedId);
+      return {
+        ...a,
+        usuario: a.usuario
+          ? { ...a.usuario, email: sanitizeEmail(a.usuario.email) }
+          : a.usuario,
+        jogadores: a.jogadores.map((j) => ({ ...j, email: sanitizeEmail(j.email) })),
+        quadraLogoUrl: resolveQuadraImg(a.quadra?.imagem) || "/quadra.png",
+
+        // 👇 adiciona também nesses resultados
+        donoId: a.usuario?.id ?? a.usuarioId,
+        donoNome: a.usuario?.nome ?? "",
+        euSouDono,
+      };
+    });
 
     return res.json(resposta);
   } catch (err) {
@@ -505,12 +514,15 @@ router.get("/me", verificarToken, async (req, res) => {
       include: {
         quadra: { select: { id: true, nome: true, numero: true, imagem: true } },
         esporte: { select: { id: true, nome: true } },
+        usuario: { select: { id: true, nome: true } }, // 👈 DONO
       },
       orderBy: [{ data: "asc" }, { horario: "asc" }],
     });
 
     const respComuns = comunsConfirmados.map((a) => {
       const quadraLogoUrl = resolveQuadraImg(a.quadra?.imagem) || "/quadra.png";
+      const euSouDono = String(a.usuarioId) === String(usuarioId);
+
       return {
         id: a.id,
         nome: a.esporte?.nome ?? "Quadra",
@@ -524,6 +536,11 @@ router.get("/me", verificarToken, async (req, res) => {
         quadraNumero: a.quadra?.numero ?? null,
         quadraLogoUrl,
         esporteNome: a.esporte?.nome ?? "",
+
+        // 👇 NOVO
+        donoId: a.usuario?.id ?? a.usuarioId,
+        donoNome: a.usuario?.nome ?? "",
+        euSouDono,
       };
     });
 
@@ -536,6 +553,7 @@ router.get("/me", verificarToken, async (req, res) => {
       include: {
         quadra: { select: { id: true, nome: true, numero: true, imagem: true } },
         esporte: { select: { id: true, nome: true } },
+        usuario: { select: { id: true, nome: true } }, // 👈 DONO
       },
       orderBy: [{ diaSemana: "asc" }, { horario: "asc" }],
     });
@@ -566,6 +584,11 @@ router.get("/me", verificarToken, async (req, res) => {
           quadraNumero: p.quadra?.numero ?? null,
           quadraLogoUrl,
           esporteNome: p.esporte?.nome ?? "",
+
+          // 👇 NOVO (aqui sempre será o próprio dono)
+          donoId: p.usuario?.id ?? p.usuarioId,
+          donoNome: p.usuario?.nome ?? "",
+          euSouDono: true,
         };
       })
     );

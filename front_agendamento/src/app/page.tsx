@@ -37,7 +37,12 @@ type AgendamentoAPI = {
   quadraLogoUrl?: string | null;
   esporteNome?: string;
 
-  // novo (vem do back)
+  // 👇 novos campos vindos do back (/agendamentos/me)
+  donoId?: string;
+  donoNome?: string;
+  euSouDono?: boolean;
+
+  // obrigatório
   tipoReserva: TipoReserva;
 };
 
@@ -50,6 +55,10 @@ type AgendamentoCard = {
   dia: string;   // "dd/mm" ou "Quarta"
   hora: string;
   tipo: TipoReserva;
+
+  // dono/visibilidade
+  donoNome?: string | null;
+  euSouDono?: boolean;
 
   // usados só para ordenação/seleção
   nextISO: string | null; // "YYYY-MM-DD"
@@ -178,6 +187,10 @@ export default function Home() {
         tipo: raw.tipoReserva,
         nextISO,
         sortTs,
+
+        // 👇 novos campos pro card
+        donoNome: raw.donoNome ?? null,
+        euSouDono: raw.euSouDono ?? false,
       };
     },
     [paraDDMM]
@@ -215,6 +228,9 @@ export default function Home() {
     fetchAgendamentos();
   }, [isChecking, normalizar]);
 
+  const emExibicao = Math.min(totalProximos, 2);
+  const plural = (n: number, s: string, p: string) => (n === 1 ? s : p);
+
   if (isChecking) {
     return (
       <main className="min-h-screen grid place-items-center bg-[#f5f5f5]">
@@ -234,9 +250,7 @@ export default function Home() {
             Bem vindo(a), {nomeUsuario}!
           </h1>
           <p className="text-sm md:text-base text-white/85">
-            Você tem {totalProximos} agendamento{totalProximos === 1 ? "" : "s"} futuro
-            {totalProximos === 1 ? "" : "s"}.
-            {totalProximos > 2 ? " Mostrando os 2 mais próximos." : ""}
+            Você tem {totalProximos} {plural(totalProximos, "reserva próxima", "reservas próximas")}!
           </p>
         </div>
       </header>
@@ -246,19 +260,23 @@ export default function Home() {
         <div className="mx-auto max-w-md md:max-w-lg lg:max-w-xl">
           {/* Cartão Suas quadras */}
           <div className="-mt-3 bg-white rounded-2xl shadow-md p-4 sm:p-5 md:p-6">
-            <h2 className="text-[13px] sm:text-sm font-semibold text-gray-500 mb-3">Suas quadras</h2>
+            <h2 className="text-[13px] sm:text-sm font-semibold text-gray-500">Suas quadras</h2>
+            <p className="text-[11px] sm:text-xs text-gray-400 mt-1">
+              Em exibição {emExibicao} {plural(emExibicao, "reserva próxima.", "reservas próximas.")}
+              {totalProximos > 2 && " Para ver mais reservas, clique em veja as suas quadras."}
+            </p>
 
             {carregando && (
-              <div className="flex items-center gap-2 text-sm text-gray-500">
+              <div className="mt-3 flex items-center gap-2 text-sm text-gray-500">
                 <Spinner /> <span>Carregando agendamentos…</span>
               </div>
             )}
 
             {!carregando && totalProximos === 0 && (
-              <p className="text-sm text-gray-500">Você não tem agendamentos futuros.</p>
+              <p className="mt-3 text-sm text-gray-500">Você não tem reservas futuras.</p>
             )}
 
-            <div className="space-y-3">
+            <div className="mt-3 space-y-3">
               {agendamentos.map((a) => (
                 <div
                   key={a.id}
@@ -305,6 +323,13 @@ export default function Home() {
                         : <>Toda {a.dia} às {a.hora}</>}
                     </p>
 
+                    {/* 👇 Reservado por (quando não for o dono) */}
+                    {!a.euSouDono && a.donoNome && (
+                      <p className="text-[11px] sm:text-[12px] text-gray-500 italic">
+                        Reservado por: {a.donoNome}
+                      </p>
+                    )}
+
                     {a.numero && (
                       <p className="text-[11px] sm:text-[12px] text-gray-500">Quadra {a.numero}</p>
                     )}
@@ -323,8 +348,9 @@ export default function Home() {
 
           {/* Ações */}
           <div
-            className={`mt-4 md:mt-6 grid grid-cols-1 ${HABILITAR_TRANSFERENCIA ? "md:grid-cols-2" : "md:grid-cols-1"
-              } gap-4`}
+            className={`mt-4 md:mt-6 grid grid-cols-1 ${
+              HABILITAR_TRANSFERENCIA ? "md:grid-cols-2" : "md:grid-cols-1"
+            } gap-4`}
           >
             {/* Marcar */}
             <div className="rounded-2xl bg-white shadow-md p-3 md:p-4">

@@ -35,7 +35,11 @@ type AgendamentoAPI = {
   quadraLogoUrl?: string | null;
   esporteNome?: string;
 
-  // NOVO (já vem do back)
+  // 👇 novos campos do back
+  donoId?: string;
+  donoNome?: string;
+  euSouDono?: boolean;
+
   tipoReserva: TipoReserva;
 };
 
@@ -49,6 +53,9 @@ type AgendamentoCard = {
   hora: string;
   tipo: TipoReserva;
   _rawDataISO?: string | null; // comuns: data | permanentes: proximaData efetiva
+
+  donoNome?: string | null;
+  euSouDono?: boolean;
 };
 
 export default function VerQuadrasPage() {
@@ -65,7 +72,6 @@ export default function VerQuadrasPage() {
   const [agendamentos, setAgendamentos] = useState<AgendamentoCard[]>([]);
   const [carregando, setCarregando] = useState(false);
 
-  // view: lista padrão ou sucesso de cancelamento
   const [view, setView] = useState<"list" | "success">("list");
 
   // modal de cancelamento
@@ -92,58 +98,42 @@ export default function VerQuadrasPage() {
     return m?.[1];
   }, []);
 
-  const prettyDiaSemana = (d?: AgendamentoAPI["diaSemana"]) => {
-    if (!d) return "";
-    return d.charAt(0) + d.slice(1).toLowerCase(); // "QUARTA" -> "Quarta"
-  };
+  const prettyDiaSemana = (d?: AgendamentoAPI["diaSemana"]) =>
+    d ? d.charAt(0) + d.slice(1).toLowerCase() : "";
 
-  /**
-   * Fallback local para permanentes — usar APENAS se o back NÃO mandar `proximaData`.
-   * NÃO sabe nada sobre exceções, então não deve sobrescrever a data calculada pelo back.
-   */
+  // Fallback local p/ permanentes quando o back NÃO mandar `proximaData`
   function proximaDataLocalQuandoFaltar(
     diaSemana?: AgendamentoAPI["diaSemana"],
     horario?: string
   ) {
     if (!diaSemana) return null;
-
     const DIA_IDX: Record<NonNullable<AgendamentoAPI["diaSemana"]>, number> = {
       DOMINGO: 0, SEGUNDA: 1, TERCA: 2, QUARTA: 3, QUINTA: 4, SEXTA: 5, SABADO: 6,
     };
-
     const tz = "America/Sao_Paulo";
     const now = new Date();
-
-    const cur = now.getDay(); // 0..6 (timezone do device)
+    const cur = now.getDay();
     const target = DIA_IDX[diaSemana];
     let delta = (target - cur + 7) % 7;
-
     const hasHM = typeof horario === "string" && /^\d{2}:\d{2}$/.test(horario);
     if (delta === 0 && hasHM) {
       const hmNow = new Intl.DateTimeFormat("en-GB", {
         timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false,
-      }).format(now); // "HH:mm"
-      if (hmNow >= horario) delta = 7; // hoje já passou
+      }).format(now);
+      if (hmNow >= horario) delta = 7;
     }
-
     const d = new Date(now);
     d.setDate(d.getDate() + delta);
-
     const ymd = new Intl.DateTimeFormat("en-CA", {
       timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
     }).format(d);
-
-    return ymd; // "YYYY-MM-DD"
+    return ymd;
   }
 
   const normalizar = useCallback(
     (raw: AgendamentoAPI): AgendamentoCard => {
       const picked = raw.quadraLogoUrl ?? raw.logoUrl ?? null;
 
-      // ISO efetiva:
-      // - COMUM: usa `data`
-      // - PERMANENTE: usa SEMPRE `proximaData` do back (que já pula exceções e respeita horário);
-      //               se vier vazio, cai no fallback local (sem exceções).
       let isoEfetiva: string | null = null;
       if (raw.tipoReserva === "COMUM") {
         isoEfetiva = raw.data ?? null;
@@ -165,7 +155,10 @@ export default function VerQuadrasPage() {
         dia: diaStr,
         hora: raw.horario,
         tipo: raw.tipoReserva,
-        _rawDataISO: isoEfetiva, // usado no modal e na ordenação
+        _rawDataISO: isoEfetiva,
+
+        donoNome: raw.donoNome ?? null,
+        euSouDono: raw.euSouDono ?? false,
       };
     },
     [extrairNumeroDoLocal, paraDDMM]
@@ -180,17 +173,14 @@ export default function VerQuadrasPage() {
       );
       const list = (res.data || []).map(normalizar);
 
-      // Ordenar priorizando a ISO real (_rawDataISO) e, em empate, pela hora
       list.sort((a, b) => {
-        const ai = a._rawDataISO;
-        const bi = b._rawDataISO;
+        const ai = a._rawDataISO, bi = b._rawDataISO;
         if (ai && bi) {
           if (ai !== bi) return ai.localeCompare(bi);
           return a.hora.localeCompare(b.hora);
         }
-        if (ai && !bi) return -1;       // quem tem data efetiva vem antes
+        if (ai && !bi) return -1;
         if (!ai && bi) return 1;
-        // fallback pela string 'dia' (dd/mm) e hora, só para casos sem ISO
         const isDDMM = (s: string) => /^\d{2}\/\d{2}$/.test(s);
         const aDD = isDDMM(a.dia), bDD = isDDMM(b.dia);
         if (aDD && bDD) {
@@ -221,12 +211,10 @@ export default function VerQuadrasPage() {
   const parseErro = (e: unknown): string => {
     const ax = e as { response?: { data?: any; status?: number; statusText?: string } };
     const body = ax?.response?.data;
-
     const msg =
       (typeof body?.erro === "string" && body.erro) ||
       (typeof body?.message === "string" && body.message) ||
       (ax?.response?.statusText ?? "");
-
     const lowered = String(msg).toLowerCase();
     if (
       lowered.includes("12h") ||
@@ -236,7 +224,6 @@ export default function VerQuadrasPage() {
     ) {
       return "O prazo para cancelamento desta reserva foi esgotado e  não poderá ser cancelado. Contate os administradores. (53) 99103-2959";
     }
-
     return msg || "Não foi possível cancelar. Tente novamente.";
   };
 
@@ -245,7 +232,6 @@ export default function VerQuadrasPage() {
     setCancelError("");
     setCancelOpen(true);
   };
-
   const fecharModalCancelar = () => {
     if (cancelSending) return;
     setCancelOpen(false);
@@ -260,17 +246,13 @@ export default function VerQuadrasPage() {
 
     try {
       if (cancelTarget.tipo === "COMUM") {
-        // comum -> rota com regra 12h/15min
         await axios.post(
           `${API_URL}/agendamentos/cancelar/${cancelTarget.id}`,
           {},
           { withCredentials: true }
         );
-        // remove da lista
         setAgendamentos((cur) => cur.filter((x) => x.id !== cancelTarget.id));
       } else {
-        // permanente -> cancela a PRÓXIMA ocorrência (12h, sem 15min)
-        // tenta '/agendamentos-permanentes', se 404 tenta '/agendamentosPermanentes'
         const url1 = `${API_URL}/agendamentos-permanentes/${cancelTarget.id}/cancelar-proxima`;
         const url2 = `${API_URL}/agendamentosPermanentes/${cancelTarget.id}/cancelar-proxima`;
         try {
@@ -282,10 +264,8 @@ export default function VerQuadrasPage() {
             throw e1;
           }
         }
-        // recarrega para atualizar a próxima data
         await carregarLista();
       }
-
       fecharModalCancelar();
       setView("success");
       return;
@@ -328,7 +308,7 @@ export default function VerQuadrasPage() {
       {view === "list" && (
         <section className="px-0 py-0">
           <div className="max-w-sm mx-auto bg-white rounded-2xl shadow-md p-4">
-            {/* Aviso (mantido) */}
+            {/* Aviso */}
             <div className="text-center text-orange-600 text-[12px] leading-snug mb-3">
               <div className="font-semibold text-[11px] tracking-wide uppercase mb-1">Atenção!</div>
               O cancelamento de quadras é permitido com 12 horas de antecedência. Caso a reserva seja realizada com menos 
@@ -381,10 +361,11 @@ export default function VerQuadrasPage() {
                       <p className="text-[12px] text-gray-600 leading-tight flex items-center gap-2">
                         {a.esporte}
                         <span
-                          className={`text-[10px] px-2 py-[2px] rounded-full ${a.tipo === "PERMANENTE"
+                          className={`text-[10px] px-2 py-[2px] rounded-full ${
+                            a.tipo === "PERMANENTE"
                               ? "bg-gray-200 text-gray-800"
                               : "bg-orange-100 text-orange-600"
-                            }`}
+                          }`}
                           title={a.tipo === "PERMANENTE" ? "Agendamento permanente" : "Agendamento comum"}
                         >
                           {a.tipo === "PERMANENTE" ? "Permanente" : "Comum"}
@@ -397,21 +378,38 @@ export default function VerQuadrasPage() {
                           : <>Toda {a.dia} às {a.hora}</>}
                       </p>
 
+                      {/* 👇 Reservado por (quando não for o dono) */}
+                      {!a.euSouDono && a.donoNome && (
+                        <p className="text-[11px] text-gray-500 italic">
+                          Reservado por: {a.donoNome}
+                        </p>
+                      )}
+
                       {a.numero && (
                         <p className="text-[11px] text-gray-500">Quadra {a.numero}</p>
                       )}
                     </div>
                   </div>
 
-                  {/* Ações — também para PERMANENTE */}
+                  {/* Ações — apenas se o usuário for o dono */}
                   <div className="mt-2 border-t border-gray-300/70" />
                   <div className="flex gap-2 pt-2">
-                    <button
-                      onClick={() => abrirModalCancelar(a)}
-                      className="w-full py-2 text-[13px] font-semibold text-orange-600 hover:text-orange-700 cursor-pointer"
-                    >
-                      Cancelar agendamento
-                    </button>
+                    {a.euSouDono ? (
+                      <button
+                        onClick={() => abrirModalCancelar(a)}
+                        className="w-full py-2 text-[13px] font-semibold text-orange-600 hover:text-orange-700 cursor-pointer"
+                      >
+                        Cancelar agendamento
+                      </button>
+                    ) : (
+                      <button
+                        disabled
+                        className="w-full py-2 text-[13px] font-semibold text-gray-400 cursor-not-allowed"
+                        title="Apenas o dono pode cancelar esta reserva"
+                      >
+                        Cancelar agendamento
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -460,11 +458,8 @@ export default function VerQuadrasPage() {
                 Confirmar cancelamento?
               </h3>
 
-              <p className="text-sm text-gray-700 mb-1">
-                Você está cancelando:
-              </p>
+              <p className="text-sm text-gray-700 mb-1">Você está cancelando:</p>
 
-              {/* texto adaptado p/ COMUM x PERMANENTE */}
               <p className="text-[13px] font-semibold text-gray-800 mb-2">
                 {cancelTarget.esporte} — Quadra {cancelTarget.numero ?? "—"}: {cancelTarget.quadraNome}{" "}
                 no dia{" "}
@@ -482,7 +477,7 @@ export default function VerQuadrasPage() {
                   *segundo nossos termos e condições, o cancelamento é permitido com 12 horas de antecedencia. Para reservas realizadas com menos de 12 horas, o cancelamento é permitido durante 15 minutos após a solicitação da reserva.
                 </p>
               )}
-  
+
               {cancelError && (
                 <div className="mt-3 rounded-md bg-red-100 text-red-800 text-[13px] px-3 py-2">
                   {cancelError}
