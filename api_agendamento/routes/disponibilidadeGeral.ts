@@ -24,9 +24,9 @@ type UsuarioSelecionado = {
 
 type AgendamentoComUsuario =
   | {
-    id: string;
-    usuario: UsuarioSelecionado;
-  }
+      id: string;
+      usuario: UsuarioSelecionado;
+    }
   | null;
 
 // horário dentro do intervalo de bloqueio [início, fim)
@@ -111,6 +111,10 @@ router.get("/geral", async (req, res) => {
             horario: horario as string,
             diaSemana: diaSemanaFinal,
             status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+            // ✔ só considera o permanente se o contrato já começou
+            ...(range
+              ? { OR: [{ dataInicio: null }, { dataInicio: { lte: range.inicio } }] }
+              : {}),
           },
           select: {
             id: true,
@@ -134,7 +138,8 @@ router.get("/geral", async (req, res) => {
               };
             }
           } else {
-            // sem data específica, mantenha o conflito
+            // sem data específica não dá para aplicar exceção do dia;
+            // mantém o conflito desde que já tenha começado (checado acima se desejar).
             conflitoPermanente = {
               id: per.id,
               usuario: per.usuario as UsuarioSelecionado,
@@ -221,7 +226,7 @@ router.get("/geral", async (req, res) => {
         });
         return acc;
       },
-      {} as Record<string, typeof quadrasDisponibilidade[number][]>
+      {} as Record<string, (typeof quadrasDisponibilidade)[number][]>
     );
 
     // -------------------- CHURRASQUEIRAS (sem exceções por dia) --------------------
@@ -238,6 +243,7 @@ router.get("/geral", async (req, res) => {
                 turno,
                 churrasqueiraId: churrasqueira.id,
                 status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+                // (se existir dataInicio nesse modelo e quiser aplicar, inclua OR aqui também)
               },
               select: {
                 id: true,
@@ -245,24 +251,20 @@ router.get("/geral", async (req, res) => {
               },
             });
 
-            // depois (✅ usa data + turno para comum; se não veio "data", não dá pra checar comum)
+            // depois (usa data + turno para comum; se não veio "data", não dá pra checar comum)
             let com: { id: string; usuario: UsuarioSelecionado } | null = null;
 
             if (range) {
               com = await prisma.agendamentoChurrasqueira.findFirst({
                 where: {
-                  data: { gte: range.inicio, lt: range.fim }, // ✅ filtra pelo dia específico
+                  data: { gte: range.inicio, lt: range.fim }, // dia específico
                   turno,
                   churrasqueiraId: churrasqueira.id,
                   status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
                 },
                 select: {
                   id: true,
-                  // ⬇️ ajuste o nome da relação conforme seu schema:
                   usuario: { select: { nome: true, email: true, celular: true } },
-                  // Se der erro aqui, troque por:
-                  // user: { select: { nome: true, email: true, celular: true } },
-                  // ou o nome correto no seu schema.
                 },
               });
             }
@@ -344,6 +346,9 @@ router.get("/dia", async (req, res) => {
       where: {
         diaSemana: diaSemanaFinal,
         status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+        // ✔ só considera se contrato já começou até o dia consultado
+        OR: [{ dataInicio: null }, { dataInicio: { lte: inicio } }],
+        // ✔ ignora se há exceção para o dia
         cancelamentos: { none: { data: { gte: inicio, lt: fim } } },
       },
       select: {
