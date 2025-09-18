@@ -53,7 +53,7 @@ type AgendamentoSelecionado = {
   dataInicio?: string | null; // YYYY-MM-DD
 };
 
-type UsuarioLista = { id: string; nome: string; email?: string };
+type UsuarioLista = { id: string; nome: string; email?: string; celular?: string | null };
 
 /* ===== Helpers comuns (iguais à Home) ===== */
 const SP_TZ = "America/Sao_Paulo";
@@ -570,8 +570,8 @@ export default function TodosHorariosPage() {
     const label = isBloq
       ? `Bloqueada - ${hourLabel}`
       : isLivre
-      ? `Livre - ${hourLabel}`
-      : `${firstName(slot.usuario?.nome)} - ${hourLabel}`;
+        ? `Livre - ${hourLabel}`
+        : `${firstName(slot.usuario?.nome)} - ${hourLabel}`;
 
     const isAgendado = !!(slot.agendamentoId && slot.tipoReserva);
     const clickable = !isBloq && (isAgendado || isLivre);
@@ -904,9 +904,8 @@ export default function TodosHorariosPage() {
                             key={d}
                             type="button"
                             onClick={() => setDataExcecaoSelecionada(d)}
-                            className={`px-3 py-2 rounded border text-sm ${
-                              ativo ? "border-indigo-600 bg-indigo-50 text-indigo-700" : "border-gray-300 hover:bg-gray-50"
-                            }`}
+                            className={`px-3 py-2 rounded border text-sm ${ativo ? "border-indigo-600 bg-indigo-50 text-indigo-700" : "border-gray-300 hover:bg-gray-50"
+                              }`}
                           >
                             {toDdMm(d)}
                           </button>
@@ -967,12 +966,12 @@ export default function TodosHorariosPage() {
               {usuariosFiltrados.map((user) => (
                 <li
                   key={user.id}
-                  className={`p-2 cursor-pointer hover:bg-blue-100 ${
-                    usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
-                  }`}
+                  className={`p-2 cursor-pointer hover:bg-blue-100 ${usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
+                    }`}
                   onClick={() => setUsuarioSelecionado(user)}
+                  title={user.celular || ""}   // 👈 tooltip com celular
                 >
-                  {user.nome} ({user.email})
+                  {user.nome} {user.celular ? ` (${user.celular})` : ""}  {/* 👈 mostra celular */}
                 </li>
               ))}
             </ul>
@@ -1018,7 +1017,7 @@ export default function TodosHorariosPage() {
             <input
               type="text"
               className="border p-2 rounded w-full mb-3"
-              placeholder="Buscar por nome ou e-mail"
+              placeholder="Buscar por nome"
               value={buscaJogador}
               onChange={(e) => setBuscaJogador(e.target.value)}
               autoFocus
@@ -1032,9 +1031,8 @@ export default function TodosHorariosPage() {
                 return (
                   <li
                     key={u.id}
-                    className={`p-2 cursor-pointer flex items-center justify-between hover:bg-orange-50 ${
-                      ativo ? "bg-orange-100" : ""
-                    }`}
+                    className={`p-2 cursor-pointer flex items-center justify-between hover:bg-orange-50 ${ativo ? "bg-orange-100" : ""
+                      }`}
                     onClick={() => alternarSelecionado(u.id)}
                   >
                     <span>
