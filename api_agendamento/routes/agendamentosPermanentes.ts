@@ -225,7 +225,10 @@ router.get(
 router.get(
   "/:id/datas-excecao",
   requireOwnerByRecord(async (req) => {
-    const reg = await prisma.agendamentoPermanente.findUnique({ where: { id: req.params.id }, select: { usuarioId: true } });
+    const reg = await prisma.agendamentoPermanente.findUnique({
+      where: { id: req.params.id },
+      select: { usuarioId: true },
+    });
     return reg?.usuarioId ?? null;
   }),
   async (req, res) => {
@@ -261,11 +264,19 @@ router.get(
         d = addDays(d, 7);
       }
 
+      const isAdmin = isAdminTipo(req.usuario!.usuarioLogadoTipo);
+
       const jaCanceladas = await prisma.agendamentoPermanenteCancelamento.findMany({
         where: { agendamentoPermanenteId: id, data: { gte: inicioJanela, lt: fimJanela } },
-        select: { data: true },
+        include: { criadoPor: { select: { id: true, nome: true, email: true } } },
+        orderBy: { data: "asc" },
       });
-      const jaCanceladasSet = new Set(jaCanceladas.map((c) => toISODateUTC(new Date(c.data))));
+
+      const jaCanceladasSet = new Set(
+        jaCanceladas.map((c) => toISODateUTC(new Date(c.data)))
+      );
+
+      // ✅ FALTAVA ESTA LINHA
       const elegiveis = todas.filter((iso) => !jaCanceladasSet.has(iso));
 
       return res.json({
@@ -274,8 +285,21 @@ router.get(
         fimJanela: toISODateUTC(fimJanela),
         diaSemana: perm.diaSemana,
         horario: perm.horario,
-        datas: elegiveis,
+        datas: elegiveis, // <- agora existe
         jaCanceladas: Array.from(jaCanceladasSet),
+        jaCanceladasDetalhes: jaCanceladas.map((c) => ({
+          id: c.id,
+          data: toISODateUTC(new Date(c.data)),
+          motivo: c.motivo ?? null,
+          criadoPor: c.criadoPor
+            ? {
+              id: c.criadoPor.id,
+              nome: c.criadoPor.nome,
+              email: isAdmin ? c.criadoPor.email : undefined,
+            }
+            : null,
+          createdAt: c.createdAt,
+        })),
       });
     } catch (e) {
       console.error("Erro em GET /:id/datas-excecao", e);
@@ -283,6 +307,7 @@ router.get(
     }
   }
 );
+
 
 // 🚫 Registrar exceção (cancelar um dia da recorrência) — dono ou admin
 router.post(
@@ -340,7 +365,10 @@ router.post(
           agendamentoPermanenteId: id,
           data: dataUTC,
           motivo: motivo ?? null,
-          criadoPorId: req.usuario!.usuarioLogadoId, // ⚠️ do token
+          criadoPorId: req.usuario!.usuarioLogadoId,
+        },
+        include: {
+          criadoPor: { select: { id: true, nome: true, email: true } },
         },
       });
 
@@ -349,7 +377,12 @@ router.post(
         agendamentoPermanenteId: id,
         data: toISODateUTC(new Date(novo.data)),
         motivo: novo.motivo ?? null,
-        criadoPorId: novo.criadoPorId,
+        criadoPor: novo.criadoPor ? {
+          id: novo.criadoPor.id,
+          nome: novo.criadoPor.nome,
+          email: novo.criadoPor.email, // se quiser, esconda p/ não-admin
+        } : null,
+        createdAt: novo.createdAt,
       });
     } catch (e) {
       console.error("Erro em POST /:id/cancelar-dia", e);
@@ -461,6 +494,142 @@ router.post(
     }
   }
 );
+
+// 🔁 Transferir agendamento permanente — admin ou dono
+router.patch(
+  "/:id/transferir",
+  requireOwnerByRecord(async (req) => {
+    const reg = await prisma.agendamentoPermanente.findUnique({
+      where: { id: req.params.id },
+      select: { usuarioId: true },
+    });
+    return reg?.usuarioId ?? null; // permite admin ou dono
+  }),
+  async (req, res) => {
+    const { id } = req.params;
+
+    const schema = z.object({
+      novoUsuarioId: z.string().uuid(),
+      transferidoPorId: z.string().uuid().optional(),
+      /** true = copia exceções (datas já canceladas) para o novo permanente */
+      copiarExcecoes: z.boolean().optional().default(true),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ erro: parsed.error.format() });
+    }
+    const { novoUsuarioId, transferidoPorId, copiarExcecoes } = parsed.data;
+
+    try {
+      // Registro atual
+      const perm = await prisma.agendamentoPermanente.findUnique({
+        where: { id },
+        include: {
+          cancelamentos: true,
+          quadra: { select: { id: true, nome: true, numero: true } },
+          esporte: { select: { id: true, nome: true } },
+        },
+      });
+      if (!perm) return res.status(404).json({ erro: "Agendamento permanente não encontrado" });
+      if (["CANCELADO", "TRANSFERIDO"].includes(perm.status)) {
+        return res.status(400).json({ erro: "Agendamento permanente não está ativo." });
+      }
+      if (novoUsuarioId === perm.usuarioId) {
+        return res.status(400).json({ erro: "Novo usuário é o mesmo do agendamento atual" });
+      }
+
+      // Valida novo usuário
+      const novoUsuario = await prisma.usuario.findUnique({
+        where: { id: novoUsuarioId },
+        select: { id: true, nome: true, email: true },
+      });
+      if (!novoUsuario) {
+        return res.status(404).json({ erro: "Novo usuário não encontrado" });
+      }
+
+      // Garante que não exista outro permanente ativo no mesmo slot
+      const jaExisteAtivo = await prisma.agendamentoPermanente.findFirst({
+        where: {
+          id: { not: id },
+          quadraId: perm.quadraId,
+          diaSemana: perm.diaSemana,
+          horario: perm.horario,
+          status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+        },
+        select: { id: true },
+      });
+      if (jaExisteAtivo) {
+        return res
+          .status(409)
+          .json({ erro: "Já existe um agendamento permanente ativo nesse dia/horário/quadra" });
+      }
+
+      // Transação: marca original como TRANSFERIDO e cria o novo com o novo usuário
+      const [, novoPerm] = await prisma.$transaction([
+        prisma.agendamentoPermanente.update({
+          where: { id },
+          data: {
+            status: "TRANSFERIDO",
+            transferidoPorId: transferidoPorId ?? req.usuario!.usuarioLogadoId,
+          },
+        }),
+        prisma.agendamentoPermanente.create({
+          data: {
+            diaSemana: perm.diaSemana,
+            horario: perm.horario,
+            quadraId: perm.quadraId,
+            esporteId: perm.esporteId,
+            usuarioId: novoUsuarioId,
+            dataInicio: perm.dataInicio ?? null,
+          },
+          include: {
+            usuario: { select: { id: true, nome: true, email: true } },
+            quadra: { select: { id: true, nome: true, numero: true } },
+            esporte: { select: { id: true, nome: true } },
+          },
+        }),
+      ]);
+
+      // (Opcional) Copia as exceções do antigo para o novo
+      if (copiarExcecoes && perm.cancelamentos.length) {
+        await prisma.agendamentoPermanenteCancelamento.createMany({
+          data: perm.cancelamentos.map((c) => ({
+            agendamentoPermanenteId: novoPerm.id,
+            data: c.data,
+            motivo: c.motivo ?? null,
+            criadoPorId: c.criadoPorId ?? null,
+          })),
+        });
+      }
+
+      const isAdmin = isAdminTipo(req.usuario!.usuarioLogadoTipo);
+      return res.status(200).json({
+        message: "Agendamento permanente transferido com sucesso",
+        agendamentoOriginalId: id,
+        novoAgendamento: {
+          id: novoPerm.id,
+          diaSemana: novoPerm.diaSemana,
+          horario: novoPerm.horario,
+          dataInicio: novoPerm.dataInicio,
+          usuario: {
+            id: novoPerm.usuario?.id,
+            nome: novoPerm.usuario?.nome,
+            email: isAdmin ? novoPerm.usuario?.email : undefined,
+          },
+          quadra: novoPerm.quadra
+            ? { id: novoPerm.quadra.id, nome: novoPerm.quadra.nome, numero: novoPerm.quadra.numero }
+            : null,
+          esporte: novoPerm.esporte ? { id: novoPerm.esporte.id, nome: novoPerm.esporte.nome } : null,
+          excecoesCopiadas: copiarExcecoes ? perm.cancelamentos.length : 0,
+        },
+      });
+    } catch (e) {
+      console.error("Erro ao transferir agendamento permanente:", e);
+      return res.status(500).json({ erro: "Erro ao transferir agendamento permanente" });
+    }
+  }
+);
+
 
 // ❌ Deletar — dono ou admin
 router.delete(
