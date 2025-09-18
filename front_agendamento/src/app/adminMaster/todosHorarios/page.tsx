@@ -174,6 +174,7 @@ export default function TodosHorariosPage() {
   const [usuarioSelecionado, setUsuarioSelecionado] = useState<UsuarioLista | null>(null);
   const [carregandoUsuarios, setCarregandoUsuarios] = useState(false);
   const [loadingTransferencia, setLoadingTransferencia] = useState(false);
+  const [copiarExcecoes, setCopiarExcecoes] = useState(true); // só usado para permanentes
 
   // Adicionar jogadores
   const [abrirModalJogadores, setAbrirModalJogadores] = useState(false);
@@ -414,6 +415,7 @@ export default function TodosHorariosPage() {
     setBuscaUsuario("");
     setUsuariosFiltrados([]);
     setUsuarioSelecionado(null);
+    setCopiarExcecoes(true); // padrão
     setAbrirModalTransferencia(true);
   };
 
@@ -423,22 +425,30 @@ export default function TodosHorariosPage() {
 
     setLoadingTransferencia(true);
     try {
-      await axios.patch(
-        `${API_URL}/agendamentos/${agendamentoSelecionado.agendamentoId}/transferir`,
-        {
-          novoUsuarioId: usuarioSelecionado.id,
-          transferidoPorId: usuarioSelecionado.id, // ajuste se necessário
-        },
-        { withCredentials: true }
-      );
+      const isPerm = agendamentoSelecionado.tipoReserva === "permanente";
+      const rota = isPerm
+        ? `agendamentosPermanentes/${agendamentoSelecionado.agendamentoId}/transferir`
+        : `agendamentos/${agendamentoSelecionado.agendamentoId}/transferir`;
+
+      const body: any = {
+        novoUsuarioId: usuarioSelecionado.id,
+        transferidoPorId: (usuario as any)?.id, // quem executa a ação
+      };
+      if (isPerm) body.copiarExcecoes = copiarExcecoes;
+
+      await axios.patch(`${API_URL}/${rota}`, body, { withCredentials: true });
 
       alert("Agendamento transferido com sucesso!");
       setAgendamentoSelecionado(null);
       setAbrirModalTransferencia(false);
       refresh();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Erro ao transferir agendamento:", error);
-      alert("Erro ao transferir agendamento.");
+      const msg =
+        error?.response?.data?.erro ||
+        error?.response?.data?.message ||
+        "Erro ao transferir agendamento.";
+      alert(msg);
     } finally {
       setLoadingTransferencia(false);
     }
@@ -771,16 +781,14 @@ export default function TodosHorariosPage() {
               </div>
             )}
 
-            {/* Transferir (somente COMUM/quadra) */}
-            {agendamentoSelecionado.tipoReserva === "comum" && (
-              <button
-                onClick={abrirModalTransferir}
-                disabled={loadingTransferencia}
-                className="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded cursor-pointer"
-              >
-                {loadingTransferencia ? "Transferindo..." : "Transferir Agendamento"}
-              </button>
-            )}
+            {/* Transferir (COMUM e PERMANENTE) */}
+            <button
+              onClick={abrirModalTransferir}
+              disabled={loadingTransferencia}
+              className="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded cursor-pointer"
+            >
+              {loadingTransferencia ? "Transferindo..." : "Transferir Agendamento"}
+            </button>
 
             {/* Botão principal de cancelar (abre fluxos) */}
             <button
@@ -936,7 +944,9 @@ export default function TodosHorariosPage() {
       {abrirModalTransferencia && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-60">
           <div className="bg-white p-6 rounded-lg shadow-lg w-96 max-h-[80vh] overflow-auto relative">
-            <h3 className="text-lg font-semibold mb-4">Transferir Agendamento</h3>
+            <h3 className="text-lg font-semibold mb-4">
+              Transferir Agendamento {agendamentoSelecionado?.tipoReserva === "permanente" ? "(Permanente)" : "(Comum)"}
+            </h3>
 
             <input
               type="text"
@@ -966,6 +976,18 @@ export default function TodosHorariosPage() {
                 </li>
               ))}
             </ul>
+
+            {/* Opção extra apenas para permanentes */}
+            {agendamentoSelecionado?.tipoReserva === "permanente" && (
+              <label className="flex items-center gap-2 mb-4 text-sm">
+                <input
+                  type="checkbox"
+                  checked={copiarExcecoes}
+                  onChange={(e) => setCopiarExcecoes(e.target.checked)}
+                />
+                Copiar exceções (datas já canceladas)
+              </label>
+            )}
 
             <div className="flex justify-end gap-3">
               <button
