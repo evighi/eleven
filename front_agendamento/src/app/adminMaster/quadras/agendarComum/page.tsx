@@ -40,8 +40,9 @@ export default function AgendamentoComum() {
   const [usuariosEncontrados, setUsuariosEncontrados] = useState<Usuario[]>([])
   const [jogadores, setJogadores] = useState<Usuario[]>([])
 
-  // convidado como DONO (opcional, nome e telefone em texto livre)
+  // convidado como DONO (opcional, agora com nome e telefone separados)
   const [ownerGuestNome, setOwnerGuestNome] = useState<string>('')
+  const [ownerGuestTelefone, setOwnerGuestTelefone] = useState<string>('')
 
   // feedback do submit
   const [salvando, setSalvando] = useState<boolean>(false)
@@ -190,6 +191,15 @@ export default function AgendamentoComum() {
       return
     }
 
+    // se for convidado dono, exigir telefone
+    if (ownerGuestNome.trim() && !ownerGuestTelefone.trim()) {
+      setFeedback({
+        kind: 'error',
+        text: 'Informe o telefone do convidado dono.'
+      })
+      return
+    }
+
     const usuarioIdTemp = jogadores[0]?.id
 
     const payload: any = {
@@ -198,7 +208,11 @@ export default function AgendamentoComum() {
       esporteId: String(esporteSelecionado),
       quadraId: String(quadraSelecionada),
       jogadoresIds: jogadores.map((j) => String(j.id)),
-      convidadosNomes: ownerGuestNome.trim() ? [ownerGuestNome.trim()] : undefined,
+      // concatena "Nome Telefone" para manter compatibilidade com o backend atual
+      convidadosNomes:
+        ownerGuestNome.trim()
+          ? [`${ownerGuestNome.trim()} ${ownerGuestTelefone.trim()}`.trim()]
+          : undefined,
     }
     if (usuarioIdTemp) payload.usuarioId = String(usuarioIdTemp)
 
@@ -211,10 +225,13 @@ export default function AgendamentoComum() {
 
       // 2) se tiver “convidado dono”, transfere titularidade
       if (ownerGuestNome.trim()) {
+        const alvoNome = ownerGuestNome.trim().toLowerCase()
         const convidado = Array.isArray(novo?.jogadores)
-          ? novo.jogadores.find((j: any) =>
-              String(j?.nome || '').trim().toLowerCase() === ownerGuestNome.trim().toLowerCase()
-            )
+          ? novo.jogadores.find((j: any) => {
+              const nome = String(j?.nome || '').trim().toLowerCase()
+              // cobre ambos os casos: nome exato OU nome + telefone concatenado
+              return nome === alvoNome || nome.startsWith(alvoNome + ' ')
+            })
           : null
 
         if (convidado?.id) {
@@ -235,6 +252,7 @@ export default function AgendamentoComum() {
       setQuadrasDisponiveis([])
       setJogadores([])
       setOwnerGuestNome('')
+      setOwnerGuestTelefone('')
 
       // redirect (mantém o toast visível)
       const params = new URLSearchParams({ data })
@@ -323,14 +341,26 @@ export default function AgendamentoComum() {
 
       {/* Dono convidado (opcional) */}
       <div className="mb-4">
-        <label className="block mb-1 font-medium">Convidado dono (nome e telefone)</label>
-        <input
-          type="text"
-          className="w-full p-2 border rounded"
-          placeholder="Ex.: João 53 99127-8304"
-          value={ownerGuestNome}
-          onChange={(e) => setOwnerGuestNome(e.target.value)}
-        />
+        <label className="block mb-1 font-medium">Convidado dono</label>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <input
+            type="text"
+            className="w-full p-2 border rounded"
+            placeholder="Nome do convidado (obrigatório se usar convidado)"
+            value={ownerGuestNome}
+            onChange={(e) => setOwnerGuestNome(e.target.value)}
+          />
+          <input
+            type="tel"
+            className="w-full p-2 border rounded"
+            placeholder="Telefone do convidado (obrigatório)"
+            value={ownerGuestTelefone}
+            onChange={(e) => setOwnerGuestTelefone(e.target.value)}
+          />
+        </div>
+        <p className="text-[11px] text-gray-500 mt-1">
+          Preencha estes campos <b>apenas</b> se o dono não é cadastrado.
+        </p>
       </div>
 
       {/* Busca e seleção de jogadores cadastrados */}
