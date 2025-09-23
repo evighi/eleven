@@ -249,17 +249,20 @@ export default function TodosHorariosPage() {
 
         const { data: det } = await axios.get(`${API_URL}/${rota}`, { withCredentials: true });
 
-        const usuarioNome =
-          (det?.usuario && typeof det.usuario === "object" ? det.usuario.nome : det?.usuario) ||
-          "—";
+        // aceita usuário como string OU objeto { nome, celular }
+        const usuarioValor: string | Usuario =
+          typeof det?.usuario === "object" || typeof det?.usuario === "string"
+            ? det.usuario
+            : "—";
+
         const jogadores: JogadorRef[] = Array.isArray(det?.jogadores) ? det.jogadores : [];
 
         setAgendamentoSelecionado({
-          dia: data, // usa a data filtrada da página
+          dia: data,
           horario,
-          usuario: usuarioNome,
+          usuario: usuarioValor,         // 👈 mantém string OU objeto
           jogadores,
-          esporte,
+          esporte,                        // aqui já vem do grid (string)
           tipoReserva,
           agendamentoId,
           tipoLocal: "quadra",
@@ -753,7 +756,9 @@ export default function TodosHorariosPage() {
               <strong>Usuário:</strong>{" "}
               {typeof agendamentoSelecionado.usuario === "string"
                 ? agendamentoSelecionado.usuario
-                : agendamentoSelecionado.usuario?.nome || "—"}
+                : [agendamentoSelecionado.usuario?.nome, agendamentoSelecionado.usuario?.celular]
+                  .filter(Boolean)
+                  .join(" — ")}
             </p>
             <p><strong>Tipo:</strong> {agendamentoSelecionado.tipoReserva}</p>
 

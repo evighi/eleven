@@ -702,8 +702,8 @@ router.get("/:id", verificarToken, async (req, res) => {
     const agendamento = await prisma.agendamento.findUnique({
       where: { id },
       include: {
-        usuario: { select: { id: true, nome: true, email: true } },
-        jogadores: { select: { id: true, nome: true, email: true } },
+        usuario: { select: { id: true, nome: true, email: true, celular: true } },     // 👈 celular
+        jogadores: { select: { id: true, nome: true, email: true, celular: true } },   // 👈 celular
         quadra: { select: { nome: true, numero: true } },
         esporte: { select: { nome: true } },
       },
@@ -715,25 +715,34 @@ router.get("/:id", verificarToken, async (req, res) => {
 
     const isOwner = agendamento.usuario?.id === userId;
     const isPlayer = agendamento.jogadores.some((j) => j.id === userId);
-
     if (!isAdmin && !isOwner && !isPlayer) {
       return res.status(403).json({ erro: "Sem permissão para ver este agendamento" });
     }
 
     const sanitizeEmail = (email?: string | null) => (isAdmin ? email : undefined);
+    const sanitizePhone = (celular?: string | null) => (isAdmin ? celular : undefined);
 
     return res.json({
       id: agendamento.id,
       tipoReserva: "COMUM",
       dia: agendamento.data.toISOString().split("T")[0],
       horario: agendamento.horario,
-      usuario: agendamento.usuario?.nome,
-      usuarioId: agendamento.usuario?.id,
+      usuario: agendamento.usuario
+        ? {
+          id: agendamento.usuario.id,
+          nome: agendamento.usuario.nome,
+          email: sanitizeEmail(agendamento.usuario.email),
+          celular: sanitizePhone(agendamento.usuario.celular),   // 👈 agora vem no payload
+        }
+        : null,
+      usuarioId: agendamento.usuario?.id, // mantém compat
       esporte: agendamento.esporte?.nome,
       quadra: `${agendamento.quadra?.nome} (Nº ${agendamento.quadra?.numero})`,
       jogadores: agendamento.jogadores.map((j) => ({
+        id: j.id,
         nome: j.nome,
         email: sanitizeEmail(j.email),
+        celular: sanitizePhone(j.celular),                         // 👈 agora vem no payload
       })),
     });
   } catch (err) {
@@ -741,6 +750,7 @@ router.get("/:id", verificarToken, async (req, res) => {
     return res.status(500).json({ erro: "Erro ao buscar agendamento" });
   }
 });
+
 
 // ✅ Cancelar agendamento comum (com regra de 12h/15min no BACK)
 router.post("/cancelar/:id", verificarToken, async (req, res) => {
@@ -947,10 +957,10 @@ router.patch("/:id/transferir", verificarToken, async (req, res) => {
         horario: novoAgendamento.horario,
         usuario: novoAgendamento.usuario
           ? {
-              id: novoAgendamento.usuario.id,
-              nome: novoAgendamento.usuario.nome,
-              email: isAdmin ? novoAgendamento.usuario.email : undefined,
-            }
+            id: novoAgendamento.usuario.id,
+            nome: novoAgendamento.usuario.nome,
+            email: isAdmin ? novoAgendamento.usuario.email : undefined,
+          }
           : null,
         jogadores: novoAgendamento.jogadores.map((j) => ({
           id: j.id,
@@ -959,10 +969,10 @@ router.patch("/:id/transferir", verificarToken, async (req, res) => {
         })),
         quadra: novoAgendamento.quadra
           ? {
-              id: novoAgendamento.quadra.id,
-              nome: novoAgendamento.quadra.nome,
-              numero: novoAgendamento.quadra.numero,
-            }
+            id: novoAgendamento.quadra.id,
+            nome: novoAgendamento.quadra.nome,
+            numero: novoAgendamento.quadra.numero,
+          }
           : null,
       },
     });
@@ -1012,9 +1022,9 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
     // 4) Buscar usuários válidos por ID (se houver)
     const usuariosValidos = jogadoresIds.length
       ? await prisma.usuario.findMany({
-          where: { id: { in: jogadoresIds } },
-          select: { id: true },
-        })
+        where: { id: { in: jogadoresIds } },
+        select: { id: true },
+      })
       : [];
 
     if (usuariosValidos.length !== jogadoresIds.length) {
@@ -1082,10 +1092,10 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
       status: atualizado.status,
       usuario: atualizado.usuario
         ? {
-            id: atualizado.usuario.id,
-            nome: atualizado.usuario.nome,
-            email: isAdmin ? atualizado.usuario.email : undefined,
-          }
+          id: atualizado.usuario.id,
+          nome: atualizado.usuario.nome,
+          email: isAdmin ? atualizado.usuario.email : undefined,
+        }
         : null,
       jogadores: atualizado.jogadores.map((j) => ({
         id: j.id,
