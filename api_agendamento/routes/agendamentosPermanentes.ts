@@ -187,7 +187,10 @@ router.get("/", async (req, res) => {
 router.get(
   "/:id",
   requireOwnerByRecord(async (req) => {
-    const reg = await prisma.agendamentoPermanente.findUnique({ where: { id: req.params.id }, select: { usuarioId: true } });
+    const reg = await prisma.agendamentoPermanente.findUnique({
+      where: { id: req.params.id },
+      select: { usuarioId: true },
+    });
     return reg?.usuarioId ?? null;
   }),
   async (req, res) => {
@@ -196,20 +199,30 @@ router.get(
       const agendamento = await prisma.agendamentoPermanente.findUnique({
         where: { id },
         include: {
-          usuario: { select: { id: true, nome: true, email: true } },
+          usuario: { select: { id: true, nome: true, email: true, celular: true } }, // 👈 inclui celular
           quadra: { select: { nome: true, numero: true } },
           esporte: { select: { nome: true } },
         },
       });
-      if (!agendamento) return res.status(404).json({ erro: "Agendamento permanente não encontrado" });
+      if (!agendamento) {
+        return res.status(404).json({ erro: "Agendamento permanente não encontrado" });
+      }
 
+      // se quiser a mesma política de privacidade do comum, sanitize email/celular aqui conforme o tipo
       return res.json({
         id: agendamento.id,
         tipoReserva: "PERMANENTE",
         diaSemana: agendamento.diaSemana,
         horario: agendamento.horario,
-        usuario: agendamento.usuario.nome,
-        usuarioId: agendamento.usuario.id,
+        usuario: agendamento.usuario
+          ? {
+              id: agendamento.usuario.id,
+              nome: agendamento.usuario.nome,
+              email: agendamento.usuario.email,
+              celular: agendamento.usuario.celular,            // 👈 agora volta no payload
+            }
+          : null,
+        usuarioId: agendamento.usuario?.id, // mantém compatibilidade
         esporte: agendamento.esporte.nome,
         quadra: `${agendamento.quadra.nome} (Nº ${agendamento.quadra.numero})`,
         dataInicio: agendamento.dataInicio,
@@ -220,6 +233,7 @@ router.get(
     }
   }
 );
+
 
 // 📅 Datas elegíveis p/ exceção — dono ou admin
 router.get(
