@@ -17,7 +17,7 @@ type QuadraDisponivel = {
 
 type Esporte = { id: string; nome: string };
 
-// 👇 agora esperamos celular (telefone) no resultado da busca
+// agora esperamos celular (telefone) no resultado da busca
 type UsuarioBusca = { id: string; nome: string; celular?: string | null };
 
 type ProximasDatasResp = { proximasDatasDisponiveis: string[]; dataUltimoConflito: string | null };
@@ -70,8 +70,9 @@ export default function CadastrarPermanente() {
   const [carregandoUsuarios, setCarregandoUsuarios] = useState<boolean>(false);
   const [listaAberta, setListaAberta] = useState<boolean>(false);
 
-  // Convidado como dono (nome livre)
+  // Convidado como dono (campos separados)
   const [convidadoDonoNome, setConvidadoDonoNome] = useState<string>("");
+  const [convidadoDonoTelefone, setConvidadoDonoTelefone] = useState<string>("");
 
   // Datas e disponibilidade
   const [dataInicio, setDataInicio] = useState<string>("");
@@ -240,6 +241,15 @@ export default function CadastrarPermanente() {
       return;
     }
 
+    // se for convidado, exigir telefone
+    if (convidadoDonoNome.trim() && !convidadoDonoTelefone.trim()) {
+      setFeedback({
+        kind: "error",
+        text: "Informe o telefone do convidado dono.",
+      });
+      return;
+    }
+
     if (existeAgendamentoComum && proximasDatasDisponiveis.length > 0 && !dataInicio) {
       setFeedback({ kind: "error", text: "Selecione uma data de início válida." });
       return;
@@ -250,7 +260,14 @@ export default function CadastrarPermanente() {
       esporteId,
       quadraId,
       horario,
-      ...(usuarioId ? { usuarioId } : { convidadosNomes: [convidadoDonoNome.trim()] }),
+      ...(usuarioId
+        ? { usuarioId }
+        : {
+            // concatena "Nome Telefone" para manter compatibilidade com o backend
+            convidadosNomes: [
+              `${convidadoDonoNome.trim()} ${convidadoDonoTelefone.trim()}`.trim(),
+            ],
+          }),
       ...(existeAgendamentoComum ? { dataInicio } : {}),
     };
 
@@ -268,6 +285,7 @@ export default function CadastrarPermanente() {
       // limpar campos principais
       setUsuarioId("");
       setConvidadoDonoNome("");
+      setConvidadoDonoTelefone("");
       setQuadraId("");
 
       setTimeout(() => {
@@ -441,6 +459,7 @@ export default function CadastrarPermanente() {
                       setUsuariosEncontrados([]);
                       setListaAberta(false);
                       setConvidadoDonoNome("");
+                      setConvidadoDonoTelefone("");
                     }}
                     title={u.celular || ""}
                   >
@@ -461,26 +480,42 @@ export default function CadastrarPermanente() {
             {usuarioId && <div className="text-xs text-green-700 mt-1">Usuário selecionado.</div>}
           </div>
 
-          {/* Convidado dono */}
+          {/* Convidado dono (nome + telefone) */}
           <div>
-            <input
-              type="text"
-              value={convidadoDonoNome}
-              onChange={(e) => {
-                setConvidadoDonoNome(e.target.value);
-                if (e.target.value.trim()) {
-                  setUsuarioId("");
-                  setBusca("");
-                  setUsuariosEncontrados([]);
-                  setListaAberta(false);
-                }
-                setFeedback(null);
-              }}
-              placeholder="Ou informe um convidado como dono (nome e telefone opcional)"
-              className="w-full border rounded p-2"
-            />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <input
+                type="text"
+                value={convidadoDonoNome}
+                onChange={(e) => {
+                  setConvidadoDonoNome(e.target.value);
+                  if (e.target.value.trim()) {
+                    setUsuarioId("");
+                    setBusca("");
+                    setUsuariosEncontrados([]);
+                    setListaAberta(false);
+                  }
+                  setFeedback(null);
+                }}
+                placeholder="Convidado: nome (obrigatório se usar convidado)"
+                className="w-full border rounded p-2"
+              />
+              <input
+                type="tel"
+                value={convidadoDonoTelefone}
+                onChange={(e) => {
+                  setConvidadoDonoTelefone(e.target.value);
+                  if (e.target.value.trim()) {
+                    setUsuarioId("");
+                  }
+                  setFeedback(null);
+                }}
+                placeholder="Convidado: telefone (obrigatório)"
+                className="w-full border rounded p-2"
+              />
+            </div>
             <p className="text-[11px] text-gray-500 mt-1">
               Preencha <strong>um</strong> dos dois: usuário cadastrado <em>ou</em> convidado dono.
+              Se usar convidado, informe também o telefone.
             </p>
           </div>
         </div>
