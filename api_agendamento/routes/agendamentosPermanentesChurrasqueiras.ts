@@ -7,6 +7,7 @@ import { addDays, addMonths, startOfDay } from "date-fns";
 
 import verificarToken from "../middleware/authMiddleware";
 import { requireAdmin, requireOwnerByRecord } from "../middleware/acl";
+import { logAudit, TargetType } from "../utils/audit";
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -97,7 +98,7 @@ router.post("/", requireAdmin, async (req, res) => {
     // 0) churrasqueira existe?
     const exists = await prisma.churrasqueira.findUnique({
       where: { id: churrasqueiraId },
-      select: { id: true },
+      select: { id: true, nome: true, numero: true },
     });
     if (!exists) {
       return res.status(404).json({ erro: "Churrasqueira não encontrada." });
@@ -139,9 +140,6 @@ router.post("/", requireAdmin, async (req, res) => {
     }
 
     // 🔑 Resolve DONO (admin obrigatório nesta rota):
-    // 1) Se veio usuarioId, usa ele
-    // 2) Senão, se veio convidadosNomes[0], cria usuário convidado e usa como dono
-    // 3) Senão, erro
     let donoId = usuarioIdBody || "";
     if (!donoId && convidadosNomes.length > 0) {
       const convidado = await criarConvidadoComoUsuario(convidadosNomes[0]);
@@ -160,6 +158,21 @@ router.post("/", requireAdmin, async (req, res) => {
         churrasqueiraId,
         usuarioId: donoId,
         dataInicio: dataInicio ?? null,
+      },
+    });
+
+    // 📜 AUDIT: criação
+    await logAudit({
+      event: "CHURRAS_PERM_CREATE",
+      req,
+      target: { type: TargetType.AGENDAMENTO_PERMANENTE_CHURRASQUEIRA, id: novo.id },
+      metadata: {
+        permanenteId: novo.id,
+        churrasqueiraId,
+        diaSemana,
+        turno,
+        donoId,
+        dataInicio: novo.dataInicio ? toISODateUTC(new Date(novo.dataInicio)) : null,
       },
     });
 
@@ -325,7 +338,7 @@ router.get(
         inicioJanela: toISODateUTC(inicioJanela),
         fimJanela: toISODateUTC(fimJanela),
         diaSemana: perm.diaSemana,
-        turno: undefined, // informação já está no recurso principal; mantemos simples
+        turno: undefined,
         datas: elegiveis,
         jaCanceladas: Array.from(jaCanceladasSet),
       });
@@ -364,7 +377,7 @@ router.post(
     try {
       const perm = await prisma.agendamentoPermanenteChurrasqueira.findUnique({
         where: { id },
-        select: { id: true, usuarioId: true, diaSemana: true, dataInicio: true, status: true },
+        select: { id: true, usuarioId: true, diaSemana: true, dataInicio: true, status: true, churrasqueiraId: true, turno: true },
       });
       if (!perm) return res.status(404).json({ erro: "Agendamento permanente não encontrado" });
       if (["CANCELADO", "TRANSFERIDO"].includes(perm.status)) {
@@ -402,6 +415,23 @@ router.post(
         },
       });
 
+      // 📜 AUDIT: exceção (um dia)
+      await logAudit({
+        event: "CHURRAS_PERM_EXCECAO",
+        req,
+        target: { type: TargetType.AGENDAMENTO_PERMANENTE_CHURRASQUEIRA, id },
+        metadata: {
+          permanenteId: id,
+          churrasqueiraId: perm.churrasqueiraId,
+          diaSemana: perm.diaSemana,
+          turno: perm.turno,
+          dataExcecao: iso,
+          motivo: motivo ?? null,
+          criadoPorId: req.usuario!.usuarioLogadoId,
+          cancelamentoId: novo.id,
+        },
+      });
+
       return res.status(201).json({
         id: novo.id,
         agendamentoPermanenteChurrasqueiraId: id,
@@ -435,11 +465,33 @@ router.post(
     const { id } = req.params;
 
     try {
+      const antes = await prisma.agendamentoPermanenteChurrasqueira.findUnique({
+        where: { id },
+        select: { status: true, churrasqueiraId: true, diaSemana: true, turno: true, usuarioId: true },
+      });
+
       const agendamento = await prisma.agendamentoPermanenteChurrasqueira.update({
         where: { id },
         data: {
           status: "CANCELADO",
           canceladoPorId: req.usuario.usuarioLogadoId,
+        },
+      });
+
+      // 📜 AUDIT: cancelar definitivo
+      await logAudit({
+        event: "CHURRAS_PERM_CANCEL",
+        req,
+        target: { type: TargetType.AGENDAMENTO_PERMANENTE_CHURRASQUEIRA, id },
+        metadata: {
+          permanenteId: id,
+          churrasqueiraId: antes?.churrasqueiraId ?? null,
+          diaSemana: antes?.diaSemana ?? null,
+          turno: antes?.turno ?? null,
+          statusAntes: antes?.status ?? null,
+          statusDepois: "CANCELADO",
+          canceladoPorId: req.usuario.usuarioLogadoId,
+          donoId: antes?.usuarioId ?? null,
         },
       });
 
@@ -461,10 +513,32 @@ router.post(
  * Apenas Admin
  */
 router.delete("/:id", requireAdmin, async (req, res) => {
+  const { id } = req.params;
   try {
-    await prisma.agendamentoPermanenteChurrasqueira.delete({
-      where: { id: req.params.id },
+    const antes = await prisma.agendamentoPermanenteChurrasqueira.findUnique({
+      where: { id },
+      select: { churrasqueiraId: true, diaSemana: true, turno: true, usuarioId: true, status: true },
     });
+
+    await prisma.agendamentoPermanenteChurrasqueira.delete({
+      where: { id },
+    });
+
+    // 📜 AUDIT: delete
+    await logAudit({
+      event: "CHURRAS_PERM_DELETE",
+      req,
+      target: { type: TargetType.AGENDAMENTO_PERMANENTE_CHURRASQUEIRA, id },
+      metadata: {
+        permanenteId: id,
+        churrasqueiraId: antes?.churrasqueiraId ?? null,
+        diaSemana: antes?.diaSemana ?? null,
+        turno: antes?.turno ?? null,
+        statusAntes: antes?.status ?? null,
+        donoId: antes?.usuarioId ?? null,
+      },
+    });
+
     return res.json({ mensagem: "Agendamento permanente deletado com sucesso" });
   } catch (err) {
     console.error(err);
