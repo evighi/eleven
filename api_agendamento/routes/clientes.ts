@@ -9,6 +9,9 @@ import { gerarCodigoVerificacao } from "../utils/gerarCodigo";
 import verificarToken from "../middleware/authMiddleware";
 import { requireAdmin, requireSelfOrAdminParam, isAdmin } from "../middleware/acl";
 
+// 👇 Audit
+import { logAudit, TargetType } from "../utils/audit";
+
 const prisma = new PrismaClient();
 const router = Router();
 
@@ -125,7 +128,7 @@ router.post("/registrar", async (req, res) => {
         codigoEmail: codigo,
         expiraEm: expira,
       },
-      select: { id: true, email: true },
+      select: { id: true, email: true, nome: true },
     });
 
     try {
@@ -135,6 +138,20 @@ router.post("/registrar", async (req, res) => {
       await prisma.usuario.delete({ where: { id: novo.id } });
       return res.status(500).json({ erro: "Erro ao enviar email de verificação" });
     }
+
+    // 📝 AUDIT: cadastro de usuário (ator = próprio usuário recém-criado)
+    await logAudit({
+      event: "USUARIO_CREATE",
+      req,
+      actor: { id: novo.id, name: nome, type: "CLIENTE" },
+      target: { type: TargetType.USUARIO, id: novo.id },
+      metadata: {
+        email,
+        celular,
+        cpf,
+        verificado: false,
+      },
+    });
 
     return res
       .status(201)
