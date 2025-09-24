@@ -4,6 +4,8 @@ import cors from 'cors';
 import path from "path";
 import cookieParser from "cookie-parser";
 
+import './utils/audit';
+
 import routesLogin from './routes/login';
 import routesClientes from './routes/clientes';
 import routesRecuperacao from "./routes/recuperacao";
