@@ -6,6 +6,7 @@ import crypto from "crypto";
 
 import verificarToken from "../middleware/authMiddleware";
 import { requireOwnerByRecord, isAdmin as isAdminTipo } from "../middleware/acl";
+import { logAudit, TargetType } from "../utils/audit";
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -154,6 +155,20 @@ router.post("/", async (req, res) => {
       },
     });
 
+    // 📋 AUDIT: criação
+    await logAudit({
+      event: "CHURRAS_CREATE",
+      req,
+      target: { type: TargetType.AGENDAMENTO_CHURRASQUEIRA, id: novo.id },
+      metadata: {
+        data,
+        turno,
+        churrasqueiraId,
+        donoId,
+        status: "CONFIRMADO",
+      },
+    });
+
     return res.status(201).json(novo);
   } catch (err) {
     console.error(err);
@@ -247,10 +262,41 @@ router.post(
   async (req, res) => {
     if (!req.usuario) return res.status(401).json({ erro: "Não autenticado" });
     try {
+      // carrega antes para log
+      const before = await prisma.agendamentoChurrasqueira.findUnique({
+        where: { id: req.params.id },
+        select: {
+          id: true,
+          data: true,
+          turno: true,
+          usuarioId: true,
+          status: true,
+          churrasqueiraId: true,
+        },
+      });
+      if (!before) return res.status(404).json({ erro: "Agendamento não encontrado" });
+
       const up = await prisma.agendamentoChurrasqueira.update({
         where: { id: req.params.id },
         data: { status: "CANCELADO", canceladoPorId: req.usuario.usuarioLogadoId },
       });
+
+      // 📋 AUDIT: cancelamento
+      await logAudit({
+        event: "CHURRAS_CANCEL",
+        req,
+        target: { type: TargetType.AGENDAMENTO_CHURRASQUEIRA, id: before.id },
+        metadata: {
+          statusAntes: before.status,
+          statusDepois: "CANCELADO",
+          data: before.data.toISOString().slice(0, 10),
+          turno: before.turno,
+          churrasqueiraId: before.churrasqueiraId,
+          donoId: before.usuarioId,
+          canceladoPorId: req.usuario.usuarioLogadoId,
+        },
+      });
+
       return res.json({ message: "Agendamento cancelado com sucesso.", agendamento: up });
     } catch (err) {
       console.error(err);
@@ -271,7 +317,37 @@ router.delete(
   }),
   async (req, res) => {
     try {
+      // carrega antes para log
+      const before = await prisma.agendamentoChurrasqueira.findUnique({
+        where: { id: req.params.id },
+        select: {
+          id: true,
+          data: true,
+          turno: true,
+          usuarioId: true,
+          status: true,
+          churrasqueiraId: true,
+        },
+      });
+      if (!before) return res.status(404).json({ erro: "Agendamento não encontrado" });
+
       await prisma.agendamentoChurrasqueira.delete({ where: { id: req.params.id } });
+
+      // 📋 AUDIT: deleção
+      await logAudit({
+        event: "CHURRAS_DELETE",
+        req,
+        target: { type: TargetType.AGENDAMENTO_CHURRASQUEIRA, id: before.id },
+        metadata: {
+          data: before.data.toISOString().slice(0, 10),
+          turno: before.turno,
+          churrasqueiraId: before.churrasqueiraId,
+          donoId: before.usuarioId,
+          statusAntes: before.status,
+          deletadoPorId: req.usuario?.usuarioLogadoId ?? null,
+        },
+      });
+
       return res.json({ mensagem: "Agendamento deletado com sucesso" });
     } catch (err) {
       console.error(err);
