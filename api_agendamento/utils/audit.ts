@@ -26,19 +26,23 @@ export type AuditEvent =
   | "AGENDAMENTO_CREATE"
   | "AGENDAMENTO_CANCEL"
   | "AGENDAMENTO_TRANSFER"
+  | "AGENDAMENTO_DELETE"
   // Agendamento permanente (quadra)
   | "AGENDAMENTO_PERM_CREATE"
   | "AGENDAMENTO_PERM_CANCEL"
   | "AGENDAMENTO_PERM_TRANSFER"
   | "AGENDAMENTO_PERM_EXCECAO"
+  | "AGENDAMENTO_PERM_DELETE"
   // Churrasqueira comum
   | "CHURRAS_CREATE"
   | "CHURRAS_CANCEL"
   | "CHURRAS_TRANSFER"
+  | "CHURRAS_DELETE"
   // Churrasqueira permanente
   | "CHURRAS_PERM_CREATE"
   | "CHURRAS_PERM_CANCEL"
   | "CHURRAS_PERM_EXCECAO"
+  | "CHURRAS_PERM_DELETE"
   // Bloqueios de quadra
   | "BLOQUEIO_CREATE"
   | "BLOQUEIO_DELETE"
@@ -148,7 +152,7 @@ export async function purgeOldAuditLogs() {
 
 /** Agenda a purga diária (protege contra hot-reload duplicado) */
 export function initAuditRetentionScheduler() {
-  const g = globalThis as any;
+  const g = (globalThis as any);
   if (g.__auditRetentionStarted__) return;
 
   cron.schedule(
