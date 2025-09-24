@@ -76,6 +76,8 @@ model Usuario {
 
   bloqueiosFeitos BloqueioQuadra[] @relation("UsuarioBloqueios")
 
+  auditLogs AuditLog[] @relation("UsuarioAuditLogs")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -285,16 +287,60 @@ model AgendamentoPermanenteCancelamento {
 
 // NOVO: Exceção (um dia) — CHURRASQUEIRA
 model AgendamentoPermanenteChurrasqueiraCancelamento {
-  id                                    String   @id @default(uuid())
+  id                                   String   @id @default(uuid())
   agendamentoPermanenteChurrasqueiraId String
-  data                                  DateTime
-  motivo                                String?
-  criadoPorId                           String?
-  createdAt                             DateTime @default(now())
+  data                                 DateTime
+  motivo                               String?
+  criadoPorId                          String?
+  createdAt                            DateTime @default(now())
 
   permanente AgendamentoPermanenteChurrasqueira @relation(fields: [agendamentoPermanenteChurrasqueiraId], references: [id], onDelete: Cascade)
-  criadoPor  Usuario?                            @relation("UsuarioCriouCancelamentoPermanenteChurrasqueira", fields: [criadoPorId], references: [id])
+  criadoPor  Usuario?                           @relation("UsuarioCriouCancelamentoPermanenteChurrasqueira", fields: [criadoPorId], references: [id])
 
   @@unique([agendamentoPermanenteChurrasqueiraId, data])
   @@index([agendamentoPermanenteChurrasqueiraId, data])
+}
+
+// =====================
+// AUDITORIA
+// =====================
+
+enum AuditTargetType {
+  USUARIO
+  AGENDAMENTO
+  AGENDAMENTO_PERMANENTE
+  AGENDAMENTO_CHURRASQUEIRA
+  AGENDAMENTO_PERMANENTE_CHURRASQUEIRA
+  QUADRA
+  CHURRASQUEIRA
+  SISTEMA
+}
+
+model AuditLog {
+  id String @id @default(uuid())
+
+  // Quem fez (pode ser null em ações anônimas)
+  actorId   String?
+  actor     Usuario?     @relation("UsuarioAuditLogs", fields: [actorId], references: [id])
+  actorName String? // snapshot do nome no momento do evento
+  actorTipo TipoUsuario? // snapshot do tipo no momento do evento
+
+  // O que aconteceu
+  event String // ex.: "LOGIN_SUCESSO", "AGENDAMENTO_CREATE", etc.
+
+  // Contra quem/qual recurso
+  targetType AuditTargetType
+  targetId   String? // id do recurso; pode ser null em eventos gerais
+
+  // Contexto
+  ip        String?
+  userAgent String?
+  metadata  Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([event])
+  @@index([actorId])
+  @@index([targetType, targetId])
+  @@index([createdAt])
 }
