@@ -7,6 +7,7 @@ import { startOfDay, addDays, getDay } from "date-fns";
 import cron from "node-cron"; // ⏰ cron para finalizar vencidos
 import verificarToken from "../middleware/authMiddleware";
 import { r2PublicUrl } from "../src/lib/r2";
+import { logAudit, TargetType } from "../utils/audit"; // 👈 AUDITORIA
 
 // Mapa DiaSemana -> número JS (0=Dom..6=Sáb)
 const DIA_IDX: Record<DiaSemana, number> = {
@@ -729,11 +730,11 @@ router.get("/:id", verificarToken, async (req, res) => {
       horario: agendamento.horario,
       usuario: agendamento.usuario
         ? {
-          id: agendamento.usuario.id,
-          nome: agendamento.usuario.nome,
-          email: sanitizeEmail(agendamento.usuario.email),
-          celular: sanitizePhone(agendamento.usuario.celular),   // 👈 agora vem no payload
-        }
+            id: agendamento.usuario.id,
+            nome: agendamento.usuario.nome,
+            email: sanitizeEmail(agendamento.usuario.email),
+            celular: sanitizePhone(agendamento.usuario.celular),   // 👈 agora vem no payload
+          }
         : null,
       usuarioId: agendamento.usuario?.id, // mantém compat
       esporte: agendamento.esporte?.nome,
@@ -841,12 +842,44 @@ router.post("/cancelar/:id", verificarToken, async (req, res) => {
       },
     });
 
+    // 🔎 AUDITORIA — registra quem cancelou e qual agendamento
+    try {
+      await logAudit({
+        event: "AGENDAMENTO_CANCEL",
+        req,
+        target: { type: TargetType.AGENDAMENTO, id },
+        metadata: {
+          agendamentoId: id,
+          statusAntes: ag.status,
+          statusDepois: atualizado.status,
+          data: ag.data.toISOString().slice(0, 10),
+          horario: ag.horario,
+          donoId: ag.usuarioId,
+        },
+      });
+    } catch (e) {
+      console.error("[audit] falha ao registrar cancelamento:", e);
+    }
+
     return res.status(200).json({
       message: "Agendamento cancelado com sucesso.",
       agendamento: atualizado,
     });
   } catch (error) {
     console.error("Erro ao cancelar agendamento:", error);
+
+    // (opcional) auditar tentativa com erro
+    try {
+      await logAudit({
+        event: "OTHER",
+        req,
+        target: { type: TargetType.AGENDAMENTO, id },
+        metadata: { action: "CANCEL_FAIL", error: (error as any)?.message ?? String(error) },
+      });
+    } catch (e) {
+      console.error("[audit] falha ao registrar erro de cancelamento:", e);
+    }
+
     return res.status(500).json({ erro: "Erro ao cancelar agendamento." });
   }
 });
@@ -957,10 +990,10 @@ router.patch("/:id/transferir", verificarToken, async (req, res) => {
         horario: novoAgendamento.horario,
         usuario: novoAgendamento.usuario
           ? {
-            id: novoAgendamento.usuario.id,
-            nome: novoAgendamento.usuario.nome,
-            email: isAdmin ? novoAgendamento.usuario.email : undefined,
-          }
+              id: novoAgendamento.usuario.id,
+              nome: novoAgendamento.usuario.nome,
+              email: isAdmin ? novoAgendamento.usuario.email : undefined,
+            }
           : null,
         jogadores: novoAgendamento.jogadores.map((j) => ({
           id: j.id,
@@ -969,10 +1002,10 @@ router.patch("/:id/transferir", verificarToken, async (req, res) => {
         })),
         quadra: novoAgendamento.quadra
           ? {
-            id: novoAgendamento.quadra.id,
-            nome: novoAgendamento.quadra.nome,
-            numero: novoAgendamento.quadra.numero,
-          }
+              id: novoAgendamento.quadra.id,
+              nome: novoAgendamento.quadra.nome,
+              numero: novoAgendamento.quadra.numero,
+            }
           : null,
       },
     });
@@ -1022,9 +1055,9 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
     // 4) Buscar usuários válidos por ID (se houver)
     const usuariosValidos = jogadoresIds.length
       ? await prisma.usuario.findMany({
-        where: { id: { in: jogadoresIds } },
-        select: { id: true },
-      })
+          where: { id: { in: jogadoresIds } },
+          select: { id: true },
+        })
       : [];
 
     if (usuariosValidos.length !== jogadoresIds.length) {
@@ -1092,10 +1125,10 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
       status: atualizado.status,
       usuario: atualizado.usuario
         ? {
-          id: atualizado.usuario.id,
-          nome: atualizado.usuario.nome,
-          email: isAdmin ? atualizado.usuario.email : undefined,
-        }
+            id: atualizado.usuario.id,
+            nome: atualizado.usuario.nome,
+            email: isAdmin ? atualizado.usuario.email : undefined,
+          }
         : null,
       jogadores: atualizado.jogadores.map((j) => ({
         id: j.id,

@@ -22,6 +22,7 @@ import routesDisponibilidadeGeral from "./routes/disponibilidadeGeral";
 import routesUsuariosAdmin from "./routes/usuariosAdmin";
 import routesBloqueios from "./routes/bloqueios";
 import routesUsuarios from "./routes/usuarios";
+import routesAudit from "./routes/audit";
 
 import verificarToken from "./middleware/authMiddleware";  // middleware de auth
 
@@ -64,6 +65,7 @@ app.use('/disponibilidadeGeral', routesDisponibilidadeGeral);
 app.use("/usuariosAdmin", routesUsuariosAdmin);
 app.use("/bloqueios", routesBloqueios);
 app.use("/usuarios", routesUsuarios);
+app.use("/audit", routesAudit); 
 
 // Rota raiz
 app.get('/', (req, res) => {
