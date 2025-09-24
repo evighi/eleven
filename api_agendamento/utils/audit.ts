@@ -1,12 +1,14 @@
 // utils/audit.ts
 import type { Request } from "express";
-import {
-  PrismaClient,
-  AuditTargetType,
-  TipoUsuario,
-} from "@prisma/client";
+import { PrismaClient, AuditTargetType, TipoUsuario } from "@prisma/client";
+import cron from "node-cron";
 
 const prisma = new PrismaClient();
+
+/** === Config fixas (sem .env) === */
+const RETENTION_DAYS = 45;          // manter logs por 45 dias
+const CRON_EXPR = "10 3 * * *";     // todo dia às 03:10
+const CRON_TZ = "America/Sao_Paulo";
 
 /** Eventos suportados */
 export type AuditEvent =
@@ -61,7 +63,7 @@ export type LogAuditInput = {
     type?: string | null; // string vinda do JWT; convertemos para enum
   };
   target?: AuditTarget;
-  // message?: string | null; // <- seu schema não tem essa coluna; deixo comentado
+  // message?: string | null; // seu schema não tem essa coluna; deixo comentado
   metadata?: Record<string, any> | null;
 };
 
@@ -102,7 +104,7 @@ export async function logAudit(input: LogAuditInput) {
 
     const ip =
       (input.req?.headers["x-forwarded-for"] as string) ||
-      input.req?.socket?.remoteAddress ||
+      (input.req?.socket?.remoteAddress as string) ||
       null;
 
     const userAgent = (input.req?.headers["user-agent"] as string) || null;
@@ -112,7 +114,7 @@ export async function logAudit(input: LogAuditInput) {
         event: input.event,
         actorId,
         actorName,
-        actorTipo,                         // enum TipoUsuario | null
+        actorTipo,                              // enum TipoUsuario | null
         targetType: input.target?.type ?? null, // enum AuditTargetType | null
         targetId: input.target?.id != null ? String(input.target.id) : null,
         ip,
@@ -121,6 +123,47 @@ export async function logAudit(input: LogAuditInput) {
       },
     });
   } catch (err) {
+    // não quebrar fluxo da API por falha de log
     console.error("[audit] erro ao registrar auditoria:", err);
+  }
+}
+
+/** Purga logs mais antigos que RETENTION_DAYS */
+export async function purgeOldAuditLogs() {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - RETENTION_DAYS);
+  try {
+    const result = await prisma.auditLog.deleteMany({
+      where: { createdAt: { lt: cutoff } },
+    });
+    if (process.env.NODE_ENV !== "production") {
+      console.log(
+        `[audit] purge > days=${RETENTION_DAYS} removed=${result.count} cutoff=${cutoff.toISOString()}`
+      );
+    }
+  } catch (e) {
+    console.error("[audit] purge error:", e);
+  }
+}
+
+/** Agenda a purga diária (protege contra hot-reload duplicado) */
+export function initAuditRetentionScheduler() {
+  const g = globalThis as any;
+  if (g.__auditRetentionStarted__) return;
+
+  cron.schedule(
+    CRON_EXPR,
+    () => {
+      purgeOldAuditLogs().catch((e) =>
+        console.error("[audit] scheduled purge error:", e)
+      );
+    },
+    { timezone: CRON_TZ }
+  );
+
+  g.__auditRetentionStarted__ = true;
+
+  if (process.env.NODE_ENV !== "production") {
+    console.log(`[audit] retention scheduler ON (every "${CRON_EXPR}" ${CRON_TZ})`);
   }
 }
