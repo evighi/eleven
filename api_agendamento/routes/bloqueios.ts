@@ -1,3 +1,4 @@
+// routes/bloqueios.ts
 import { Router } from "express";
 import { PrismaClient } from "@prisma/client";
 import { z } from "zod";
@@ -5,6 +6,7 @@ import { startOfDay, endOfDay } from "date-fns";
 
 import verificarToken from "../middleware/authMiddleware";
 import { requireAdmin } from "../middleware/acl";
+import { logAudit, TargetType } from "../utils/audit";
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -63,8 +65,7 @@ router.post("/", async (req, res) => {
         });
       }
 
-      // TODO (se quiser): também considerar agendamentos permanentes que caiam nesse dia/horário
-      // Ex.: checar regra que mapeia DiaSemana + horario -> dataBloqueio
+      // (Opcional) também considerar permanentes, caso queira
     }
 
     const bloqueioCriado = await prisma.bloqueioQuadra.create({
@@ -78,6 +79,25 @@ router.post("/", async (req, res) => {
       include: {
         bloqueadoPor: { select: { id: true, nome: true, email: true } },
         quadras: { select: { id: true, nome: true, numero: true } },
+      },
+    });
+
+    // 📝 AUDIT: BLOQUEIO_CREATE
+    await logAudit({
+      event: "BLOQUEIO_CREATE",
+      req,
+      target: { type: TargetType.QUADRA, id: bloqueioCriado.id },
+      metadata: {
+        bloqueioId: bloqueioCriado.id,
+        dataBloqueio: bloqueioCriado.dataBloqueio.toISOString().slice(0, 10),
+        inicioBloqueio: bloqueioCriado.inicioBloqueio,
+        fimBloqueio: bloqueioCriado.fimBloqueio,
+        bloqueadoPorId,
+        quadras: bloqueioCriado.quadras.map((q) => ({
+          id: q.id,
+          nome: q.nome,
+          numero: q.numero,
+        })),
       },
     });
 
@@ -118,7 +138,36 @@ router.get("/", async (_req, res) => {
 
 router.delete("/:id", async (req, res) => {
   try {
+    // carrega antes para logar metadados
+    const atual = await prisma.bloqueioQuadra.findUnique({
+      where: { id: req.params.id },
+      include: { quadras: { select: { id: true, nome: true, numero: true } } },
+    });
+
+    if (!atual) {
+      return res.status(404).json({ erro: "Bloqueio não encontrado" });
+    }
+
     await prisma.bloqueioQuadra.delete({ where: { id: req.params.id } });
+
+    // 📝 AUDIT: BLOQUEIO_DELETE
+    await logAudit({
+      event: "BLOQUEIO_DELETE",
+      req,
+      target: { type: TargetType.QUADRA, id: req.params.id },
+      metadata: {
+        bloqueioId: req.params.id,
+        dataBloqueio: atual.dataBloqueio.toISOString().slice(0, 10),
+        inicioBloqueio: atual.inicioBloqueio,
+        fimBloqueio: atual.fimBloqueio,
+        quadras: atual.quadras.map((q) => ({
+          id: q.id,
+          nome: q.nome,
+          numero: q.numero,
+        })),
+      },
+    });
+
     return res.json({ mensagem: "Bloqueio removido com sucesso" });
   } catch (error: any) {
     if (error?.code === "P2025") {
