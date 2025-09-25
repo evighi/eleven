@@ -7,6 +7,7 @@ import { addDays, addMonths, startOfDay } from "date-fns";
 
 import verificarToken from "../middleware/authMiddleware";
 import { isAdmin as isAdminTipo, requireOwnerByRecord } from "../middleware/acl";
+import { logAudit, TargetType } from "../utils/audit"; // 👈 AUDIT
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -151,6 +152,26 @@ router.post("/", async (req, res) => {
       select: { id: true, diaSemana: true, horario: true, quadraId: true, esporteId: true, usuarioId: true, dataInicio: true, status: true },
     });
 
+    // 📝 AUDIT - CREATE
+    try {
+      await logAudit({
+        event: "AGENDAMENTO_PERM_CREATE",
+        req,
+        target: { type: TargetType.AGENDAMENTO, id: novo.id },
+        metadata: {
+          permanenteId: novo.id,
+          donoId: novo.usuarioId,
+          diaSemana: novo.diaSemana,
+          horario: novo.horario,
+          quadraId,
+          esporteId,
+          dataInicio: novo.dataInicio ?? null,
+        },
+      });
+    } catch (e) {
+      console.error("[audit] perm create error:", e);
+    }
+
     return res.status(201).json(novo);
   } catch (err) {
     console.error(err);
@@ -199,7 +220,7 @@ router.get(
       const agendamento = await prisma.agendamentoPermanente.findUnique({
         where: { id },
         include: {
-          usuario: { select: { id: true, nome: true, email: true, celular: true } }, // 👈 inclui celular
+          usuario: { select: { id: true, nome: true, email: true, celular: true } },
           quadra: { select: { nome: true, numero: true } },
           esporte: { select: { nome: true } },
         },
@@ -208,7 +229,6 @@ router.get(
         return res.status(404).json({ erro: "Agendamento permanente não encontrado" });
       }
 
-      // se quiser a mesma política de privacidade do comum, sanitize email/celular aqui conforme o tipo
       return res.json({
         id: agendamento.id,
         tipoReserva: "PERMANENTE",
@@ -219,10 +239,10 @@ router.get(
               id: agendamento.usuario.id,
               nome: agendamento.usuario.nome,
               email: agendamento.usuario.email,
-              celular: agendamento.usuario.celular,            // 👈 agora volta no payload
+              celular: agendamento.usuario.celular,
             }
           : null,
-        usuarioId: agendamento.usuario?.id, // mantém compatibilidade
+        usuarioId: agendamento.usuario?.id,
         esporte: agendamento.esporte.nome,
         quadra: `${agendamento.quadra.nome} (Nº ${agendamento.quadra.numero})`,
         dataInicio: agendamento.dataInicio,
@@ -290,7 +310,6 @@ router.get(
         jaCanceladas.map((c) => toISODateUTC(new Date(c.data)))
       );
 
-      // ✅ FALTAVA ESTA LINHA
       const elegiveis = todas.filter((iso) => !jaCanceladasSet.has(iso));
 
       return res.json({
@@ -299,7 +318,7 @@ router.get(
         fimJanela: toISODateUTC(fimJanela),
         diaSemana: perm.diaSemana,
         horario: perm.horario,
-        datas: elegiveis, // <- agora existe
+        datas: elegiveis,
         jaCanceladas: Array.from(jaCanceladasSet),
         jaCanceladasDetalhes: jaCanceladas.map((c) => ({
           id: c.id,
@@ -386,6 +405,23 @@ router.post(
         },
       });
 
+      // 📝 AUDIT - EXCEÇÃO (um dia)
+      try {
+        await logAudit({
+          event: "AGENDAMENTO_PERM_EXCECAO",
+          req,
+          target: { type: TargetType.AGENDAMENTO, id },
+          metadata: {
+            permanenteId: id,
+            data: iso,
+            motivo: motivo ?? null,
+            criadoPorId: req.usuario!.usuarioLogadoId,
+          },
+        });
+      } catch (e) {
+        console.error("[audit] perm excecao error:", e);
+      }
+
       return res.status(201).json({
         id: novo.id,
         agendamentoPermanenteId: id,
@@ -394,7 +430,7 @@ router.post(
         criadoPor: novo.criadoPor ? {
           id: novo.criadoPor.id,
           nome: novo.criadoPor.nome,
-          email: novo.criadoPor.email, // se quiser, esconda p/ não-admin
+          email: novo.criadoPor.email,
         } : null,
         createdAt: novo.createdAt,
       });
@@ -445,8 +481,7 @@ router.post(
 
       const ehAdmin = isAdminTipo(req.usuario!.usuarioLogadoTipo);
       if (!ehAdmin) {
-        // Regra de 12 horas para o CLIENTE dono
-        // Brasil sem DST — usa offset -03:00 explícito
+        // Regra de 12 horas para o CLIENTE dono (offset fixo -03:00)
         const alvo = new Date(`${proximaISO}T${perm.horario}:00-03:00`);
         const diffHoras = (alvo.getTime() - Date.now()) / (1000 * 60 * 60);
         if (diffHoras < 12) {
@@ -474,6 +509,23 @@ router.post(
         },
       });
 
+      // 📝 AUDIT - EXCEÇÃO (próxima)
+      try {
+        await logAudit({
+          event: "AGENDAMENTO_PERM_EXCECAO",
+          req,
+          target: { type: TargetType.AGENDAMENTO, id },
+          metadata: {
+            permanenteId: id,
+            data: proximaISO,
+            motivo: "Cancelado pelo cliente (próxima ocorrência)",
+            criadoPorId: req.usuario!.usuarioLogadoId,
+          },
+        });
+      } catch (e) {
+        console.error("[audit] perm excecao(proxima) error:", e);
+      }
+
       return res.status(201).json({
         ok: true,
         mensagem: "Próxima ocorrência cancelada com sucesso.",
@@ -497,10 +549,35 @@ router.post(
   async (req, res) => {
     const { id } = req.params;
     try {
+      const before = await prisma.agendamentoPermanente.findUnique({
+        where: { id },
+        select: { status: true, usuarioId: true, diaSemana: true, horario: true },
+      });
+
       const agendamento = await prisma.agendamentoPermanente.update({
         where: { id },
         data: { status: "CANCELADO", canceladoPorId: req.usuario!.usuarioLogadoId }, // ⚠️ do token
       });
+
+      // 📝 AUDIT - CANCEL
+      try {
+        await logAudit({
+          event: "AGENDAMENTO_PERM_CANCEL",
+          req,
+          target: { type: TargetType.AGENDAMENTO, id },
+          metadata: {
+            permanenteId: id,
+            statusAntes: before?.status ?? null,
+            statusDepois: agendamento.status,
+            donoId: before?.usuarioId ?? null,
+            diaSemana: before?.diaSemana ?? null,
+            horario: before?.horario ?? null,
+          },
+        });
+      } catch (e) {
+        console.error("[audit] perm cancel error:", e);
+      }
+
       return res.status(200).json({ message: "Agendamento permanente cancelado com sucesso.", agendamento });
     } catch (error) {
       console.error("Erro ao cancelar agendamento permanente:", error);
@@ -616,6 +693,28 @@ router.patch(
         });
       }
 
+      // 📝 AUDIT - TRANSFER
+      try {
+        await logAudit({
+          event: "AGENDAMENTO_PERM_TRANSFER",
+          req,
+          target: { type: TargetType.AGENDAMENTO, id },
+          metadata: {
+            permanenteIdOriginal: id,
+            permanenteIdNovo: novoPerm.id,
+            deUsuarioId: perm.usuarioId,
+            paraUsuarioId: novoUsuarioId,
+            diaSemana: perm.diaSemana,
+            horario: perm.horario,
+            quadraId: perm.quadraId,
+            esporteId: perm.esporteId,
+            excecoesCopiadas: !!copiarExcecoes ? perm.cancelamentos.length : 0,
+          },
+        });
+      } catch (e) {
+        console.error("[audit] perm transfer error:", e);
+      }
+
       const isAdmin = isAdminTipo(req.usuario!.usuarioLogadoTipo);
       return res.status(200).json({
         message: "Agendamento permanente transferido com sucesso",
@@ -655,10 +754,31 @@ router.delete(
   async (req, res) => {
     const { id } = req.params;
     try {
-      const agendamento = await prisma.agendamentoPermanente.findUnique({ where: { id }, select: { id: true } });
+      const agendamento = await prisma.agendamentoPermanente.findUnique({
+        where: { id },
+        select: { id: true, usuarioId: true, diaSemana: true, horario: true },
+      });
       if (!agendamento) return res.status(404).json({ erro: "Agendamento permanente não encontrado" });
 
       await prisma.agendamentoPermanente.delete({ where: { id } });
+
+      // 📝 AUDIT - DELETE
+      try {
+        await logAudit({
+          event: "AGENDAMENTO_PERM_DELETE",
+          req,
+          target: { type: TargetType.AGENDAMENTO, id },
+          metadata: {
+            permanenteId: id,
+            donoId: agendamento.usuarioId,
+            diaSemana: agendamento.diaSemana,
+            horario: agendamento.horario,
+          },
+        });
+      } catch (e) {
+        console.error("[audit] perm delete error:", e);
+      }
+
       return res.status(200).json({ mensagem: "Agendamento permanente deletado com sucesso" });
     } catch (error) {
       console.error("Erro ao deletar agendamento permanente:", error);
