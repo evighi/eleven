@@ -396,6 +396,26 @@ router.post("/", verificarToken, async (req, res) => {
       },
     });
 
+    // 📝 AUDIT: criação
+    try {
+      await logAudit({
+        event: "AGENDAMENTO_CREATE",
+        req,
+        target: { type: TargetType.AGENDAMENTO, id: novoAgendamento.id },
+        metadata: {
+          agendamentoId: novoAgendamento.id,
+          data: toISODateUTC(novoAgendamento.data),
+          horario: novoAgendamento.horario,
+          quadraId,
+          esporteId,
+          donoId: usuarioIdDono,
+          jogadoresIds: connectIds.map((c) => c.id),
+        },
+      });
+    } catch (e) {
+      console.error("[audit] falha ao registrar criação:", e);
+    }
+
     return res.status(201).json(novoAgendamento);
   } catch (err: any) {
     // 🧱 Concorrência: outro usuário confirmou o mesmo slot entre sua checagem e o create()
@@ -703,8 +723,8 @@ router.get("/:id", verificarToken, async (req, res) => {
     const agendamento = await prisma.agendamento.findUnique({
       where: { id },
       include: {
-        usuario: { select: { id: true, nome: true, email: true, celular: true } },     // 👈 celular
-        jogadores: { select: { id: true, nome: true, email: true, celular: true } },   // 👈 celular
+        usuario: { select: { id: true, nome: true, email: true, celular: true } },
+        jogadores: { select: { id: true, nome: true, email: true, celular: true } },
         quadra: { select: { nome: true, numero: true } },
         esporte: { select: { nome: true } },
       },
@@ -733,7 +753,7 @@ router.get("/:id", verificarToken, async (req, res) => {
             id: agendamento.usuario.id,
             nome: agendamento.usuario.nome,
             email: sanitizeEmail(agendamento.usuario.email),
-            celular: sanitizePhone(agendamento.usuario.celular),   // 👈 agora vem no payload
+            celular: sanitizePhone(agendamento.usuario.celular),
           }
         : null,
       usuarioId: agendamento.usuario?.id, // mantém compat
@@ -743,7 +763,7 @@ router.get("/:id", verificarToken, async (req, res) => {
         id: j.id,
         nome: j.nome,
         email: sanitizeEmail(j.email),
-        celular: sanitizePhone(j.celular),                         // 👈 agora vem no payload
+        celular: sanitizePhone(j.celular),
       })),
     });
   } catch (err) {
@@ -903,6 +923,28 @@ router.delete("/:id", verificarToken, async (req, res) => {
     }
 
     await prisma.agendamento.delete({ where: { id } });
+
+    // 📝 AUDIT: deletado
+    try {
+      await logAudit({
+        event: "AGENDAMENTO_DELETE",
+        req,
+        target: { type: TargetType.AGENDAMENTO, id },
+        metadata: {
+          agendamentoId: id,
+          data: agendamento.data?.toISOString?.().slice(0, 10) ?? null,
+          horario: agendamento.horario ?? null,
+          quadraId: agendamento.quadraId ?? null,
+          esporteId: agendamento.esporteId ?? null,
+          donoId: agendamento.usuarioId ?? null,
+          statusAntes: agendamento.status ?? null,
+          statusDepois: "DELETADO",
+        },
+      });
+    } catch (e) {
+      console.error("[audit] falha ao registrar deleção:", e);
+    }
+
     return res.json({ message: "Agendamento deletado com sucesso" });
   } catch (err) {
     console.error(err);
@@ -980,6 +1022,27 @@ router.patch("/:id/transferir", verificarToken, async (req, res) => {
         },
       }),
     ]);
+
+    // 📝 AUDIT: transferência
+    try {
+      await logAudit({
+        event: "AGENDAMENTO_TRANSFER",
+        req,
+        target: { type: TargetType.AGENDAMENTO, id }, // alvo: o agendamento original
+        metadata: {
+          agendamentoOriginalId: id,
+          novoAgendamentoId: novoAgendamento.id,
+          data: toISODateUTC(novoAgendamento.data),
+          horario: novoAgendamento.horario,
+          quadraId: novoAgendamento.quadraId,
+          esporteId: novoAgendamento.esporteId,
+          fromOwnerId: agendamento.usuarioId,
+          toOwnerId: novoUsuarioId,
+        },
+      });
+    } catch (e) {
+      console.error("[audit] falha ao registrar transferência:", e);
+    }
 
     return res.status(200).json({
       message: "Agendamento transferido com sucesso",
