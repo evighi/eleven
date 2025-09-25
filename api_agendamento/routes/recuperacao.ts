@@ -4,6 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcrypt";
 import { z } from "zod";
 import { enviarCodigoRecuperacao } from "../utils/enviarEmail"; // ⬅️ usa o helper novo
+import { logAudit, TargetType } from "../utils/audit";          // ⬅️ AUDIT
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -28,7 +29,10 @@ router.post("/esqueci-senha", async (req, res) => {
       return res.status(400).json({ message: "E-mail inválido" });
     }
 
-    const usuario = await prisma.usuario.findUnique({ where: { email } });
+    const usuario = await prisma.usuario.findUnique({
+      where: { email },
+      select: { id: true, nome: true, email: true, tipo: true },
+    });
     if (!usuario) {
       // mantém comportamento atual (404) para seu front
       return res.status(404).json({ message: "Email não encontrado" });
@@ -46,6 +50,15 @@ router.post("/esqueci-senha", async (req, res) => {
     });
 
     await enviarCodigoRecuperacao(email, codigo, TTL_MIN);
+
+    // 🔎 AUDITORIA — pedido de recuperação (não loga código)
+    await logAudit({
+      event: "PASSWORD_RESET_REQUEST",
+      req,
+      actor: { id: usuario.id, name: usuario.nome, type: usuario.tipo },
+      target: { type: TargetType.USUARIO, id: usuario.id },
+      metadata: { email, ttlMin: TTL_MIN, via: "email" },
+    });
 
     return res.json({
       message: "Código de recuperação enviado para o e-mail",
@@ -75,7 +88,18 @@ router.post("/redefinir-senha-codigo", async (req, res) => {
         .json({ message: valida.error.errors.map((e) => e.message).join("; ") });
     }
 
-    const usuario = await prisma.usuario.findUnique({ where: { email } });
+    const usuario = await prisma.usuario.findUnique({
+      where: { email },
+      select: {
+        id: true,
+        nome: true,
+        email: true,
+        tipo: true,
+        codigoRecuperacao: true,
+        expiraEm: true,
+      },
+    });
+
     if (!usuario || usuario.codigoRecuperacao !== codigo) {
       return res.status(400).json({ message: "Código inválido ou e-mail incorreto" });
     }
@@ -93,6 +117,15 @@ router.post("/redefinir-senha-codigo", async (req, res) => {
         codigoRecuperacao: null,
         expiraEm: null,
       },
+    });
+
+    // 🔎 AUDITORIA — senha redefinida (não loga senha/código)
+    await logAudit({
+      event: "PASSWORD_RESET",
+      req,
+      actor: { id: usuario.id, name: usuario.nome, type: usuario.tipo },
+      target: { type: TargetType.USUARIO, id: usuario.id },
+      metadata: { email },
     });
 
     return res.json({ message: "Senha redefinida com sucesso" });
