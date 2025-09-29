@@ -63,7 +63,7 @@ export default function LogsPage() {
 
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil((data?.total || 0) / (data?.size || pageSize))),
-    [data, pageSize]
+    [data?.total, data?.size, pageSize]
   );
 
   const jumpPages = (delta: number) => {
