@@ -2,6 +2,7 @@
 
 // src/app/adminMaster/logs/page.tsx
 import React, { useEffect, useState } from "react";
+import axios from "axios";
 import {
   actorDisplay,
   eventLabel,
@@ -10,7 +11,7 @@ import {
   ownerDisplay,
   resumoHumano,
   type AuditItem,
-} from "../../../utils/auditUi"; // <- caminho corrigido
+} from "../../../utils/auditUi";
 
 type ApiResponse = {
   page: number;
@@ -20,19 +21,29 @@ type ApiResponse = {
 };
 
 export default function LogsPage() {
+  const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
   const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
+  const [erro, setErro] = useState<string>("");
 
   async function fetchLogs(p = 1) {
     setLoading(true);
+    setErro("");
     try {
-      const res = await fetch(`/audit/logs?page=${p}&size=50`, {
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+      const { data: json } = await axios.get<ApiResponse>(`${API_URL}/audit/logs`, {
+        params: { page: p, size: 50 },
+        withCredentials: true,
       });
-      const json: ApiResponse = await res.json();
       setData(json);
+    } catch (e: any) {
+      console.error("Falha ao carregar logs:", e);
+      const msg =
+        e?.response?.data?.erro ||
+        e?.response?.data?.message ||
+        "Erro ao carregar os logs.";
+      setErro(String(msg));
+      setData({ page: 1, size: 50, total: 0, items: [] });
     } finally {
       setLoading(false);
     }
@@ -40,14 +51,26 @@ export default function LogsPage() {
 
   useEffect(() => {
     fetchLogs(page);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
 
   if (loading && !data) return <div>Carregando logs…</div>;
-  if (!data) return <div>Nenhum log encontrado.</div>;
+  if (!data || data.items.length === 0)
+    return (
+      <div className="p-4">
+        <h1 className="text-xl font-semibold mb-2">Logs de Auditoria</h1>
+        {erro ? (
+          <div className="text-sm text-red-600">{erro}</div>
+        ) : (
+          <div>Nenhum log encontrado.</div>
+        )}
+      </div>
+    );
 
   return (
     <div className="p-4 space-y-4">
       <h1 className="text-xl font-semibold">Logs de Auditoria</h1>
+      {erro && <div className="text-sm text-red-600">{erro}</div>}
 
       <div className="rounded border overflow-x-auto">
         <table className="min-w-full text-sm">
@@ -87,7 +110,7 @@ export default function LogsPage() {
       <div className="flex items-center gap-2">
         <button
           className="px-3 py-1 rounded border disabled:opacity-50"
-          disabled={page <= 1}
+          disabled={page <= 1 || loading}
           onClick={() => setPage((p) => Math.max(1, p - 1))}
         >
           Anterior
@@ -97,7 +120,7 @@ export default function LogsPage() {
         </span>
         <button
           className="px-3 py-1 rounded border disabled:opacity-50"
-          disabled={data.page * data.size >= data.total}
+          disabled={data.page * data.size >= data.total || loading}
           onClick={() => setPage((p) => p + 1)}
         >
           Próxima
