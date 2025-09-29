@@ -173,13 +173,14 @@ export function fullSentence(it: AuditItem): [string, string[]] {
   const quadra = strQuadra(m);
   const esporte = m.esporteNome ? String(m.esporteNome) : undefined;
 
-  // horário/data “do jogo” (para comuns) — e também para PERMANENTE quando o back envia
+  // Comuns: data específica; Permanente: diaSemana + horario fixo
   const horarioBase = m.horario || m.horarioPermanente;
-  const dataHorario =
-    m.data && horarioBase ? `${m.data} às ${horarioBase}` : m.data ? String(m.data) : undefined;
-
-  // extras para PERMANENTE
   const diaSemanaPerm = m.diaSemana ? String(m.diaSemana) : undefined;
+
+  const dataHorario =
+    m.data && horarioBase ? `${m.data} às ${horarioBase}`
+    : m.data ? String(m.data)
+    : undefined;
 
   const bullets: string[] = [];
   if (dataHorario) bullets.push(`Dia e hora do jogo: ${dataHorario}`);
@@ -193,13 +194,14 @@ export function fullSentence(it: AuditItem): [string, string[]] {
   if (it.ip) bullets.push(`IP: ${it.ip}`);
   if (it.userAgent) bullets.push(`Navegador: ${it.userAgent}`);
 
+  // Nomes priorizando o que o back realmente envia (transferFromNome/transferToNome)
   const donoAnterior = strUsuarioNomeOuId(
-    m.fromOwnerNome || it.targetOwnerName || m.donoNome,
+    m.transferFromNome || m.fromOwnerNome || it.targetOwnerName || m.donoNome,
     m.fromOwnerId || it.targetOwnerId || m.donoId
   );
   const donoNovo = strUsuarioNomeOuId(
-    m.novoUsuarioNome || m.toOwnerNome,
-    m.novoUsuarioId || m.toOwnerId
+    m.transferToNome || m.novoUsuarioNome || m.toOwnerNome,
+    m.toOwnerId || m.novoUsuarioId
   );
 
   // Construção por tipo de evento
@@ -293,13 +295,15 @@ export function fullSentence(it: AuditItem): [string, string[]] {
     }
 
     case "LOGIN_FAIL": {
-      const tentado = pickLoginIdent(m);
-      const motivo = m.motivo || m.reason || m.erro || m.error;
+      const tentado = pickLoginIdent(m); // e.g. m.email
+      const motivo = m.motivo || m.reason || m.erro || m.error; // seu payload usa "reason"
+      const metodo = m.method ? String(m.method) : undefined;
       const quem = tentado ? ` para ${tentado}` : "";
       return [
         `Tentativa de login falhou${quem}.`,
         [
           `Quando: ${quando}`,
+          ...(metodo ? [`Método: ${metodo}`] : []),
           ...(motivo ? [`Motivo: ${String(motivo)}`] : []),
           ...(it.ip ? [`IP: ${it.ip}`] : []),
           ...(it.userAgent ? [`Navegador: ${it.userAgent}`] : []),
