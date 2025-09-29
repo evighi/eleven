@@ -155,6 +155,15 @@ function strQuadra(m: any) {
 function strUsuarioNomeOuId(nome?: string | null, id?: string | null) {
   return nome || (id ? `Usuário ${String(id).slice(0, 6)}…` : undefined);
 }
+function pickLoginIdent(m: any): string | undefined {
+  return (
+    m?.email ||
+    m?.usuarioEmail ||
+    m?.username ||
+    m?.login ||
+    (m?.usuarioId ? `Usuário ${String(m.usuarioId).slice(0, 6)}…` : undefined)
+  );
+}
 
 /** Retorna: [título em PT-BR simples, bullets[]] */
 export function fullSentence(it: AuditItem): [string, string[]] {
@@ -163,11 +172,20 @@ export function fullSentence(it: AuditItem): [string, string[]] {
   const quando = fmtDataHoraSP(it.createdAt);
   const quadra = strQuadra(m);
   const esporte = m.esporteNome ? String(m.esporteNome) : undefined;
+
+  // horário/data “do jogo” (para comuns) — e também para PERMANENTE quando o back envia
+  const horarioBase = m.horario || m.horarioPermanente;
   const dataHorario =
-    m.data && m.horario ? `${m.data} às ${m.horario}` : m.data ? String(m.data) : undefined;
+    m.data && horarioBase ? `${m.data} às ${horarioBase}` : m.data ? String(m.data) : undefined;
+
+  // extras para PERMANENTE
+  const diaSemanaPerm = m.diaSemana ? String(m.diaSemana) : undefined;
 
   const bullets: string[] = [];
   if (dataHorario) bullets.push(`Dia e hora do jogo: ${dataHorario}`);
+  if (!dataHorario && diaSemanaPerm && horarioBase) {
+    bullets.push(`Toda ${diaSemanaPerm} às ${horarioBase}`);
+  }
   if (quadra) bullets.push(`Quadra: ${quadra}`);
   if (esporte) bullets.push(`Esporte: ${esporte}`);
   if (m.motivo) bullets.push(`Motivo: ${m.motivo}`);
@@ -179,7 +197,10 @@ export function fullSentence(it: AuditItem): [string, string[]] {
     m.fromOwnerNome || it.targetOwnerName || m.donoNome,
     m.fromOwnerId || it.targetOwnerId || m.donoId
   );
-  const donoNovo = strUsuarioNomeOuId(m.novoUsuarioNome || m.toOwnerNome, m.novoUsuarioId || m.toOwnerId);
+  const donoNovo = strUsuarioNomeOuId(
+    m.novoUsuarioNome || m.toOwnerNome,
+    m.novoUsuarioId || m.toOwnerId
+  );
 
   // Construção por tipo de evento
   switch (it.event) {
@@ -203,7 +224,12 @@ export function fullSentence(it: AuditItem): [string, string[]] {
       const deQuem = donoAnterior ? ` que era de ${donoAnterior}` : "";
       return [
         `${actor} transferiu um agendamento${deQuem}${toQuem}${quadra ? ` na ${quadra}` : ""}${dataHorario ? ` em ${dataHorario}` : ""}.`,
-        [`Quem transferiu: ${actor}`, ...(donoNovo ? [`Novo dono: ${donoNovo}`] : []), ...(donoAnterior ? [`Dono anterior: ${donoAnterior}`] : []), ...bullets],
+        [
+          `Quem transferiu: ${actor}`,
+          ...(donoNovo ? [`Novo dono: ${donoNovo}`] : []),
+          ...(donoAnterior ? [`Dono anterior: ${donoAnterior}`] : []),
+          ...bullets,
+        ],
       ];
     }
 
@@ -214,11 +240,18 @@ export function fullSentence(it: AuditItem): [string, string[]] {
         [`Quem excluiu: ${actor}`, ...bullets],
       ];
 
-    case "AGENDAMENTO_PERM_CREATE":
+    case "AGENDAMENTO_PERM_CREATE": {
+      const fraseHorario =
+        diaSemanaPerm && horarioBase
+          ? ` (toda ${diaSemanaPerm}, às ${horarioBase})`
+          : dataHorario
+          ? ` (mesmo dia/horário: ${dataHorario})`
+          : "";
       return [
-        `${actor} criou um agendamento permanente${esporte ? ` de ${esporte}` : ""}${quadra ? ` na ${quadra}` : ""}${dataHorario ? ` (mesmo dia/horário: ${dataHorario})` : ""}.`,
+        `${actor} criou um agendamento permanente${esporte ? ` de ${esporte}` : ""}${quadra ? ` na ${quadra}` : ""}${fraseHorario}.`,
         [`Quem criou: ${actor}`, ...bullets],
       ];
+    }
 
     case "AGENDAMENTO_PERM_CANCEL":
       return [
@@ -231,13 +264,18 @@ export function fullSentence(it: AuditItem): [string, string[]] {
       const deQuem = donoAnterior ? ` que era de ${donoAnterior}` : "";
       return [
         `${actor} transferiu um agendamento permanente${deQuem}${toQuem}${quadra ? ` na ${quadra}` : ""}.`,
-        [`Quem transferiu: ${actor}`, ...(donoNovo ? [`Novo dono: ${donoNovo}`] : []), ...(donoAnterior ? [`Dono anterior: ${donoAnterior}`] : []), ...bullets],
+        [
+          `Quem transferiu: ${actor}`,
+          ...(donoNovo ? [`Novo dono: ${donoNovo}`] : []),
+          ...(donoAnterior ? [`Dono anterior: ${donoAnterior}`] : []),
+          ...bullets,
+        ],
       ];
     }
 
     case "AGENDAMENTO_PERM_EXCECAO":
       return [
-        `${actor} cancelou **apenas uma data** de um agendamento permanente${quadra ? ` na ${quadra}` : ""}${dataHorario ? ` (${dataHorario})` : ""}.`,
+        `${actor} cancelou apenas uma data de um agendamento permanente${quadra ? ` na ${quadra}` : ""}${dataHorario ? ` (${dataHorario})` : ""}.`,
         [`Quem fez: ${actor}`, ...bullets],
       ];
 
@@ -247,10 +285,28 @@ export function fullSentence(it: AuditItem): [string, string[]] {
         [`Quem excluiu: ${actor}`, ...bullets],
       ];
 
-    case "LOGIN":
-      return [`${actor} entrou no sistema.`, [`Quando: ${quando}`, ...(it.ip ? [`IP: ${it.ip}`] : [])]];
-    case "LOGIN_FAIL":
-      return [`Tentativa de login falhou.`, [`Quando: ${quando}`, ...(it.ip ? [`IP: ${it.ip}`] : []), ...(it.userAgent ? [`Navegador: ${it.userAgent}`] : [])]];
+    case "LOGIN": {
+      return [
+        `${actor} entrou no sistema.`,
+        [`Quando: ${quando}`, ...(it.ip ? [`IP: ${it.ip}`] : [])],
+      ];
+    }
+
+    case "LOGIN_FAIL": {
+      const tentado = pickLoginIdent(m);
+      const motivo = m.motivo || m.reason || m.erro || m.error;
+      const quem = tentado ? ` para ${tentado}` : "";
+      return [
+        `Tentativa de login falhou${quem}.`,
+        [
+          `Quando: ${quando}`,
+          ...(motivo ? [`Motivo: ${String(motivo)}`] : []),
+          ...(it.ip ? [`IP: ${it.ip}`] : []),
+          ...(it.userAgent ? [`Navegador: ${it.userAgent}`] : []),
+        ],
+      ];
+    }
+
     case "LOGOUT":
       return [`${actor} saiu do sistema.`, [`Quando: ${quando}`]];
 

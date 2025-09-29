@@ -11,7 +11,6 @@ import {
   targetDisplay,
   ownerDisplay,
   resumoHumano,
-  detailLines,
   fullSentence,
   type AuditItem,
 } from "../../../utils/auditUi";
@@ -28,17 +27,19 @@ export default function LogsPage() {
   const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [goto, setGoto] = useState<string>("");
   const [erro, setErro] = useState<string>("");
 
   // modal de detalhes
   const [selecionado, setSelecionado] = useState<AuditItem | null>(null);
 
-  async function fetchLogs(p = 1) {
+  async function fetchLogs(p = 1, size = pageSize) {
     setLoading(true);
     setErro("");
     try {
       const { data: json } = await axios.get<ApiResponse>(`${API_URL}/audit/logs`, {
-        params: { page: p, size: 50 },
+        params: { page: p, size },
         withCredentials: true,
       });
       setData(json);
@@ -49,34 +50,66 @@ export default function LogsPage() {
         e?.response?.data?.message ||
         "Erro ao carregar os logs.";
       setErro(String(msg));
-      setData({ page: 1, size: 50, total: 0, items: [] });
+      setData({ page: 1, size, total: 0, items: [] });
     } finally {
       setLoading(false);
     }
   }
 
+  // carrega ao mudar page/pageSize
   useEffect(() => {
-    fetchLogs(page);
+    fetchLogs(page, pageSize);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
+  }, [page, pageSize]);
 
   const totalPages = useMemo(
-    () => Math.max(1, Math.ceil((data?.total || 0) / (data?.size || 50))),
-    [data]
+    () => Math.max(1, Math.ceil((data?.total || 0) / (data?.size || pageSize))),
+    [data, pageSize]
   );
+
+  const jumpPages = (delta: number) => {
+    setPage((p) => {
+      const np = Math.min(totalPages, Math.max(1, p + delta));
+      return np;
+    });
+  };
+
+  const onGoto = () => {
+    const n = parseInt(goto, 10);
+    if (Number.isFinite(n)) {
+      setPage(Math.min(totalPages, Math.max(1, n)));
+    }
+  };
 
   return (
     <div className="p-4 space-y-4">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <h1 className="text-xl font-semibold">Logs de Auditoria</h1>
-        <button
-          onClick={() => fetchLogs(page)}
-          disabled={loading}
-          className="px-3 py-1 rounded bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50"
-          title="Atualizar"
-        >
-          {loading ? "Atualizando…" : "Atualizar"}
-        </button>
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-gray-600">Por página:</label>
+          <select
+            className="border rounded px-2 py-1 text-sm"
+            value={pageSize}
+            onChange={(e) => {
+              const sz = parseInt(e.target.value, 10);
+              setPageSize(sz);
+              setPage(1); // volta pro começo ao trocar tamanho
+            }}
+          >
+            <option value={25}>25</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+          </select>
+
+          <button
+            onClick={() => fetchLogs(page, pageSize)}
+            disabled={loading}
+            className="px-3 py-1 rounded bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50"
+            title="Atualizar"
+          >
+            {loading ? "Atualizando…" : "Atualizar"}
+          </button>
+        </div>
       </div>
 
       {erro && <div className="text-sm text-red-600">{erro}</div>}
@@ -90,7 +123,16 @@ export default function LogsPage() {
 
       {/* Tabela */}
       {data && (
-        <div className="rounded border overflow-x-auto">
+        <div className="rounded border overflow-x-auto relative">
+          {/* spinner discreto durante troca de página */}
+          {loading && (
+            <div className="absolute inset-x-0 top-0 bg-white/70 backdrop-blur-sm py-1 flex items-center justify-center border-b z-10">
+              <span className="inline-flex items-center gap-2 text-gray-700 text-sm">
+                <Spinner /> carregando…
+              </span>
+            </div>
+          )}
+
           <table className="min-w-full text-sm">
             <thead className="bg-gray-50">
               <tr>
@@ -103,16 +145,6 @@ export default function LogsPage() {
               </tr>
             </thead>
             <tbody>
-              {loading && data.items.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="p-3">
-                    <div className="flex items-center gap-2 text-gray-700">
-                      <Spinner /> <span>Carregando…</span>
-                    </div>
-                  </td>
-                </tr>
-              )}
-
               {!loading && data.items.length === 0 && (
                 <tr>
                   <td colSpan={6} className="p-3 text-gray-600">
@@ -129,7 +161,7 @@ export default function LogsPage() {
                   title="Ver detalhes"
                 >
                   <td className="p-2 whitespace-nowrap">
-                    {new Date(it.createdAt).toLocaleString("pt-BR")}
+                    {new Date(it.createdAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
                   </td>
                   <td className="p-2">
                     <div className="font-medium">{eventLabel(it.event)}</div>
@@ -148,18 +180,35 @@ export default function LogsPage() {
         </div>
       )}
 
-      {/* Paginação simples com melhor UX */}
+      {/* Paginação com pular páginas / ir para página */}
       {data && data.total > 0 && (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            className="px-3 py-1 rounded border disabled:opacity-50"
+            disabled={page <= 1 || loading}
+            onClick={() => setPage(1)}
+            title="Primeira"
+          >
+            «
+          </button>
+          <button
+            className="px-3 py-1 rounded border disabled:opacity-50"
+            disabled={page <= 1 || loading}
+            onClick={() => jumpPages(-5)}
+            title="-5 páginas"
+          >
+            « −5
+          </button>
           <button
             className="px-3 py-1 rounded border disabled:opacity-50"
             disabled={page <= 1 || loading}
             onClick={() => setPage((p) => Math.max(1, p - 1))}
+            title="Anterior"
           >
             Anterior
           </button>
 
-          <span>
+          <span className="text-sm">
             Página {data.page} / {totalPages}
           </span>
 
@@ -167,9 +216,48 @@ export default function LogsPage() {
             className="px-3 py-1 rounded border disabled:opacity-50"
             disabled={data.page >= totalPages || loading}
             onClick={() => setPage((p) => p + 1)}
+            title="Próxima"
           >
             Próxima
           </button>
+          <button
+            className="px-3 py-1 rounded border disabled:opacity-50"
+            disabled={data.page >= totalPages || loading}
+            onClick={() => jumpPages(+5)}
+            title="+5 páginas"
+          >
+            +5 »
+          </button>
+          <button
+            className="px-3 py-1 rounded border disabled:opacity-50"
+            disabled={data.page >= totalPages || loading}
+            onClick={() => setPage(totalPages)}
+            title="Última"
+          >
+            »
+          </button>
+
+          <div className="flex items-center gap-2 ml-2">
+            <label className="text-sm text-gray-600">Ir para:</label>
+            <input
+              type="number"
+              min={1}
+              max={totalPages}
+              value={goto}
+              onChange={(e) => setGoto(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") onGoto();
+              }}
+              className="w-20 border rounded px-2 py-1 text-sm"
+            />
+            <button
+              onClick={onGoto}
+              disabled={loading || !goto}
+              className="px-3 py-1 rounded border"
+            >
+              Ir
+            </button>
+          </div>
 
           {loading && (
             <span className="inline-flex items-center gap-2 text-gray-600 ml-2">
@@ -195,7 +283,7 @@ export default function LogsPage() {
               {eventLabel(selecionado.event)}
             </h2>
             <p className="text-sm text-gray-600 mb-4">
-              {new Date(selecionado.createdAt).toLocaleString("pt-BR")}
+              {new Date(selecionado.createdAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
             </p>
 
             {/* Título + bullets descritivos */}
