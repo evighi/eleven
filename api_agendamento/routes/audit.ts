@@ -304,7 +304,7 @@ router.get(
       } = req.query as Record<string, string | undefined>;
 
       const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
-      const take = Math.min(200, Math.max(1, parseInt(String(size), 10) || 50));
+      const take = Math.min(300, Math.max(1, parseInt(String(size), 10) || 50));
       const skip = (pageNum - 1) * take;
 
       const where: any = {};

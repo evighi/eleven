@@ -31,6 +31,7 @@ export default function AdminHeader() {
     { nome: "Esportes", url: "/adminMaster/esportes", imagem: "/icons/editar.png" },
     { nome: "Quadras", url: "/adminMaster/quadras", imagem: "/icons/editar.png" },
     { nome: "Churrasqueiras", url: "/adminMaster/churrasqueiras", imagem: "/icons/editar.png" },
+    { nome: "Registros", url: "/adminMaster/logs", imagem: "/icons/editar.png" },
     { nome: "Bloqueio de Quadras", url: "/adminMaster/bloqueioQuadras", imagem: "/icons/bloq.png" },
   ];
 
