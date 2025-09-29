@@ -137,14 +137,12 @@ export default function LogsPage() {
                 onClick={() => setSelecionado(it)}
                 title="Ver detalhes"
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="text-xs text-gray-500">{fmtPtBR(it.createdAt)}</div>
-                    <div className="font-medium text-sm leading-snug break-words">
-                      {eventLabel(it.event)}
-                    </div>
-                    <div className="text-xs text-gray-500">{targetTypeLabel(it.targetType)}</div>
+                <div className="min-w-0">
+                  <div className="text-xs text-gray-500">{fmtPtBR(it.createdAt)}</div>
+                  <div className="font-medium text-sm leading-snug break-words">
+                    {eventLabel(it.event)}
                   </div>
+                  <div className="text-xs text-gray-500">{targetTypeLabel(it.targetType)}</div>
                 </div>
 
                 <div className="mt-2 text-sm">
@@ -160,9 +158,9 @@ export default function LogsPage() {
         </div>
       )}
 
-      {/* ===== Desktop (tabela) ===== */}
+      {/* ===== Desktop (tabela sem rolagem horizontal; quebra de linha automática) ===== */}
       {data && (
-        <div className="rounded border overflow-x-auto relative hidden md:block">
+        <div className="rounded border relative hidden md:block">
           {loading && (
             <div className="absolute inset-x-0 top-0 bg-white/70 backdrop-blur-sm py-1 flex items-center justify-center border-b z-10">
               <span className="inline-flex items-center gap-2 text-gray-700 text-sm">
@@ -171,15 +169,15 @@ export default function LogsPage() {
             </div>
           )}
 
-          <table className="min-w-full text-sm">
+          <table className="w-full table-auto text-sm">
             <thead className="bg-gray-50 sticky top-0">
               <tr>
-                <th className="text-left p-2 w-44">Quando</th>
-                <th className="text-left p-2 w-56">Evento</th>
-                <th className="text-left p-2 w-60">Quem fez</th>
-                <th className="text-left p-2 w-64">Alvo</th>
-                <th className="text-left p-2 w-64">Dono do Alvo</th>
-                <th className="text-left p-2">Resumo</th>
+                <th className="text-left p-2 align-top">Quando</th>
+                <th className="text-left p-2 align-top">Evento</th>
+                <th className="text-left p-2 align-top">Quem fez</th>
+                <th className="text-left p-2 align-top">Alvo</th>
+                <th className="text-left p-2 align-top">Dono do Alvo</th>
+                <th className="text-left p-2 align-top">Resumo</th>
               </tr>
             </thead>
             <tbody>
@@ -194,20 +192,29 @@ export default function LogsPage() {
               {data.items.map((it) => (
                 <tr
                   key={it.id}
-                  className="border-t hover:bg-orange-50 cursor-pointer"
+                  className="border-t hover:bg-orange-50 cursor-pointer align-top"
                   onClick={() => setSelecionado(it)}
                   title="Ver detalhes"
                 >
-                  <td className="p-2 whitespace-nowrap">{fmtPtBR(it.createdAt)}</td>
-                  <td className="p-2">
-                    <div className="font-medium truncate">{eventLabel(it.event)}</div>
+                  {/* Quando: mantém sem quebra pra data/hora */}
+                  <td className="p-2 whitespace-nowrap align-top">{fmtPtBR(it.createdAt)}</td>
+
+                  {/* Demais colunas: permitem quebra e crescer em altura */}
+                  <td className="p-2 whitespace-normal break-words align-top">
+                    <div className="font-medium">{eventLabel(it.event)}</div>
                     <div className="text-gray-500">{targetTypeLabel(it.targetType)}</div>
                   </td>
-                  <td className="p-2 truncate max-w-[240px]">{actorDisplay(it)}</td>
-                  <td className="p-2 truncate max-w-[260px]">{targetDisplay(it)}</td>
-                  <td className="p-2 truncate max-w-[260px]">{ownerDisplay(it)}</td>
-                  <td className="p-2">
-                    <div className="line-clamp-2">{resumoHumano(it)}</div>
+                  <td className="p-2 whitespace-normal break-words align-top">
+                    {actorDisplay(it)}
+                  </td>
+                  <td className="p-2 whitespace-normal break-words align-top">
+                    {targetDisplay(it)}
+                  </td>
+                  <td className="p-2 whitespace-normal break-words align-top">
+                    {ownerDisplay(it)}
+                  </td>
+                  <td className="p-2 whitespace-normal break-words align-top">
+                    {resumoHumano(it)}
                   </td>
                 </tr>
               ))}
