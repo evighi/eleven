@@ -1,4 +1,6 @@
-// src/pages/LogsPage.tsx  (ou src/app/adminMaster/logs/page.tsx)
+"use client";
+
+// src/app/adminMaster/logs/page.tsx
 import React, { useEffect, useState } from "react";
 import {
   actorDisplay,
@@ -8,7 +10,7 @@ import {
   ownerDisplay,
   resumoHumano,
   type AuditItem,
-} from "@/utils/auditUi"; // troque para "../../../utils/auditUi" se não tiver alias @
+} from "../../../utils/auditUi"; // <- caminho corrigido
 
 type ApiResponse = {
   page: number;
@@ -67,7 +69,9 @@ export default function LogsPage() {
                 </td>
                 <td className="p-2">
                   <div className="font-medium">{eventLabel(it.event)}</div>
-                  <div className="text-gray-500">{targetTypeLabel(it.targetType)}</div>
+                  <div className="text-gray-500">
+                    {targetTypeLabel(it.targetType)}
+                  </div>
                 </td>
                 <td className="p-2">{actorDisplay(it)}</td>
                 <td className="p-2">{targetDisplay(it)}</td>

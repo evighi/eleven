@@ -15,14 +15,11 @@ export type AuditTargetTypeUI =
 export type AuditLogItem = {
   id: string;
   event: string;
-
   actorId: string | null;
   actorName: string | null;
   actorTipo: string | null;
-
   targetType: AuditTargetTypeUI | null;
   targetId: string | null;
-
   ip: string | null;
   userAgent: string | null;
   metadata: any;
@@ -35,11 +32,11 @@ export type AuditLogItem = {
   targetOwnerName?: string | null;      // nome do dono (quando aplicável)
 };
 
-// Alias para o que a página espera
+// Para manter compat com o que a página importa:
 export type AuditItem = AuditLogItem;
 
 // ===== Labels amigáveis para EVENTOS =====
-export const EVENT_LABEL: Record<string, string> = {
+const EVENT_LABEL: Record<string, string> = {
   // Autenticação
   LOGIN: "Login realizado",
   LOGIN_FAIL: "Falha no login",
@@ -86,7 +83,7 @@ export const EVENT_LABEL: Record<string, string> = {
 };
 
 // ===== Labels para TARGET TYPE =====
-export const TARGET_LABEL: Record<AuditTargetTypeUI, string> = {
+const TARGET_LABEL: Record<AuditTargetTypeUI, string> = {
   USUARIO: "Usuário",
   AGENDAMENTO: "Agendamento",
   AGENDAMENTO_PERMANENTE: "Agendamento permanente",
@@ -96,70 +93,73 @@ export const TARGET_LABEL: Record<AuditTargetTypeUI, string> = {
   OUTRO: "Outro",
 };
 
-// ===== Helpers base =====
-export function labelForEvent(event: string): string {
+// ===== Helpers de label =====
+export function eventLabel(event: string): string {
   return EVENT_LABEL[event] ?? event.replaceAll("_", " ").toLowerCase();
 }
-
-export function labelForTargetType(tt?: string | null): string {
+export function targetTypeLabel(tt?: string | null): string {
   if (!tt) return "—";
   const key = tt as AuditTargetTypeUI;
   return TARGET_LABEL[key] ?? tt;
 }
 
-// Ex.: formata um “alvo” amigável usando os campos enriquecidos
-export function prettyTarget(it: AuditLogItem): string {
-  if (it.targetType === "USUARIO") {
-    return it.targetNameResolved ?? it.targetId ?? "Usuário";
-  }
-  // quando houver dono do alvo, mostramos “<Tipo> de <Nome do dono>”
-  if (it.targetOwnerName) {
-    return `${labelForTargetType(it.targetType)} de ${it.targetOwnerName}`;
-  }
-  return labelForTargetType(it.targetType);
-}
-
-// ===== Helpers com nomes esperados na página =====
-// Quem fez (ator)
+// ===== Helpers de exibição =====
 export function actorDisplay(it: AuditItem): string {
-  return it.actorNameResolved || it.actorName || it.actorId || "—";
+  return (
+    it.actorNameResolved ||
+    it.actorName ||
+    (it.actorId ? `Usuário ${it.actorId.slice(0, 6)}…` : "—")
+  );
 }
 
-// Tipo do alvo (nome amigável)
-export function targetTypeLabel(tt?: string | null): string {
-  return labelForTargetType(tt);
-}
-
-// Alvo (com nome quando for usuário, ou “tipo de <dono>”)
 export function targetDisplay(it: AuditItem): string {
   if (it.targetType === "USUARIO") {
-    if (it.targetNameResolved && it.targetId) {
-      return `${it.targetNameResolved} (${it.targetId})`;
-    }
-    return it.targetNameResolved || it.targetId || "Usuário";
+    return it.targetNameResolved ?? (it.targetId ? `Usuário ${it.targetId.slice(0, 6)}…` : "Usuário");
   }
   if (it.targetOwnerName) {
-    return `${labelForTargetType(it.targetType)} de ${it.targetOwnerName}`;
+    return `${targetTypeLabel(it.targetType)} de ${it.targetOwnerName}`;
   }
-  return it.targetId || labelForTargetType(it.targetType);
+  return it.targetId
+    ? `${targetTypeLabel(it.targetType)} (${it.targetId.slice(0, 6)}…)`
+    : targetTypeLabel(it.targetType);
 }
 
-// Dono do alvo (quando aplicável)
 export function ownerDisplay(it: AuditItem): string {
-  if (it.targetOwnerName && it.targetOwnerId) {
-    return `${it.targetOwnerName} (${it.targetOwnerId})`;
-  }
-  return it.targetOwnerName || it.targetOwnerId || "—";
+  return (
+    it.targetOwnerName ||
+    (it.metadata?.donoNome as string | undefined) ||
+    (it.metadata?.donoId ? `Usuário ${String(it.metadata.donoId).slice(0, 6)}…` : "—")
+  );
 }
 
-// Rótulo do evento
-export function eventLabel(ev: string): string {
-  return labelForEvent(ev);
-}
-
-// Resumo curto
 export function resumoHumano(it: AuditItem): string {
-  const ev = eventLabel(it.event);
-  const tgt = prettyTarget(it);
-  return `${ev} • ${tgt}`;
+  const m = it.metadata || {};
+  const partes: string[] = [];
+
+  // campos comuns
+  if (m.data && m.horario) partes.push(`${m.data} às ${m.horario}`);
+  else if (m.data) partes.push(String(m.data));
+  if (m.quadraNome || m.quadraNumero) {
+    partes.push(`Quadra ${m.quadraNome ?? ""}${m.quadraNumero ? ` Nº ${m.quadraNumero}` : ""}`.trim());
+  }
+  if (m.esporteNome) partes.push(`${m.esporteNome}`);
+
+  // transferências
+  if (it.event.includes("TRANSFER") && m.novoUsuarioNome) {
+    partes.push(`→ novo dono: ${m.novoUsuarioNome}`);
+  }
+
+  // exceção permanente
+  if (it.event.includes("EXCECAO") && m.motivo) {
+    partes.push(`Motivo: ${m.motivo}`);
+  }
+
+  // cancel/delete
+  if (it.event.includes("CANCEL") || it.event.includes("DELETE")) {
+    if (m.statusAntes && m.statusDepois) {
+      partes.push(`(${m.statusAntes} → ${m.statusDepois})`);
+    }
+  }
+
+  return partes.join(" · ") || "—";
 }
