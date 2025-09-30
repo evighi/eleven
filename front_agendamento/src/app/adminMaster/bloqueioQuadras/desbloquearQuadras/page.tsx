@@ -16,8 +16,8 @@ type UsuarioResumo = {
 
 type Bloqueio = {
   id: string;
-  createdAt: string;       // ISO
-  dataBloqueio: string;    // ISO "YYYY-MM-DD" vinda do back como Date -> serializada
+  createdAt: string;       // ISO completo com horário
+  dataBloqueio: string;    // vem como ISO Date, mas queremos tratar como YMD
   inicioBloqueio: string;  // "HH:MM"
   fimBloqueio: string;     // "HH:MM"
   bloqueadoPor: UsuarioResumo;
@@ -33,7 +33,6 @@ export default function DesbloqueioQuadrasPage() {
   const [confirmarDesbloqueio, setConfirmarDesbloqueio] = useState<boolean>(false);
   const [deletando, setDeletando] = useState<boolean>(false);
 
-  // Carregar lista de bloqueios
   useEffect(() => {
     const fetchBloqueios = async () => {
       setLoading(true);
@@ -70,12 +69,17 @@ export default function DesbloqueioQuadrasPage() {
     }
   };
 
-  const formatDate = (iso: string) => {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return iso;
-    return d.toLocaleDateString();
+  // 👇 NÃO usar new Date para campos "date-only" vindos do back como 00:00Z
+  const formatDateYMD = (isoLike: string) => {
+    // pega apenas a parte YYYY-MM-DD se existir, senão tenta heurística
+    const m = isoLike.match(/^(\d{4}-\d{2}-\d{2})/);
+    const ymd = m ? m[1] : isoLike.slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return isoLike; // fallback
+    const [y, mth, d] = ymd.split("-");
+    return `${d}/${mth}/${y}`;
   };
 
+  // createdAt é um carimbo completo (data+hora) — aqui pode usar toLocaleString
   const formatDateTime = (iso: string) => {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return iso;
@@ -103,11 +107,14 @@ export default function DesbloqueioQuadrasPage() {
                           Bloqueio criado por {bloqueio.bloqueadoPor?.nome ?? "—"}
                         </h2>
                         <p className="text-sm text-gray-600">
-                          Criado em: <span className="font-medium">{formatDateTime(bloqueio.createdAt)}</span>
+                          Criado em:{" "}
+                          <span className="font-medium">{formatDateTime(bloqueio.createdAt)}</span>
                         </p>
                         <p className="text-sm text-gray-600">
                           Dia bloqueado:{" "}
-                          <span className="font-medium">{formatDate(bloqueio.dataBloqueio)}</span>
+                          <span className="font-medium">
+                            {formatDateYMD(bloqueio.dataBloqueio)}
+                          </span>
                         </p>
                         <p className="text-sm text-gray-600">
                           Horário:{" "}
