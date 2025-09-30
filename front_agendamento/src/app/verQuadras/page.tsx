@@ -26,6 +26,11 @@ type AgendamentoAPI = {
   diaSemana?: "DOMINGO" | "SEGUNDA" | "TERCA" | "QUARTA" | "QUINTA" | "SEXTA" | "SABADO";
   proximaData?: string | null;
 
+  // 🔴 NOVOS (para destacar bloqueio na próxima ocorrência do permanente)
+  proximaDataBloqueada?: boolean;
+  proximaDataBloqueioInicio?: string; // "HH:MM" (opcional)
+  proximaDataBloqueioFim?: string;    // "HH:MM" (opcional)
+
   // metadados (compat + novos)
   nome?: string;
   local?: string;
@@ -56,6 +61,11 @@ type AgendamentoCard = {
 
   donoNome?: string | null;
   euSouDono?: boolean;
+
+  // 🔴 bloqueio (apenas faz sentido para permanentes)
+  bloqueado?: boolean;
+  bloqueioInicio?: string | null;
+  bloqueioFim?: string | null;
 };
 
 export default function VerQuadrasPage() {
@@ -146,6 +156,11 @@ export default function VerQuadrasPage() {
           ? paraDDMM(isoEfetiva)
           : (raw.tipoReserva === "PERMANENTE" ? prettyDiaSemana(raw.diaSemana) : paraDDMM(raw.data));
 
+      // 🔴 status de bloqueio para permanentes
+      const bloqueado = raw.tipoReserva === "PERMANENTE" ? !!raw.proximaDataBloqueada : false;
+      const bloqueioInicio = raw.proximaDataBloqueioInicio ?? null;
+      const bloqueioFim = raw.proximaDataBloqueioFim ?? null;
+
       return {
         id: raw.id,
         logoUrl: picked,
@@ -159,6 +174,10 @@ export default function VerQuadrasPage() {
 
         donoNome: raw.donoNome ?? null,
         euSouDono: raw.euSouDono ?? false,
+
+        bloqueado,
+        bloqueioInicio,
+        bloqueioFim,
       };
     },
     [extrairNumeroDoLocal, paraDDMM]
@@ -308,11 +327,11 @@ export default function VerQuadrasPage() {
       {view === "list" && (
         <section className="px-0 py-0">
           <div className="max-w-sm mx-auto bg-white rounded-2xl shadow-md p-4">
-            {/* Aviso */}
+            {/* Aviso geral */}
             <div className="text-center text-orange-600 text-[12px] leading-snug mb-3">
               <div className="font-semibold text-[11px] tracking-wide uppercase mb-1">Atenção!</div>
-              O cancelamento de quadras é permitido com 12 horas de antecedência. Caso a reserva seja realizada com menos 
-              de 12 horas, o usuario pode cancelar a reserva em ate 15 minutos. Caso haja dúvidas, contate os administradores.
+              O cancelamento de quadras é permitido com 12 horas de antecedência. Caso a reserva seja realizada com menos
+              de 12 horas, o usuário pode cancelar a reserva em até 15 minutos. Em caso de dúvidas, contate os administradores.
               (53) 991032959
             </div>
 
@@ -334,85 +353,114 @@ export default function VerQuadrasPage() {
             )}
 
             <div className="space-y-3">
-              {agendamentos.map((a) => (
-                <div
-                  key={a.id}
-                  className="rounded-xl bg-[#f3f3f3] pt-3 pb-2 px-3 shadow-sm"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="shrink-0 w-28 h-12 sm:w-36 sm:h-14 md:w-40 md:h-16 flex items-center justify-center overflow-hidden">
-                      <AppImage
-                        src={a.logoUrl ?? undefined}
-                        alt={a.quadraNome}
-                        width={320}
-                        height={128}
-                        className="w-full h-full object-contain select-none"
-                        legacyDir="quadras"
-                        fallbackSrc="/quadra.png"
-                        forceUnoptimized
-                      />
-                    </div>
+              {agendamentos.map((a) => {
+                const isBloqueado = a.tipo === "PERMANENTE" && a.bloqueado;
 
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[13px] font-semibold text-gray-800 truncate">
-                        {a.quadraNome}
-                      </p>
+                return (
+                  <div
+                    key={a.id}
+                    className="rounded-xl bg-[#f3f3f3] pt-3 pb-2 px-3 shadow-sm"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="shrink-0 w-28 h-12 sm:w-36 sm:h-14 md:w-40 md:h-16 flex items-center justify-center overflow-hidden">
+                        <AppImage
+                          src={a.logoUrl ?? undefined}
+                          alt={a.quadraNome}
+                          width={320}
+                          height={128}
+                          className="w-full h-full object-contain select-none"
+                          legacyDir="quadras"
+                          fallbackSrc="/quadra.png"
+                          forceUnoptimized
+                        />
+                      </div>
 
-                      <p className="text-[12px] text-gray-600 leading-tight flex items-center gap-2">
-                        {a.esporte}
-                        <span
-                          className={`text-[10px] px-2 py-[2px] rounded-full ${
-                            a.tipo === "PERMANENTE"
-                              ? "bg-gray-200 text-gray-800"
-                              : "bg-orange-100 text-orange-600"
-                          }`}
-                          title={a.tipo === "PERMANENTE" ? "Agendamento permanente" : "Agendamento comum"}
-                        >
-                          {a.tipo === "PERMANENTE" ? "Permanente" : "Comum"}
-                        </span>
-                      </p>
-
-                      <p className="text-[12px] text-gray-500">
-                        {/^\d{2}\/\d{2}$/.test(a.dia)
-                          ? <>Dia {a.dia} às {a.hora}</>
-                          : <>Toda {a.dia} às {a.hora}</>}
-                      </p>
-
-                      {/* 👇 Reservado por (quando não for o dono) */}
-                      {!a.euSouDono && a.donoNome && (
-                        <p className="text-[11px] text-gray-500 italic">
-                          Reservado por: {a.donoNome}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[13px] font-semibold text-gray-800 truncate">
+                          {a.quadraNome}
                         </p>
-                      )}
 
-                      {a.numero && (
-                        <p className="text-[11px] text-gray-500">Quadra {a.numero}</p>
+                        <p className="text-[12px] text-gray-600 leading-tight flex items-center gap-2">
+                          {a.esporte}
+                          <span
+                            className={`text-[10px] px-2 py-[2px] rounded-full ${
+                              a.tipo === "PERMANENTE"
+                                ? "bg-gray-200 text-gray-800"
+                                : "bg-orange-100 text-orange-600"
+                            }`}
+                            title={a.tipo === "PERMANENTE" ? "Agendamento permanente" : "Agendamento comum"}
+                          >
+                            {a.tipo === "PERMANENTE" ? "Permanente" : "Comum"}
+                          </span>
+
+                          {isBloqueado && (
+                            <span
+                              className="text-[10px] px-2 py-[2px] rounded-full bg-red-100 text-red-700"
+                              title="Ocorrência bloqueada por evento"
+                            >
+                              Bloqueado
+                            </span>
+                          )}
+                        </p>
+
+                        {/* Data/Hora (vermelho quando bloqueado) */}
+                        <p
+                          className={`text-[12px] ${
+                            isBloqueado ? "text-red-600 font-semibold" : "text-gray-500"
+                          }`}
+                        >
+                          {/^\d{2}\/\d{2}$/.test(a.dia)
+                            ? <>Dia {a.dia} às {a.hora}</>
+                            : <>Toda {a.dia} às {a.hora}</>}
+                        </p>
+
+                        {/* Aviso de bloqueio (somente quando bloqueado na próxima ocorrência) */}
+                        {isBloqueado && (
+                          <p className="mt-0.5 text-[11px] text-red-600">
+                            A quadra está bloqueada nesta data
+                            {a.bloqueioInicio && a.bloqueioFim ? (
+                              <> (das {a.bloqueioInicio} às {a.bloqueioFim})</>
+                            ) : null}.
+                            Seu agendamento permanece, mas não será utilizável por conta do evento.
+                          </p>
+                        )}
+
+                        {/* Reservado por (quando não for o dono) */}
+                        {!a.euSouDono && a.donoNome && (
+                          <p className="text-[11px] text-gray-500 italic">
+                            Reservado por: {a.donoNome}
+                          </p>
+                        )}
+
+                        {a.numero && (
+                          <p className="text-[11px] text-gray-500">Quadra {a.numero}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Ações — apenas se o usuário for o dono */}
+                    <div className="mt-2 border-t border-gray-300/70" />
+                    <div className="flex gap-2 pt-2">
+                      {a.euSouDono ? (
+                        <button
+                          onClick={() => abrirModalCancelar(a)}
+                          className="w-full py-2 text-[13px] font-semibold text-orange-600 hover:text-orange-700 cursor-pointer"
+                        >
+                          Cancelar agendamento
+                        </button>
+                      ) : (
+                        <button
+                          disabled
+                          className="w-full py-2 text-[13px] font-semibold text-gray-400 cursor-not-allowed"
+                          title="Apenas o dono pode cancelar esta reserva"
+                        >
+                          Cancelar agendamento
+                        </button>
                       )}
                     </div>
                   </div>
-
-                  {/* Ações — apenas se o usuário for o dono */}
-                  <div className="mt-2 border-t border-gray-300/70" />
-                  <div className="flex gap-2 pt-2">
-                    {a.euSouDono ? (
-                      <button
-                        onClick={() => abrirModalCancelar(a)}
-                        className="w-full py-2 text-[13px] font-semibold text-orange-600 hover:text-orange-700 cursor-pointer"
-                      >
-                        Cancelar agendamento
-                      </button>
-                    ) : (
-                      <button
-                        disabled
-                        className="w-full py-2 text-[13px] font-semibold text-gray-400 cursor-not-allowed"
-                        title="Apenas o dono pode cancelar esta reserva"
-                      >
-                        Cancelar agendamento
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </section>
@@ -470,11 +518,12 @@ export default function VerQuadrasPage() {
 
               {cancelTarget.tipo === "PERMANENTE" ? (
                 <p className="text-[12px] text-gray-500 italic">
-                  *Cancelamento permitido somente com 12 horas de antecedencia da próxima reserva.
+                  *Cancelamento permitido somente com 12 horas de antecedência da próxima reserva.
                 </p>
               ) : (
                 <p className="text-[12px] text-gray-500 italic">
-                  *segundo nossos termos e condições, o cancelamento é permitido com 12 horas de antecedencia. Para reservas realizadas com menos de 12 horas, o cancelamento é permitido durante 15 minutos após a solicitação da reserva.
+                  *Segundo nossos termos e condições, o cancelamento é permitido com 12 horas de antecedência.
+                  Para reservas realizadas com menos de 12 horas, o cancelamento é permitido por 15 minutos após a criação.
                 </p>
               )}
 
