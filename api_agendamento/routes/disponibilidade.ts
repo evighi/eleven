@@ -64,7 +64,7 @@ router.get("/", async (req, res) => {
     const quadrasComConflitos = await Promise.all(
       quadras.map(async (quadra) => {
         // ------------------------------
-        // 1) Conflito com PERMANENTE (agora ignorando exceções quando 'data' for enviada)
+        // 1) Conflito com PERMANENTE (ignorando exceções quando 'data' for enviada)
         // ------------------------------
         let conflitoPermanente = false;
 
@@ -95,7 +95,7 @@ router.get("/", async (req, res) => {
             conflitoPermanente = !exc; // só conflita se NÃO houver exceção para a data
           }
         } else {
-          // Sem data específica, mantemos o comportamento antigo:
+          // Sem data específica, mantemos o comportamento padrão:
           // existe algum permanente ativo nesse dia/horário/quadra? então conflita.
           const count = await prisma.agendamentoPermanente.count({
             where: {
@@ -129,8 +129,22 @@ router.get("/", async (req, res) => {
           const hoje = new Date();
           const hojeDia = hoje.getDay();
           const indexSelecionado = diasEnum.indexOf(diaSemanaFinal);
-          let diasAte = (indexSelecionado - hojeDia + 7) % 7;
-          if (diasAte === 0) diasAte = 7;
+
+          // 🟠 ALTERAÇÃO: incluir HOJE quando o dia selecionado é hoje
+          // e o horário ainda NÃO passou; se já passou, pula para a semana seguinte.
+          let diasAte = (indexSelecionado - hojeDia + 7) % 7; // 0..6
+          if (diasAte === 0) {
+            // comparar HH:mm atuais com o horário do slot
+            const [hh, mm] = String(horario).split(":").map((n: string) => parseInt(n, 10));
+            const agoraMin = hoje.getHours() * 60 + hoje.getMinutes();
+            const slotMin = (hh || 0) * 60 + (mm || 0);
+            const passou = agoraMin >= slotMin;
+
+            if (passou) {
+              diasAte = 7; // já passou o horário de hoje => próxima semana
+            }
+            // se NÃO passou, mantém 0 para usar a data de HOJE
+          }
 
           const datasVerificar: Date[] = [];
           for (let i = 0; i < 8; i++) {
