@@ -138,6 +138,7 @@ const isAdminRole = (t?: string) =>
  * Calcula a PRÓXIMA data (YYYY-MM-DD) para um permanente,
  * PULANDO as datas já marcadas como exceção e CONSIDERANDO o horário.
  */
+// Substitua sua função atual por esta
 async function proximaDataPermanenteSemExcecao(p: {
   id: string;
   diaSemana: DiaSemana;
@@ -146,44 +147,62 @@ async function proximaDataPermanenteSemExcecao(p: {
 }): Promise<string> {
   const agora = new Date();
 
-  // base: hoje ou dataInicio se estiver no futuro
-  const base = p.dataInicio && p.dataInicio > agora ? p.dataInicio : agora;
+  // "hoje" no fuso de SP, como YMD
+  const hojeSP_YMD = localYMD(agora);              // "YYYY-MM-DD" em SP
+  const hojeSP_utc00 = toUtc00(hojeSP_YMD);        // Date 00:00Z daquele dia local
 
-  const cur = base.getDay(); // 0..6 (local)
-  const target = DIA_IDX[p.diaSemana] ?? 0; // 0..6
-  const delta = (target - cur + 7) % 7;
-
-  let tentativa = startOfDay(addDays(base, delta));
-
-  // Se a tentativa é "hoje" no calendário local, respeitar o horário:
-  const tentativaEhHojeLocal = localYMD(tentativa) === localYMD(agora); // ambos em SP
-  if (tentativaEhHojeLocal) {
-    const agoraHHMM = localHM(agora); // "HH:mm" em SP
-    if (agoraHHMM >= p.horario) {
-      // já passou o horário de hoje -> pula uma semana
-      tentativa = addDays(tentativa, 7);
+  // Se há dataInicio futura, usamos o dia local correspondente a ela
+  const baseLocalYMD = (() => {
+    if (p.dataInicio && p.dataInicio > agora) {
+      // p.dataInicio está salvo como 00:00Z do dia local — convertemos para YMD
+      return p.dataInicio.toISOString().slice(0, 10);
     }
+    return hojeSP_YMD;
+  })();
+
+  // Índices (0..6) para o dia local base e alvo
+  const DIA_IDX: Record<DiaSemana, number> = {
+    DOMINGO: 0, SEGUNDA: 1, TERCA: 2, QUARTA: 3, QUINTA: 4, SEXTA: 5, SABADO: 6,
+  };
+  // dayIdx do baseLocalYMD (criamos um Date "fixo" às 12:00-03:00 só para extrair o getUTCDay estável)
+  const baseLocalNoon = new Date(`${baseLocalYMD}T12:00:00-03:00`);
+  const cur = baseLocalNoon.getUTCDay();                  // 0..6 para o dia local
+  const target = DIA_IDX[p.diaSemana] ?? 0;               // 0..6
+  let delta = (target - cur + 7) % 7;                     // 0..6
+
+  // Se delta=0, checar horário "hoje em SP": se já passou, próxima semana
+  if (delta === 0) {
+    const agoraHM = localHM(agora); // "HH:mm" em SP
+    if (agoraHM >= p.horario) delta = 7;
   }
 
-  // Limite de segurança de 120 iterações (~2 anos)
+  // Construímos a tentativa a partir do YMD local, somando 'delta' dias em "linha do tempo local"
+  function addDaysLocalYMD(ymd: string, days: number): string {
+    const d = new Date(`${ymd}T12:00:00-03:00`); // meio-dia local evita DST edge
+    d.setUTCDate(d.getUTCDate() + days);
+    // volta para YMD local
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Sao_Paulo",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(d);
+  }
+
+  let tentativaYMD = addDaysLocalYMD(baseLocalYMD, delta);
+
+  // Até ~2 anos
   for (let i = 0; i < 120; i++) {
-    const iso = toISODateUTC(tentativa); // "YYYY-MM-DD"
+    const tentativaUTC00 = toUtc00(tentativaYMD);
     const exc = await prisma.agendamentoPermanenteCancelamento.findFirst({
-      where: {
-        agendamentoPermanenteId: p.id,
-        data: toUtc00(iso), // comparar sempre em 00:00Z
-      },
+      where: { agendamentoPermanenteId: p.id, data: tentativaUTC00 },
       select: { id: true },
     });
-
-    if (!exc) return iso; // achou uma ocorrência sem exceção
-
-    // pula 1 semana
-    tentativa = addDays(tentativa, 7);
+    if (!exc) return tentativaYMD; // devolvemos o YMD LOCAL
+    tentativaYMD = addDaysLocalYMD(tentativaYMD, 7);
   }
 
-  // fallback defensivo
-  return toISODateUTC(tentativa);
+  return tentativaYMD;
 }
 
 const addJogadoresSchema = z.object({
