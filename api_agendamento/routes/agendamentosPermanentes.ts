@@ -119,11 +119,15 @@ router.post("/", async (req, res) => {
       where: { horario, quadraId, status: "CONFIRMADO" },
       select: { data: true },
     });
+
+    // ✅ AJUSTE: comparar pelo índice do dia da semana (UTC) com o enum do sistema.
+    // Isso reconhece conflitos também "hoje" quando o usuário tenta iniciar no mesmo dia.
+    const targetIdx = DIA_IDX[diaSemana];
     const possuiConflito = agendamentosComuns.some(ag => {
-      const data = new Date(ag.data);
-      const dia = data.toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" }).toUpperCase();
-      return dia === diaSemana;
+      const idx = new Date(ag.data).getUTCDay(); // 0..6 em UTC
+      return idx === targetIdx;
     });
+
     if (possuiConflito && !dataInicio) {
       return res.status(409).json({ erro: "Conflito com agendamento comum existente nesse dia, horário e quadra" });
     }
@@ -254,7 +258,6 @@ router.get(
   }
 );
 
-
 // 📅 Datas elegíveis p/ exceção — dono ou admin
 router.get(
   "/:id/datas-excecao",
@@ -340,7 +343,6 @@ router.get(
     }
   }
 );
-
 
 // 🚫 Registrar exceção (cancelar um dia da recorrência) — dono ou admin
 router.post(
@@ -444,7 +446,7 @@ router.post(
 /**
  * ✅ Cancelar **a próxima ocorrência** de um permanente (cliente dono ou admin)
  * - Admin: SEM restrição de 12h.
- * - Cliente dono: permitido apenas até 12h antes do horário da próxima ocorrência.
+ * - Cliente dono: permitido apenas até 12h antes da próxima ocorrência.
  * - Implementado criando uma exceção na data correspondente.
  */
 router.post(
@@ -742,7 +744,6 @@ router.patch(
     }
   }
 );
-
 
 // ❌ Deletar — dono ou admin
 router.delete(
