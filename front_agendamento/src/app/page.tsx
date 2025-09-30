@@ -28,6 +28,11 @@ type AgendamentoAPI = {
   diaSemana?: "DOMINGO" | "SEGUNDA" | "TERCA" | "QUARTA" | "QUINTA" | "SEXTA" | "SABADO";
   proximaData?: string | null;
 
+  // 🔴 NOVOS (vindos do back para permanentes)
+  proximaDataBloqueada?: boolean;
+  proximaDataBloqueioInicio?: string; // "HH:MM" (opcional)
+  proximaDataBloqueioFim?: string;    // "HH:MM" (opcional)
+
   // metadados (compat + novos)
   nome?: string;
   local?: string;
@@ -59,6 +64,11 @@ type AgendamentoCard = {
   // dono/visibilidade
   donoNome?: string | null;
   euSouDono?: boolean;
+
+  // bloqueio (apenas permanentes)
+  bloqueado?: boolean;
+  bloqueioInicio?: string | null;
+  bloqueioFim?: string | null;
 
   // usados só para ordenação/seleção
   nextISO: string | null; // "YYYY-MM-DD"
@@ -102,7 +112,6 @@ export default function Home() {
 
   /** timestamp em UTC considerando o fuso de SP (-03:00) */
   function tsFromSP(ymd: string, hora: string) {
-    // hora esperado "HH:mm"
     const safeHora = /^\d{2}:\d{2}$/.test(hora) ? hora : "00:00";
     return new Date(`${ymd}T${safeHora}:00-03:00`).getTime();
   }
@@ -125,12 +134,11 @@ export default function Home() {
     const target = DIA_IDX[diaSemana];
     let delta = (target - cur + 7) % 7;
 
-    // só compara horário se vier "HH:mm"
     const hasHM = typeof horario === "string" && /^\d{2}:\d{2}$/.test(horario);
     if (delta === 0 && hasHM) {
       const hmNow = new Intl.DateTimeFormat("en-GB", {
         timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false,
-      }).format(now); // "HH:mm"
+      }).format(now);
       if (hmNow >= horario) {
         delta = 7; // hoje já passou o horário -> próxima semana
       }
@@ -139,7 +147,6 @@ export default function Home() {
     const d = new Date(now);
     d.setDate(d.getDate() + delta);
 
-    // "YYYY-MM-DD" no fuso de SP
     const ymd = new Intl.DateTimeFormat("en-CA", {
       timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
     }).format(d);
@@ -161,9 +168,7 @@ export default function Home() {
         if (m?.[1]) numero = m[1];
       }
 
-      // Define a data ISO usada para exibição e ordenação:
-      // - COMUM: usa `data`
-      // - PERMANENTE: usa `proximaData`; se não vier, calcula localmente
+      // Define a data ISO usada para exibição e ordenação
       const nextISO =
         raw.tipoReserva === "COMUM"
           ? (raw.data ?? null)
@@ -175,6 +180,11 @@ export default function Home() {
         nextISO
           ? paraDDMM(nextISO)
           : prettyDiaSemana(raw.diaSemana);
+
+      // Sinalizadores de bloqueio (só fazem sentido para permanentes)
+      const bloqueado = raw.tipoReserva === "PERMANENTE" ? !!raw.proximaDataBloqueada : false;
+      const bloqueioInicio = raw.proximaDataBloqueioInicio ?? null;
+      const bloqueioFim = raw.proximaDataBloqueioFim ?? null;
 
       return {
         id: raw.id,
@@ -188,13 +198,18 @@ export default function Home() {
         nextISO,
         sortTs,
 
-        // 👇 novos campos pro card
         donoNome: raw.donoNome ?? null,
         euSouDono: raw.euSouDono ?? false,
+
+        bloqueado,
+        bloqueioInicio,
+        bloqueioFim,
       };
     },
     [paraDDMM]
   );
+
+  const [totalListados, setTotalListados] = useState(0);
 
   useEffect(() => {
     if (isChecking) return;
@@ -206,20 +221,20 @@ export default function Home() {
           withCredentials: true,
         });
 
-        // normaliza
         const list = (res.data || []).map(normalizar);
 
-        // só próximos (>= agora)
         const agora = Date.now();
         const futuras = list
           .filter((a) => a.sortTs !== Number.POSITIVE_INFINITY && a.sortTs >= agora)
           .sort((a, b) => a.sortTs - b.sortTs);
 
         setTotalProximos(futuras.length);
-        setAgendamentos(futuras.slice(0, 2)); // << mostra só os 2 mais próximos
+        setTotalListados(futuras.length);
+        setAgendamentos(futuras.slice(0, 2)); // mostra só os 2 mais próximos
       } catch {
         setAgendamentos([]);
         setTotalProximos(0);
+        setTotalListados(0);
       } finally {
         setCarregando(false);
       }
@@ -263,7 +278,7 @@ export default function Home() {
             <h2 className="text-[13px] sm:text-sm font-semibold text-gray-500">Suas quadras</h2>
             <p className="text-[11px] sm:text-xs text-gray-400 mt-1">
               Em exibição {emExibicao} {plural(emExibicao, "reserva próxima.", "reservas próximas.")}
-              {totalProximos > 2 && " Para ver mais reservas, clique em veja as suas quadras."}
+              {totalListados > 2 && " Para ver mais reservas, clique em veja as suas quadras."}
             </p>
 
             {carregando && (
@@ -277,65 +292,91 @@ export default function Home() {
             )}
 
             <div className="mt-3 space-y-3">
-              {agendamentos.map((a) => (
-                <div
-                  key={a.id}
-                  className="flex items-center gap-3 sm:gap-4 rounded-xl bg-[#f3f3f3] px-3 sm:px-4 py-2.5 sm:py-3 shadow-sm"
-                >
-                  {/* Logo */}
-                  <div className="shrink-0 w-28 h-12 sm:w-36 sm:h-14 md:w-40 md:h-16 flex items-center justify-center overflow-hidden">
-                    <AppImage
-                      src={a.logoUrl ?? undefined}
-                      alt={a.quadraNome}
-                      width={320}
-                      height={128}
-                      className="w-full h-full object-contain select-none"
-                      legacyDir="quadras"
-                      fallbackSrc="/quadra.png"
-                      forceUnoptimized
-                    />
-                  </div>
+              {agendamentos.map((a) => {
+                const isBloqueado = a.tipo === "PERMANENTE" && a.bloqueado;
 
-                  {/* Texto */}
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[13px] sm:text-[15px] font-semibold text-gray-800 truncate">
-                      {a.quadraNome}
-                    </p>
+                return (
+                  <div
+                    key={a.id}
+                    className="flex items-center gap-3 sm:gap-4 rounded-xl bg-[#f3f3f3] px-3 sm:px-4 py-2.5 sm:py-3 shadow-sm"
+                  >
+                    {/* Logo */}
+                    <div className="shrink-0 w-28 h-12 sm:w-36 sm:h-14 md:w-40 md:h-16 flex items-center justify-center overflow-hidden">
+                      <AppImage
+                        src={a.logoUrl ?? undefined}
+                        alt={a.quadraNome}
+                        width={320}
+                        height={128}
+                        className="w-full h-full object-contain select-none"
+                        legacyDir="quadras"
+                        fallbackSrc="/quadra.png"
+                        forceUnoptimized
+                      />
+                    </div>
 
-                    <p className="text-[12px] sm:text-[13px] text-gray-600 leading-tight flex items-center gap-2">
-                      {a.esporte}
-                      <span
-                        className={`text-[10px] px-2 py-[2px] rounded-full ${
-                          a.tipo === "PERMANENTE"
-                            ? "bg-gray-200 text-gray-800"
-                            : "bg-orange-100 text-orange-700"
-                        }`}
-                        title={a.tipo === "PERMANENTE" ? "Agendamento permanente" : "Agendamento comum"}
-                      >
-                        {a.tipo === "PERMANENTE" ? "Permanente" : "Comum"}
-                      </span>
-                    </p>
-
-                    <p className="text-[12px] sm:text-[13px] text-gray-500">
-                      {/* dd/mm => 'Dia'; caso contrário (Quarta) => 'Toda' */}
-                      {/^\d{2}\/\d{2}$/.test(a.dia)
-                        ? <>Dia {a.dia} às {a.hora}</>
-                        : <>Toda {a.dia} às {a.hora}</>}
-                    </p>
-
-                    {/* 👇 Reservado por (quando não for o dono) */}
-                    {!a.euSouDono && a.donoNome && (
-                      <p className="text-[11px] sm:text-[12px] text-gray-500 italic">
-                        Reservado por: {a.donoNome}
+                    {/* Texto */}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] sm:text-[15px] font-semibold text-gray-800 truncate">
+                        {a.quadraNome}
                       </p>
-                    )}
 
-                    {a.numero && (
-                      <p className="text-[11px] sm:text-[12px] text-gray-500">Quadra {a.numero}</p>
-                    )}
+                      <p className="text-[12px] sm:text-[13px] text-gray-600 leading-tight flex items-center gap-2">
+                        {a.esporte}
+                        <span
+                          className={`text-[10px] px-2 py-[2px] rounded-full ${
+                            a.tipo === "PERMANENTE"
+                              ? "bg-gray-200 text-gray-800"
+                              : "bg-orange-100 text-orange-700"
+                          }`}
+                          title={a.tipo === "PERMANENTE" ? "Agendamento permanente" : "Agendamento comum"}
+                        >
+                          {a.tipo === "PERMANENTE" ? "Permanente" : "Comum"}
+                        </span>
+
+                        {isBloqueado && (
+                          <span
+                            className="text-[10px] px-2 py-[2px] rounded-full bg-red-100 text-red-700"
+                            title="Ocorrência bloqueada por evento"
+                          >
+                            Bloqueado
+                          </span>
+                        )}
+                      </p>
+
+                      {/* Data/Hora (pinta de vermelho quando bloqueado) */}
+                      <p
+                        className={`text-[12px] sm:text-[13px] ${
+                          isBloqueado ? "text-red-600 font-semibold" : "text-gray-500"
+                        }`}
+                      >
+                        {/^\d{2}\/\d{2}$/.test(a.dia)
+                          ? <>Dia {a.dia} às {a.hora}</>
+                          : <>Toda {a.dia} às {a.hora}</>}
+                      </p>
+
+                      {/* Aviso de bloqueio (somente quando bloqueado na próxima ocorrência) */}
+                      {isBloqueado && (
+                        <p className="mt-0.5 text-[11px] sm:text-[12px] text-red-600">
+                          A quadra está bloqueada nesta data{a.bloqueioInicio && a.bloqueioFim ? (
+                            <> (das {a.bloqueioInicio} às {a.bloqueioFim})</>
+                          ) : null}. Seu agendamento permanece, mas não será utilizável por conta do evento.
+                        </p>
+                      )}
+
+                      {/* Reservado por (quando não for o dono) */}
+                      {!a.euSouDono && a.donoNome && (
+                        <p className="text-[11px] sm:text-[12px] text-gray-500 italic">
+                          Reservado por: {a.donoNome}
+                        </p>
+                      )}
+
+                      {a.numero && (
+                        <p className="text-[11px] sm:text-[12px] text-gray-500">Quadra {a.numero}</p>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <Link

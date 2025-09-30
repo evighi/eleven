@@ -122,6 +122,11 @@ function toUtc00(isoYYYYMMDD: string) {
   return new Date(`${isoYYYYMMDD}T00:00:00Z`);
 }
 
+// 👉 helper p/ checar se um horário "HH:MM" está em [inicio, fim)
+function horarioDentroIntervalo(h: string, ini: string, fim: string) {
+  return h >= ini && h < fim;
+}
+
 const prisma = new PrismaClient();
 const router = Router();
 
@@ -517,6 +522,7 @@ router.get("/", verificarToken, async (req, res) => {
 });
 
 // GET /agendamentos/me  -> comuns CONFIRMADOS + permanentes ATIVOS (próxima data respeita horário/exceções)
+// 🔴 Alteração: para PERMANENTES, marca se a próxima data está coberta por um BLOQUEIO (sem mudar a data).
 router.get("/me", verificarToken, async (req, res) => {
   const reqCustom = req as typeof req & {
     usuario?: { usuarioLogadoId: string; usuarioLogadoNome?: string; usuarioLogadoTipo?: string };
@@ -526,7 +532,7 @@ router.get("/me", verificarToken, async (req, res) => {
   try {
     const usuarioId = reqCustom.usuario.usuarioLogadoId;
 
-    // 1) Comuns CONFIRMADOS onde o usuário é dono ou jogador
+    // 1) Comuns CONFIRMADOS onde o usuário é dono ou jogador (inalterado)
     const comunsConfirmados = await prisma.agendamento.findMany({
       where: {
         status: "CONFIRMADO",
@@ -558,7 +564,6 @@ router.get("/me", verificarToken, async (req, res) => {
         quadraLogoUrl,
         esporteNome: a.esporte?.nome ?? "",
 
-        // 👇 NOVO
         donoId: a.usuario?.id ?? a.usuarioId,
         donoNome: a.usuario?.nome ?? "",
         euSouDono,
@@ -579,40 +584,114 @@ router.get("/me", verificarToken, async (req, res) => {
       orderBy: [{ diaSemana: "asc" }, { horario: "asc" }],
     });
 
-    // pega próxima data pulando exceções E respeitando horário (hoje antes/depois)
-    const respPermanentes = await Promise.all(
+    // 2.1) Calcula proximaData de cada permanente
+    const permsComProxima = await Promise.all(
       permanentes.map(async (p) => {
-        const quadraLogoUrl = resolveQuadraImg(p.quadra?.imagem) || "/quadra.png";
         const proximaData = await proximaDataPermanenteSemExcecao({
           id: p.id,
           diaSemana: p.diaSemana as DiaSemana,
           dataInicio: p.dataInicio ?? null,
-          horario: p.horario, // 👈 respeita horário em SP
-        });
-
-        return {
-          id: p.id,
-          nome: p.esporte?.nome ?? "Quadra",
-          local: p.quadra ? `${p.quadra.nome} - Nº ${p.quadra.numero}` : "",
           horario: p.horario,
-          tipoReserva: "PERMANENTE" as const,
-          status: p.status,
-          logoUrl: quadraLogoUrl,
-          data: null, // permanentes não têm uma data fixa
-          diaSemana: p.diaSemana, // exibir "toda SEGUNDA"
-          proximaData, // já pulando exceções e respeitando horário
-          quadraNome: p.quadra?.nome ?? "",
-          quadraNumero: p.quadra?.numero ?? null,
-          quadraLogoUrl,
-          esporteNome: p.esporte?.nome ?? "",
-
-          // 👇 NOVO (aqui sempre será o próprio dono)
-          donoId: p.usuario?.id ?? p.usuarioId,
-          donoNome: p.usuario?.nome ?? "",
-          euSouDono: true,
-        };
+        });
+        return { p, proximaData };
       })
     );
+
+    // 2.2) Carrega bloqueios relevantes em LOTE para (quadraId, proximaData)
+    const datasSet = new Set<string>();
+    const quadrasSet = new Set<string>();
+    for (const { p, proximaData } of permsComProxima) {
+      if (proximaData) {
+        datasSet.add(proximaData);
+        quadrasSet.add(p.quadra?.id ?? p.quadraId);
+      }
+    }
+
+    let bloqueios: Array<{
+      id: string;
+      dataBloqueio: Date;
+      inicioBloqueio: string;
+      fimBloqueio: string;
+      quadras: { id: string }[];
+    }> = [];
+
+    if (datasSet.size > 0 && quadrasSet.size > 0) {
+      bloqueios = await prisma.bloqueioQuadra.findMany({
+        where: {
+          dataBloqueio: { in: Array.from(datasSet).map(toUtc00) },
+          quadras: { some: { id: { in: Array.from(quadrasSet) } } },
+        },
+        select: {
+          id: true,
+          dataBloqueio: true,
+          inicioBloqueio: true,
+          fimBloqueio: true,
+          quadras: { select: { id: true } },
+        },
+      });
+    }
+
+    // Index por (quadraId|YYYY-MM-DD)
+    const bloqueiosIndex = new Map<string, Array<typeof bloqueios[number]>>();
+    for (const b of bloqueios) {
+      const ymd = b.dataBloqueio.toISOString().slice(0, 10);
+      for (const q of b.quadras) {
+        const k = `${q.id}|${ymd}`;
+        const list = bloqueiosIndex.get(k) || [];
+        list.push(b);
+        bloqueiosIndex.set(k, list);
+      }
+    }
+
+    // 2.3) Monta resposta dos permanentes com flag de bloqueio (sem alterar proximaData)
+    const respPermanentes = permsComProxima.map(({ p, proximaData }) => {
+      const quadraLogoUrl = resolveQuadraImg(p.quadra?.imagem) || "/quadra.png";
+
+      let proximaDataBloqueada = false;
+      let bloqueioInfo: { data: string; inicio: string; fim: string } | undefined;
+
+      if (proximaData) {
+        const k = `${p.quadra?.id ?? p.quadraId}|${proximaData}`;
+        const candidatos = bloqueiosIndex.get(k) || [];
+        const hit = candidatos.find((b) =>
+          horarioDentroIntervalo(p.horario, b.inicioBloqueio, b.fimBloqueio)
+        );
+        if (hit) {
+          proximaDataBloqueada = true;
+          bloqueioInfo = {
+            data: proximaData,
+            inicio: hit.inicioBloqueio,
+            fim: hit.fimBloqueio,
+          };
+        }
+      }
+
+      return {
+        id: p.id,
+        nome: p.esporte?.nome ?? "Quadra",
+        local: p.quadra ? `${p.quadra.nome} - Nº ${p.quadra.numero}` : "",
+        horario: p.horario,
+        tipoReserva: "PERMANENTE" as const,
+        status: p.status,
+        logoUrl: quadraLogoUrl,
+
+        data: null,                 // permanentes não têm data fixa
+        diaSemana: p.diaSemana,     // exibir "toda SEGUNDA"
+        proximaData,                // mantém a mesma data
+        proximaDataBloqueada,       // 👈 NOVO FLAG
+        ...(bloqueioInfo ? { bloqueioInfo } : {}), // 👈 opcional para UI
+
+        quadraNome: p.quadra?.nome ?? "",
+        quadraNumero: p.quadra?.numero ?? null,
+        quadraLogoUrl,
+        esporteNome: p.esporte?.nome ?? "",
+
+        // sempre o próprio dono
+        donoId: p.usuario?.id ?? p.usuarioId,
+        donoNome: p.usuario?.nome ?? "",
+        euSouDono: true,
+      };
+    });
 
     // 3) Junta e ordena por (data|proximaData) + horário
     const tudo = [...respComuns, ...respPermanentes].sort((a: any, b: any) => {
