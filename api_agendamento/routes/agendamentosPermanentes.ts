@@ -114,17 +114,14 @@ router.post("/", async (req, res) => {
       return res.status(409).json({ erro: "Já existe um agendamento permanente nesse horário, quadra e dia" });
     }
 
-    // conflito com comuns confirmados (mantido)
+    // conflito com comuns confirmados (mantido) — usando índice UTC (reconhece "hoje")
     const agendamentosComuns = await prisma.agendamento.findMany({
       where: { horario, quadraId, status: "CONFIRMADO" },
       select: { data: true },
     });
-
-    // ✅ AJUSTE: comparar pelo índice do dia da semana (UTC) com o enum do sistema.
-    // Isso reconhece conflitos também "hoje" quando o usuário tenta iniciar no mesmo dia.
     const targetIdx = DIA_IDX[diaSemana];
     const possuiConflito = agendamentosComuns.some(ag => {
-      const idx = new Date(ag.data).getUTCDay(); // 0..6 em UTC
+      const idx = new Date(ag.data).getUTCDay(); // 0..6 UTC
       return idx === targetIdx;
     });
 
@@ -161,7 +158,7 @@ router.post("/", async (req, res) => {
       await logAudit({
         event: "AGENDAMENTO_PERM_CREATE",
         req,
-        target: { type: TargetType.AGENDAMENTO, id: novo.id },
+        target: { type: TargetType.AGENDAMENTO_PERMANENTE, id: novo.id },
         metadata: {
           permanenteId: novo.id,
           donoId: novo.usuarioId,
@@ -366,7 +363,16 @@ router.post(
     try {
       const perm = await prisma.agendamentoPermanente.findUnique({
         where: { id },
-        select: { id: true, usuarioId: true, diaSemana: true, dataInicio: true, status: true },
+        select: {
+          id: true,
+          usuarioId: true,
+          diaSemana: true,
+          horario: true,
+          quadraId: true,
+          esporteId: true,
+          dataInicio: true,
+          status: true,
+        },
       });
       if (!perm) return res.status(404).json({ erro: "Agendamento permanente não encontrado" });
       if (["CANCELADO", "TRANSFERIDO"].includes(perm.status)) {
@@ -412,12 +418,19 @@ router.post(
         await logAudit({
           event: "AGENDAMENTO_PERM_EXCECAO",
           req,
-          target: { type: TargetType.AGENDAMENTO, id },
+          target: { type: TargetType.AGENDAMENTO_PERMANENTE, id },
           metadata: {
             permanenteId: id,
             data: iso,
             motivo: motivo ?? null,
             criadoPorId: req.usuario!.usuarioLogadoId,
+
+            // enriquecimento:
+            donoId: perm.usuarioId,
+            diaSemana: perm.diaSemana,
+            horario: perm.horario,
+            quadraId: perm.quadraId,
+            esporteId: perm.esporteId,
           },
         });
       } catch (e) {
@@ -464,7 +477,16 @@ router.post(
     try {
       const perm = await prisma.agendamentoPermanente.findUnique({
         where: { id },
-        select: { id: true, usuarioId: true, diaSemana: true, horario: true, dataInicio: true, status: true },
+        select: {
+          id: true,
+          usuarioId: true,
+          diaSemana: true,
+          horario: true,
+          quadraId: true,
+          esporteId: true,
+          dataInicio: true,
+          status: true,
+        },
       });
       if (!perm) return res.status(404).json({ erro: "Agendamento permanente não encontrado" });
       if (["CANCELADO", "TRANSFERIDO"].includes(perm.status)) {
@@ -516,12 +538,19 @@ router.post(
         await logAudit({
           event: "AGENDAMENTO_PERM_EXCECAO",
           req,
-          target: { type: TargetType.AGENDAMENTO, id },
+          target: { type: TargetType.AGENDAMENTO_PERMANENTE, id },
           metadata: {
             permanenteId: id,
             data: proximaISO,
             motivo: "Cancelado pelo cliente (próxima ocorrência)",
             criadoPorId: req.usuario!.usuarioLogadoId,
+
+            // enriquecimento:
+            donoId: perm.usuarioId,
+            diaSemana: perm.diaSemana,
+            horario: perm.horario,
+            quadraId: perm.quadraId,
+            esporteId: perm.esporteId,
           },
         });
       } catch (e) {
@@ -553,7 +582,7 @@ router.post(
     try {
       const before = await prisma.agendamentoPermanente.findUnique({
         where: { id },
-        select: { status: true, usuarioId: true, diaSemana: true, horario: true },
+        select: { status: true, usuarioId: true, diaSemana: true, horario: true, quadraId: true, esporteId: true },
       });
 
       const agendamento = await prisma.agendamentoPermanente.update({
@@ -566,7 +595,7 @@ router.post(
         await logAudit({
           event: "AGENDAMENTO_PERM_CANCEL",
           req,
-          target: { type: TargetType.AGENDAMENTO, id },
+          target: { type: TargetType.AGENDAMENTO_PERMANENTE, id },
           metadata: {
             permanenteId: id,
             statusAntes: before?.status ?? null,
@@ -574,6 +603,8 @@ router.post(
             donoId: before?.usuarioId ?? null,
             diaSemana: before?.diaSemana ?? null,
             horario: before?.horario ?? null,
+            quadraId: before?.quadraId ?? null,
+            esporteId: before?.esporteId ?? null,
           },
         });
       } catch (e) {
@@ -700,12 +731,20 @@ router.patch(
         await logAudit({
           event: "AGENDAMENTO_PERM_TRANSFER",
           req,
-          target: { type: TargetType.AGENDAMENTO, id },
+          target: { type: TargetType.AGENDAMENTO_PERMANENTE, id },
           metadata: {
             permanenteIdOriginal: id,
             permanenteIdNovo: novoPerm.id,
+
+            // ✅ chaves reconhecidas pelo enrich
+            fromOwnerId: perm.usuarioId,
+            toOwnerId: novoUsuarioId,
+            // aliases extras (compat)
+            deDonoId: perm.usuarioId,
+            paraDonoId: novoUsuarioId,
             deUsuarioId: perm.usuarioId,
             paraUsuarioId: novoUsuarioId,
+
             diaSemana: perm.diaSemana,
             horario: perm.horario,
             quadraId: perm.quadraId,
@@ -757,7 +796,7 @@ router.delete(
     try {
       const agendamento = await prisma.agendamentoPermanente.findUnique({
         where: { id },
-        select: { id: true, usuarioId: true, diaSemana: true, horario: true },
+        select: { id: true, usuarioId: true, diaSemana: true, horario: true, quadraId: true, esporteId: true },
       });
       if (!agendamento) return res.status(404).json({ erro: "Agendamento permanente não encontrado" });
 
@@ -768,12 +807,14 @@ router.delete(
         await logAudit({
           event: "AGENDAMENTO_PERM_DELETE",
           req,
-          target: { type: TargetType.AGENDAMENTO, id },
+          target: { type: TargetType.AGENDAMENTO_PERMANENTE, id },
           metadata: {
             permanenteId: id,
-            donoId: agendamento.usuarioId,
-            diaSemana: agendamento.diaSemana,
-            horario: agendamento.horario,
+            donoId: agendamento?.usuarioId ?? null,
+            diaSemana: agendamento?.diaSemana ?? null,
+            horario: agendamento?.horario ?? null,
+            quadraId: agendamento?.quadraId ?? null,
+            esporteId: agendamento?.esporteId ?? null,
           },
         });
       } catch (e) {
