@@ -762,20 +762,10 @@ export default function TodosHorariosPage() {
             </p>
             <p><strong>Tipo:</strong> {agendamentoSelecionado.tipoReserva}</p>
 
-            {/* Jogadores + botão adicionar (somente COMUM/quadra) */}
+            {/* Jogadores (COMUM) — sem o botão “+” no título */}
             {agendamentoSelecionado.tipoReserva === "comum" && (
               <div className="mt-2">
-                <div className="flex items-center justify-between">
-                  <strong>Jogadores:</strong>
-                  <button
-                    type="button"
-                    onClick={abrirModalAdicionarJogadores}
-                    className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-emerald-600 text-white hover:bg-emerald-700"
-                    title="Adicionar jogadores"
-                  >
-                    +
-                  </button>
-                </div>
+                <strong>Jogadores:</strong>
                 <ul className="list-disc list-inside text-sm text-gray-700 mt-2">
                   {agendamentoSelecionado.jogadores?.length > 0 ? (
                     agendamentoSelecionado.jogadores.map((j, idx) => <li key={idx}>{j.nome}</li>)
@@ -786,19 +776,32 @@ export default function TodosHorariosPage() {
               </div>
             )}
 
+            {/* --- AÇÕES --- */}
+
+            {/* Adicionar Jogadores (somente COMUM) */}
+            {agendamentoSelecionado.tipoReserva === "comum" && (
+              <button
+                type="button"
+                onClick={abrirModalAdicionarJogadores}
+                className="mt-4 w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 px-4 rounded cursor-pointer"
+              >
+                Adicionar jogadores
+              </button>
+            )}
+
             {/* Transferir (COMUM e PERMANENTE) */}
             <button
               onClick={abrirModalTransferir}
               disabled={loadingTransferencia}
-              className="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded cursor-pointer"
+              className="mt-3 w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded cursor-pointer disabled:opacity-60"
             >
               {loadingTransferencia ? "Transferindo..." : "Transferir Agendamento"}
             </button>
 
-            {/* Botão principal de cancelar (abre fluxos) */}
+            {/* Cancelar */}
             <button
               onClick={abrirFluxoCancelamento}
-              className="mt-4 w-full bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded cursor-pointer"
+              className="mt-3 w-full bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded cursor-pointer"
             >
               Cancelar Agendamento
             </button>
