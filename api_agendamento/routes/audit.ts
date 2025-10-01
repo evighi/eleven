@@ -1,9 +1,6 @@
 // routes/audit.ts
 import { Router } from "express";
-import {
-  PrismaClient,
-  AuditTargetType,
-} from "@prisma/client";
+import { PrismaClient, AuditTargetType } from "@prisma/client";
 import verificarToken from "../middleware/authMiddleware";
 import { requireAdmin } from "../middleware/acl";
 
@@ -38,21 +35,21 @@ async function enrichNamesForLogs(items: any[]) {
 
   // NOVO: coletar também IDs do metadata para nomes
   const esporteIds = new Set<string>();
-  const quadraIds  = new Set<string>();
+  const quadraIds = new Set<string>();
 
   for (const it of items) {
     if (it.actorId) userIds.add(String(it.actorId));
     if (it?.metadata?.donoId) userIds.add(String(it.metadata.donoId));
 
     // Transferências podem vir com chaves diferentes. Aceitamos variações.
-    const md = (it?.metadata && typeof it.metadata === "object") ? it.metadata : {};
+    const md = it?.metadata && typeof it.metadata === "object" ? it.metadata : {};
     const fromId = md.fromOwnerId ?? md.deDonoId ?? md.transferFromId ?? null;
-    const toId   = md.toOwnerId   ?? md.paraDonoId ?? md.transferToId   ?? md.novoUsuarioId ?? null;
+    const toId = md.toOwnerId ?? md.paraDonoId ?? md.transferToId ?? md.novoUsuarioId ?? null;
     if (fromId) userIds.add(String(fromId));
-    if (toId)   userIds.add(String(toId));
+    if (toId) userIds.add(String(toId));
 
     if (md.esporteId) esporteIds.add(String(md.esporteId));
-    if (md.quadraId)  quadraIds.add(String(md.quadraId));
+    if (md.quadraId) quadraIds.add(String(md.quadraId));
 
     switch (it.targetType as AuditTargetType | null) {
       case "USUARIO":
@@ -161,7 +158,7 @@ async function enrichNamesForLogs(items: any[]) {
       where: { id: { in: Array.from(esporteIds) } },
       select: { id: true, nome: true },
     });
-    esportesMap = new Map(esportes.map(e => [e.id, { nome: e.nome }]));
+    esportesMap = new Map(esportes.map((e) => [e.id, { nome: e.nome }]));
   }
 
   let quadrasMap = new Map<string, { nome: string; numero: number | null }>();
@@ -170,7 +167,7 @@ async function enrichNamesForLogs(items: any[]) {
       where: { id: { in: Array.from(quadraIds) } },
       select: { id: true, nome: true, numero: true },
     });
-    quadrasMap = new Map(quadras.map(q => [q.id, { nome: q.nome, numero: q.numero ?? null }]));
+    quadrasMap = new Map(quadras.map((q) => [q.id, { nome: q.nome, numero: q.numero ?? null }]));
   }
 
   // 4) Monta resposta enriquecida
@@ -180,30 +177,28 @@ async function enrichNamesForLogs(items: any[]) {
       it.actorName || (it.actorId ? usersMap.get(String(it.actorId)) || null : null);
 
     // Metadata enriquecido (sem expor dados sensíveis)
-    const rawMd = (it.metadata && typeof it.metadata === "object") ? it.metadata : {};
+    const rawMd = it.metadata && typeof it.metadata === "object" ? it.metadata : {};
 
     const mdFromId = rawMd.fromOwnerId ?? rawMd.deDonoId ?? rawMd.transferFromId ?? null;
-    const mdToId   = rawMd.toOwnerId   ?? rawMd.paraDonoId ?? rawMd.transferToId   ?? rawMd.novoUsuarioId ?? null;
+    const mdToId =
+      rawMd.toOwnerId ?? rawMd.paraDonoId ?? rawMd.transferToId ?? rawMd.novoUsuarioId ?? null;
 
     const donoNome =
-      rawMd.donoNome ??
-      (rawMd.donoId ? usersMap.get(String(rawMd.donoId)) || null : null);
+      rawMd.donoNome ?? (rawMd.donoId ? usersMap.get(String(rawMd.donoId)) || null : null);
 
     const transferFromNome =
-      rawMd.transferFromNome ??
-      (mdFromId ? usersMap.get(String(mdFromId)) || null : null);
+      rawMd.transferFromNome ?? (mdFromId ? usersMap.get(String(mdFromId)) || null : null);
 
     const transferToNome =
-      rawMd.transferToNome ??
-      (mdToId ? usersMap.get(String(mdToId)) || null : null);
+      rawMd.transferToNome ?? (mdToId ? usersMap.get(String(mdToId)) || null : null);
 
     const esporteNome =
       rawMd.esporteNome ??
-      (rawMd.esporteId ? (esportesMap.get(String(rawMd.esporteId))?.nome ?? null) : null);
+      (rawMd.esporteId ? esportesMap.get(String(rawMd.esporteId))?.nome ?? null : null);
 
     const quadraInfo = rawMd.quadraId ? quadrasMap.get(String(rawMd.quadraId)) : null;
-    const quadraNome = rawMd.quadraNome ?? (quadraInfo?.nome ?? null);
-    const quadraNumero = rawMd.quadraNumero ?? (quadraInfo?.numero ?? null);
+    const quadraNome = rawMd.quadraNome ?? quadraInfo?.nome ?? null;
+    const quadraNumero = rawMd.quadraNumero ?? quadraInfo?.numero ?? null;
 
     const metadata = {
       ...rawMd,
@@ -267,10 +262,10 @@ async function enrichNamesForLogs(items: any[]) {
     return {
       ...it,
       actorNameResolved,
-      targetNameResolved,   // nome do próprio alvo quando USUARIO
-      targetOwnerId,        // dono do alvo (quando aplicável)
-      targetOwnerName,      // nome do dono (quando aplicável)
-      metadata,             // metadata já enriquecido com nomes
+      targetNameResolved, // nome do próprio alvo quando USUARIO
+      targetOwnerId, // dono do alvo (quando aplicável)
+      targetOwnerName, // nome do dono (quando aplicável)
+      metadata, // metadata já enriquecido com nomes
     };
   });
 }
@@ -283,93 +278,215 @@ async function enrichNamesForLogs(items: any[]) {
  *  - targetId: string
  *  - actorId: string
  *  - from, to: ISO date (YYYY-MM-DD) ou ISO datetime
+ *  - qUser: pesquisa por usuário (nome, email ou id) em QUALQUER papel (ator, alvo, metadata, dono do alvo)
  *  - page: 1..N (default 1)
  *  - size: 1..200 (default 50)
  */
-router.get(
-  "/logs",
-  verificarToken,
-  requireAdmin, // só admin lista
-  async (req, res) => {
-    try {
-      const {
-        event,
-        targetType,
-        targetId,
-        actorId,
-        from,
-        to,
-        page = "1",
-        size = "50",
-      } = req.query as Record<string, string | undefined>;
+router.get("/logs", verificarToken, requireAdmin, async (req, res) => {
+  try {
+    const {
+      event,
+      targetType,
+      targetId,
+      actorId,
+      from,
+      to,
+      qUser, // 👈 NOVO
+      page = "1",
+      size = "50",
+    } = req.query as Record<string, string | undefined>;
 
-      const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
-      const take = Math.min(300, Math.max(1, parseInt(String(size), 10) || 50));
-      const skip = (pageNum - 1) * take;
+    const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
+    const take = Math.min(300, Math.max(1, parseInt(String(size), 10) || 50));
+    const skip = (pageNum - 1) * take;
 
-      const where: any = {};
+    const where: any = {};
 
-      if (event && event.trim()) {
-        where.event = { contains: event.trim(), mode: "insensitive" };
-      }
-      if (actorId) where.actorId = String(actorId);
-      if (targetId) where.targetId = String(targetId);
-
-      if (
-        targetType &&
-        Object.values(AuditTargetType).includes(targetType as AuditTargetType)
-      ) {
-        where.targetType = targetType as AuditTargetType;
-      }
-
-      if (from || to) {
-        where.createdAt = {};
-        if (from) {
-          const d = from.length === 10 ? new Date(`${from}T00:00:00Z`) : new Date(from);
-          where.createdAt.gte = d;
-        }
-        if (to) {
-          const d = to.length === 10 ? new Date(`${to}T23:59:59.999Z`) : new Date(to);
-          where.createdAt.lte = d;
-        }
-      }
-
-      const [rawItems, total] = await Promise.all([
-        prisma.auditLog.findMany({
-          where,
-          orderBy: { createdAt: "desc" },
-          skip,
-          take,
-          select: {
-            id: true,
-            event: true,
-            actorId: true,
-            actorName: true,
-            actorTipo: true,
-            targetType: true,
-            targetId: true,
-            ip: true,
-            userAgent: true,
-            metadata: true,
-            createdAt: true,
-          },
-        }),
-        prisma.auditLog.count({ where }),
-      ]);
-
-      const items = await enrichNamesForLogs(rawItems);
-
-      return res.json({
-        page: pageNum,
-        size: take,
-        total,
-        items,
-      });
-    } catch (e) {
-      console.error("[audit] list error:", e);
-      return res.status(500).json({ erro: "Falha ao listar logs de auditoria." });
+    if (event && event.trim()) {
+      where.event = { contains: event.trim(), mode: "insensitive" };
     }
+    if (actorId) where.actorId = String(actorId);
+    if (targetId) where.targetId = String(targetId);
+
+    if (targetType && Object.values(AuditTargetType).includes(targetType as AuditTargetType)) {
+      where.targetType = targetType as AuditTargetType;
+    }
+
+    if (from || to) {
+      where.createdAt = {};
+      if (from) {
+        const d = from.length === 10 ? new Date(`${from}T00:00:00Z`) : new Date(from);
+        where.createdAt.gte = d;
+      }
+      if (to) {
+        const d = to.length === 10 ? new Date(`${to}T23:59:59.999Z`) : new Date(to);
+        where.createdAt.lte = d;
+      }
+    }
+
+    // ================================
+    // 🔎 NOVO: filtro por usuário (qUser)
+    // ================================
+    if (qUser && qUser.trim().length > 0) {
+      const term = qUser.trim();
+
+      // 1) Resolve possíveis usuários por nome/email/id
+      const matchedUsers = await prisma.usuario.findMany({
+        where: {
+          OR: [
+            { nome: { contains: term, mode: "insensitive" } },
+            { email: { contains: term, mode: "insensitive" } },
+            ...(term.length >= 8 ? [{ id: term }] : []), // se for id
+          ],
+        },
+        select: { id: true },
+        take: 200,
+      });
+      const matchedUserIds = matchedUsers.map((u) => u.id);
+
+      // 2) IDs de alvos pertencentes a esses usuários (para targetId por tipo)
+      let agIds: string[] = [];
+      let agPermIds: string[] = [];
+      let agChurrasIds: string[] = [];
+      let agPermChurrasIds: string[] = [];
+
+      if (matchedUserIds.length > 0) {
+        const [ags, agps, agcs, agpcs] = await Promise.all([
+          prisma.agendamento.findMany({
+            where: { usuarioId: { in: matchedUserIds } },
+            select: { id: true },
+            take: 2000,
+          }),
+          prisma.agendamentoPermanente.findMany({
+            where: { usuarioId: { in: matchedUserIds } },
+            select: { id: true },
+            take: 2000,
+          }),
+          prisma.agendamentoChurrasqueira.findMany({
+            where: { usuarioId: { in: matchedUserIds } },
+            select: { id: true },
+            take: 2000,
+          }),
+          prisma.agendamentoPermanenteChurrasqueira.findMany({
+            where: { usuarioId: { in: matchedUserIds } },
+            select: { id: true },
+            take: 2000,
+          }),
+        ]);
+        agIds = ags.map((x) => x.id);
+        agPermIds = agps.map((x) => x.id);
+        agChurrasIds = agcs.map((x) => x.id);
+        agPermChurrasIds = agpcs.map((x) => x.id);
+      }
+
+      // 3) Monta OR para qualquer “envolvimento” do usuário
+      const userFilterOr: any[] = [];
+
+      // ator por ID
+      if (matchedUserIds.length) {
+        userFilterOr.push({ actorId: { in: matchedUserIds } });
+      }
+
+      // ator por nome (match textual direto)
+      userFilterOr.push({ actorName: { contains: term, mode: "insensitive" } });
+
+      // alvo = usuário
+      if (matchedUserIds.length) {
+        userFilterOr.push({
+          AND: [{ targetType: "USUARIO" }, { targetId: { in: matchedUserIds } }],
+        });
+      }
+
+      // alvo = agendamentos (quadras/churrasqueiras) do usuário
+      if (agIds.length) {
+        userFilterOr.push({
+          AND: [{ targetType: "AGENDAMENTO" }, { targetId: { in: agIds } }],
+        });
+      }
+      if (agPermIds.length) {
+        userFilterOr.push({
+          AND: [{ targetType: "AGENDAMENTO_PERMANENTE" }, { targetId: { in: agPermIds } }],
+        });
+      }
+      if (agChurrasIds.length) {
+        userFilterOr.push({
+          AND: [{ targetType: "AGENDAMENTO_CHURRASQUEIRA" }, { targetId: { in: agChurrasIds } }],
+        });
+      }
+      if (agPermChurrasIds.length) {
+        userFilterOr.push({
+          AND: [
+            { targetType: "AGENDAMENTO_PERMANENTE_CHURRASQUEIRA" },
+            { targetId: { in: agPermChurrasIds } },
+          ],
+        });
+      }
+
+      // metadata: chaves comuns que referenciam usuários
+      const metaUserKeys = [
+        "donoId",
+        "fromOwnerId",
+        "deDonoId",
+        "transferFromId",
+        "toOwnerId",
+        "paraDonoId",
+        "transferToId",
+        "novoUsuarioId",
+        "bloqueadoPorId",
+      ];
+
+      // Prisma (Postgres) -> JSONB contains
+      const mdUserContains = (key: string, id: string) => ({
+        metadata: { contains: { [key]: id } },
+      });
+
+      for (const uid of matchedUserIds) {
+        for (const k of metaUserKeys) {
+          userFilterOr.push(mdUserContains(k, uid));
+        }
+      }
+
+      // injeta no where.OR
+      if (userFilterOr.length > 0) {
+        where.OR = where.OR ? [...where.OR, ...userFilterOr] : userFilterOr;
+      }
+    }
+
+    const [rawItems, total] = await Promise.all([
+      prisma.auditLog.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip,
+        take,
+        select: {
+          id: true,
+          event: true,
+          actorId: true,
+          actorName: true,
+          actorTipo: true,
+          targetType: true,
+          targetId: true,
+          ip: true,
+          userAgent: true,
+          metadata: true,
+          createdAt: true,
+        },
+      }),
+      prisma.auditLog.count({ where }),
+    ]);
+
+    const items = await enrichNamesForLogs(rawItems);
+
+    return res.json({
+      page: pageNum,
+      size: take,
+      total,
+      items,
+    });
+  } catch (e) {
+    console.error("[audit] list error:", e);
+    return res.status(500).json({ erro: "Falha ao listar logs de auditoria." });
   }
-);
+});
 
 export default router;

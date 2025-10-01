@@ -31,15 +31,31 @@ export default function LogsPage() {
   const [goto, setGoto] = useState<string>("");
   const [erro, setErro] = useState<string>("");
 
+  // 🔎 filtro por usuário (nome/email/id) com debounce
+  const [qUser, setQUser] = useState<string>("");
+  const [qUserDebounced, setQUserDebounced] = useState<string>("");
+
   // modal de detalhes
   const [selecionado, setSelecionado] = useState<AuditItem | null>(null);
 
-  async function fetchLogs(p = 1, size = pageSize) {
+  // Debounce de 300ms
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setQUserDebounced(qUser.trim());
+      setPage(1); // ao trocar busca, volta pra página 1
+    }, 300);
+    return () => clearTimeout(t);
+  }, [qUser]);
+
+  async function fetchLogs(p = 1, size = pageSize, q?: string) {
     setLoading(true);
     setErro("");
     try {
+      const params: Record<string, any> = { page: p, size };
+      if (q && q.length > 0) params.qUser = q;
+
       const { data: json } = await axios.get<ApiResponse>(`${API_URL}/audit/logs`, {
-        params: { page: p, size },
+        params,
         withCredentials: true,
       });
       setData(json);
@@ -56,10 +72,11 @@ export default function LogsPage() {
     }
   }
 
+  // carrega quando página/tamanho mudam ou quando o termo debounced muda
   useEffect(() => {
-    fetchLogs(page, pageSize);
+    fetchLogs(page, pageSize, qUserDebounced);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, pageSize]);
+  }, [page, pageSize, qUserDebounced]);
 
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil((data?.total || 0) / (data?.size || pageSize))),
@@ -85,7 +102,41 @@ export default function LogsPage() {
         <h1 className="text-xl font-semibold">Logs de Auditoria</h1>
 
         <div className="flex flex-wrap items-center gap-2">
-          <label className="text-sm text-gray-600">Qntd de Registros por página:</label>
+          {/* 🔎 Campo de busca por usuário */}
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-gray-600 whitespace-nowrap">Usuário:</label>
+            <div className="relative">
+              <input
+                type="text"
+                value={qUser}
+                onChange={(e) => setQUser(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    setQUserDebounced(qUser.trim());
+                    setPage(1);
+                  }
+                }}
+                placeholder="Nome, e-mail ou ID…"
+                className="border rounded px-3 py-1 text-sm w-56 pr-8"
+              />
+              {!!qUser && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQUser("");
+                    setQUserDebounced("");
+                    setPage(1);
+                  }}
+                  title="Limpar"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-800"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          </div>
+
+          <label className="text-sm text-gray-600">Registros/página:</label>
           <select
             className="border rounded px-2 py-1 text-sm"
             value={pageSize}
@@ -102,7 +153,7 @@ export default function LogsPage() {
           </select>
 
           <button
-            onClick={() => fetchLogs(page, pageSize)}
+            onClick={() => fetchLogs(page, pageSize, qUserDebounced)}
             disabled={loading}
             className="px-3 py-1 rounded bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50"
             title="Atualizar"
@@ -110,6 +161,34 @@ export default function LogsPage() {
             {loading ? "Atualizando…" : "Atualizar"}
           </button>
         </div>
+      </div>
+
+      {/* Badges de estado da busca */}
+      <div className="flex flex-wrap items-center gap-2">
+        {qUserDebounced && (
+          <span
+            className="inline-flex items-center gap-2 text-xs px-2 py-1 rounded-full bg-gray-100 border"
+            title="Filtro aplicado"
+          >
+            Filtro usuário: <b>{qUserDebounced}</b>
+            <button
+              onClick={() => {
+                setQUser("");
+                setQUserDebounced("");
+                setPage(1);
+              }}
+              className="text-gray-600 hover:text-gray-900"
+              title="Limpar filtro"
+            >
+              ×
+            </button>
+          </span>
+        )}
+        {data && (
+          <span className="text-xs text-gray-600">
+            Total: <b>{data.total}</b>
+          </span>
+        )}
       </div>
 
       {erro && <div className="text-sm text-red-600">{erro}</div>}
@@ -148,8 +227,14 @@ export default function LogsPage() {
                 <div className="mt-2 text-sm">
                   <div className="text-gray-900 line-clamp-3">{titulo}</div>
                   <div className="mt-1 grid grid-cols-2 gap-2 text-xs text-gray-600">
-                    <div className="truncate"><span className="text-gray-500">Quem: </span>{actorDisplay(it)}</div>
-                    <div className="truncate"><span className="text-gray-500">Dono: </span>{ownerDisplay(it)}</div>
+                    <div className="truncate">
+                      <span className="text-gray-500">Quem: </span>
+                      {actorDisplay(it)}
+                    </div>
+                    <div className="truncate">
+                      <span className="text-gray-500">Dono: </span>
+                      {ownerDisplay(it)}
+                    </div>
                   </div>
                 </div>
               </button>
@@ -158,7 +243,7 @@ export default function LogsPage() {
         </div>
       )}
 
-      {/* ===== Desktop (tabela sem rolagem horizontal; quebra de linha automática) ===== */}
+      {/* ===== Desktop (tabela) ===== */}
       {data && (
         <div className="rounded border relative hidden md:block">
           {loading && (
@@ -199,7 +284,7 @@ export default function LogsPage() {
                   {/* Quando: mantém sem quebra pra data/hora */}
                   <td className="p-2 whitespace-nowrap align-top">{fmtPtBR(it.createdAt)}</td>
 
-                  {/* Demais colunas: permitem quebra e crescer em altura */}
+                  {/* Demais colunas: quebra permitida */}
                   <td className="p-2 whitespace-normal break-words align-top">
                     <div className="font-medium">{eventLabel(it.event)}</div>
                     <div className="text-gray-500">{targetTypeLabel(it.targetType)}</div>
@@ -342,7 +427,9 @@ export default function LogsPage() {
                     {bullets.length > 0 && (
                       <ul className="list-disc list-inside text-sm text-gray-800 space-y-1">
                         {bullets.map((b, i) => (
-                          <li key={i} className="break-words">{b}</li>
+                          <li key={i} className="break-words">
+                            {b}
+                          </li>
                         ))}
                       </ul>
                     )}
