@@ -310,11 +310,12 @@ export default function AdminHome() {
       const res = await axios.get(`${API_URL}/${rota}`, { withCredentials: true });
 
       // aceita esporte como string OU { nome }
+      // prioriza SEMPRE o esporte vindo do agendamento (API)
       const esporteNome =
-        extra?.esporte ??
         (typeof (res.data as any)?.esporte === "string"
           ? (res.data as any).esporte
-          : (res.data as any)?.esporte?.nome ?? null);
+          : (res.data as any)?.esporte?.nome) ??
+        (extra?.esporte ?? null);
 
       setAgendamentoSelecionado({
         dia: data,
