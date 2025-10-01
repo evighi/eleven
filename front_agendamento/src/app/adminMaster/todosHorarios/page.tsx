@@ -257,12 +257,17 @@ export default function TodosHorariosPage() {
 
         const jogadores: JogadorRef[] = Array.isArray(det?.jogadores) ? det.jogadores : [];
 
+        // prioriza SEMPRE o esporte do agendamento (API); usa o do grid só como fallback
+        const esporteNome =
+          (typeof det?.esporte === "string" ? det.esporte : det?.esporte?.nome) ??
+          (esporte ?? null);
+
         setAgendamentoSelecionado({
           dia: data,
           horario,
-          usuario: usuarioValor,         // 👈 mantém string OU objeto
+          usuario: usuarioValor,
           jogadores,
-          esporte,                        // aqui já vem do grid (string)
+          esporte: esporteNome,           // <- agora vem do backend
           tipoReserva,
           agendamentoId,
           tipoLocal: "quadra",
