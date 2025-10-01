@@ -1,7 +1,7 @@
 "use client";
 
 // src/app/adminMaster/logs/page.tsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import Spinner from "@/components/Spinner";
 import {
@@ -14,6 +14,7 @@ import {
   fullSentence,
   type AuditItem,
 } from "../../../utils/auditUi";
+import { useRouter, useSearchParams } from "next/navigation";
 
 type ApiResponse = {
   page: number;
@@ -24,28 +25,76 @@ type ApiResponse = {
 
 export default function LogsPage() {
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(300); // padrão 300
-  const [goto, setGoto] = useState<string>("");
   const [erro, setErro] = useState<string>("");
 
-  // 🔎 filtro por usuário (nome/email/id) com debounce
+  // paginação
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(300);
+  const [goto, setGoto] = useState<string>("");
+
+  // 🔎 filtro por usuário (nome/email/UUID) com debounce + sync URL
   const [qUser, setQUser] = useState<string>("");
   const [qUserDebounced, setQUserDebounced] = useState<string>("");
 
   // modal de detalhes
   const [selecionado, setSelecionado] = useState<AuditItem | null>(null);
 
-  // Debounce de 300ms
+  // ref p/ focar no input (atalho '/')
+  const userInputRef = useRef<HTMLInputElement | null>(null);
+
+  // ===== inicializa estados a partir da URL (deep-link)
+  useEffect(() => {
+    const p = parseInt(searchParams.get("page") || "1", 10);
+    const s = parseInt(searchParams.get("size") || "300", 10);
+    const q = searchParams.get("qUser") || "";
+
+    setPage(Number.isFinite(p) && p > 0 ? p : 1);
+    setPageSize([25, 50, 100, 300].includes(s) ? s : 300);
+    setQUser(q);
+    setQUserDebounced(q.trim());
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // só na carga
+
+  // ===== atualiza URL quando page/pageSize/qUserDebounced mudam
+  useEffect(() => {
+    const usp = new URLSearchParams();
+    usp.set("page", String(page));
+    usp.set("size", String(pageSize));
+    if (qUserDebounced) usp.set("qUser", qUserDebounced);
+    router.replace(`/adminMaster/logs?${usp.toString()}`, { scroll: false });
+  }, [page, pageSize, qUserDebounced, router]);
+
+  // ===== debounce do qUser digitado
   useEffect(() => {
     const t = setTimeout(() => {
       setQUserDebounced(qUser.trim());
-      setPage(1); // ao trocar busca, volta pra página 1
+      setPage(1);
     }, 300);
     return () => clearTimeout(t);
   }, [qUser]);
+
+  // ===== atalho '/' para focar; ESC limpa
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "/") {
+        e.preventDefault();
+        userInputRef.current?.focus();
+      } else if (e.key === "Escape") {
+        if (qUser.length > 0) {
+          setQUser("");
+          setQUserDebounced("");
+          setPage(1);
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [qUser.length]);
 
   async function fetchLogs(p = 1, size = pageSize, q?: string) {
     setLoading(true);
@@ -61,10 +110,7 @@ export default function LogsPage() {
       setData(json);
     } catch (e: any) {
       console.error("Falha ao carregar logs:", e);
-      const msg =
-        e?.response?.data?.erro ||
-        e?.response?.data?.message ||
-        "Erro ao carregar os logs.";
+      const msg = e?.response?.data?.erro || e?.response?.data?.message || "Erro ao carregar os logs.";
       setErro(String(msg));
       setData({ page: 1, size, total: 0, items: [] });
     } finally {
@@ -95,18 +141,32 @@ export default function LogsPage() {
   const fmtPtBR = (iso: string) =>
     new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
 
+  const copiarLink = async () => {
+    const url = typeof window !== "undefined" ? window.location.href : "";
+    try {
+      await navigator.clipboard.writeText(url);
+      alert("Link copiado!");
+    } catch {
+      alert("Não foi possível copiar o link.");
+    }
+  };
+
   return (
     <div className="p-4 space-y-4">
-      {/* Top bar + controles - empilha no mobile */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-xl font-semibold">Logs de Auditoria</h1>
+      {/* Top bar + controles */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-semibold">Logs de Auditoria</h1>
+          <span className="hidden sm:inline text-xs text-gray-500">atalho: pressione “/” para buscar</span>
+        </div>
 
         <div className="flex flex-wrap items-center gap-2">
           {/* 🔎 Campo de busca por usuário */}
           <div className="flex items-center gap-2">
-            <label className="text-sm text-gray-600 whitespace-nowrap">Usuário:</label>
+            <label className="text-sm text-gray-600 whitespace-nowrap">Busca por usuário:</label>
             <div className="relative">
               <input
+                ref={userInputRef}
                 type="text"
                 value={qUser}
                 onChange={(e) => setQUser(e.target.value)}
@@ -116,9 +176,21 @@ export default function LogsPage() {
                     setPage(1);
                   }
                 }}
-                placeholder="Nome, e-mail ou ID…"
-                className="border rounded px-3 py-1 text-sm w-56 pr-8"
+                placeholder="Digite o nome..."
+                className="border rounded px-3 py-1.5 text-sm w-60 pr-10 focus:outline-none focus:ring-2 focus:ring-orange-300"
+                aria-label="Buscar por usuário"
               />
+              {/* ícone/loader à direita dentro do input */}
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
+                {loading ? (
+                  <div className="scale-75 opacity-70">
+                    <Spinner />
+                  </div>
+                ) : (
+                  <span className="text-gray-400 text-xs">↵</span>
+                )}
+              </div>
+
               {!!qUser && (
                 <button
                   type="button"
@@ -126,9 +198,11 @@ export default function LogsPage() {
                     setQUser("");
                     setQUserDebounced("");
                     setPage(1);
+                    userInputRef.current?.focus();
                   }}
                   title="Limpar"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-800"
+                  className="absolute right-6 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-800"
+                  aria-label="Limpar busca"
                 >
                   ×
                 </button>
@@ -138,7 +212,7 @@ export default function LogsPage() {
 
           <label className="text-sm text-gray-600">Registros/página:</label>
           <select
-            className="border rounded px-2 py-1 text-sm"
+            className="border rounded px-2 py-1.5 text-sm"
             value={pageSize}
             onChange={(e) => {
               const sz = parseInt(e.target.value, 10);
@@ -155,22 +229,30 @@ export default function LogsPage() {
           <button
             onClick={() => fetchLogs(page, pageSize, qUserDebounced)}
             disabled={loading}
-            className="px-3 py-1 rounded bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50"
+            className="px-3 py-1.5 rounded bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50"
             title="Atualizar"
           >
             {loading ? "Atualizando…" : "Atualizar"}
           </button>
+
+          <button
+            onClick={copiarLink}
+            className="px-3 py-1.5 rounded border hover:bg-gray-50"
+            title="Copiar link com filtros"
+          >
+            Copiar link
+          </button>
         </div>
       </div>
 
-      {/* Badges de estado da busca */}
+      {/* Badges/estado da busca */}
       <div className="flex flex-wrap items-center gap-2">
         {qUserDebounced && (
           <span
             className="inline-flex items-center gap-2 text-xs px-2 py-1 rounded-full bg-gray-100 border"
             title="Filtro aplicado"
           >
-            Filtro usuário: <b>{qUserDebounced}</b>
+            Filtro usuário: <b className="max-w-[220px] truncate">{qUserDebounced}</b>
             <button
               onClick={() => {
                 setQUser("");
@@ -281,10 +363,7 @@ export default function LogsPage() {
                   onClick={() => setSelecionado(it)}
                   title="Ver detalhes"
                 >
-                  {/* Quando: mantém sem quebra pra data/hora */}
                   <td className="p-2 whitespace-nowrap align-top">{fmtPtBR(it.createdAt)}</td>
-
-                  {/* Demais colunas: quebra permitida */}
                   <td className="p-2 whitespace-normal break-words align-top">
                     <div className="font-medium">{eventLabel(it.event)}</div>
                     <div className="text-gray-500">{targetTypeLabel(it.targetType)}</div>
@@ -308,7 +387,7 @@ export default function LogsPage() {
         </div>
       )}
 
-      {/* Paginação responsiva */}
+      {/* Paginação */}
       {data && data.total > 0 && (
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
           <div className="flex items-center gap-2">
