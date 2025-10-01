@@ -7,24 +7,10 @@ import { requireAdmin } from "../middleware/acl";
 const prisma = new PrismaClient();
 const router = Router();
 
-/**
- * Faz o enrichment dos logs:
- * - Resolve actorName se não estiver salvo (via actorId -> Usuario.nome)
- * - Preenche metadata.donoNome quando houver metadata.donoId
- * - Resolve transferFromNome/transferToNome (quando houver fromOwnerId/toOwnerId no metadata)
- * - Resolve esporteNome/quadraNome/quadraNumero (quando houver esporteId/quadraId no metadata)
- * - Para targetType:
- *    - USUARIO:   targetNameResolved (nome do próprio usuário)
- *    - AGENDAMENTO: targetOwnerId/targetOwnerName (dono do agendamento)
- *    - AGENDAMENTO_PERMANENTE: targetOwnerId/targetOwnerName
- *    - AGENDAMENTO_CHURRASQUEIRA: targetOwnerId/targetOwnerName
- *    - AGENDAMENTO_PERMANENTE_CHURRASQUEIRA: targetOwnerId/targetOwnerName
- *    - QUADRA:  targetOwnerId/targetOwnerName (bloqueadoPor)
- */
+/** ===== Enrichment (mesmo do seu, só mantido aqui) ===== */
 async function enrichNamesForLogs(items: any[]) {
   if (!items.length) return items;
 
-  // Coleta IDs relevantes para consultas em lote
   const userIds = new Set<string>();
 
   const agendamentoIds: string[] = [];
@@ -33,7 +19,6 @@ async function enrichNamesForLogs(items: any[]) {
   const agPermChurrasIds: string[] = [];
   const bloqueioIds: string[] = [];
 
-  // NOVO: coletar também IDs do metadata para nomes
   const esporteIds = new Set<string>();
   const quadraIds = new Set<string>();
 
@@ -41,7 +26,6 @@ async function enrichNamesForLogs(items: any[]) {
     if (it.actorId) userIds.add(String(it.actorId));
     if (it?.metadata?.donoId) userIds.add(String(it.metadata.donoId));
 
-    // Transferências podem vir com chaves diferentes. Aceitamos variações.
     const md = it?.metadata && typeof it.metadata === "object" ? it.metadata : {};
     const fromId = md.fromOwnerId ?? md.deDonoId ?? md.transferFromId ?? null;
     const toId = md.toOwnerId ?? md.paraDonoId ?? md.transferToId ?? md.novoUsuarioId ?? null;
@@ -75,7 +59,7 @@ async function enrichNamesForLogs(items: any[]) {
     }
   }
 
-  // 1) Usuários: id -> nome
+  // 1) Usuários
   let usersMap = new Map<string, string>();
   if (userIds.size > 0) {
     const users = await prisma.usuario.findMany({
@@ -85,7 +69,7 @@ async function enrichNamesForLogs(items: any[]) {
     usersMap = new Map(users.map((u) => [u.id, u.nome]));
   }
 
-  // 2) Donos dos alvos (para targetOwnerName)
+  // 2) Donos dos alvos
   const agOwnerById = new Map<string, { id: string; nome: string | null }>();
   if (agendamentoIds.length) {
     const rows = await prisma.agendamento.findMany({
@@ -151,7 +135,7 @@ async function enrichNamesForLogs(items: any[]) {
     }
   }
 
-  // 3) NOVO — mapas de Esporte e Quadra (para nomes)
+  // 3) Esportes e Quadras
   let esportesMap = new Map<string, { nome: string }>();
   if (esporteIds.size > 0) {
     const esportes = await prisma.esporte.findMany({
@@ -170,25 +154,19 @@ async function enrichNamesForLogs(items: any[]) {
     quadrasMap = new Map(quadras.map((q) => [q.id, { nome: q.nome, numero: q.numero ?? null }]));
   }
 
-  // 4) Monta resposta enriquecida
   return items.map((it) => {
-    // Nome do ator
     const actorNameResolved =
       it.actorName || (it.actorId ? usersMap.get(String(it.actorId)) || null : null);
 
-    // Metadata enriquecido (sem expor dados sensíveis)
     const rawMd = it.metadata && typeof it.metadata === "object" ? it.metadata : {};
 
     const mdFromId = rawMd.fromOwnerId ?? rawMd.deDonoId ?? rawMd.transferFromId ?? null;
     const mdToId =
       rawMd.toOwnerId ?? rawMd.paraDonoId ?? rawMd.transferToId ?? rawMd.novoUsuarioId ?? null;
 
-    const donoNome =
-      rawMd.donoNome ?? (rawMd.donoId ? usersMap.get(String(rawMd.donoId)) || null : null);
-
+    const donoNome = rawMd.donoNome ?? (rawMd.donoId ? usersMap.get(String(rawMd.donoId)) || null : null);
     const transferFromNome =
       rawMd.transferFromNome ?? (mdFromId ? usersMap.get(String(mdFromId)) || null : null);
-
     const transferToNome =
       rawMd.transferToNome ?? (mdToId ? usersMap.get(String(mdToId)) || null : null);
 
@@ -197,20 +175,11 @@ async function enrichNamesForLogs(items: any[]) {
       (rawMd.esporteId ? esportesMap.get(String(rawMd.esporteId))?.nome ?? null : null);
 
     const quadraInfo = rawMd.quadraId ? quadrasMap.get(String(rawMd.quadraId)) : null;
-    const quadraNome = rawMd.quadraNome ?? quadraInfo?.nome ?? null;
-    const quadraNumero = rawMd.quadraNumero ?? quadraInfo?.numero ?? null;
+    const quadraNome = rawMd.quadraNome ?? (quadraInfo?.nome ?? null);
+    const quadraNumero = rawMd.quadraNumero ?? (quadraInfo?.numero ?? null);
 
-    const metadata = {
-      ...rawMd,
-      donoNome,
-      transferFromNome,
-      transferToNome,
-      esporteNome,
-      quadraNome,
-      quadraNumero,
-    };
+    const metadata = { ...rawMd, donoNome, transferFromNome, transferToNome, esporteNome, quadraNome, quadraNumero };
 
-    // target (dono do alvo, quando fizer sentido)
     let targetNameResolved: string | null = null;
     let targetOwnerId: string | null = null;
     let targetOwnerName: string | null = null;
@@ -219,42 +188,36 @@ async function enrichNamesForLogs(items: any[]) {
       case "USUARIO":
         if (it.targetId) targetNameResolved = usersMap.get(String(it.targetId)) || null;
         break;
-
       case "AGENDAMENTO": {
         const info = it.targetId ? agOwnerById.get(String(it.targetId)) : undefined;
         targetOwnerId = info?.id ?? null;
         targetOwnerName = info?.nome ?? null;
         break;
       }
-
       case "AGENDAMENTO_PERMANENTE": {
         const info = it.targetId ? agPermOwnerById.get(String(it.targetId)) : undefined;
         targetOwnerId = info?.id ?? null;
         targetOwnerName = info?.nome ?? null;
         break;
       }
-
       case "AGENDAMENTO_CHURRASQUEIRA": {
         const info = it.targetId ? agChurrasOwnerById.get(String(it.targetId)) : undefined;
         targetOwnerId = info?.id ?? null;
         targetOwnerName = info?.nome ?? null;
         break;
       }
-
       case "AGENDAMENTO_PERMANENTE_CHURRASQUEIRA": {
         const info = it.targetId ? agPermChurrasOwnerById.get(String(it.targetId)) : undefined;
         targetOwnerId = info?.id ?? null;
         targetOwnerName = info?.nome ?? null;
         break;
       }
-
       case "QUADRA": {
         const info = it.targetId ? bloqueioOwnerById.get(String(it.targetId)) : undefined;
         targetOwnerId = info?.id ?? null;
         targetOwnerName = info?.nome ?? null;
         break;
       }
-
       default:
         break;
     }
@@ -262,25 +225,26 @@ async function enrichNamesForLogs(items: any[]) {
     return {
       ...it,
       actorNameResolved,
-      targetNameResolved, // nome do próprio alvo quando USUARIO
-      targetOwnerId, // dono do alvo (quando aplicável)
-      targetOwnerName, // nome do dono (quando aplicável)
-      metadata, // metadata já enriquecido com nomes
+      targetNameResolved,
+      targetOwnerId,
+      targetOwnerName,
+      metadata,
     };
   });
 }
 
+/** util: detecta se string parece UUID */
+function looksLikeUUID(s: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
+}
+
 /**
  * GET /audit/logs
- * Admin-only. Filtros:
- *  - event: string (match parcial, case-insensitive)
- *  - targetType: AuditTargetType (USUARIO, AGENDAMENTO, ...)
- *  - targetId: string
- *  - actorId: string
- *  - from, to: ISO date (YYYY-MM-DD) ou ISO datetime
- *  - qUser: pesquisa por usuário (nome, email ou id) em QUALQUER papel (ator, alvo, metadata, dono do alvo)
- *  - page: 1..N (default 1)
- *  - size: 1..200 (default 50)
+ * Filtros:
+ *  - event, targetType, targetId, actorId
+ *  - from, to
+ *  - qUser  (nome/email/celular OU UUID)
+ *  - page, size
  */
 router.get("/logs", verificarToken, requireAdmin, async (req, res) => {
   try {
@@ -291,9 +255,9 @@ router.get("/logs", verificarToken, requireAdmin, async (req, res) => {
       actorId,
       from,
       to,
-      qUser, // 👈 NOVO
       page = "1",
       size = "50",
+      qUser,
     } = req.query as Record<string, string | undefined>;
 
     const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
@@ -324,132 +288,66 @@ router.get("/logs", verificarToken, requireAdmin, async (req, res) => {
       }
     }
 
-    // ================================
-    // 🔎 NOVO: filtro por usuário (qUser)
-    // ================================
+    // ====== qUser: busca total (ator, alvo e metadata por JSON path) ======
     if (qUser && qUser.trim().length > 0) {
-      const term = qUser.trim();
+      const q = qUser.trim();
 
-      // 1) Resolve possíveis usuários por nome/email/id
-      const matchedUsers = await prisma.usuario.findMany({
-        where: {
-          OR: [
-            { nome: { contains: term, mode: "insensitive" } },
-            { email: { contains: term, mode: "insensitive" } },
-            ...(term.length >= 8 ? [{ id: term }] : []), // se for id
-          ],
-        },
-        select: { id: true },
-        take: 200,
-      });
-      const matchedUserIds = matchedUsers.map((u) => u.id);
-
-      // 2) IDs de alvos pertencentes a esses usuários (para targetId por tipo)
-      let agIds: string[] = [];
-      let agPermIds: string[] = [];
-      let agChurrasIds: string[] = [];
-      let agPermChurrasIds: string[] = [];
-
-      if (matchedUserIds.length > 0) {
-        const [ags, agps, agcs, agpcs] = await Promise.all([
-          prisma.agendamento.findMany({
-            where: { usuarioId: { in: matchedUserIds } },
-            select: { id: true },
-            take: 2000,
-          }),
-          prisma.agendamentoPermanente.findMany({
-            where: { usuarioId: { in: matchedUserIds } },
-            select: { id: true },
-            take: 2000,
-          }),
-          prisma.agendamentoChurrasqueira.findMany({
-            where: { usuarioId: { in: matchedUserIds } },
-            select: { id: true },
-            take: 2000,
-          }),
-          prisma.agendamentoPermanenteChurrasqueira.findMany({
-            where: { usuarioId: { in: matchedUserIds } },
-            select: { id: true },
-            take: 2000,
-          }),
-        ]);
-        agIds = ags.map((x) => x.id);
-        agPermIds = agps.map((x) => x.id);
-        agChurrasIds = agcs.map((x) => x.id);
-        agPermChurrasIds = agpcs.map((x) => x.id);
-      }
-
-      // 3) Monta OR para qualquer “envolvimento” do usuário
-      const userFilterOr: any[] = [];
-
-      // ator por ID
-      if (matchedUserIds.length) {
-        userFilterOr.push({ actorId: { in: matchedUserIds } });
-      }
-
-      // ator por nome (match textual direto)
-      userFilterOr.push({ actorName: { contains: term, mode: "insensitive" } });
-
-      // alvo = usuário
-      if (matchedUserIds.length) {
-        userFilterOr.push({
-          AND: [{ targetType: "USUARIO" }, { targetId: { in: matchedUserIds } }],
+      // Se o termo já for UUID, use direto; senão resolva por nome/email/celular
+      let ids: string[] = [];
+      if (looksLikeUUID(q)) {
+        ids = [q];
+      } else {
+        const found = await prisma.usuario.findMany({
+          where: {
+            OR: [
+              { nome: { contains: q, mode: "insensitive" } },
+              { email: { contains: q, mode: "insensitive" } },
+              { celular: { contains: q, mode: "insensitive" } },
+            ],
+          },
+          select: { id: true },
+          take: 2000,
         });
+        ids = found.map((u) => u.id);
       }
 
-      // alvo = agendamentos (quadras/churrasqueiras) do usuário
-      if (agIds.length) {
-        userFilterOr.push({
-          AND: [{ targetType: "AGENDAMENTO" }, { targetId: { in: agIds } }],
-        });
-      }
-      if (agPermIds.length) {
-        userFilterOr.push({
-          AND: [{ targetType: "AGENDAMENTO_PERMANENTE" }, { targetId: { in: agPermIds } }],
-        });
-      }
-      if (agChurrasIds.length) {
-        userFilterOr.push({
-          AND: [{ targetType: "AGENDAMENTO_CHURRASQUEIRA" }, { targetId: { in: agChurrasIds } }],
-        });
-      }
-      if (agPermChurrasIds.length) {
-        userFilterOr.push({
-          AND: [
-            { targetType: "AGENDAMENTO_PERMANENTE_CHURRASQUEIRA" },
-            { targetId: { in: agPermChurrasIds } },
-          ],
-        });
-      }
+      const orParts: any[] = [];
 
-      // metadata: chaves comuns que referenciam usuários
-      const metaUserKeys = [
-        "donoId",
-        "fromOwnerId",
-        "deDonoId",
-        "transferFromId",
-        "toOwnerId",
-        "paraDonoId",
-        "transferToId",
-        "novoUsuarioId",
-        "bloqueadoPorId",
-      ];
+      // 1) Ator por id
+      if (ids.length > 0) {
+        orParts.push({ actorId: { in: ids } });
 
-      // Prisma (Postgres) -> JSONB contains
-      const mdUserContains = (key: string, id: string) => ({
-        metadata: { contains: { [key]: id } },
-      });
+        // 2) Alvo do tipo USUARIO por id
+        orParts.push({
+          AND: [{ targetType: "USUARIO" as AuditTargetType }, { targetId: { in: ids } }],
+        });
 
-      for (const uid of matchedUserIds) {
-        for (const k of metaUserKeys) {
-          userFilterOr.push(mdUserContains(k, uid));
+        // 3) Participações no METADATA (JSON path) — ids exatos
+        const idJsonPaths = [
+          ["donoId"],
+          ["fromOwnerId"],
+          ["deDonoId"],
+          ["transferFromId"],
+          ["toOwnerId"],
+          ["paraDonoId"],
+          ["transferToId"],
+          ["novoUsuarioId"],
+        ] as const;
+
+        for (const uid of ids) {
+          for (const p of idJsonPaths) {
+            orParts.push({ metadata: { path: p as any, equals: uid } });
+          }
+          // Arrays usuais (se existirem na sua modelagem de metadata)
+          orParts.push({ metadata: { path: ["jogadoresIds"], array_contains: uid } });
+          orParts.push({ metadata: { path: ["usuariosIds"], array_contains: uid } });
         }
       }
 
-      // injeta no where.OR
-      if (userFilterOr.length > 0) {
-        where.OR = where.OR ? [...where.OR, ...userFilterOr] : userFilterOr;
-      }
+      // 4) Fallback por nome salvo no log (compatibilidade)
+      orParts.push({ actorName: { contains: q, mode: "insensitive" } });
+
+      where.OR = orParts;
     }
 
     const [rawItems, total] = await Promise.all([
@@ -477,12 +375,7 @@ router.get("/logs", verificarToken, requireAdmin, async (req, res) => {
 
     const items = await enrichNamesForLogs(rawItems);
 
-    return res.json({
-      page: pageNum,
-      size: take,
-      total,
-      items,
-    });
+    return res.json({ page: pageNum, size: take, total, items });
   } catch (e) {
     console.error("[audit] list error:", e);
     return res.status(500).json({ erro: "Falha ao listar logs de auditoria." });
