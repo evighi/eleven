@@ -719,10 +719,10 @@ export default function AdminHome() {
                         }
                       }}
                       className={`${clsBase} ${q.bloqueada
-                          ? "border-2 border-red-500 bg-red-50"
-                          : q.disponivel
-                            ? "border-2 border-green-500 bg-green-50"
-                            : "border-2 border-gray-500 bg-gray-50"
+                        ? "border-2 border-red-500 bg-red-50"
+                        : q.disponivel
+                          ? "border-2 border-green-500 bg-green-50"
+                          : "border-2 border-gray-500 bg-gray-50"
                         }`}
                     >
                       <p className="font-medium">{q.nome}</p>
@@ -780,8 +780,8 @@ export default function AdminHome() {
                       }
                     }}
                     className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${disponivel
-                        ? "border-2 border-green-500 bg-green-50"
-                        : "border-2 border-gray-500 bg-gray-50"
+                      ? "border-2 border-green-500 bg-green-50"
+                      : "border-2 border-gray-500 bg-gray-50"
                       }`}
                   >
                     <p className="font-medium">{c.nome}</p>
@@ -830,8 +830,8 @@ export default function AdminHome() {
                       }
                     }}
                     className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${disponivel
-                        ? "border-2 border-green-500 bg-green-50"
-                        : "border-2 border-gray-500 bg-gray-50"
+                      ? "border-2 border-green-500 bg-green-50"
+                      : "border-2 border-gray-500 bg-gray-50"
                       }`}
                   >
                     <p className="font-medium">{c.nome}</p>
@@ -872,18 +872,13 @@ export default function AdminHome() {
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg shadow-lg w-80 relative max-h-[90vh] overflow-auto">
             <h2 className="text-lg font-semibold mb-4">Detalhes do Agendamento</h2>
-            <p>
-              <strong>Dia:</strong> {agendamentoSelecionado.dia}
-            </p>
+
+            <p><strong>Dia:</strong> {agendamentoSelecionado.dia}</p>
             {agendamentoSelecionado.horario && (
-              <p>
-                <strong>Horário:</strong> {agendamentoSelecionado.horario}
-              </p>
+              <p><strong>Horário:</strong> {agendamentoSelecionado.horario}</p>
             )}
             {agendamentoSelecionado.turno && (
-              <p>
-                <strong>Turno:</strong> {agendamentoSelecionado.turno}
-              </p>
+              <p><strong>Turno:</strong> {agendamentoSelecionado.turno}</p>
             )}
             <p>
               <strong>Usuário:</strong>{" "}
@@ -894,30 +889,15 @@ export default function AdminHome() {
                   .join(" — ")}
             </p>
             {agendamentoSelecionado.esporte && (
-              <p>
-                <strong>Esporte:</strong> {agendamentoSelecionado.esporte}
-              </p>
+              <p><strong>Esporte:</strong> {agendamentoSelecionado.esporte}</p>
             )}
-            <p>
-              <strong>Tipo:</strong> {agendamentoSelecionado.tipoReserva}
-            </p>
+            <p><strong>Tipo:</strong> {agendamentoSelecionado.tipoReserva}</p>
 
-            {/* Jogadores (comum/quadra) */}
+            {/* Jogadores (comum/quadra) — sem o botão "+" */}
             {agendamentoSelecionado.tipoReserva === "comum" &&
               agendamentoSelecionado.tipoLocal === "quadra" && (
                 <div className="mt-2">
-                  <div className="flex items-center justify-between">
-                    <strong>Jogadores:</strong>
-                    <button
-                      type="button"
-                      onClick={abrirModalAdicionarJogadores}
-                      className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-emerald-600 text-white hover:bg-emerald-700"
-                      title="Adicionar jogadores"
-                    >
-                      +
-                    </button>
-                  </div>
-
+                  <strong>Jogadores:</strong>
                   <ul className="list-disc list-inside text-sm text-gray-700 mt-2">
                     {agendamentoSelecionado.jogadores.length > 0 ? (
                       agendamentoSelecionado.jogadores.map((j, idx) => (
@@ -930,12 +910,24 @@ export default function AdminHome() {
                 </div>
               )}
 
+            {/* BOTÕES DE AÇÃO */}
+            {/* Adicionar Jogadores (somente comum/quadra) */}
+            {agendamentoSelecionado.tipoReserva === "comum" &&
+              agendamentoSelecionado.tipoLocal === "quadra" && (
+                <button
+                  onClick={abrirModalAdicionarJogadores}
+                  className="mt-4 w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 px-4 rounded cursor-pointer"
+                >
+                  Adicionar jogadores
+                </button>
+              )}
+
             {/* Transferir (quadra: comum e permanente) */}
             {agendamentoSelecionado.tipoLocal === "quadra" && (
               <button
                 onClick={abrirModalTransferir}
                 disabled={loadingTransferencia}
-                className="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded cursor-pointer"
+                className="mt-3 w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded cursor-pointer disabled:opacity-60"
               >
                 {loadingTransferencia ? "Transferindo..." : "Transferir Agendamento"}
               </button>
@@ -943,19 +935,19 @@ export default function AdminHome() {
 
             <button
               onClick={abrirFluxoCancelamento}
-              className="mt-4 w-full bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded cursor-pointer"
+              className="mt-3 w-full bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded cursor-pointer"
             >
               Cancelar Agendamento
             </button>
 
             <button
               onClick={() => setAgendamentoSelecionado(null)}
-              className="mt-2 w-full bg-orange-600 hover:bg-orange-700 text-white py-2 px-4 rounded cursor-pointer"
+              className="mt-3 w-full bg-orange-600 hover:bg-orange-700 text-white py-2 px-4 rounded cursor-pointer"
             >
               Fechar
             </button>
 
-            {/* Fluxo antigo: confirmação simples */}
+            {/* Fluxos/overlays existentes permanecem iguais… */}
             {confirmarCancelamento && (
               <div className="absolute inset-0 bg-black bg-opacity-80 flex flex-col items-center justify-center p-4 rounded-xl border shadow-lg z-50">
                 <p className="text-center text-white mb-4">
@@ -979,7 +971,6 @@ export default function AdminHome() {
               </div>
             )}
 
-            {/* Opções para AGENDAMENTO PERMANENTE */}
             {mostrarOpcoesCancelamento && (
               <div className="absolute inset-0 bg-black bg-opacity-80 flex flex-col items-center justify-center p-4 rounded-xl border shadow-lg z-50">
                 <div className="bg-white rounded-lg p-4 w-full">
@@ -1013,7 +1004,6 @@ export default function AdminHome() {
               </div>
             )}
 
-            {/* Confirmação "para sempre" */}
             {confirmarCancelamentoForever && (
               <div className="absolute inset-0 bg-black bg-opacity-80 flex flex-col items-center justify-center p-4 rounded-xl border shadow-lg z-50">
                 <p className="text-center text-white mb-4">
@@ -1059,8 +1049,8 @@ export default function AdminHome() {
                             type="button"
                             onClick={() => setDataExcecaoSelecionada(d)}
                             className={`px-3 py-2 rounded border text-sm ${ativo
-                                ? "border-indigo-600 bg-indigo-50 text-indigo-700"
-                                : "border-gray-300 hover:bg-gray-50"
+                              ? "border-indigo-600 bg-indigo-50 text-indigo-700"
+                              : "border-gray-300 hover:bg-gray-50"
                               }`}
                           >
                             {toDdMm(d)}
