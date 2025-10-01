@@ -157,7 +157,6 @@ export default function LogsPage() {
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-semibold">Logs de Auditoria</h1>
-          <span className="hidden sm:inline text-xs text-gray-500">atalho: pressione “/” para buscar</span>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -233,14 +232,6 @@ export default function LogsPage() {
             title="Atualizar"
           >
             {loading ? "Atualizando…" : "Atualizar"}
-          </button>
-
-          <button
-            onClick={copiarLink}
-            className="px-3 py-1.5 rounded border hover:bg-gray-50"
-            title="Copiar link com filtros"
-          >
-            Copiar link
           </button>
         </div>
       </div>
