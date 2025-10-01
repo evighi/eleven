@@ -163,7 +163,7 @@ export default function LogsPage() {
         <div className="flex flex-wrap items-center gap-2">
           {/* 🔎 Campo de busca por usuário */}
           <div className="flex items-center gap-2">
-            <label className="text-sm text-gray-600 whitespace-nowrap">Usuário:</label>
+            <label className="text-sm text-gray-600 whitespace-nowrap">Busca por usuário:</label>
             <div className="relative">
               <input
                 ref={userInputRef}
@@ -176,7 +176,7 @@ export default function LogsPage() {
                     setPage(1);
                   }
                 }}
-                placeholder="Nome, e-mail ou ID…"
+                placeholder="Digite o nome..."
                 className="border rounded px-3 py-1.5 text-sm w-60 pr-10 focus:outline-none focus:ring-2 focus:ring-orange-300"
                 aria-label="Buscar por usuário"
               />
