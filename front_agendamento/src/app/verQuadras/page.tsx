@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import axios from "axios";
@@ -22,16 +22,16 @@ type AgendamentoAPI = {
   // comuns
   data?: string;
 
-  // permanentes (back já considera exceções e horário)
+  // permanentes
   diaSemana?: "DOMINGO" | "SEGUNDA" | "TERCA" | "QUARTA" | "QUINTA" | "SEXTA" | "SABADO";
   proximaData?: string | null;
 
-  // 🔴 NOVOS (para destacar bloqueio na próxima ocorrência do permanente)
+  // bloqueio (permanente)
   proximaDataBloqueada?: boolean;
-  proximaDataBloqueioInicio?: string; // "HH:MM" (opcional)
-  proximaDataBloqueioFim?: string;    // "HH:MM" (opcional)
+  proximaDataBloqueioInicio?: string;
+  proximaDataBloqueioFim?: string;
 
-  // metadados (compat + novos)
+  // metadados
   nome?: string;
   local?: string;
   logoUrl?: string | null;
@@ -40,7 +40,7 @@ type AgendamentoAPI = {
   quadraLogoUrl?: string | null;
   esporteNome?: string;
 
-  // 👇 novos campos do back
+  // novos campos
   donoId?: string;
   donoNome?: string;
   euSouDono?: boolean;
@@ -62,7 +62,7 @@ type AgendamentoCard = {
   donoNome?: string | null;
   euSouDono?: boolean;
 
-  // 🔴 bloqueio (apenas faz sentido para permanentes)
+  // bloqueio (permanentes)
   bloqueado?: boolean;
   bloqueioInicio?: string | null;
   bloqueioFim?: string | null;
@@ -90,6 +90,9 @@ export default function VerQuadrasPage() {
   const [cancelSending, setCancelSending] = useState(false);
   const [cancelError, setCancelError] = useState<string>("");
 
+  // ✅ novo: dados do sucesso (mostrados na tela de sucesso)
+  const [cancelSuccess, setCancelSuccess] = useState<AgendamentoCard | null>(null);
+
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
   const hojeISO = useMemo(() => isoLocalDate(new Date(), "America/Sao_Paulo"), []);
 
@@ -111,7 +114,6 @@ export default function VerQuadrasPage() {
   const prettyDiaSemana = (d?: AgendamentoAPI["diaSemana"]) =>
     d ? d.charAt(0) + d.slice(1).toLowerCase() : "";
 
-  // Fallback local p/ permanentes quando o back NÃO mandar `proximaData`
   function proximaDataLocalQuandoFaltar(
     diaSemana?: AgendamentoAPI["diaSemana"],
     horario?: string
@@ -156,7 +158,6 @@ export default function VerQuadrasPage() {
           ? paraDDMM(isoEfetiva)
           : (raw.tipoReserva === "PERMANENTE" ? prettyDiaSemana(raw.diaSemana) : paraDDMM(raw.data));
 
-      // 🔴 status de bloqueio para permanentes
       const bloqueado = raw.tipoReserva === "PERMANENTE" ? !!raw.proximaDataBloqueada : false;
       const bloqueioInicio = raw.proximaDataBloqueioInicio ?? null;
       const bloqueioFim = raw.proximaDataBloqueioFim ?? null;
@@ -258,33 +259,80 @@ export default function VerQuadrasPage() {
     setCancelError("");
   };
 
+  // 🔧 helper: tenta montar um "card" a partir do retorno do back; se nada, usa fallback
+  const montarCardDeRetorno = (resp: any, fallback: AgendamentoCard): AgendamentoCard => {
+    try {
+      // aceito tanto resposta direta quanto {agendamento: {...}}
+      const raw: Partial<AgendamentoAPI> = resp?.agendamento ?? resp ?? {};
+      // preencho com fallback para campos ausentes
+      const merged: AgendamentoAPI = {
+        id: String(raw.id ?? fallback.id),
+        horario: String(raw.horario ?? fallback.hora),
+        tipoReserva: (raw.tipoReserva as TipoReserva) ?? fallback.tipo,
+        data: (raw.data as string) ?? fallback._rawDataISO ?? undefined,
+        proximaData: (raw.proximaData as string | null) ?? (fallback._rawDataISO ?? null),
+        diaSemana: (raw.diaSemana as any) ?? undefined,
+        nome: raw.nome ?? undefined,
+        esporteNome: raw.esporteNome ?? fallback.esporte,
+        quadraNome: raw.quadraNome ?? fallback.quadraNome,
+        quadraNumero: (raw.quadraNumero as any) ?? fallback.numero,
+        quadraLogoUrl: (raw.quadraLogoUrl as any) ?? fallback.logoUrl,
+        logoUrl: raw.logoUrl ?? undefined,
+        donoNome: raw.donoNome ?? fallback.donoNome,
+        euSouDono: raw.euSouDono ?? fallback.euSouDono,
+        proximaDataBloqueada: raw.proximaDataBloqueada ?? undefined,
+        proximaDataBloqueioInicio: raw.proximaDataBloqueioInicio ?? undefined,
+        proximaDataBloqueioFim: raw.proximaDataBloqueioFim ?? undefined,
+        local: raw.local ?? undefined,
+        status: (raw.status as Status) ?? undefined,
+      } as any;
+
+      return normalizar(merged);
+    } catch {
+      return fallback;
+    }
+  };
+
   const confirmarCancelamento = async () => {
     if (!cancelTarget) return;
     setCancelError("");
     setCancelSending(true);
 
     try {
+      let respData: any | null = null;
+
       if (cancelTarget.tipo === "COMUM") {
-        await axios.post(
+        const { data: resp } = await axios.post(
           `${API_URL}/agendamentos/cancelar/${cancelTarget.id}`,
           {},
           { withCredentials: true }
         );
+        respData = resp ?? null;
+
+        // tira da lista
         setAgendamentos((cur) => cur.filter((x) => x.id !== cancelTarget.id));
       } else {
+        // permanente → cancelar apenas a PRÓXIMA ocorrência
         const url1 = `${API_URL}/agendamentos-permanentes/${cancelTarget.id}/cancelar-proxima`;
         const url2 = `${API_URL}/agendamentosPermanentes/${cancelTarget.id}/cancelar-proxima`;
         try {
-          await axios.post(url1, {}, { withCredentials: true });
+          const { data: resp } = await axios.post(url1, {}, { withCredentials: true });
+          respData = resp ?? null;
         } catch (e1: any) {
           if (e1?.response?.status === 404) {
-            await axios.post(url2, {}, { withCredentials: true });
+            const { data: resp } = await axios.post(url2, {}, { withCredentials: true });
+            respData = resp ?? null;
           } else {
             throw e1;
           }
         }
         await carregarLista();
       }
+
+      // guarda o "card" para a tela de sucesso (usa resp do back se existir; senão, fallback)
+      const card = montarCardDeRetorno(respData, cancelTarget);
+      setCancelSuccess(card);
+
       fecharModalCancelar();
       setView("success");
       return;
@@ -305,6 +353,59 @@ export default function VerQuadrasPage() {
       </main>
     );
   }
+
+  const SuccessCard = ({ a }: { a: AgendamentoCard }) => {
+    const isPermanente = a.tipo === "PERMANENTE";
+    return (
+      <div className="w-full rounded-xl bg-[#f7f7f7] pt-3 pb-2 px-3 shadow-sm border border-gray-200">
+        <div className="flex items-center gap-3">
+          <div className="shrink-0 w-28 h-12 sm:w-36 sm:h-14 flex items-center justify-center overflow-hidden">
+            <AppImage
+              src={a.logoUrl ?? undefined}
+              alt={a.quadraNome}
+              width={320}
+              height={128}
+              className="w-full h-full object-contain select-none"
+              legacyDir="quadras"
+              fallbackSrc="/quadra.png"
+              forceUnoptimized
+            />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-semibold text-gray-800 truncate">{a.quadraNome}</p>
+            <p className="text-[12px] text-gray-600 leading-tight flex items-center gap-2">
+              {a.esporte}
+              <span
+                className={`text-[10px] px-2 py-[2px] rounded-full ${
+                  isPermanente ? "bg-gray-200 text-gray-800" : "bg-orange-100 text-orange-600"
+                }`}
+              >
+                {isPermanente ? "Permanente" : "Comum"}
+              </span>
+            </p>
+            <p className="text-[12px] text-gray-500">
+              {/^\d{2}\/\d{2}$/.test(a.dia)
+                ? <>Dia {a.dia} às {a.hora}</>
+                : <>Toda {a.dia} às {a.hora}</>}
+              {a.numero ? <> · Quadra {a.numero}</> : null}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-3 p-3 rounded-lg bg-white border">
+          {isPermanente ? (
+            <p className="text-[13px] text-gray-700">
+              Você cancelou <b>apenas a próxima ocorrência</b> deste agendamento permanente.
+            </p>
+          ) : (
+            <p className="text-[13px] text-gray-700">
+              Você cancelou esta <b>reserva comum</b>.
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <main className="min-h-screen bg-[#f5f5f5]">
@@ -403,7 +504,7 @@ export default function VerQuadrasPage() {
                           )}
                         </p>
 
-                        {/* Data/Hora (vermelho quando bloqueado) */}
+                        {/* Data/Hora */}
                         <p
                           className={`text-[12px] ${
                             isBloqueado ? "text-red-600 font-semibold" : "text-gray-500"
@@ -414,7 +515,6 @@ export default function VerQuadrasPage() {
                             : <>Toda {a.dia} às {a.hora}</>}
                         </p>
 
-                        {/* Aviso de bloqueio (somente quando bloqueado na próxima ocorrência) */}
                         {isBloqueado && (
                           <p className="mt-0.5 text-[11px] text-red-600">
                             A quadra está bloqueada nesta data
@@ -425,7 +525,6 @@ export default function VerQuadrasPage() {
                           </p>
                         )}
 
-                        {/* Reservado por (quando não for o dono) */}
                         {!a.euSouDono && a.donoNome && (
                           <p className="text-[11px] text-gray-500 italic">
                             Reservado por: {a.donoNome}
@@ -438,7 +537,7 @@ export default function VerQuadrasPage() {
                       </div>
                     </div>
 
-                    {/* Ações — apenas se o usuário for o dono */}
+                    {/* Ações */}
                     <div className="mt-2 border-t border-gray-300/70" />
                     <div className="flex gap-2 pt-2">
                       {a.euSouDono ? (
@@ -479,13 +578,28 @@ export default function VerQuadrasPage() {
                 priority
               />
             </div>
-            <h2 className="text-xl font-extrabold text-orange-600 mb-4">Reserva Cancelada!</h2>
+
+            <h2 className="text-xl font-extrabold text-orange-600 mb-2">
+              {cancelSuccess?.tipo === "PERMANENTE"
+                ? "Próxima ocorrência cancelada!"
+                : "Reserva cancelada!"}
+            </h2>
+
+            <p className="text-[13px] text-gray-600 mb-4">
+              {cancelSuccess?.tipo === "PERMANENTE"
+                ? "Cancelamos apenas a próxima data deste agendamento permanente."
+                : "Cancelamos sua reserva com sucesso."}
+            </p>
+
+            {/* cartão-resumo do que foi cancelado */}
+            {cancelSuccess && <SuccessCard a={cancelSuccess} />}
+
             <button
               onClick={() => {
                 setView("list");
                 carregarLista();
               }}
-              className="rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-sm font-semibold px-4 py-2 shadow-md cursor-pointer"
+              className="mt-5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-sm font-semibold px-4 py-2 shadow-md cursor-pointer"
             >
               Voltar às suas quadras
             </button>
