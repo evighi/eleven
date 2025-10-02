@@ -7,7 +7,7 @@ import { requireAdmin } from "../middleware/acl";
 const prisma = new PrismaClient();
 const router = Router();
 
-/** ===== Enrichment (mesmo do seu, só mantido aqui) ===== */
+/** ===== Enrichment (com fallback de quadra p/ agendamentos) ===== */
 async function enrichNamesForLogs(items: any[]) {
   if (!items.length) return items;
 
@@ -69,30 +69,62 @@ async function enrichNamesForLogs(items: any[]) {
     usersMap = new Map(users.map((u) => [u.id, u.nome]));
   }
 
-  // 2) Donos dos alvos
+  // 2) Donos dos alvos + QUADRA dos agendamentos
   const agOwnerById = new Map<string, { id: string; nome: string | null }>();
+  const agQuadraByAgId = new Map<string, { id: string; nome: string | null; numero: number | null }>();
   if (agendamentoIds.length) {
     const rows = await prisma.agendamento.findMany({
       where: { id: { in: agendamentoIds } },
-      select: { id: true, usuario: { select: { id: true, nome: true } }, usuarioId: true },
+      select: {
+        id: true,
+        usuario: { select: { id: true, nome: true } },
+        usuarioId: true,
+        quadra: { select: { id: true, nome: true, numero: true } },
+        quadraId: true,
+      },
     });
     for (const r of rows) {
       const ownerId = r.usuario?.id ?? r.usuarioId ?? null;
       const ownerName = r.usuario?.nome ?? (ownerId ? usersMap.get(ownerId) ?? null : null);
       if (ownerId) agOwnerById.set(r.id, { id: ownerId, nome: ownerName });
+
+      if (r.quadra) {
+        agQuadraByAgId.set(r.id, {
+          id: r.quadra.id,
+          nome: r.quadra.nome ?? null,
+          numero: r.quadra.numero ?? null,
+        });
+        quadraIds.add(String(r.quadra.id));
+      }
     }
   }
 
   const agPermOwnerById = new Map<string, { id: string; nome: string | null }>();
+  const agPermQuadraByAgId = new Map<string, { id: string; nome: string | null; numero: number | null }>();
   if (agPermIds.length) {
     const rows = await prisma.agendamentoPermanente.findMany({
       where: { id: { in: agPermIds } },
-      select: { id: true, usuario: { select: { id: true, nome: true } }, usuarioId: true },
+      select: {
+        id: true,
+        usuario: { select: { id: true, nome: true } },
+        usuarioId: true,
+        quadra: { select: { id: true, nome: true, numero: true } },
+        quadraId: true,
+      },
     });
     for (const r of rows) {
       const ownerId = r.usuario?.id ?? r.usuarioId ?? null;
       const ownerName = r.usuario?.nome ?? (ownerId ? usersMap.get(ownerId) ?? null : null);
       if (ownerId) agPermOwnerById.set(r.id, { id: ownerId, nome: ownerName });
+
+      if (r.quadra) {
+        agPermQuadraByAgId.set(r.id, {
+          id: r.quadra.id,
+          nome: r.quadra.nome ?? null,
+          numero: r.quadra.numero ?? null,
+        });
+        quadraIds.add(String(r.quadra.id));
+      }
     }
   }
 
@@ -135,7 +167,7 @@ async function enrichNamesForLogs(items: any[]) {
     }
   }
 
-  // 3) Esportes e Quadras
+  // 3) Esportes e Quadras (IDs avulsos encontrados)
   let esportesMap = new Map<string, { nome: string }>();
   if (esporteIds.size > 0) {
     const esportes = await prisma.esporte.findMany({
@@ -154,6 +186,7 @@ async function enrichNamesForLogs(items: any[]) {
     quadrasMap = new Map(quadras.map((q) => [q.id, { nome: q.nome, numero: q.numero ?? null }]));
   }
 
+  // 4) Monta resposta enriquecida
   return items.map((it) => {
     const actorNameResolved =
       it.actorName || (it.actorId ? usersMap.get(String(it.actorId)) || null : null);
@@ -174,11 +207,36 @@ async function enrichNamesForLogs(items: any[]) {
       rawMd.esporteNome ??
       (rawMd.esporteId ? esportesMap.get(String(rawMd.esporteId))?.nome ?? null : null);
 
+    // 1º: tenta por metadata.quadraId
     const quadraInfo = rawMd.quadraId ? quadrasMap.get(String(rawMd.quadraId)) : null;
-    const quadraNome = rawMd.quadraNome ?? (quadraInfo?.nome ?? null);
-    const quadraNumero = rawMd.quadraNumero ?? (quadraInfo?.numero ?? null);
+    let quadraNome = rawMd.quadraNome ?? (quadraInfo?.nome ?? null);
+    let quadraNumero = rawMd.quadraNumero ?? (quadraInfo?.numero ?? null);
 
-    const metadata = { ...rawMd, donoNome, transferFromNome, transferToNome, esporteNome, quadraNome, quadraNumero };
+    // 2º: fallback pelo alvo do log (AGENDAMENTO / AGENDAMENTO_PERMANENTE)
+    if ((!quadraNome || quadraNumero == null) && it.targetType === "AGENDAMENTO") {
+      const q = it.targetId ? agQuadraByAgId.get(String(it.targetId)) : undefined;
+      if (q) {
+        if (!quadraNome) quadraNome = q.nome ?? quadraNome;
+        if (quadraNumero == null) quadraNumero = q.numero ?? quadraNumero;
+      }
+    }
+    if ((!quadraNome || quadraNumero == null) && it.targetType === "AGENDAMENTO_PERMANENTE") {
+      const q = it.targetId ? agPermQuadraByAgId.get(String(it.targetId)) : undefined;
+      if (q) {
+        if (!quadraNome) quadraNome = q.nome ?? quadraNome;
+        if (quadraNumero == null) quadraNumero = q.numero ?? quadraNumero;
+      }
+    }
+
+    const metadata = {
+      ...rawMd,
+      donoNome,
+      transferFromNome,
+      transferToNome,
+      esporteNome,
+      quadraNome,
+      quadraNumero,
+    };
 
     let targetNameResolved: string | null = null;
     let targetOwnerId: string | null = null;
