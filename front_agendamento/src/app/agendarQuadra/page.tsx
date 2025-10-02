@@ -64,6 +64,17 @@ type ReservaPayloadExtra = {
   convidadosNomes?: string[];
 };
 
+/* 🔸 NOVO: estrutura para a tela de sucesso */
+type ReservaSuccess = {
+  tipo: "COMUM" | "PERMANENTE";
+  esporte: string;
+  quadraNome: string;
+  quadraNumero?: string | number;
+  quadraLogo?: string;
+  data: string;    // YYYY-MM-DD
+  horario: string; // HH:MM
+};
+
 /* =========================================================
    Constantes e helpers
 ========================================================= */
@@ -270,9 +281,6 @@ function UserPicker({
             params: {
               q,
               limit: 10,
-              // opcional: por padrão o back já filtra CLIENTE,
-              // mas se quiser incluir admins em alguma tela interna:
-              // tipos: "CLIENTE,ADMIN_ATENDENTE,ADMIN_PROFESSORES"
             },
             withCredentials: true,
             signal: controller.signal,
@@ -531,10 +539,8 @@ export default function AgendarQuadraCliente() {
   const flashAdvance = (msg: string, run: () => void, after?: () => void) => {
     setNavLock(true);
     setAutoMsg(msg);
-    // pequeno atraso para mostrar o estado pressionado
     setTimeout(() => {
       run();
-      // mantém o lock por um curto período para o usuário perceber o feedback
       setTimeout(() => {
         setNavLock(false);
         setAutoMsg(null);
@@ -721,6 +727,9 @@ export default function AgendarQuadraCliente() {
     [esporteId, esporteNome, diaISO, horario, quadraSel, isVoleiSelected]
   );
 
+  /* 🔸 NOVO: estado com os dados da reserva confirmada */
+  const [successInfo, setSuccessInfo] = useState<ReservaSuccess | null>(null);
+
   /* ========= Navegação ========= */
   const confirmarHorario = () => {
     if (!horario) return setMsg("Selecione um horário.");
@@ -746,17 +755,17 @@ export default function AgendarQuadraCliente() {
     const maybeAxios = err as { response?: { data?: unknown; statusText?: string }; message?: string };
     const data = maybeAxios.response?.data;
 
-    if (isRecord(data) && typeof data.erro === "string") return data.erro;
+    if (isRecord(data) && typeof (data as any).erro === "string") return (data as any).erro;
 
     if (isRecord(data) && Array.isArray((data as Record<string, unknown>).issues)) {
       const items = (data as Record<string, unknown>).issues as unknown[];
       const msgs = items
-        .map((i) => (isRecord(i) && typeof i.message === "string" ? i.message : null))
+        .map((i) => (isRecord(i) && typeof (i as any).message === "string" ? (i as any).message : null))
         .filter((s): s is string => !!s);
       if (msgs.length) return msgs.join(" • ");
     }
 
-    if (isRecord(data) && typeof data.message === "string") return data.message;
+    if (isRecord(data) && typeof (data as any).message === "string") return (data as any).message;
     if (maybeAxios.response?.statusText) return String(maybeAxios.response.statusText);
     if (typeof maybeAxios.message === "string") return maybeAxios.message;
 
@@ -791,7 +800,22 @@ export default function AgendarQuadraCliente() {
     setMsg("");
     setIsConcurrencyErr(false);
     try {
+      // Podemos usar a resposta do backend se ela trouxer dados do agendamento,
+      // mas para garantir mostramos as escolhas atuais que já temos.
       await axios.post(`${API_URL}/agendamentos`, payload, { withCredentials: true });
+
+      // 🔸 NOVO: preencher o card de sucesso com as infos da seleção atual
+      const quadra = quadras.find((q) => String(q.quadraId) === String(quadraId));
+      setSuccessInfo({
+        tipo: "COMUM",
+        esporte: esporteNome || "",
+        quadraNome: quadra?.nome || "",
+        quadraNumero: quadra?.numero,
+        quadraLogo: quadra?.logoUrl || (quadraId ? quadraLogos[quadraId] : undefined),
+        data: diaISO,
+        horario,
+      });
+
       setStep(7);
     } catch (e: unknown) {
       console.error(e);
@@ -895,10 +919,7 @@ export default function AgendarQuadraCliente() {
         <div className="max-w-sm mx-auto space-y-4">
           {msg && (
             <div className="flex items-center justify-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
-              {isConcurrencyErr && (
-                /* 🔁 Ajuste o caminho do seu ícone aqui */
-                <img src="/icon_recemmarcada.png" alt="" className="w-4 h-4" />
-              )}
+              {isConcurrencyErr && <img src="/icon_recemmarcada.png" alt="" className="w-4 h-4" />}
               <span>{msg}</span>
             </div>
           )}
@@ -1204,8 +1225,9 @@ export default function AgendarQuadraCliente() {
 
           {/* STEP 7 - Sucesso */}
           {step === 7 && (
-            <Card className="flex flex-col items-center text-center py-10">
-              <div className="relative w-60 h-60 mb-4">
+            <Card className="flex flex-col items-center text-center py-6">
+              {/* topo visual */}
+              <div className="relative w-52 h-52 mb-3">
                 <AppImage
                   src="/icons/realizada.png"
                   alt=""
@@ -1214,8 +1236,69 @@ export default function AgendarQuadraCliente() {
                   priority
                 />
               </div>
-              <h2 className="text-xl font-extrabold text-orange-600 mb-3">Reserva Realizada!</h2>
-              <Btn onClick={() => router.push("/")}>Voltar à página inicial</Btn>
+
+              <h2 className="text-xl font-extrabold text-orange-600 mb-2">Reserva Realizada!</h2>
+
+              {/* 🔸 NOVO: card com dados da quadra/esporte/horário */}
+              {successInfo && (
+                <div className="w-full mt-3 rounded-xl bg-[#f7f7f7] pt-3 pb-2 px-3 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <div className="shrink-0 w-28 h-12 sm:w-36 sm:h-14 md:w-40 md:h-16 flex items-center justify-center overflow-hidden">
+                      <AppImage
+                        src={successInfo.quadraLogo || "/quadra.png"}
+                        alt={successInfo.quadraNome}
+                        width={320}
+                        height={128}
+                        className="w-full h-full object-contain select-none"
+                        fallbackSrc="/quadra.png"
+                        forceUnoptimized
+                      />
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-semibold text-gray-800 truncate">
+                        {successInfo.quadraNome}
+                      </p>
+
+                      <p className="text-[12px] text-gray-600 leading-tight flex items-center gap-2">
+                        {successInfo.esporte}
+                        <span
+                          className={`text-[10px] px-2 py-[2px] rounded-full ${
+                            successInfo.tipo === "PERMANENTE"
+                              ? "bg-gray-200 text-gray-800"
+                              : "bg-orange-100 text-orange-600"
+                          }`}
+                        >
+                          {successInfo.tipo === "PERMANENTE" ? "Permanente" : "Comum"}
+                        </span>
+                      </p>
+
+                      <p className="text-[12px] text-gray-500">
+                        Dia {formatarDia(successInfo.data)} às {successInfo.horario}
+                      </p>
+
+                      {successInfo.quadraNumero && (
+                        <p className="text-[11px] text-gray-500">Quadra {successInfo.quadraNumero}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full mt-4">
+                <Btn onClick={() => router.push("/")}>Voltar à página inicial</Btn>
+                <button
+                  onClick={() => {
+                    // resetar para um novo fluxo se quiser
+                    setStep(1);
+                    setSuccessInfo(null);
+                    setMsg("");
+                  }}
+                  className="w-full rounded-lg px-4 py-2 font-semibold transition bg-gray-200 text-gray-900 hover:bg-gray-300"
+                >
+                  Fazer outra reserva
+                </button>
+              </div>
             </Card>
           )}
         </div>

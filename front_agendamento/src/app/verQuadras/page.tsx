@@ -392,7 +392,7 @@ export default function VerQuadrasPage() {
           </div>
         </div>
 
-        <div className="mt-3 p-3 rounded-lg bg-white border">
+        <div className="mt-3 p-3 rounded-lg bg-white">
           {isPermanente ? (
             <p className="text-[13px] text-gray-700">
               Você cancelou <b>apenas a próxima ocorrência</b> deste agendamento permanente.
