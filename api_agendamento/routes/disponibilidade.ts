@@ -26,6 +26,40 @@ function horarioDentroDoBloqueio(horario: string, inicioBloqueio: string, fimBlo
   return horario >= inicioBloqueio && horario < fimBloqueio;
 }
 
+/* ===== Helpers de timezone (SP) ===== */
+
+// “Agora” no fuso America/Sao_Paulo
+function nowInTZ(tz = "America/Sao_Paulo") {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    weekday: "short",   // Sun..Sat
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+
+  const hour = Number(parts.find(p => p.type === "hour")?.value ?? "0");
+  const minute = Number(parts.find(p => p.type === "minute")?.value ?? "0");
+  const wd = (parts.find(p => p.type === "weekday")?.value ?? "Sun") as
+    | "Sun" | "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat";
+
+  const DOW: Record<typeof wd, number> = {
+    Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+  };
+
+  return { hour, minute, dowIndex: DOW[wd] };
+}
+
+// YYYY-MM-DD “de hoje” no calendário de SP
+function todayISOByTZ(tz = "America/Sao_Paulo") {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date()); // "YYYY-MM-DD"
+}
+
 router.get("/", async (req, res) => {
   const { data, diaSemana, horario, esporteId } = req.query;
 
@@ -39,7 +73,7 @@ router.get("/", async (req, res) => {
 
   if (diaSemana) {
     if (!diasEnum.includes(diaSemana as DiaSemana)) {
-      return res.status(400).json({ erro: "Dia da semana inválido" });
+      return res.status(400).json({ erro: "Dia da semana inválida" });
     }
     diaSemanaFinal = diaSemana as DiaSemana;
   } else if (data) {
@@ -95,8 +129,7 @@ router.get("/", async (req, res) => {
             conflitoPermanente = !exc; // só conflita se NÃO houver exceção para a data
           }
         } else {
-          // Sem data específica, mantemos o comportamento padrão:
-          // existe algum permanente ativo nesse dia/horário/quadra? então conflita.
+          // Sem data específica: existe algum permanente ativo nesse dia/horário/quadra?
           const count = await prisma.agendamentoPermanente.count({
             where: {
               quadraId: quadra.id,
@@ -126,37 +159,32 @@ router.get("/", async (req, res) => {
           });
         } else {
           // Sem data: olhamos as próximas 8 ocorrências daquele dia da semana
-          const hoje = new Date();
-          const hojeDia = hoje.getDay();
+          // *** AGORA usando calendário/hora de São Paulo ***
+          const { hour: spHour, minute: spMinute, dowIndex: hojeDiaSP } = nowInTZ("America/Sao_Paulo");
           const indexSelecionado = diasEnum.indexOf(diaSemanaFinal);
 
-          // 🟠 ALTERAÇÃO: incluir HOJE quando o dia selecionado é hoje
-          // e o horário ainda NÃO passou; se já passou, pula para a semana seguinte.
-          let diasAte = (indexSelecionado - hojeDia + 7) % 7; // 0..6
+          // inclui HOJE se ainda não passou o horário; senão, pula para a semana seguinte
+          let diasAte = (indexSelecionado - hojeDiaSP + 7) % 7;
+
           if (diasAte === 0) {
-            // comparar HH:mm atuais com o horário do slot
             const [hh, mm] = String(horario).split(":").map((n: string) => parseInt(n, 10));
-            const agoraMin = hoje.getHours() * 60 + hoje.getMinutes();
+            const agoraMin = spHour * 60 + spMinute;
             const slotMin = (hh || 0) * 60 + (mm || 0);
             const passou = agoraMin >= slotMin;
-
-            if (passou) {
-              diasAte = 7; // já passou o horário de hoje => próxima semana
-            }
-            // se NÃO passou, mantém 0 para usar a data de HOJE
+            if (passou) diasAte = 7;
           }
+
+          // Âncora “hoje” no calendário de SP (evita virar dia no UTC)
+          const hojeISO_SP = todayISOByTZ("America/Sao_Paulo"); // "YYYY-MM-DD"
+          const hojeSP = new Date(`${hojeISO_SP}T00:00:00-03:00`);
 
           const datasVerificar: Date[] = [];
           for (let i = 0; i < 8; i++) {
-            const dataTemp = new Date();
-            dataTemp.setDate(hoje.getDate() + diasAte + i * 7);
-
-            // 🔧 Zera horário para evitar “virada” pelo fuso ao converter para ISO
+            const dataTemp = new Date(hojeSP);
+            dataTemp.setDate(hojeSP.getDate() + diasAte + i * 7);
             dataTemp.setHours(0, 0, 0, 0);
-
-            // normaliza para 00:00Z igual ao padrão salvo no banco
             const iso = dataTemp.toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
-            datasVerificar.push(toUtc00(iso));
+            datasVerificar.push(toUtc00(iso));               // normaliza p/ 00:00Z como no banco
           }
 
           conflitoComum = await prisma.agendamento.findFirst({
