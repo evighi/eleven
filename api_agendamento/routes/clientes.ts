@@ -298,6 +298,80 @@ router.get("/:id", verificarToken, requireSelfOrAdminParam("id"), async (req, re
   }
 });
 
+// ================== ADMIN: alterar e-mail (sem nova verificação) ==================
+const updateEmailSchema = z.object({
+  email: z.string().email(),
+});
+
+router.patch("/:id/email", verificarToken, requireAdmin, async (req, res) => {
+  try {
+    const { email } = updateEmailSchema.parse(req.body);
+    const newEmail = email.trim().toLowerCase();
+
+    // 1) Usuário alvo existe?
+    const alvo = await prisma.usuario.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, email: true, nome: true, tipo: true, verificado: true },
+    });
+    if (!alvo) return res.status(404).json({ erro: "Usuário não encontrado" });
+
+    // 2) Se é o mesmo e-mail, apenas retorna
+    if (alvo.email.toLowerCase() === newEmail) {
+      return res.json({
+        mensagem: "E-mail já está definido com esse valor",
+        usuario: { ...alvo, email: newEmail },
+      });
+    }
+
+    // 3) Verifica conflito
+    const conflito = await prisma.usuario.findUnique({
+      where: { email: newEmail },
+      select: { id: true },
+    });
+    if (conflito && conflito.id !== alvo.id) {
+      return res.status(409).json({ erro: "E-mail já cadastrado por outro usuário" });
+    }
+
+    // 4) Atualiza apenas o e-mail (sem mexer em 'verificado', sem códigos)
+    const atualizado = await prisma.usuario.update({
+      where: { id: alvo.id },
+      data: { email: newEmail },
+      select: baseUserSelect,
+    });
+
+    // 📝 AUDIT: alteração de e-mail por admin
+    await logAudit({
+      event: "USUARIO_UPDATE",
+      req,
+      actor: {
+        id: req.usuario?.usuarioLogadoId,
+        name: req.usuario?.usuarioLogadoNome,
+        type: req.usuario?.usuarioLogadoTipo,
+      },
+      target: { type: TargetType.USUARIO, id: alvo.id },
+      metadata: {
+        email_antigo: alvo.email,
+        email_novo: newEmail,
+        tipo: alvo.tipo,
+        verificado_antes: alvo.verificado,
+        verificado_depois: atualizado.verificado,
+      },
+    });
+
+    return res.json({ mensagem: "E-mail atualizado com sucesso", usuario: atualizado });
+  } catch (error: any) {
+    if (error?.code === "P2002") {
+      return res.status(409).json({ erro: "E-mail já cadastrado" });
+    }
+    if (error?.issues) {
+      return res.status(400).json({ erro: error.issues.map((i: any) => i.message).join("; ") });
+    }
+    console.error(error);
+    return res.status(500).json({ erro: "Erro ao atualizar e-mail" });
+  }
+});
+
+
 router.patch("/:id", verificarToken, requireSelfOrAdminParam("id"), async (req, res) => {
   try {
     const admin = isAdmin(req.usuario?.usuarioLogadoTipo);
