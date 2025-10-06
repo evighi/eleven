@@ -150,8 +150,12 @@ router.get("/", async (req, res) => {
           for (let i = 0; i < 8; i++) {
             const dataTemp = new Date();
             dataTemp.setDate(hoje.getDate() + diasAte + i * 7);
-            // normaliza para 00:00Z
-            const iso = dataTemp.toISOString().split("T")[0]; // YYYY-MM-DD (UTC)
+
+            // 🔧 Zera horário para evitar “virada” pelo fuso ao converter para ISO
+            dataTemp.setHours(0, 0, 0, 0);
+
+            // normaliza para 00:00Z igual ao padrão salvo no banco
+            const iso = dataTemp.toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
             datasVerificar.push(toUtc00(iso));
           }
 
