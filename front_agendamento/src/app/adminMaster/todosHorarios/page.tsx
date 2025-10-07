@@ -158,7 +158,6 @@ export default function TodosHorariosPage() {
   // === AÇÕES (iguais à Home) ===
   const [confirmarCancelamento, setConfirmarCancelamento] = useState(false);
   const [mostrarOpcoesCancelamento, setMostrarOpcoesCancelamento] = useState(false);
-  const [confirmarCancelamentoForever, setConfirmarCancelamentoForever] = useState(false);
   const [loadingCancelamento, setLoadingCancelamento] = useState(false);
 
   // Exceção (permanente: cancelar 1 dia)
@@ -305,7 +304,7 @@ export default function TodosHorariosPage() {
       data,
       horario: agendarCtx.hora,
       quadraId: agendarCtx.quadraId,
-      esporte: agendarCtx.esporte, // usamos nome; a page tenta casar pelo nome também
+      esporte: agendarCtx.esporte,
     });
     setConfirmAgendar(false);
     setAgendarCtx(null);
@@ -339,7 +338,6 @@ export default function TodosHorariosPage() {
       setAgendamentoSelecionado(null);
       setConfirmarCancelamento(false);
       setMostrarOpcoesCancelamento(false);
-      setConfirmarCancelamentoForever(false);
       refresh();
     } catch (error) {
       console.error("Erro ao cancelar agendamento:", error);
@@ -359,8 +357,8 @@ export default function TodosHorariosPage() {
       agendamentoSelecionado.diaSemana,
       data || todayStrSP(),
       agendamentoSelecionado.dataInicio || null,
-      6,  // só 6 datas
-      true // incluindo a base
+      6,
+      true
     );
     setDatasExcecao(lista);
     setDataExcecaoSelecionada(null);
@@ -440,7 +438,7 @@ export default function TodosHorariosPage() {
 
       const body: any = {
         novoUsuarioId: usuarioSelecionado.id,
-        transferidoPorId: (usuario as any)?.id, // quem executa a ação
+        transferidoPorId: (usuario as any)?.id,
       };
       if (isPerm) body.copiarExcecoes = copiarExcecoes;
 
@@ -548,7 +546,7 @@ export default function TodosHorariosPage() {
     }
   };
 
-  // Célula da grade — agora também clica em "Livre" para agendar
+  // Célula da grade
   const Cell = ({
     slot,
     hora,
@@ -578,8 +576,8 @@ export default function TodosHorariosPage() {
     const label = isBloq
       ? `Bloqueada - ${hourLabel}`
       : isLivre
-        ? `Livre - ${hourLabel}`
-        : `${firstName(slot.usuario?.nome)} - ${hourLabel}`;
+      ? `Livre - ${hourLabel}`
+      : `${firstName(slot.usuario?.nome)} - ${hourLabel}`;
 
     const isAgendado = !!(slot.agendamentoId && slot.tipoReserva);
     const clickable = !isBloq && (isAgendado || isLivre);
@@ -636,7 +634,7 @@ export default function TodosHorariosPage() {
 
                 return (
                   <section key={`${esporte}-${gi}`}>
-                    {/* Cabeçalho por grupo (ex: Beach Tennis – 1 - 6) */}
+                    {/* Cabeçalho por grupo */}
                     <h2 className="text-center text-xl sm:text-2xl md:text-3xl font-extrabold text-gray-900 mb-3">
                       {esporte} – {minNum} - {maxNum}
                     </h2>
@@ -688,6 +686,16 @@ export default function TodosHorariosPage() {
       </div>
     );
   }, [loading, erro, esportes, horas, abrirDetalhes, abrirConfirmAgendar]);
+
+  /** NOVO: ação direta “Cancelar PARA SEMPRE” — só avisa e redireciona */
+  const redirecionarParaPermanentes = () => {
+    alert(
+      "Para cancelar um agendamento PERMANENTE para sempre, use a página de controle de permanentes."
+    );
+    setMostrarOpcoesCancelamento(false);
+    setAgendamentoSelecionado(null);
+    router.push("/adminMaster/todosHorariosPermanentes");
+  };
 
   return (
     <div className="px-2 sm:px-3 md:px-4 py-4">
@@ -747,7 +755,7 @@ export default function TodosHorariosPage() {
         </div>
       )}
 
-      {/* MODAL DE DETALHES + AÇÕES (igual à Home) */}
+      {/* MODAL DE DETALHES + AÇÕES */}
       {agendamentoSelecionado && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg shadow-lg w-80 relative max-h-[90vh] overflow-auto">
@@ -767,7 +775,7 @@ export default function TodosHorariosPage() {
             </p>
             <p><strong>Tipo:</strong> {agendamentoSelecionado.tipoReserva}</p>
 
-            {/* Jogadores (COMUM) — sem o botão “+” no título */}
+            {/* Jogadores (COMUM) */}
             {agendamentoSelecionado.tipoReserva === "comum" && (
               <div className="mt-2">
                 <strong>Jogadores:</strong>
@@ -819,7 +827,7 @@ export default function TodosHorariosPage() {
               Fechar
             </button>
 
-            {/* Fluxo antigo: confirmação simples (comum) */}
+            {/* Confirmar cancelamento (comum) */}
             {confirmarCancelamento && (
               <div className="absolute inset-0 bg-black bg-opacity-80 flex flex-col items-center justify-center p-4 rounded-xl border shadow-lg z-50">
                 <p className="text-center text-white mb-4">Tem certeza que deseja cancelar este agendamento?</p>
@@ -848,10 +856,7 @@ export default function TodosHorariosPage() {
                   <p className="font-semibold mb-3 text-center">Como deseja cancelar este agendamento permanente?</p>
                   <div className="grid gap-3">
                     <button
-                      onClick={() => {
-                        setMostrarOpcoesCancelamento(false);
-                        setConfirmarCancelamentoForever(true);
-                      }}
+                      onClick={redirecionarParaPermanentes}
                       className="w-full bg-red-600 hover:bg-red-700 text-white py-2 rounded cursor-pointer"
                     >
                       Cancelar PARA SEMPRE
@@ -869,30 +874,6 @@ export default function TodosHorariosPage() {
                       Voltar
                     </button>
                   </div>
-                </div>
-              </div>
-            )}
-
-            {/* Confirmação "para sempre" */}
-            {confirmarCancelamentoForever && (
-              <div className="absolute inset-0 bg-black bg-opacity-80 flex flex-col items-center justify-center p-4 rounded-xl border shadow-lg z-50">
-                <p className="text-center text-white mb-4">
-                  Tem certeza que deseja cancelar <b>para sempre</b> este agendamento permanente?
-                </p>
-                <div className="flex gap-4">
-                  <button
-                    onClick={cancelarAgendamento}
-                    disabled={loadingCancelamento}
-                    className="bg-red-600 text-white px-4 py-1 rounded hover:bg-red-700 transition cursor-pointer"
-                  >
-                    {loadingCancelamento ? "Cancelando..." : "Sim, cancelar para sempre"}
-                  </button>
-                  <button
-                    onClick={() => setConfirmarCancelamentoForever(false)}
-                    className="bg-gray-300 text-black px-4 py-1 rounded hover:bg-gray-400 transition cursor-pointer"
-                  >
-                    Não
-                  </button>
                 </div>
               </div>
             )}
@@ -982,9 +963,9 @@ export default function TodosHorariosPage() {
                   className={`p-2 cursor-pointer hover:bg-blue-100 ${usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
                     }`}
                   onClick={() => setUsuarioSelecionado(user)}
-                  title={user.celular || ""}   // 👈 tooltip com celular
+                  title={user.celular || ""}   // tooltip com celular
                 >
-                  {user.nome} {user.celular ? ` (${user.celular})` : ""}  {/* 👈 mostra celular */}
+                  {user.nome} {user.celular ? ` (${user.celular})` : ""}
                 </li>
               ))}
             </ul>
