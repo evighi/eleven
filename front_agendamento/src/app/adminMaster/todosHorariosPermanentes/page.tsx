@@ -53,9 +53,8 @@ type DiaSemana =
   | "SABADO";
 
 /* =========================
-   Modal de detalhes (reaproveita seu formato)
+   Modal de detalhes
 ========================= */
-type JogadorRef = { nome: string };
 type AgendamentoSelecionado = {
   horario: string;         // HH:MM
   usuario: string | Usuario | "—";
@@ -101,6 +100,9 @@ function firstName(full?: string) {
   return a || "";
 }
 
+/* ===== Tipos auxiliares para transferência ===== */
+type UsuarioLista = { id: string; nome: string; email?: string; celular?: string | null };
+
 /* =========================
    Página
 ========================= */
@@ -132,6 +134,19 @@ export default function PermanentesGridPage() {
   const [loadingDetalhes, setLoadingDetalhes] = useState(false);
   const [agendamentoSelecionado, setAgendamentoSelecionado] =
     useState<AgendamentoSelecionado | null>(null);
+
+  // Cancelar PARA SEMPRE
+  const [confirmarCancelamentoForever, setConfirmarCancelamentoForever] = useState(false);
+  const [loadingCancelamento, setLoadingCancelamento] = useState(false);
+
+  // Transferência
+  const [abrirModalTransferencia, setAbrirModalTransferencia] = useState(false);
+  const [buscaUsuario, setBuscaUsuario] = useState("");
+  const [usuariosFiltrados, setUsuariosFiltrados] = useState<UsuarioLista[]>([]);
+  const [usuarioSelecionado, setUsuarioSelecionado] = useState<UsuarioLista | null>(null);
+  const [carregandoUsuarios, setCarregandoUsuarios] = useState(false);
+  const [loadingTransferencia, setLoadingTransferencia] = useState(false);
+  const [copiarExcecoes, setCopiarExcecoes] = useState(true);
 
   // inicializa via query (?diaSemana=SEGUNDA)
   useEffect(() => {
@@ -192,6 +207,9 @@ export default function PermanentesGridPage() {
         const esporteNome =
           (typeof det?.esporte === "string" ? det.esporte : det?.esporte?.nome) ?? (esporte ?? null);
 
+        // normaliza datas para YYYY-MM-DD
+        const normalize = (d?: string | null) => (d ? String(d).slice(0, 10) : null);
+
         setAgendamentoSelecionado({
           horario,
           usuario: usuarioValor,
@@ -200,8 +218,8 @@ export default function PermanentesGridPage() {
           agendamentoId,
           tipoLocal: "quadra",
           diaSemana: det?.diaSemana ?? null,
-          dataInicio: meta?.dataInicio ?? (det?.dataInicio ? String(det.dataInicio).slice(0, 10) : null),
-          proximaData: meta?.proximaData ?? null,
+          dataInicio: normalize(meta?.dataInicio ?? det?.dataInicio ?? null),
+          proximaData: normalize(meta?.proximaData ?? null),
           excecoes: meta?.excecoes ?? [],
         });
       } catch (err) {
@@ -212,6 +230,107 @@ export default function PermanentesGridPage() {
     },
     [API_URL]
   );
+
+  /* ====== Cancelar PARA SEMPRE ====== */
+  const abrirFluxoCancelarForever = () => {
+    setConfirmarCancelamentoForever(true);
+  };
+
+  const cancelarForever = async () => {
+    if (!agendamentoSelecionado?.agendamentoId) return;
+    try {
+      setLoadingCancelamento(true);
+      await axios.post(
+        `${API_URL}/agendamentosPermanentes/cancelar/${agendamentoSelecionado.agendamentoId}`,
+        {},
+        { withCredentials: true }
+      );
+      alert("Agendamento permanente cancelado para sempre!");
+      setAgendamentoSelecionado(null);
+      setConfirmarCancelamentoForever(false);
+      refresh();
+    } catch (error: any) {
+      console.error("Erro ao cancelar permanente:", error);
+      const msg =
+        error?.response?.data?.erro ||
+        error?.response?.data?.message ||
+        "Erro ao cancelar agendamento permanente.";
+      alert(msg);
+    } finally {
+      setLoadingCancelamento(false);
+    }
+  };
+
+  /* ====== Transferência ====== */
+  const buscarUsuarios = useCallback(
+    async (termo: string) => {
+      if (termo.trim().length === 0) {
+        setUsuariosFiltrados([]);
+        return;
+      }
+      setCarregandoUsuarios(true);
+      try {
+        const res = await axios.get<UsuarioLista[]>(`${API_URL}/clientes`, {
+          params: { nome: termo },
+          withCredentials: true,
+        });
+        setUsuariosFiltrados(res.data || []);
+      } catch (error) {
+        console.error("Erro ao buscar usuários:", error);
+        setUsuariosFiltrados([]);
+      } finally {
+        setCarregandoUsuarios(false);
+      }
+    },
+    [API_URL]
+  );
+
+  useEffect(() => {
+    const t = setTimeout(() => buscarUsuarios(buscaUsuario), 300);
+    return () => clearTimeout(t);
+  }, [buscaUsuario, buscarUsuarios]);
+
+  const abrirModalTransferir = () => {
+    setBuscaUsuario("");
+    setUsuariosFiltrados([]);
+    setUsuarioSelecionado(null);
+    setCopiarExcecoes(true);
+    setAbrirModalTransferencia(true);
+  };
+
+  const confirmarTransferencia = async () => {
+    if (!agendamentoSelecionado?.agendamentoId) return alert("Nenhum agendamento selecionado.");
+    if (!usuarioSelecionado) return alert("Selecione um usuário para transferir.");
+
+    setLoadingTransferencia(true);
+    try {
+      const rota = `agendamentosPermanentes/${agendamentoSelecionado.agendamentoId}/transferir`;
+
+      await axios.patch(
+        `${API_URL}/${rota}`,
+        {
+          novoUsuarioId: usuarioSelecionado.id,
+          transferidoPorId: (usuario as any)?.id,
+          copiarExcecoes,
+        },
+        { withCredentials: true }
+      );
+
+      alert("Agendamento permanente transferido com sucesso!");
+      setAgendamentoSelecionado(null);
+      setAbrirModalTransferencia(false);
+      refresh();
+    } catch (error: any) {
+      console.error("Erro ao transferir agendamento:", error);
+      const msg =
+        error?.response?.data?.erro ||
+        error?.response?.data?.message ||
+        "Erro ao transferir agendamento.";
+      alert(msg);
+    } finally {
+      setLoadingTransferencia(false);
+    }
+  };
 
   // célula (apenas permanentes em verde; vazias não clicam)
   const Cell = ({
@@ -368,9 +487,6 @@ export default function PermanentesGridPage() {
             <option key={d} value={d}>{DIA_LABEL[d]}</option>
           ))}
         </select>
-        <p className="text-[11px] text-gray-500 mt-1">
-          Clique nos blocos verdes para ver detalhes do permanente.
-        </p>
       </div>
 
       {/* Conteúdo (tabela/grade) */}
@@ -404,7 +520,7 @@ export default function PermanentesGridPage() {
                     .filter(Boolean)
                     .join(" — ")}
             </p>
-            <p><strong>Início do contrato:</strong> {agendamentoSelecionado.dataInicio ?? "—"}</p>
+            <p><strong>Data de inicio:</strong> {agendamentoSelecionado.dataInicio ?? "—"}</p>
             <p><strong>Próxima data:</strong> {agendamentoSelecionado.proximaData ?? "—"}</p>
 
             <div className="mt-3">
@@ -422,12 +538,115 @@ export default function PermanentesGridPage() {
               )}
             </div>
 
+            {/* AÇÕES */}
+            <button
+              onClick={abrirModalTransferir}
+              disabled={loadingTransferencia}
+              className="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded cursor-pointer disabled:opacity-60"
+            >
+              {loadingTransferencia ? "Transferindo..." : "Transferir Permanente"}
+            </button>
+
+            <button
+              onClick={abrirFluxoCancelarForever}
+              className="mt-3 w-full bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded cursor-pointer"
+            >
+              Cancelar PARA SEMPRE
+            </button>
+
             <button
               onClick={() => setAgendamentoSelecionado(null)}
-              className="mt-4 w-full bg-orange-600 hover:bg-orange-700 text-white py-2 px-4 rounded cursor-pointer"
+              className="mt-3 w-full bg-orange-600 hover:bg-orange-700 text-white py-2 px-4 rounded cursor-pointer"
             >
               Fechar
             </button>
+
+            {/* Confirmação "para sempre" */}
+            {confirmarCancelamentoForever && (
+              <div className="absolute inset-0 bg-black bg-opacity-80 flex flex-col items-center justify-center p-4 rounded-xl border shadow-lg z-50">
+                <p className="text-center text-white mb-4">
+                  Tem certeza que deseja cancelar <b>para sempre</b> este agendamento permanente?
+                </p>
+                <div className="flex gap-4">
+                  <button
+                    onClick={cancelarForever}
+                    disabled={loadingCancelamento}
+                    className="bg-red-600 text-white px-4 py-1 rounded hover:bg-red-700 transition cursor-pointer"
+                  >
+                    {loadingCancelamento ? "Cancelando..." : "Sim, cancelar para sempre"}
+                  </button>
+                  <button
+                    onClick={() => setConfirmarCancelamentoForever(false)}
+                    className="bg-gray-300 text-black px-4 py-1 rounded hover:bg-gray-400 transition cursor-pointer"
+                  >
+                    Não
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE TRANSFERÊNCIA */}
+      {abrirModalTransferencia && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-60">
+          <div className="bg-white p-6 rounded-lg shadow-lg w-96 max-h-[80vh] overflow-auto relative">
+            <h3 className="text-lg font-semibold mb-4">Transferir Agendamento Permanente</h3>
+
+            <input
+              type="text"
+              className="border p-2 rounded w-full mb-3"
+              placeholder="Digite nome ou email do usuário"
+              value={buscaUsuario}
+              onChange={(e) => setBuscaUsuario(e.target.value)}
+              autoFocus
+            />
+
+            {carregandoUsuarios && <p>Carregando usuários...</p>}
+
+            {!carregandoUsuarios && usuariosFiltrados.length === 0 && buscaUsuario.trim().length > 0 && (
+              <p className="text-sm text-gray-500">Nenhum usuário encontrado</p>
+            )}
+
+            <ul className="max-h-64 overflow-y-auto border rounded mb-4">
+              {usuariosFiltrados.map((user) => (
+                <li
+                  key={user.id}
+                  className={`p-2 cursor-pointer hover:bg-blue-100 ${usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""}`}
+                  onClick={() => setUsuarioSelecionado(user)}
+                  title={user.celular || ""}
+                >
+                  {user.nome} {user.celular ? ` (${user.celular})` : ""}
+                </li>
+              ))}
+            </ul>
+
+            <label className="flex items-center gap-2 mb-4 text-sm">
+              <input
+                type="checkbox"
+                checked={copiarExcecoes}
+                onChange={(e) => setCopiarExcecoes(e.target.checked)}
+              />
+              Copiar exceções (datas já canceladas)
+            </label>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setAbrirModalTransferencia(false)}
+                disabled={loadingTransferencia}
+                className="px-4 py-2 rounded bg-gray-300 hover:bg-gray-400"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmarTransferencia}
+                disabled={!usuarioSelecionado || loadingTransferencia}
+                className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-300"
+              >
+                {loadingTransferencia ? "Transferindo..." : "Confirmar Transferência"}
+              </button>
+            </div>
           </div>
         </div>
       )}
