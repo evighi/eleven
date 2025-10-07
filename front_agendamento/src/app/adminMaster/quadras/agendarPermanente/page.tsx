@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import axios from "axios";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { format, parseISO, addDays } from "date-fns";
 import { toast } from "sonner";
 
@@ -57,6 +57,7 @@ function proximaDataParaDiaSemana(diaSemana: string, horario?: string): string {
 
 export default function CadastrarPermanente() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [diaSemana, setDiaSemana] = useState<string>("");
   const [esporteId, setEsporteId] = useState<string>("");
@@ -82,17 +83,56 @@ export default function CadastrarPermanente() {
   const [dataUltimoConflito, setDataUltimoConflito] = useState<string | null>(null);
   const [proximasDatasDisponiveis, setProximasDatasDisponiveis] = useState<string[]>([]);
 
+  // Pré-preenchimento vindo da URL
+  const [esporteQuery, setEsporteQuery] = useState<string | null>(null);
+  const [quadraIdQuery, setQuadraIdQuery] = useState<string | null>(null);
+
   // UI
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
 
-  /* ===== Esportes ===== */
+  /* ===== Ler parâmetros da URL e pré-preencher ===== */
+  useEffect(() => {
+    if (!searchParams) return;
+    const qsDia = searchParams.get("diaSemana");
+    const qsHora = searchParams.get("horario");
+    const qsQuadra = searchParams.get("quadraId");
+    const qsEsporte = searchParams.get("esporte"); // pode vir nome ou id
+
+    if (qsDia && (diasEnum as readonly string[]).includes(qsDia)) {
+      setDiaSemana(qsDia);
+    }
+    if (qsHora && /^\d{2}:\d{2}$/.test(qsHora)) {
+      setHorario(qsHora);
+    }
+    if (qsQuadra) {
+      setQuadraIdQuery(qsQuadra);
+    }
+    if (qsEsporte) {
+      setEsporteQuery(qsEsporte);
+    }
+  }, [searchParams]);
+
+  /* ===== Esportes (e mapear query -> esporteId) ===== */
   useEffect(() => {
     axios
       .get<Esporte[]>(`${API_URL}/esportes`, { withCredentials: true })
-      .then((res) => setEsportes(res.data))
+      .then((res) => {
+        setEsportes(res.data);
+
+        // Se veio "esporte" na URL, tentar mapear para id
+        if (esporteQuery && !esporteId) {
+          const byId = res.data.find((e) => e.id === esporteQuery);
+          const byName = res.data.find(
+            (e) => e.nome.trim().toLowerCase() === esporteQuery.trim().toLowerCase()
+          );
+          const chosen = byId?.id || byName?.id || "";
+          if (chosen) setEsporteId(chosen);
+        }
+      })
       .catch(() => setFeedback({ kind: "error", text: "Falha ao carregar esportes." }));
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [esporteQuery]);
 
   /* ===== Disponibilidade (permanente) ===== */
   useEffect(() => {
@@ -120,7 +160,14 @@ export default function CadastrarPermanente() {
         setDataInicio("");
         setDataUltimoConflito(null);
         setProximasDatasDisponiveis([]);
-        setQuadraId("");
+
+        // Se veio quadraId pela URL, selecionar se existir na lista
+        if (quadraIdQuery && !quadraId) {
+          const existe = res.data.find((q) => q.quadraId === quadraIdQuery);
+          if (existe) setQuadraId(quadraIdQuery);
+        } else {
+          setQuadraId("");
+        }
       })
       .catch((err) => {
         console.error(err);
@@ -131,7 +178,7 @@ export default function CadastrarPermanente() {
         setProximasDatasDisponiveis([]);
         setFeedback({ kind: "error", text: "Erro ao buscar disponibilidade." });
       });
-  }, [esporteId, horario, diaSemana]);
+  }, [esporteId, horario, diaSemana, quadraIdQuery, quadraId]);
 
   /* ===== Próximas datas quando há conflito comum ===== */
   useEffect(() => {
@@ -242,7 +289,7 @@ export default function CadastrarPermanente() {
     }
 
     // se for convidado, exigir telefone
-    if (convidadoDonoNome.trim() && !convidadoDonoTelefone.trim()) {
+       if (convidadoDonoNome.trim() && !convidadoDonoTelefone.trim()) {
       setFeedback({
         kind: "error",
         text: "Informe o telefone do convidado dono.",

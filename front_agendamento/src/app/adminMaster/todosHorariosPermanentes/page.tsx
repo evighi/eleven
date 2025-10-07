@@ -178,6 +178,16 @@ export default function PermanentesGridPage() {
   const [loadingTransferencia, setLoadingTransferencia] = useState(false);
   const [copiarExcecoes, setCopiarExcecoes] = useState(true);
 
+  // >>> NOVO: confirmação de agendar permanente rápido (slot livre)
+  const [confirmAgendar, setConfirmAgendar] = useState(false);
+  const [agendarCtx, setAgendarCtx] = useState<{
+    hora: string;
+    esporte: string;
+    quadraId: string;
+    quadraNome: string;
+    quadraNumero: number;
+  } | null>(null);
+
   // inicializa via query (?diaSemana=SEGUNDA)
   useEffect(() => {
     const q = searchParams.get("diaSemana") as DiaSemana | null;
@@ -277,6 +287,21 @@ export default function PermanentesGridPage() {
       router.push(`/adminMaster/quadras/agendarPermanente?${params.toString()}`);
     },
     [router, diaSemana]
+  );
+
+  // >>> NOVO: abrir confirmação antes de redirecionar
+  const abrirConfirmAgendar = useCallback(
+    (hora: string, esporte: string, q: { quadraId: string; nome: string; numero: number }) => {
+      setAgendarCtx({
+        hora,
+        esporte,
+        quadraId: q.quadraId,
+        quadraNome: q.nome,
+        quadraNumero: q.numero,
+      });
+      setConfirmAgendar(true);
+    },
+    []
   );
 
   /* ====== Cancelar PARA SEMPRE ====== */
@@ -413,7 +438,8 @@ export default function PermanentesGridPage() {
       if (hasPermAgendado) {
         abrirDetalhes(slot.agendamentoId!, hora, esporte, slot.permanenteMeta);
       } else if (isLivre) {
-        irParaAgendarPermanente(hora, esporte, quadra);
+        // antes: irParaAgendarPermanente(hora, esporte, quadra);
+        abrirConfirmAgendar(hora, esporte, quadra);
       }
     };
 
@@ -525,7 +551,7 @@ export default function PermanentesGridPage() {
         })}
       </div>
     );
-  }, [loading, erro, esportes, horas, abrirDetalhes, irParaAgendarPermanente]);
+  }, [loading, erro, esportes, horas, abrirDetalhes, abrirConfirmAgendar]);
 
   return (
     <div className="px-2 sm:px-3 md:px-4 py-4">
@@ -644,6 +670,41 @@ export default function PermanentesGridPage() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* >>> NOVO: CONFIRMAÇÃO DE AGENDAMENTO PERMANENTE (slot livre) */}
+      {confirmAgendar && agendarCtx && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[65]">
+          <div className="bg-white rounded-lg p-5 w-[90%] max-w-md">
+            <h3 className="text-lg font-semibold mb-2">Confirmar agendamento permanente</h3>
+            <p className="text-sm text-gray-700 mb-4">
+              Deseja agendar a <b>Quadra {agendarCtx.quadraNumero}</b> ({agendarCtx.quadraNome})
+              em <b>{DIA_LABEL[diaSemana]}</b> às <b>{agendarCtx.hora}</b> para <b>{agendarCtx.esporte}</b>?
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => { setConfirmAgendar(false); setAgendarCtx(null); }}
+                className="px-3 py-2 rounded bg-gray-300 hover:bg-gray-400"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  irParaAgendarPermanente(agendarCtx.hora, agendarCtx.esporte, {
+                    quadraId: agendarCtx.quadraId,
+                    nome: agendarCtx.quadraNome,
+                    numero: agendarCtx.quadraNumero,
+                  });
+                  setConfirmAgendar(false);
+                  setAgendarCtx(null);
+                }}
+                className="px-3 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700"
+              >
+                Sim, agendar
+              </button>
+            </div>
           </div>
         </div>
       )}
