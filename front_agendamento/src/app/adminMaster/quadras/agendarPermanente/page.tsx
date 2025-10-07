@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import axios from "axios";
 import { useRouter, useSearchParams } from "next/navigation";
 import { format, parseISO, addDays } from "date-fns";
@@ -86,31 +86,24 @@ export default function CadastrarPermanente() {
   // Pré-preenchimento vindo da URL
   const [esporteQuery, setEsporteQuery] = useState<string | null>(null);
   const [quadraIdQuery, setQuadraIdQuery] = useState<string | null>(null);
+  const prefillRef = useRef(true); // true só na primeira carga
 
   // UI
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
 
-  /* ===== Ler parâmetros da URL e pré-preencher ===== */
+  /* ===== Ler parâmetros da URL e pré-preencher base ===== */
   useEffect(() => {
     if (!searchParams) return;
     const qsDia = searchParams.get("diaSemana");
     const qsHora = searchParams.get("horario");
     const qsQuadra = searchParams.get("quadraId");
-    const qsEsporte = searchParams.get("esporte"); // pode vir nome ou id
+    const qsEsporte = searchParams.get("esporte"); // pode vir nome OU id
 
-    if (qsDia && (diasEnum as readonly string[]).includes(qsDia)) {
-      setDiaSemana(qsDia);
-    }
-    if (qsHora && /^\d{2}:\d{2}$/.test(qsHora)) {
-      setHorario(qsHora);
-    }
-    if (qsQuadra) {
-      setQuadraIdQuery(qsQuadra);
-    }
-    if (qsEsporte) {
-      setEsporteQuery(qsEsporte);
-    }
+    if (qsDia && (diasEnum as readonly string[]).includes(qsDia)) setDiaSemana(qsDia);
+    if (qsHora && /^\d{2}:\d{2}$/.test(qsHora)) setHorario(qsHora);
+    if (qsQuadra) setQuadraIdQuery(qsQuadra);
+    if (qsEsporte) setEsporteQuery(qsEsporte);
   }, [searchParams]);
 
   /* ===== Esportes (e mapear query -> esporteId) ===== */
@@ -153,6 +146,7 @@ export default function CadastrarPermanente() {
       })
       .then((res) => {
         setQuadras(res.data);
+
         const existeConflitoComum = res.data.some(
           (q) => !q.disponivel && q.conflitoComum && !q.conflitoPermanente
         );
@@ -161,13 +155,22 @@ export default function CadastrarPermanente() {
         setDataUltimoConflito(null);
         setProximasDatasDisponiveis([]);
 
-        // Se veio quadraId pela URL, selecionar se existir na lista
-        if (quadraIdQuery && !quadraId) {
-          const existe = res.data.find((q) => q.quadraId === quadraIdQuery);
-          if (existe) setQuadraId(quadraIdQuery);
+        // --------- estabiliza a seleção da quadra ----------
+        // 1) se é a 1ª carga e veio quadraId pela URL, tenta aplicar
+        if (prefillRef.current && quadraIdQuery && !quadraId) {
+          const existeNaLista = res.data.some((q) => q.quadraId === quadraIdQuery);
+          if (existeNaLista) setQuadraId(quadraIdQuery);
         } else {
-          setQuadraId("");
+          // 2) em cargas subsequentes, só limpe se a quadra atual deixar de existir/ser válida
+          const selecionadaAindaExiste = res.data.some(
+            (q) =>
+              q.quadraId === quadraId &&
+              (q.disponivel || q.conflitoComum || q.conflitoPermanente)
+          );
+          if (!selecionadaAindaExiste) setQuadraId("");
         }
+        prefillRef.current = false;
+        // ---------------------------------------------------
       })
       .catch((err) => {
         console.error(err);
@@ -178,7 +181,9 @@ export default function CadastrarPermanente() {
         setProximasDatasDisponiveis([]);
         setFeedback({ kind: "error", text: "Erro ao buscar disponibilidade." });
       });
-  }, [esporteId, horario, diaSemana, quadraIdQuery, quadraId]);
+    // IMPORTANTE: não colocar `quadraId` nas deps para não criar loop de limpeza/seleção
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [esporteId, horario, diaSemana, quadraIdQuery]);
 
   /* ===== Próximas datas quando há conflito comum ===== */
   useEffect(() => {
@@ -289,7 +294,7 @@ export default function CadastrarPermanente() {
     }
 
     // se for convidado, exigir telefone
-       if (convidadoDonoNome.trim() && !convidadoDonoTelefone.trim()) {
+    if (convidadoDonoNome.trim() && !convidadoDonoTelefone.trim()) {
       setFeedback({
         kind: "error",
         text: "Informe o telefone do convidado dono.",
