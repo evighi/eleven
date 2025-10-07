@@ -6,6 +6,7 @@ export default function QuadrasHome() {
   const opcoes = [
     { nome: "Agendar Quadra Permanente", url: "/adminMaster/quadras/agendarPermanente", imagem: "/icons/editar.png" }, 
     { nome: "Agendar Quadra", url: "/adminMaster/quadras/agendarComum", imagem: "/icons/editar.png" }, 
+    { nome: "Controle de permanentes", url: "/adminMaster/todosHorariosPermanentes", imagem: "/icons/editar.png" }, 
     { nome: "Cadastrar Quadras", url: "/adminMaster/quadras/cadastrarQuadras", imagem: "/icons/editar.png" },
     { nome: "Editar Quadras", url: "/adminMaster/quadras/editarQuadras", imagem: "/icons/editar.png"  },
     { nome: "Excluir Quadras", url: "/adminMaster/quadras/excluirQuadras", imagem: "/icons/editar.png"  },
