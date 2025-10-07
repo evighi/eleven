@@ -230,6 +230,21 @@ router.get(
         return res.status(404).json({ erro: "Agendamento permanente não encontrado" });
       }
 
+      // 🔹 próxima data (pula exceções já cadastradas)
+      const proximaData = await proximaDataPermanenteSemExcecao({
+        id: agendamento.id,
+        diaSemana: agendamento.diaSemana as DiaSemana,
+        dataInicio: agendamento.dataInicio ? new Date(agendamento.dataInicio) : null,
+      });
+
+      // 🔹 exceções futuras (a partir de hoje)
+      const hoje = startOfDay(new Date());
+      const excecoes = await prisma.agendamentoPermanenteCancelamento.findMany({
+        where: { agendamentoPermanenteId: agendamento.id, data: { gte: hoje } },
+        orderBy: { data: "asc" },
+        select: { id: true, data: true, motivo: true },
+      });
+
       return res.json({
         id: agendamento.id,
         tipoReserva: "PERMANENTE",
@@ -246,7 +261,19 @@ router.get(
         usuarioId: agendamento.usuario?.id,
         esporte: agendamento.esporte.nome,
         quadra: `${agendamento.quadra.nome} (Nº ${agendamento.quadra.numero})`,
-        dataInicio: agendamento.dataInicio,
+
+        // ✅ normalizado para "YYYY-MM-DD" ou null
+        dataInicio: agendamento.dataInicio
+          ? String(agendamento.dataInicio).slice(0, 10)
+          : null,
+
+        // ✅ NOVOS CAMPOS
+        proximaData, // "YYYY-MM-DD" | null
+        excecoes: excecoes.map((e) => ({
+          id: e.id,
+          data: toISODateUTC(new Date(e.data)), // "YYYY-MM-DD"
+          motivo: e.motivo ?? null,
+        })),
       });
     } catch (err) {
       console.error(err);
