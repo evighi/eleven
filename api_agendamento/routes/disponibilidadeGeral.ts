@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { PrismaClient, DiaSemana, Turno, BloqueioQuadra } from "@prisma/client";
-import { addDays, getDay } from "date-fns";
+import { addDays, getDay, startOfDay } from "date-fns"; // ⬅️ addDays/startOfDay adicionados
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -58,18 +58,7 @@ function getUtcDayRange(dateStr: string) {
   return { inicio, fim };
 }
 
-/** ===== Helpers extras para o endpoint de permanentes (com fuso SP) ===== */
-const SP_TZ = "America/Sao_Paulo";
-
-function ymdInTZ(d: Date, tz = SP_TZ): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: tz,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(d); // "YYYY-MM-DD"
-}
-
+/** Helpers extras para o endpoint de permanentes */
 const DIA_IDX: Record<DiaSemana, number> = {
   DOMINGO: 0,
   SEGUNDA: 1,
@@ -79,47 +68,39 @@ const DIA_IDX: Record<DiaSemana, number> = {
   SEXTA: 5,
   SABADO: 6,
 };
-
 function toUtc00(isoYYYYMMDD: string) {
   return new Date(`${isoYYYYMMDD}T00:00:00.000Z`);
 }
-
-/** Próxima data do permanente PULANDO exceções, respeitando o fuso de SP */
+function toISODateUTC(d: Date) {
+  return d.toISOString().slice(0, 10);
+}
+/** Próxima data do permanente PULANDO exceções (usa hoje como base ou dataInicio se no futuro) */
 async function proximaDataPermanenteSemExcecao(p: {
   id: string;
   diaSemana: DiaSemana;
   dataInicio: Date | null;
 }): Promise<string | null> {
-  // hoje no fuso de SP
-  const hojeYmdSP = ymdInTZ(new Date(), SP_TZ);
-  const hojeAnchor = toUtc00(hojeYmdSP);
+  const hoje = startOfDay(new Date());
+  const base =
+    p.dataInicio && startOfDay(new Date(p.dataInicio)) > hoje
+      ? startOfDay(new Date(p.dataInicio))
+      : hoje;
 
-  // se dataInicio for futura (em SP), começa por ela
-  const dataInicioYmdSP = p.dataInicio ? ymdInTZ(new Date(p.dataInicio), SP_TZ) : null;
-  const inicioAnchor = dataInicioYmdSP ? toUtc00(dataInicioYmdSP) : null;
-  const base = inicioAnchor && inicioAnchor > hojeAnchor ? inicioAnchor : hojeAnchor;
-
-  // Como "base" representa a meia-noite de SP ancorada em UTC, o getUTCDay equivale ao dia de SP
-  const cur = base.getUTCDay(); // 0..6
+  const cur = base.getDay(); // 0..6 local
   const target = DIA_IDX[p.diaSemana] ?? 0; // 0..6
   const delta = (target - cur + 7) % 7;
 
   let tentativa = addDays(base, delta);
-
   // Limite defensivo ~2 anos
   for (let i = 0; i < 120; i++) {
-    const tentativaYmdSP = ymdInTZ(tentativa, SP_TZ); // "YYYY-MM-DD" no fuso de SP
-
-    // Verifica exceção gravada (data em UTC 00:00 correspondente ao YMD SP)
+    const iso = toISODateUTC(tentativa); // "YYYY-MM-DD"
     const exc = await prisma.agendamentoPermanenteCancelamento.findFirst({
-      where: { agendamentoPermanenteId: p.id, data: toUtc00(tentativaYmdSP) },
+      where: { agendamentoPermanenteId: p.id, data: toUtc00(iso) },
       select: { id: true },
     });
-    if (!exc) return tentativaYmdSP;
-
+    if (!exc) return iso;
     tentativa = addDays(tentativa, 7);
   }
-
   return null;
 }
 
@@ -430,9 +411,7 @@ router.get("/dia", async (req, res) => {
       where: {
         diaSemana: diaSemanaFinal,
         status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
-        // ✔ só considera se contrato já começou até o dia consultado
         OR: [{ dataInicio: null }, { dataInicio: { lte: inicio } }],
-        // ✔ ignora se há exceção para o dia
         cancelamentos: { none: { data: { gte: inicio, lt: fim } } },
       },
       select: {
@@ -575,7 +554,7 @@ router.get("/dia", async (req, res) => {
  *   - diaSemana (obrigatório) — enum DiaSemana
  *   - esporteId (opcional) — filtra quadras por esporte
  * Retorna um grid por esporte contendo APENAS os permanentes do dia/horário.
- * Cada slot com permanente inclui {proximaData, dataInicio, excecoes} em YYYY-MM-DD (SP).
+ * Cada slot com permanente inclui {proximaData, dataInicio, excecoes}.
  */
 router.get("/permanentes", async (req, res) => {
   const { diaSemana, esporteId } = req.query;
@@ -610,21 +589,14 @@ router.get("/permanentes", async (req, res) => {
         horario: true,
         dataInicio: true,
         usuario: { select: { nome: true, email: true, celular: true } },
-        cancelamentos: {
-          select: { id: true, data: true, motivo: true },
-          orderBy: { data: "asc" },
-        },
+        cancelamentos: { select: { id: true, data: true, motivo: true }, orderBy: { data: "asc" } },
       },
     });
 
-    // Calcula proximaData por permanente (pula exceções) + normaliza datas para SP
+    // Calcula proximaData por permanente (pula exceções)
     const metaByPermId = new Map<
       string,
-      {
-        proximaData: string | null;
-        dataInicio: string | null;
-        excecoes: { id: string; data: string; motivo: string | null }[];
-      }
+      { proximaData: string | null; dataInicio: string | null; excecoes: { id: string; data: string; motivo: string | null }[] }
     >();
 
     await Promise.all(
@@ -636,11 +608,11 @@ router.get("/permanentes", async (req, res) => {
         });
 
         metaByPermId.set(p.id, {
-          proximaData, // já em YYYY-MM-DD (SP)
-          dataInicio: p.dataInicio ? ymdInTZ(new Date(p.dataInicio), SP_TZ) : null,
+          proximaData,
+          dataInicio: p.dataInicio ? String(p.dataInicio).slice(0, 10) : null,
           excecoes: p.cancelamentos.map((c) => ({
             id: c.id,
-            data: ymdInTZ(new Date(c.data), SP_TZ), // YYYY-MM-DD (SP)
+            data: toISODateUTC(new Date(c.data)),
             motivo: c.motivo ?? null,
           })),
         });
@@ -653,11 +625,7 @@ router.get("/permanentes", async (req, res) => {
       {
         id: string;
         usuario: UsuarioSelecionado;
-        meta: {
-          proximaData: string | null;
-          dataInicio: string | null;
-          excecoes: { id: string; data: string; motivo: string | null }[];
-        };
+        meta: { proximaData: string | null; dataInicio: string | null; excecoes: { id: string; data: string; motivo: string | null }[] };
       }
     >();
     permanentes.forEach((p) => {
