@@ -56,7 +56,7 @@ type DiaSemana =
    Modal de detalhes
 ========================= */
 type AgendamentoSelecionado = {
-  horario: string;         // HH:MM
+  horario: string;
   usuario: string | Usuario | "—";
   esporte?: string | null;
   tipoReserva: "permanente";
@@ -104,7 +104,6 @@ function firstName(full?: string) {
 function normalizeDateYmdSP(d: unknown): string | null {
   if (d == null) return null;
 
-  // já está em YYYY-MM-DD?
   if (typeof d === "string") {
     const m = d.match(/^\d{4}-\d{2}-\d{2}/);
     if (m) return m[0];
@@ -120,7 +119,6 @@ function normalizeDateYmdSP(d: unknown): string | null {
     return null;
   }
 
-  // timestamp ou Date
   const parsed = typeof d === "number" ? new Date(d) : new Date(d as any);
   if (isNaN(parsed.getTime())) return null;
 
@@ -132,7 +130,7 @@ function normalizeDateYmdSP(d: unknown): string | null {
   }).format(parsed);
 }
 
-/* ===== Tipos auxiliares para transferência ===== */
+/* ===== Tipos auxiliares p/ transferência ===== */
 type UsuarioLista = { id: string; nome: string; email?: string; celular?: string | null };
 
 /* =========================
@@ -220,7 +218,7 @@ export default function PermanentesGridPage() {
     if (diaSemana) carregar(diaSemana);
   }, [carregar, diaSemana]);
 
-  // Abre modal com detalhes do PERMANENTE
+  // Detalhes do PERMANENTE
   const abrirDetalhes = useCallback(
     async (agendamentoId: string, horario: string, esporte: string, meta?: PermMeta) => {
       if (!agendamentoId) return;
@@ -239,7 +237,6 @@ export default function PermanentesGridPage() {
         const esporteNome =
           (typeof det?.esporte === "string" ? det.esporte : det?.esporte?.nome) ?? (esporte ?? null);
 
-        // normaliza tudo no fuso de SP
         const dataInicioYmd = normalizeDateYmdSP(meta?.dataInicio ?? (det as any)?.dataInicio ?? null);
         const proximaDataYmd = normalizeDateYmdSP(meta?.proximaData ?? (det as any)?.proximaData ?? null);
         const excecoesNorm = (meta?.excecoes ?? []).map((e) => ({
@@ -266,6 +263,20 @@ export default function PermanentesGridPage() {
       }
     },
     [API_URL]
+  );
+
+  /* ====== REDIRECIONAR para agendar PERMANENTE (slot livre) ====== */
+  const irParaAgendarPermanente = useCallback(
+    (hora: string, esporte: string, q: { quadraId: string; nome: string; numero: number }) => {
+      const params = new URLSearchParams({
+        diaSemana,
+        horario: hora,
+        quadraId: q.quadraId,
+        esporte,
+      });
+      router.push(`/adminMaster/quadras/agendarPermanente?${params.toString()}`);
+    },
+    [router, diaSemana]
   );
 
   /* ====== Cancelar PARA SEMPRE ====== */
@@ -298,7 +309,6 @@ export default function PermanentesGridPage() {
     }
   };
 
-  /* ====== Transferência ====== */
   const buscarUsuarios = useCallback(
     async (termo: string) => {
       if (termo.trim().length === 0) {
@@ -369,17 +379,20 @@ export default function PermanentesGridPage() {
     }
   };
 
-  // célula (apenas permanentes em verde; vazias não clicam)
+  // ====== CÉLULA ======
   const Cell = ({
     slot,
     hora,
     esporte,
+    quadra,
   }: {
     slot: SlotInfoPerm;
     hora: string;
     esporte: string;
+    quadra: { quadraId: string; nome: string; numero: number };
   }) => {
     const isPerm = slot.tipoReserva === "permanente";
+    const isLivre = !isPerm && slot.disponivel; // livre = sem permanente
     const base =
       "min-h-7 xs:min-h-8 sm:min-h-9 md:min-h-10 text-[9px] xs:text-[10px] sm:text-[11px] md:text-xs " +
       "rounded-none border flex items-center justify-center text-center px-1 py-1 whitespace-normal break-words leading-tight";
@@ -392,14 +405,18 @@ export default function PermanentesGridPage() {
       ? `${firstName(slot.usuario?.nome)} - ${hourLabel}`
       : `Sem permanente - ${hourLabel}`;
 
-    const clickable = isPerm && !!slot.agendamentoId;
+    const hasPermAgendado = isPerm && !!slot.agendamentoId;
+    const clickable = hasPermAgendado || isLivre;
 
     const onClick = () => {
       if (!clickable) return;
-      abrirDetalhes(slot.agendamentoId!, hora, esporte, slot.permanenteMeta);
+      if (hasPermAgendado) {
+        abrirDetalhes(slot.agendamentoId!, hora, esporte, slot.permanenteMeta);
+      } else if (isLivre) {
+        irParaAgendarPermanente(hora, esporte, quadra);
+      }
     };
 
-    // tooltip com datas normalizadas no fuso de SP
     const title = isPerm
       ? [
           slot.usuario?.nome,
@@ -457,7 +474,7 @@ export default function PermanentesGridPage() {
 
                 return (
                   <section key={`${esporte}-${gi}`}>
-                    {/* Cabeçalho por grupo (ex: Beach Tennis – 1 - 6) */}
+                    {/* Cabeçalho por grupo */}
                     <h2 className="text-center text-xl sm:text-2xl md:text-3xl font-extrabold text-gray-900 mb-3">
                       {esporte} – {minNum} - {maxNum}
                     </h2>
@@ -490,6 +507,7 @@ export default function PermanentesGridPage() {
                                 slot={slot}
                                 hora={hora}
                                 esporte={esporte}
+                                quadra={{ quadraId: q.quadraId, nome: q.nome, numero: q.numero }}
                               />
                             );
                           })}
@@ -507,7 +525,7 @@ export default function PermanentesGridPage() {
         })}
       </div>
     );
-  }, [loading, erro, esportes, horas, abrirDetalhes]);
+  }, [loading, erro, esportes, horas, abrirDetalhes, irParaAgendarPermanente]);
 
   return (
     <div className="px-2 sm:px-3 md:px-4 py-4">
