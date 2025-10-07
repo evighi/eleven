@@ -12,8 +12,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 type Usuario = { nome: string; email?: string; celular?: string | null };
 
 type PermMeta = {
-  proximaData: string | null;     // YYYY-MM-DD (SP)
-  dataInicio: string | null;      // YYYY-MM-DD (SP)
+  proximaData: string | null;     // YYYY-MM-DD (ou ISO/Date -> normalizamos)
+  dataInicio: string | null;      // YYYY-MM-DD (ou ISO/Date -> normalizamos)
   excecoes: { id: string; data: string; motivo: string | null }[];
 };
 
@@ -98,6 +98,38 @@ function firstName(full?: string) {
   if (!full) return "";
   const [a] = full.trim().split(/\s+/);
   return a || "";
+}
+
+/** Normaliza para YYYY-MM-DD no fuso de São Paulo */
+function normalizeDateYmdSP(d: unknown): string | null {
+  if (d == null) return null;
+
+  // já está em YYYY-MM-DD?
+  if (typeof d === "string") {
+    const m = d.match(/^\d{4}-\d{2}-\d{2}/);
+    if (m) return m[0];
+    const parsed = new Date(d);
+    if (!isNaN(parsed.getTime())) {
+      return new Intl.DateTimeFormat("en-CA", {
+        timeZone: SP_TZ,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(parsed);
+    }
+    return null;
+  }
+
+  // timestamp ou Date
+  const parsed = typeof d === "number" ? new Date(d) : new Date(d as any);
+  if (isNaN(parsed.getTime())) return null;
+
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: SP_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(parsed);
 }
 
 /* ===== Tipos auxiliares para transferência ===== */
@@ -207,6 +239,14 @@ export default function PermanentesGridPage() {
         const esporteNome =
           (typeof det?.esporte === "string" ? det.esporte : det?.esporte?.nome) ?? (esporte ?? null);
 
+        // normaliza tudo no fuso de SP
+        const dataInicioYmd = normalizeDateYmdSP(meta?.dataInicio ?? (det as any)?.dataInicio ?? null);
+        const proximaDataYmd = normalizeDateYmdSP(meta?.proximaData ?? (det as any)?.proximaData ?? null);
+        const excecoesNorm = (meta?.excecoes ?? []).map((e) => ({
+          ...e,
+          data: normalizeDateYmdSP(e.data) ?? e.data,
+        }));
+
         setAgendamentoSelecionado({
           horario,
           usuario: usuarioValor,
@@ -215,10 +255,9 @@ export default function PermanentesGridPage() {
           agendamentoId,
           tipoLocal: "quadra",
           diaSemana: det?.diaSemana ?? null,
-          // Datas já são YYYY-MM-DD no fuso de SP vindas do back/meta
-          dataInicio: meta?.dataInicio ?? (det as any)?.dataInicio ?? null,
-          proximaData: meta?.proximaData ?? (det as any)?.proximaData ?? null,
-          excecoes: meta?.excecoes ?? (det as any)?.excecoes ?? [],
+          dataInicio: dataInicioYmd,
+          proximaData: proximaDataYmd,
+          excecoes: excecoesNorm,
         });
       } catch (err) {
         console.error("Erro ao buscar detalhes:", err);
@@ -360,15 +399,15 @@ export default function PermanentesGridPage() {
       abrirDetalhes(slot.agendamentoId!, hora, esporte, slot.permanenteMeta);
     };
 
-    // tooltip com datas como vierem do back (YYYY-MM-DD)
+    // tooltip com datas normalizadas no fuso de SP
     const title = isPerm
       ? [
           slot.usuario?.nome,
           slot.permanenteMeta?.proximaData
-            ? `Próxima: ${slot.permanenteMeta.proximaData}`
+            ? `Próxima: ${normalizeDateYmdSP(slot.permanenteMeta.proximaData)}`
             : null,
           slot.permanenteMeta?.dataInicio
-            ? `Início: ${slot.permanenteMeta.dataInicio}`
+            ? `Início: ${normalizeDateYmdSP(slot.permanenteMeta.dataInicio)}`
             : null,
         ]
           .filter(Boolean)
@@ -532,7 +571,7 @@ export default function PermanentesGridPage() {
                 <ul className="list-disc list-inside text-sm text-gray-700 mt-2">
                   {agendamentoSelecionado.excecoes.map((e) => (
                     <li key={e.id}>
-                      {e.data} {e.motivo ? `— ${e.motivo}` : ""}
+                      {normalizeDateYmdSP(e.data) ?? e.data} {e.motivo ? `— ${e.motivo}` : ""}
                     </li>
                   ))}
                 </ul>
