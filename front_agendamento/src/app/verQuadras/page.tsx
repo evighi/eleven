@@ -167,6 +167,10 @@ export default function VerQuadrasPage() {
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
   const hojeISO = useMemo(() => isoLocalDate(new Date(), "America/Sao_Paulo"), []);
 
+  const isCliente = usuario?.tipo === "CLIENTE";
+  const isProfessor = usuario?.tipo === "ADMIN_PROFESSORES";
+  // (admins com limite infinito não exibirão avisos também)
+
   const paraDDMM = useCallback(
     (iso?: string | null) => {
       const s = (iso || hojeISO).slice(0, 10);
@@ -427,12 +431,10 @@ export default function VerQuadrasPage() {
     );
   }
 
-  // Texto geral dinamizado por perfil
-  const limitHours = cancellationWindowHours(usuario?.tipo as TipoUsuario);
-  const avisoTopo =
-    limitHours === Infinity
-      ? "Administradores podem cancelar sem limite de antecedência. A exceção de 15min pós-criação continua válida para todos."
-      : `Cancelamento permitido até ${limitHours} horas de antecedência. Se a reserva foi criada faltando menos que isso, você pode cancelar em até 15 minutos após a criação. Em caso de dúvidas, contate os administradores. (53) 99103-2959`;
+  // 🔸 Topo: mostrar aviso SOMENTE para professores
+  const avisoTopo = isProfessor
+    ? "Cancelamento permitido até 2 horas de antecedência. Se a reserva foi criada faltando menos que isso, você pode cancelar em até 15 minutos após a criação. Em caso de dúvidas, contate os administradores. (53) 99103-2959"
+    : null;
 
   const SuccessCard = ({ a }: { a: AgendamentoCard }) => {
     const isPermanente = a.tipo === "PERMANENTE";
@@ -499,7 +501,7 @@ export default function VerQuadrasPage() {
           >
             <span className="inline-block rotate-180 text-xl cursor-pointer">➜</span>
           </button>
-          <h1 className="text-2xl font-extrabold tracking-wide drop-shadow-sm">
+        <h1 className="text-2xl font-extrabold tracking-wide drop-shadow-sm">
             {view === "success" ? "Reserva cancelada" : "Suas quadras"}
           </h1>
         </div>
@@ -508,11 +510,13 @@ export default function VerQuadrasPage() {
       {view === "list" && (
         <section className="px-0 py-0">
           <div className="max-w-sm mx-auto bg-white rounded-2xl shadow-md p-4">
-            {/* Aviso geral (dinâmico por perfil) */}
-            <div className="text-center text-orange-600 text-[12px] leading-snug mb-3">
-              <div className="font-semibold text-[11px] tracking-wide uppercase mb-1">Atenção!</div>
-              {avisoTopo}
-            </div>
+            {/* Aviso geral — SOMENTE professores */}
+            {avisoTopo && (
+              <div className="text-center text-orange-600 text-[12px] leading-snug mb-3">
+                <div className="font-semibold text-[11px] tracking-wide uppercase mb-1">Atenção!</div>
+                {avisoTopo}
+              </div>
+            )}
 
             <h2 className="text-[13px] font-semibold text-gray-500 mb-3">
               Suas quadras:
@@ -535,7 +539,7 @@ export default function VerQuadrasPage() {
               {agendamentos.map((a) => {
                 const isBloqueado = a.tipo === "PERMANENTE" && a.bloqueado;
 
-                // 🔸 policy por item (usa data efetiva do card)
+                // policy por item
                 const policy = getCancelPolicy({
                   userTipo: usuario?.tipo as TipoUsuario,
                   dataISO: a._rawDataISO,
@@ -622,13 +626,15 @@ export default function VerQuadrasPage() {
                           <p className="text-[11px] text-gray-500">Quadra {a.numero}</p>
                         )}
 
-                        {/* 🔸 Regra/aviso por item */}
-                        <div className="mt-1">
-                          <p className="text-[11px] text-gray-500">{policy.regraTexto}</p>
-                          {policy.warning && (
-                            <p className="text-[11px] text-amber-700">{policy.warning}</p>
-                          )}
-                        </div>
+                        {/* 🔸 Avisos por item — SOMENTE para professores */}
+                        {isProfessor && (
+                          <div className="mt-1">
+                            <p className="text-[11px] text-gray-500">{policy.regraTexto}</p>
+                            {policy.warning && (
+                              <p className="text-[11px] text-amber-700">{policy.warning}</p>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -736,8 +742,8 @@ export default function VerQuadrasPage() {
                 {cancelTarget.tipo === "PERMANENTE" && " (permanente — próxima reserva)"}
               </p>
 
-              {/* Rodapé dinâmico da regra na modal */}
-              {(() => {
+              {/* Rodapé da regra — SOMENTE para professores */}
+              {isProfessor && (() => {
                 const policy = getCancelPolicy({
                   userTipo: usuario?.tipo as TipoUsuario,
                   dataISO: cancelTarget._rawDataISO,
