@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import axios from 'axios'
+import Spinner from '@/components/Spinner' // ✅ usa seu Spinner
 
 interface Usuario {
   id: string
@@ -29,9 +30,14 @@ export default function UsuariosAdmin() {
   const [usuarioSelecionado, setUsuarioSelecionado] = useState<Usuario | null>(null)
   const [novoTipo, setNovoTipo] = useState('')
 
+  // ✅ novos estados de carregamento
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+
   const API_URL = process.env.NEXT_PUBLIC_URL_API || 'http://localhost:3001'
 
   const carregarUsuarios = useCallback(async () => {
+    setLoading(true) // <-- inicia spinner
     try {
       const res = await axios.get(`${API_URL}/usuariosAdmin`, {
         params: {
@@ -46,6 +52,9 @@ export default function UsuariosAdmin() {
       setUsuarios(lista)
     } catch (err) {
       console.error(err)
+      setUsuarios([])
+    } finally {
+      setLoading(false) // <-- finaliza spinner
     }
   }, [API_URL, busca, filtroTipo])
 
@@ -58,6 +67,7 @@ export default function UsuariosAdmin() {
 
   const salvarTipo = async () => {
     if (!usuarioSelecionado) return
+    setSaving(true) // <-- spinner no botão salvar
     try {
       await axios.put(
         `${API_URL}/usuariosAdmin/${usuarioSelecionado.id}/tipo`,
@@ -70,6 +80,8 @@ export default function UsuariosAdmin() {
     } catch (err) {
       console.error(err)
       alert('Erro ao atualizar tipo')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -114,7 +126,18 @@ export default function UsuariosAdmin() {
         </div>
       </div>
 
+      {/* Linha de status de carregamento */}
+      {loading && (
+        <div className="flex items-center gap-2 text-gray-600 mb-3">
+          <Spinner /> <span>Carregando usuários…</span>
+        </div>
+      )}
+
       <ul className="border rounded divide-y">
+        {!loading && usuarios.length === 0 && (
+          <li className="p-4 text-sm text-gray-600">Nenhum usuário encontrado.</li>
+        )}
+
         {usuarios.map((u) => (
           <li key={u.id}>
             {/* Linha do usuário */}
@@ -158,6 +181,7 @@ export default function UsuariosAdmin() {
                   className="w-full p-2 border rounded mb-3 cursor-pointer"
                   value={novoTipo}
                   onChange={(e) => setNovoTipo(e.target.value)}
+                  disabled={saving}
                 >
                   {tipos.map((t) => (
                     <option key={t} value={t}>
@@ -167,12 +191,18 @@ export default function UsuariosAdmin() {
                 </select>
 
                 <div className="flex gap-2">
-                  <button onClick={salvarTipo} className="bg-green-600 text-white px-4 py-2 rounded cursor-pointer">
-                    Salvar
+                  <button
+                    onClick={salvarTipo}
+                    disabled={saving}
+                    className="bg-green-600 text-white px-4 py-2 rounded cursor-pointer disabled:opacity-60 flex items-center gap-2"
+                  >
+                    {saving && <Spinner size="w-4 h-4" />} {/* ✅ spinner no botão */}
+                    {saving ? 'Salvando…' : 'Salvar'}
                   </button>
                   <button
                     onClick={() => setUsuarioSelecionado(null)}
-                    className="bg-gray-400 text-white px-4 py-2 rounded cursor-pointer"
+                    disabled={saving}
+                    className="bg-gray-400 text-white px-4 py-2 rounded cursor-pointer disabled:opacity-60"
                   >
                     Cancelar
                   </button>
