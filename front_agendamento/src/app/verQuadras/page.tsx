@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import axios from "axios";
@@ -13,6 +13,13 @@ import { useAuthStore } from "@/context/AuthStore";
 
 type Status = "CONFIRMADO" | "FINALIZADO" | "CANCELADO" | "TRANSFERIDO";
 type TipoReserva = "COMUM" | "PERMANENTE";
+
+// 👉 TIPOS DE USUÁRIO (para a regra)
+type TipoUsuario =
+  | "CLIENTE"
+  | "ADMIN_MASTER"
+  | "ADMIN_ATENDENTE"
+  | "ADMIN_PROFESSORES";
 
 type AgendamentoAPI = {
   id: string;
@@ -68,6 +75,70 @@ type AgendamentoCard = {
   bloqueioFim?: string | null;
 };
 
+/* ============================================================
+   🔸 Regras de cancelamento — implementadas AQUI no arquivo
+   ============================================================ */
+function cancellationWindowHours(tipo?: TipoUsuario): number {
+  if (tipo === "ADMIN_MASTER" || tipo === "ADMIN_ATENDENTE") return Infinity; // sem limite
+  if (tipo === "ADMIN_PROFESSORES") return 2; // 2h antes
+  return 12; // cliente
+}
+/** Converte Y-M-D + HH:mm para timestamp considerando America/Sao_Paulo */
+function tsFromSP(ymd: string, hm: string) {
+  const safeHM = /^\d{2}:\d{2}$/.test(hm) ? hm : "00:00";
+  return new Date(`${ymd}T${safeHM}:00-03:00`).getTime();
+}
+/** Parecer de cancelamento p/ UI (o back ainda é a autoridade por causa da exceção de 15min) */
+function getCancelPolicy({
+  userTipo,
+  dataISO, // "YYYY-MM-DD"
+  horario, // "HH:mm"
+  agoraTs = Date.now(),
+}: {
+  userTipo?: TipoUsuario;
+  dataISO: string | null | undefined;
+  horario: string;
+  agoraTs?: number;
+}) {
+  if (!dataISO) {
+    return {
+      regraTexto: "Regra de cancelamento conforme perfil do usuário.",
+      minutesLeft: Infinity,
+      jaIniciado: false,
+      dentroJanela: false,
+      canTryCancel: true,
+      warning: undefined as string | undefined,
+      limitHours: cancellationWindowHours(userTipo),
+    };
+  }
+
+  const limitHours = cancellationWindowHours(userTipo);
+  const startTs = tsFromSP(dataISO, horario);
+
+  const diffMs = startTs - agoraTs;
+  const minutesLeft = Math.floor(diffMs / 60000);
+  const requiredMinutes = limitHours === Infinity ? 0 : limitHours * 60;
+
+  const jaIniciado = minutesLeft <= 0;
+  const dentroJanela = limitHours !== Infinity && minutesLeft < requiredMinutes;
+
+  const regraTexto =
+    limitHours === Infinity
+      ? "Cancelamento liberado para administradores."
+      : `Cancelamento permitido até ${limitHours}h antes do horário.`;
+
+  const canTryCancel = !jaIniciado;
+
+  const warning =
+    jaIniciado
+      ? "Não é possível cancelar um agendamento já iniciado."
+      : dentroJanela
+      ? "Falta menos que o limite. O cancelamento pode ser recusado, exceto nos 15min após a criação."
+      : undefined;
+
+  return { regraTexto, minutesLeft, jaIniciado, dentroJanela, canTryCancel, warning, limitHours };
+}
+
 export default function VerQuadrasPage() {
   const { isChecking } = useRequireAuth([
     "CLIENTE",
@@ -90,7 +161,7 @@ export default function VerQuadrasPage() {
   const [cancelSending, setCancelSending] = useState(false);
   const [cancelError, setCancelError] = useState<string>("");
 
-  // ✅ novo: dados do sucesso (mostrados na tela de sucesso)
+  // sucesso
   const [cancelSuccess, setCancelSuccess] = useState<AgendamentoCard | null>(null);
 
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
@@ -137,9 +208,12 @@ export default function VerQuadrasPage() {
     const d = new Date(now);
     d.setDate(d.getDate() + delta);
     const ymd = new Intl.DateTimeFormat("en-CA", {
-      timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
+      timeZone: tz, year: "numeric", month: "2-digit", day: "numeric",
     }).format(d);
-    return ymd;
+    // formata com zero no dia
+    const [yy, mm, ddAny] = ymd.split("-");
+    const dd = String(ddAny).padStart(2, "0");
+    return `${yy}-${mm}-${dd}`;
   }
 
   const normalizar = useCallback(
@@ -228,6 +302,7 @@ export default function VerQuadrasPage() {
     carregarLista();
   }, [carregarLista, isChecking]);
 
+  // Mensagens de erro vindas do back (com 12h/2h)
   const parseErro = (e: unknown): string => {
     const ax = e as { response?: { data?: any; status?: number; statusText?: string } };
     const body = ax?.response?.data;
@@ -239,10 +314,12 @@ export default function VerQuadrasPage() {
     if (
       lowered.includes("12h") ||
       lowered.includes("12 horas") ||
+      lowered.includes("2h") ||
+      lowered.includes("2 horas") ||
       lowered.includes("janela de cancelamento") ||
-      lowered.includes("faltam menos de 12")
+      lowered.includes("faltam menos de")
     ) {
-      return "O prazo para cancelamento desta reserva foi esgotado e  não poderá ser cancelado. Contate os administradores. (53) 99103-2959";
+      return "O prazo para cancelamento desta reserva foi esgotado e não poderá ser cancelado. Contate os administradores. (53) 99103-2959";
     }
     return msg || "Não foi possível cancelar. Tente novamente.";
   };
@@ -259,12 +336,10 @@ export default function VerQuadrasPage() {
     setCancelError("");
   };
 
-  // 🔧 helper: tenta montar um "card" a partir do retorno do back; se nada, usa fallback
+  // tenta montar um "card" a partir do retorno do back; se nada, usa fallback
   const montarCardDeRetorno = (resp: any, fallback: AgendamentoCard): AgendamentoCard => {
     try {
-      // aceito tanto resposta direta quanto {agendamento: {...}}
       const raw: Partial<AgendamentoAPI> = resp?.agendamento ?? resp ?? {};
-      // preencho com fallback para campos ausentes
       const merged: AgendamentoAPI = {
         id: String(raw.id ?? fallback.id),
         horario: String(raw.horario ?? fallback.hora),
@@ -309,7 +384,6 @@ export default function VerQuadrasPage() {
         );
         respData = resp ?? null;
 
-        // tira da lista
         setAgendamentos((cur) => cur.filter((x) => x.id !== cancelTarget.id));
       } else {
         // permanente → cancelar apenas a PRÓXIMA ocorrência
@@ -329,7 +403,6 @@ export default function VerQuadrasPage() {
         await carregarLista();
       }
 
-      // guarda o "card" para a tela de sucesso (usa resp do back se existir; senão, fallback)
       const card = montarCardDeRetorno(respData, cancelTarget);
       setCancelSuccess(card);
 
@@ -353,6 +426,13 @@ export default function VerQuadrasPage() {
       </main>
     );
   }
+
+  // Texto geral dinamizado por perfil
+  const limitHours = cancellationWindowHours(usuario?.tipo as TipoUsuario);
+  const avisoTopo =
+    limitHours === Infinity
+      ? "Administradores podem cancelar sem limite de antecedência. A exceção de 15min pós-criação continua válida para todos."
+      : `Cancelamento permitido até ${limitHours} horas de antecedência. Se a reserva foi criada faltando menos que isso, você pode cancelar em até 15 minutos após a criação. Em caso de dúvidas, contate os administradores. (53) 99103-2959`;
 
   const SuccessCard = ({ a }: { a: AgendamentoCard }) => {
     const isPermanente = a.tipo === "PERMANENTE";
@@ -428,12 +508,10 @@ export default function VerQuadrasPage() {
       {view === "list" && (
         <section className="px-0 py-0">
           <div className="max-w-sm mx-auto bg-white rounded-2xl shadow-md p-4">
-            {/* Aviso geral */}
+            {/* Aviso geral (dinâmico por perfil) */}
             <div className="text-center text-orange-600 text-[12px] leading-snug mb-3">
               <div className="font-semibold text-[11px] tracking-wide uppercase mb-1">Atenção!</div>
-              O cancelamento de quadras é permitido com 12 horas de antecedência. Caso a reserva seja realizada com menos
-              de 12 horas, o usuário pode cancelar a reserva em até 15 minutos. Em caso de dúvidas, contate os administradores.
-              (53) 991032959
+              {avisoTopo}
             </div>
 
             <h2 className="text-[13px] font-semibold text-gray-500 mb-3">
@@ -456,6 +534,15 @@ export default function VerQuadrasPage() {
             <div className="space-y-3">
               {agendamentos.map((a) => {
                 const isBloqueado = a.tipo === "PERMANENTE" && a.bloqueado;
+
+                // 🔸 policy por item (usa data efetiva do card)
+                const policy = getCancelPolicy({
+                  userTipo: usuario?.tipo as TipoUsuario,
+                  dataISO: a._rawDataISO,
+                  horario: a.hora,
+                });
+
+                const cancelarDisabled = policy.jaIniciado || !a.euSouDono;
 
                 return (
                   <div
@@ -534,6 +621,14 @@ export default function VerQuadrasPage() {
                         {a.numero && (
                           <p className="text-[11px] text-gray-500">Quadra {a.numero}</p>
                         )}
+
+                        {/* 🔸 Regra/aviso por item */}
+                        <div className="mt-1">
+                          <p className="text-[11px] text-gray-500">{policy.regraTexto}</p>
+                          {policy.warning && (
+                            <p className="text-[11px] text-amber-700">{policy.warning}</p>
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -543,7 +638,19 @@ export default function VerQuadrasPage() {
                       {a.euSouDono ? (
                         <button
                           onClick={() => abrirModalCancelar(a)}
-                          className="w-full py-2 text-[13px] font-semibold text-orange-600 hover:text-orange-700 cursor-pointer"
+                          disabled={cancelarDisabled}
+                          className={`w-full py-2 text-[13px] font-semibold ${
+                            cancelarDisabled
+                              ? "text-gray-400 cursor-not-allowed"
+                              : "text-orange-600 hover:text-orange-700 cursor-pointer"
+                          }`}
+                          title={
+                            !a.euSouDono
+                              ? "Apenas o dono pode cancelar esta reserva"
+                              : policy.jaIniciado
+                              ? "O horário já passou/iniciou."
+                              : "Cancelar agendamento"
+                          }
                         >
                           Cancelar agendamento
                         </button>
@@ -591,7 +698,6 @@ export default function VerQuadrasPage() {
                 : "Cancelamos sua reserva com sucesso."}
             </p>
 
-            {/* cartão-resumo do que foi cancelado */}
             {cancelSuccess && <SuccessCard a={cancelSuccess} />}
 
             <button
@@ -630,16 +736,27 @@ export default function VerQuadrasPage() {
                 {cancelTarget.tipo === "PERMANENTE" && " (permanente — próxima reserva)"}
               </p>
 
-              {cancelTarget.tipo === "PERMANENTE" ? (
-                <p className="text-[12px] text-gray-500 italic">
-                  *Cancelamento permitido somente com 12 horas de antecedência da próxima reserva.
-                </p>
-              ) : (
-                <p className="text-[12px] text-gray-500 italic">
-                  *Segundo nossos termos e condições, o cancelamento é permitido com 12 horas de antecedência.
-                  Para reservas realizadas com menos de 12 horas, o cancelamento é permitido por 15 minutos após a criação.
-                </p>
-              )}
+              {/* Rodapé dinâmico da regra na modal */}
+              {(() => {
+                const policy = getCancelPolicy({
+                  userTipo: usuario?.tipo as TipoUsuario,
+                  dataISO: cancelTarget._rawDataISO,
+                  horario: cancelTarget.hora,
+                });
+                return (
+                  <>
+                    <p className="text-[12px] text-gray-500 italic">{policy.regraTexto}</p>
+                    {policy.dentroJanela && (
+                      <p className="text-[12px] text-amber-700">
+                        Falta menos que o limite. O back pode recusar, salvo exceção de 15min após a criação.
+                      </p>
+                    )}
+                    {policy.jaIniciado && (
+                      <p className="text-[12px] text-red-600">O horário já passou/iniciou.</p>
+                    )}
+                  </>
+                );
+              })()}
 
               {cancelError && (
                 <div className="mt-3 rounded-md bg-red-100 text-red-800 text-[13px] px-3 py-2">
