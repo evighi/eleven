@@ -754,7 +754,7 @@ export default function VerQuadrasPage() {
                     <p className="text-[12px] text-gray-500 italic">{policy.regraTexto}</p>
                     {policy.dentroJanela && (
                       <p className="text-[12px] text-amber-700">
-                        Falta menos que o limite. O back pode recusar, salvo exceção de 15min após a criação.
+                        Falta menos que o limite. Salvo exceção de 15min após a criação.
                       </p>
                     )}
                     {policy.jaIniciado && (

@@ -456,7 +456,14 @@ export default function AgendarQuadraCliente() {
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
 
   // protege a rota
-  const { isChecking } = useRequireAuth(["CLIENTE", "ADMIN_MASTER"]);
+  // depois — deixa professor entrar no fluxo de marcação
+  const { isChecking } = useRequireAuth([
+    "CLIENTE",
+    "ADMIN_MASTER",
+    "ADMIN_ATENDENTE",   // se quiser que atendente também possa agendar
+    "ADMIN_PROFESSORES", // <- este é o importante pro seu caso
+  ]);
+
   const { usuario } = useAuthStore();
 
   // helpers URL
@@ -1263,11 +1270,10 @@ export default function AgendarQuadraCliente() {
                       <p className="text-[12px] text-gray-600 leading-tight flex items-center gap-2">
                         {successInfo.esporte}
                         <span
-                          className={`text-[10px] px-2 py-[2px] rounded-full ${
-                            successInfo.tipo === "PERMANENTE"
+                          className={`text-[10px] px-2 py-[2px] rounded-full ${successInfo.tipo === "PERMANENTE"
                               ? "bg-gray-200 text-gray-800"
                               : "bg-orange-100 text-orange-600"
-                          }`}
+                            }`}
                         >
                           {successInfo.tipo === "PERMANENTE" ? "Permanente" : "Comum"}
                         </span>
