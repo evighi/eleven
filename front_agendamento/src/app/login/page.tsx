@@ -184,7 +184,7 @@ export default function Login() {
           router.push("/admin/atendente");
           break;
         case "ADMIN_PROFESSORES":
-          router.push("/admin/professor");
+          router.push("/");
           break;
         default:
           router.push("/");
