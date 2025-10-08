@@ -3,7 +3,6 @@ import { PrismaClient, DiaSemana, Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { z } from "zod";
-import { startOfDay, addDays, getDay } from "date-fns";
 import cron from "node-cron"; // ⏰ cron para finalizar vencidos
 import verificarToken from "../middleware/authMiddleware";
 import { r2PublicUrl } from "../src/lib/r2";
@@ -48,15 +47,25 @@ function msFromLocalYMDHM(ymd: string, hm: string) {
   return Date.UTC(y, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0, 0, 0);
 }
 
-// Próxima data (YYYY-MM-DD, UTC) para um DiaSemana, respeitando dataInicio opcional
-function nextDateISOForDiaSemana(dia: DiaSemana, minDate?: Date | null) {
-  const hoje = new Date();
-  const base = minDate && minDate > hoje ? minDate : hoje;
-  const cur = base.getDay(); // 0..6
-  const target = DIA_IDX[dia] ?? 0; // 0..6
-  const delta = (target - cur + 7) % 7; // 0..6
-  const d = startOfDay(addDays(base, delta));
-  return d.toISOString().slice(0, 10);
+/**
+ * ⚠️ IMPORTANTE SOBRE O CAMPO `data`:
+ * No POST você manda "YYYY-MM-DD", que o Node interpreta como MEIA-NOITE EM UTC daquele dia.
+ * Portanto, no banco o campo `data` representa "00:00 UTC do dia pretendido".
+ * Para comparar com "hoje" local, converta o dia local para esse MESMO formato.
+ */
+function getStoredUtcBoundaryForLocalDay(dLocal = new Date()) {
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: SP_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const [y, m, d] = fmt.format(dLocal).split("-").map(Number);
+
+  const hojeUTC00 = new Date(Date.UTC(y, m - 1, d, 0, 0, 0));
+  const amanhaUTC00 = new Date(Date.UTC(y, m - 1, d + 1, 0, 0, 0));
+
+  return { hojeUTC00, amanhaUTC00 };
 }
 
 function getUtcDayRange(dateStr?: string) {
@@ -72,30 +81,6 @@ function getUtcDayRange(dateStr?: string) {
   // Caso contrário, usamos o DIA LOCAL (America/Sao_Paulo) para gerar os boundaries em UTC
   const { hojeUTC00, amanhaUTC00 } = getStoredUtcBoundaryForLocalDay(new Date());
   return { inicio: hojeUTC00, fim: amanhaUTC00 };
-}
-
-/**
- * ⚠️ IMPORTANTE SOBRE O CAMPO `data`:
- * No POST você manda "YYYY-MM-DD", que o Node interpreta como MEIA-NOITE EM UTC daquele dia.
- * Portanto, no banco o campo `data` representa "00:00 UTC do dia pretendido".
- * Para comparar com "hoje" local, converta o dia local para esse MESMO formato:
- *   Date.UTC(anoLocal, mesLocal, diaLocal, 0, 0, 0) => boundary correto para consultas.
- */
-// Força o dia local em America/Sao_Paulo e devolve os limites em UTC [início, fim)
-function getStoredUtcBoundaryForLocalDay(dLocal = new Date()) {
-  const fmt = new Intl.DateTimeFormat("en-CA", {
-    timeZone: SP_TZ,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  const [y, m, d] = fmt.format(dLocal).split("-").map(Number);
-
-  // 00:00:00 UTC do mesmo YYYY-MM-DD (é exatamente como você salva no banco)
-  const hojeUTC00 = new Date(Date.UTC(y, m - 1, d, 0, 0, 0));
-  const amanhaUTC00 = new Date(Date.UTC(y, m - 1, d + 1, 0, 0, 0));
-
-  return { hojeUTC00, amanhaUTC00 };
 }
 
 // helpers de imagem (R2/legado/url absoluta)
@@ -127,6 +112,17 @@ function horarioDentroIntervalo(h: string, ini: string, fim: string) {
   return h >= ini && h < fim;
 }
 
+// ===== novos helpers para trabalhar sempre no "dia local" =====
+function localWeekdayIndexOfYMD(ymd: string): number {
+  // meio-dia -03:00 evita rollover
+  return new Date(`${ymd}T12:00:00-03:00`).getUTCDay(); // 0..6
+}
+function addDaysLocalYMD(ymd: string, days: number): string {
+  const d = new Date(`${ymd}T12:00:00-03:00`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return localYMD(d);
+}
+
 const prisma = new PrismaClient();
 const router = Router();
 
@@ -134,11 +130,21 @@ const router = Router();
 const isAdminRole = (t?: string) =>
   ["ADMIN_MASTER", "ADMIN_ATENDENTE", "ADMIN_PROFESSORES"].includes(t || "");
 
+// super-admin segue sem limite de cancelamento
+const isSuperAdminRole = (t?: string) =>
+  ["ADMIN_MASTER", "ADMIN_ATENDENTE"].includes(t || "");
+
+// janela por perfil (em horas)
+function cancellationWindowHours(tipo?: string): number {
+  if (isSuperAdminRole(tipo)) return Infinity; // sem limite
+  if (tipo === "ADMIN_PROFESSORES") return 2;  // professor
+  return 12;                                   // cliente
+}
+
 /**
  * Calcula a PRÓXIMA data (YYYY-MM-DD) para um permanente,
- * PULANDO as datas já marcadas como exceção e CONSIDERANDO o horário.
+ * PULANDO exceções e CONSIDERANDO o horário.
  */
-// Substitua sua função atual por esta
 async function proximaDataPermanenteSemExcecao(p: {
   id: string;
   diaSemana: DiaSemana;
@@ -147,58 +153,32 @@ async function proximaDataPermanenteSemExcecao(p: {
 }): Promise<string> {
   const agora = new Date();
 
-  // "hoje" no fuso de SP, como YMD
-  const hojeSP_YMD = localYMD(agora);              // "YYYY-MM-DD" em SP
-  const hojeSP_utc00 = toUtc00(hojeSP_YMD);        // Date 00:00Z daquele dia local
+  const hojeSP_YMD = localYMD(agora);
+  const baseLocalYMD =
+    p.dataInicio && p.dataInicio > agora ? p.dataInicio.toISOString().slice(0, 10) : hojeSP_YMD;
 
-  // Se há dataInicio futura, usamos o dia local correspondente a ela
-  const baseLocalYMD = (() => {
-    if (p.dataInicio && p.dataInicio > agora) {
-      // p.dataInicio está salvo como 00:00Z do dia local — convertemos para YMD
-      return p.dataInicio.toISOString().slice(0, 10);
-    }
-    return hojeSP_YMD;
-  })();
-
-  // Índices (0..6) para o dia local base e alvo
-  const DIA_IDX: Record<DiaSemana, number> = {
+  const DIA_IDX_LOCAL: Record<DiaSemana, number> = {
     DOMINGO: 0, SEGUNDA: 1, TERCA: 2, QUARTA: 3, QUINTA: 4, SEXTA: 5, SABADO: 6,
   };
-  // dayIdx do baseLocalYMD (criamos um Date "fixo" às 12:00-03:00 só para extrair o getUTCDay estável)
   const baseLocalNoon = new Date(`${baseLocalYMD}T12:00:00-03:00`);
-  const cur = baseLocalNoon.getUTCDay();                  // 0..6 para o dia local
-  const target = DIA_IDX[p.diaSemana] ?? 0;               // 0..6
-  let delta = (target - cur + 7) % 7;                     // 0..6
+  const cur = baseLocalNoon.getUTCDay();
+  const target = DIA_IDX_LOCAL[p.diaSemana] ?? 0;
+  let delta = (target - cur + 7) % 7;
 
-  // Se delta=0, checar horário "hoje em SP": se já passou, próxima semana
   if (delta === 0) {
-    const agoraHM = localHM(agora); // "HH:mm" em SP
+    const agoraHM = localHM(agora);
     if (agoraHM >= p.horario) delta = 7;
-  }
-
-  // Construímos a tentativa a partir do YMD local, somando 'delta' dias em "linha do tempo local"
-  function addDaysLocalYMD(ymd: string, days: number): string {
-    const d = new Date(`${ymd}T12:00:00-03:00`); // meio-dia local evita DST edge
-    d.setUTCDate(d.getUTCDate() + days);
-    // volta para YMD local
-    return new Intl.DateTimeFormat("en-CA", {
-      timeZone: "America/Sao_Paulo",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(d);
   }
 
   let tentativaYMD = addDaysLocalYMD(baseLocalYMD, delta);
 
-  // Até ~2 anos
   for (let i = 0; i < 120; i++) {
     const tentativaUTC00 = toUtc00(tentativaYMD);
     const exc = await prisma.agendamentoPermanenteCancelamento.findFirst({
       where: { agendamentoPermanenteId: p.id, data: tentativaUTC00 },
       select: { id: true },
     });
-    if (!exc) return tentativaYMD; // devolvemos o YMD LOCAL
+    if (!exc) return tentativaYMD;
     tentativaYMD = addDaysLocalYMD(tentativaYMD, 7);
   }
 
@@ -216,7 +196,6 @@ const agendamentoSchema = z.object({
   horario: z.string().min(1),
   quadraId: z.string().uuid(),
   esporteId: z.string().uuid(),
-  // admin pode mandar; cliente não precisa mandar (vem do token)
   usuarioId: z.string().uuid().optional(),
   jogadoresIds: z.array(z.string().uuid()).optional().default([]),
   convidadosNomes: z.array(z.string().trim().min(1)).optional().default([]),
@@ -225,7 +204,7 @@ const agendamentoSchema = z.object({
 async function criarConvidadoComoUsuario(nomeConvidado: string) {
   const cleanName = nomeConvidado.trim().replace(/\s+/g, " ");
   const localPart = cleanName.toLowerCase().replace(/\s+/g, ".");
-  const suffix = crypto.randomBytes(3).toString("hex"); // 6 chars para unicidade
+  const suffix = crypto.randomBytes(3).toString("hex");
   const emailSintetico = `${localPart}+guest.${suffix}@noemail.local`;
 
   const randomPass = crypto.randomUUID();
@@ -251,21 +230,13 @@ const diasEnum = ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "S
 
 /**
  * ⛳ Finaliza agendamentos CONFIRMADOS cujo dia/horário já passaram.
- * Regras:
- *  1) data < HOJE(UTC00 do dia local)  -> FINALIZADO
- *  2) HOJE <= data < AMANHÃ (utc00) e horario < HH:mm ATUAL LOCAL(SP) -> FINALIZADO
- * Obs: 'horario' no formato 'HH:mm' permite comparação lexicográfica.
  */
 async function finalizarAgendamentosVencidos() {
   const agora = new Date();
 
-  // Limites do dia LOCAL (SP) codificados em UTC 00:00 — compatíveis com como "data" é salva
   const { hojeUTC00, amanhaUTC00 } = getStoredUtcBoundaryForLocalDay(agora);
-
-  // HORA ATUAL NO FUSO DE SP — NÃO usar getHours()/getMinutes()
   const agoraHHMM = localHM(agora, SP_TZ); // "HH:mm"
 
-  // 1) Qualquer dia anterior a hoje
   const r1 = await prisma.agendamento.updateMany({
     where: {
       status: "CONFIRMADO",
@@ -274,7 +245,6 @@ async function finalizarAgendamentosVencidos() {
     data: { status: "FINALIZADO" },
   });
 
-  // 2) Hoje, mas com horário já passado
   const r2 = await prisma.agendamento.updateMany({
     where: {
       status: "CONFIRMADO",
@@ -334,18 +304,18 @@ router.post("/", verificarToken, async (req, res) => {
     convidadosNomes = [],
   } = parsed.data;
 
-  // cliente não define usuarioId; admin pode
-  const usuarioIdDono = isAdmin && usuarioIdBody
-    ? usuarioIdBody
-    : reqCustom.usuario.usuarioLogadoId;
+  const usuarioIdDono =
+    isAdmin && usuarioIdBody ? usuarioIdBody : reqCustom.usuario.usuarioLogadoId;
 
   try {
-    // ── checagens de conflito ───────────────────────────────────────────────────
-    const diaSemanaEnum = diasEnum[getDay(data)] as DiaSemana;
-    const dataInicio = startOfDay(data);
-    const dataFim = addDays(dataInicio, 1);
+    // === TZ-safe: derive do YMD local salvo (00:00Z)
+    const dataYMD = toISODateUTC(data); // "YYYY-MM-DD"
+    const diaSemanaEnum = diasEnum[localWeekdayIndexOfYMD(dataYMD)] as DiaSemana;
 
-    // (1) conflito com comum existente no MESMO dia/horário/quadra (não cancelado/transferido)
+    // Janela [00:00Z do dia local, 00:00Z do próximo dia local]
+    const dataInicio = toUtc00(dataYMD);
+    const dataFim = toUtc00(addDaysLocalYMD(dataYMD, 1));
+
     const agendamentoExistente = await prisma.agendamento.findFirst({
       where: {
         quadraId,
@@ -360,9 +330,7 @@ router.post("/", verificarToken, async (req, res) => {
         .json({ erro: "Já existe um agendamento para essa quadra, data e horário" });
     }
 
-    // (2) conflito com PERMANENTE ATIVO — respeitando exceções
-    const dataISO = toISODateUTC(data); // "YYYY-MM-DD"
-    const dataUTC00 = toUtc00(dataISO); // Date em 00:00Z do mesmo dia
+    const dataUTC00 = toUtc00(dataYMD);
 
     const permanentesAtivos = await prisma.agendamentoPermanente.findMany({
       where: {
@@ -389,19 +357,16 @@ router.post("/", verificarToken, async (req, res) => {
       }
     }
 
-    // ── cria usuários mínimos para cada convidado ───────────────────────────────
     const convidadosCriadosIds: string[] = [];
     for (const nome of convidadosNomes) {
       const convidado = await criarConvidadoComoUsuario(nome);
       convidadosCriadosIds.push(convidado.id);
     }
 
-    // ── monta todos os jogadores: dono + cadastrados + convidados (sem duplicar) ─
     const connectIds = Array.from(
       new Set<string>([usuarioIdDono, ...jogadoresIds, ...convidadosCriadosIds])
     ).map((id) => ({ id }));
 
-    // ── cria agendamento já conectando jogadores ───────────────────────────────
     const novoAgendamento = await prisma.agendamento.create({
       data: {
         data,
@@ -420,7 +385,6 @@ router.post("/", verificarToken, async (req, res) => {
       },
     });
 
-    // 📝 AUDIT: criação
     try {
       await logAudit({
         event: "AGENDAMENTO_CREATE",
@@ -442,8 +406,6 @@ router.post("/", verificarToken, async (req, res) => {
 
     return res.status(201).json(novoAgendamento);
   } catch (err: any) {
-    // 🧱 Concorrência: outro usuário confirmou o mesmo slot entre sua checagem e o create()
-    // Prisma lança P2002 (unique) e, em alguns casos de SQL bruto, pode vir 23505 (Postgres)
     if (
       (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") ||
       err?.code === "23505"
@@ -467,18 +429,15 @@ router.get("/", verificarToken, async (req, res) => {
 
   const isAdmin = isAdminRole(reqCustom.usuario.usuarioLogadoTipo);
 
-  // filtros opcionais
   const { data, quadraId, usuarioId } = req.query as {
     data?: string;
     quadraId?: string;
     usuarioId?: string;
   };
 
-  // monta where de forma flexível
   const where: any = {};
   if (quadraId) where.quadraId = String(quadraId);
 
-  // filtro de data
   if (typeof data === "string" && /^\d{4}-\d{2}-\d{2}$/.test(data)) {
     const { inicio, fim } = getUtcDayRange(data);
     where.data = { gte: inicio, lt: fim };
@@ -525,8 +484,6 @@ router.get("/", verificarToken, async (req, res) => {
           : a.usuario,
         jogadores: a.jogadores.map((j) => ({ ...j, email: sanitizeEmail(j.email) })),
         quadraLogoUrl: resolveQuadraImg(a.quadra?.imagem) || "/quadra.png",
-
-        // 👇 adiciona também nesses resultados
         donoId: a.usuario?.id ?? a.usuarioId,
         donoNome: a.usuario?.nome ?? "",
         euSouDono,
@@ -540,8 +497,7 @@ router.get("/", verificarToken, async (req, res) => {
   }
 });
 
-// GET /agendamentos/me  -> comuns CONFIRMADOS + permanentes ATIVOS (próxima data respeita horário/exceções)
-// 🔴 Alteração: para PERMANENTES, marca se a próxima data está coberta por um BLOQUEIO (sem mudar a data).
+// GET /agendamentos/me
 router.get("/me", verificarToken, async (req, res) => {
   const reqCustom = req as typeof req & {
     usuario?: { usuarioLogadoId: string; usuarioLogadoNome?: string; usuarioLogadoTipo?: string };
@@ -551,7 +507,6 @@ router.get("/me", verificarToken, async (req, res) => {
   try {
     const usuarioId = reqCustom.usuario.usuarioLogadoId;
 
-    // 1) Comuns CONFIRMADOS onde o usuário é dono ou jogador (inalterado)
     const comunsConfirmados = await prisma.agendamento.findMany({
       where: {
         status: "CONFIRMADO",
@@ -560,7 +515,7 @@ router.get("/me", verificarToken, async (req, res) => {
       include: {
         quadra: { select: { id: true, nome: true, numero: true, imagem: true } },
         esporte: { select: { id: true, nome: true } },
-        usuario: { select: { id: true, nome: true } }, // 👈 DONO
+        usuario: { select: { id: true, nome: true } },
       },
       orderBy: [{ data: "asc" }, { horario: "asc" }],
     });
@@ -577,19 +532,17 @@ router.get("/me", verificarToken, async (req, res) => {
         tipoReserva: "COMUM" as const,
         status: a.status,
         logoUrl: quadraLogoUrl,
-        data: a.data.toISOString().slice(0, 10), // data efetiva do comum
+        data: a.data.toISOString().slice(0, 10),
         quadraNome: a.quadra?.nome ?? "",
         quadraNumero: a.quadra?.numero ?? null,
         quadraLogoUrl,
         esporteNome: a.esporte?.nome ?? "",
-
         donoId: a.usuario?.id ?? a.usuarioId,
         donoNome: a.usuario?.nome ?? "",
         euSouDono,
       };
     });
 
-    // 2) Permanentes ATIVOS onde o usuário é dono
     const permanentes = await prisma.agendamentoPermanente.findMany({
       where: {
         usuarioId,
@@ -598,12 +551,11 @@ router.get("/me", verificarToken, async (req, res) => {
       include: {
         quadra: { select: { id: true, nome: true, numero: true, imagem: true } },
         esporte: { select: { id: true, nome: true } },
-        usuario: { select: { id: true, nome: true } }, // 👈 DONO
+        usuario: { select: { id: true, nome: true } },
       },
       orderBy: [{ diaSemana: "asc" }, { horario: "asc" }],
     });
 
-    // 2.1) Calcula proximaData de cada permanente
     const permsComProxima = await Promise.all(
       permanentes.map(async (p) => {
         const proximaData = await proximaDataPermanenteSemExcecao({
@@ -616,7 +568,6 @@ router.get("/me", verificarToken, async (req, res) => {
       })
     );
 
-    // 2.2) Carrega bloqueios relevantes em LOTE para (quadraId, proximaData)
     const datasSet = new Set<string>();
     const quadrasSet = new Set<string>();
     for (const { p, proximaData } of permsComProxima) {
@@ -650,7 +601,6 @@ router.get("/me", verificarToken, async (req, res) => {
       });
     }
 
-    // Index por (quadraId|YYYY-MM-DD)
     const bloqueiosIndex = new Map<string, Array<typeof bloqueios[number]>>();
     for (const b of bloqueios) {
       const ymd = b.dataBloqueio.toISOString().slice(0, 10);
@@ -662,7 +612,6 @@ router.get("/me", verificarToken, async (req, res) => {
       }
     }
 
-    // 2.3) Monta resposta dos permanentes com flag de bloqueio (sem alterar proximaData)
     const respPermanentes = permsComProxima.map(({ p, proximaData }) => {
       const quadraLogoUrl = resolveQuadraImg(p.quadra?.imagem) || "/quadra.png";
 
@@ -693,26 +642,21 @@ router.get("/me", verificarToken, async (req, res) => {
         tipoReserva: "PERMANENTE" as const,
         status: p.status,
         logoUrl: quadraLogoUrl,
-
-        data: null,                 // permanentes não têm data fixa
-        diaSemana: p.diaSemana,     // exibir "toda SEGUNDA"
-        proximaData,                // mantém a mesma data
-        proximaDataBloqueada,       // 👈 NOVO FLAG
-        ...(bloqueioInfo ? { bloqueioInfo } : {}), // 👈 opcional para UI
-
+        data: null,
+        diaSemana: p.diaSemana,
+        proximaData,
+        proximaDataBloqueada,
+        ...(bloqueioInfo ? { bloqueioInfo } : {}),
         quadraNome: p.quadra?.nome ?? "",
         quadraNumero: p.quadra?.numero ?? null,
         quadraLogoUrl,
         esporteNome: p.esporte?.nome ?? "",
-
-        // sempre o próprio dono
         donoId: p.usuario?.id ?? p.usuarioId,
         donoNome: p.usuario?.nome ?? "",
         euSouDono: true,
       };
     });
 
-    // 3) Junta e ordena por (data|proximaData) + horário
     const tudo = [...respComuns, ...respPermanentes].sort((a: any, b: any) => {
       const da = a.data || a.proximaData || "";
       const db = b.data || b.proximaData || "";
@@ -727,7 +671,7 @@ router.get("/me", verificarToken, async (req, res) => {
   }
 });
 
-// 🔎 Lista transferências feitas pelo usuário logado + "para quem" foi transferido
+// 🔎 Lista transferências feitas pelo usuário logado
 router.get("/transferidos/me", verificarToken, async (req, res) => {
   const reqCustom = req as typeof req & {
     usuario?: { usuarioLogadoId: string; usuarioLogadoTipo?: string };
@@ -854,7 +798,7 @@ router.get("/:id", verificarToken, async (req, res) => {
             celular: sanitizePhone(agendamento.usuario.celular),
           }
         : null,
-      usuarioId: agendamento.usuario?.id, // mantém compat
+      usuarioId: agendamento.usuario?.id,
       esporte: agendamento.esporte?.nome,
       quadra: `${agendamento.quadra?.nome} (Nº ${agendamento.quadra?.numero})`,
       jogadores: agendamento.jogadores.map((j) => ({
@@ -870,8 +814,8 @@ router.get("/:id", verificarToken, async (req, res) => {
   }
 });
 
-
-// ✅ Cancelar agendamento comum (com regra de 12h/15min no BACK)
+// ✅ Cancelar agendamento comum (cliente 12h / professor 2h / super-admin sem limite)
+// Mantém a sua janela de 15min pós-criação quando faltar menos que o limite.
 router.post("/cancelar/:id", verificarToken, async (req, res) => {
   const { id } = req.params;
 
@@ -883,13 +827,12 @@ router.post("/cancelar/:id", verificarToken, async (req, res) => {
   }
 
   try {
-    // carrega campos necessários
     const ag = await prisma.agendamento.findUnique({
       where: { id },
       select: {
         id: true,
-        data: true, // Date (00:00Z do dia local)
-        horario: true, // "HH:mm"
+        data: true,
+        horario: true,
         usuarioId: true,
         status: true,
         createdAt: true,
@@ -902,56 +845,52 @@ router.post("/cancelar/:id", verificarToken, async (req, res) => {
       return res.status(409).json({ erro: "Este agendamento não pode ser cancelado." });
     }
 
-    const isAdmin = isAdminRole(reqCustom.usuario.usuarioLogadoTipo);
+    const tipo = reqCustom.usuario.usuarioLogadoTipo;
+    const isAdmin = isAdminRole(tipo);
+    const isSuperAdmin = isSuperAdminRole(tipo);
     const isOwner = String(ag.usuarioId) === String(reqCustom.usuario.usuarioLogadoId);
 
     if (!isAdmin && !isOwner) {
       return res.status(403).json({ erro: "Você não pode cancelar este agendamento." });
     }
 
-    // ===== Regra de tempo (para CLIENTE/dono) =====
-    if (!isAdmin) {
-      // Agora (local SP)
+    if (!isSuperAdmin) {
+      const limitHours = cancellationWindowHours(tipo); // 12, 2 ou Infinity
+
       const now = new Date();
       const nowYMD = localYMD(now);
       const nowHM = localHM(now);
       const nowMs = msFromLocalYMDHM(nowYMD, nowHM);
 
-      // Início do agendamento (local SP)
-      // Obs: ag.data está como "00:00Z" do mesmo YYYY-MM-DD que o DIA local pretendido.
-      const schedYMD = ag.data.toISOString().slice(0, 10); // "YYYY-MM-DD" do dia local
-      const schedHM = ag.horario; // "HH:mm"
+      const schedYMD = ag.data.toISOString().slice(0, 10);
+      const schedHM = ag.horario;
       const schedMs = msFromLocalYMDHM(schedYMD, schedHM);
 
-      // Se já passou, não cancela
       if (schedMs <= nowMs) {
         return res
           .status(422)
           .json({ erro: "Não é possível cancelar um agendamento já iniciado ou finalizado." });
       }
 
-      const minutesToStart = Math.floor((schedMs - nowMs) / 60000); // quanto falta
-      const canBy12h = minutesToStart >= 12 * 60;
+      const minutesToStart = Math.floor((schedMs - nowMs) / 60000);
+      const requiredMinutes = limitHours === Infinity ? 0 : limitHours * 60;
 
-      if (!canBy12h) {
-        // Janela de graça de 15 minutos a partir da CRIAÇÃO, válida sempre que < 12h para o início
+      if (limitHours !== Infinity && minutesToStart < requiredMinutes) {
         const createdYMD = localYMD(ag.createdAt);
         const createdHM = localHM(ag.createdAt);
         const createdMs = msFromLocalYMDHM(createdYMD, createdHM);
-
         const minutesSinceCreation = Math.floor((nowMs - createdMs) / 60000);
 
         if (minutesSinceCreation > 15) {
           return res.status(422).json({
             erro:
-              "Cancelamento permitido até 12 horas antes do horário do agendamento " +
-              "ou, se faltar menos de 12 horas, em até 15 minutos após a criação.",
+              `Cancelamento permitido até ${limitHours} horas antes do horário do agendamento ` +
+              "ou, se faltar menos que isso, em até 15 minutos após a criação.",
           });
         }
       }
     }
 
-    // Efetiva o cancelamento (idempotência simples: só atualiza se ainda não cancelado)
     const atualizado = await prisma.agendamento.update({
       where: { id },
       data: {
@@ -960,7 +899,6 @@ router.post("/cancelar/:id", verificarToken, async (req, res) => {
       },
     });
 
-    // 🔎 AUDITORIA — registra quem cancelou e qual agendamento
     try {
       await logAudit({
         event: "AGENDAMENTO_CANCEL",
@@ -986,7 +924,6 @@ router.post("/cancelar/:id", verificarToken, async (req, res) => {
   } catch (error) {
     console.error("Erro ao cancelar agendamento:", error);
 
-    // (opcional) auditar tentativa com erro
     try {
       await logAudit({
         event: "OTHER",
@@ -1022,7 +959,6 @@ router.delete("/:id", verificarToken, async (req, res) => {
 
     await prisma.agendamento.delete({ where: { id } });
 
-    // 📝 AUDIT: deletado
     try {
       await logAudit({
         event: "AGENDAMENTO_DELETE",
@@ -1068,7 +1004,6 @@ router.patch("/:id/transferir", verificarToken, async (req, res) => {
   }
 
   try {
-    // 1) busca agendamento original + info necessária
     const agendamento = await prisma.agendamento.findUnique({
       where: { id },
       include: { jogadores: true },
@@ -1082,7 +1017,6 @@ router.patch("/:id/transferir", verificarToken, async (req, res) => {
       return res.status(403).json({ erro: "Sem permissão para transferir este agendamento" });
     }
 
-    // 2) valida novo usuário
     const novoUsuario = await prisma.usuario.findUnique({
       where: { id: novoUsuarioId },
     });
@@ -1090,8 +1024,6 @@ router.patch("/:id/transferir", verificarToken, async (req, res) => {
       return res.status(404).json({ erro: "Novo usuário não encontrado" });
     }
 
-    // 3) transação: marca original como TRANSFERIDO + zera jogadores,
-    //    e cria o novo com apenas o novo usuário na lista de jogadores
     const [_, novoAgendamento] = await prisma.$transaction([
       prisma.agendamento.update({
         where: { id },
@@ -1107,10 +1039,9 @@ router.patch("/:id/transferir", verificarToken, async (req, res) => {
         data: {
           data: agendamento.data,
           horario: agendamento.horario,
-          usuarioId: novoUsuarioId, // dono do novo agendamento
+          usuarioId: novoUsuarioId,
           quadraId: agendamento.quadraId,
           esporteId: agendamento.esporteId,
-          // Apenas o novo usuário como jogador
           jogadores: { connect: [{ id: novoUsuarioId }] },
         },
         include: {
@@ -1121,12 +1052,11 @@ router.patch("/:id/transferir", verificarToken, async (req, res) => {
       }),
     ]);
 
-    // 📝 AUDIT: transferência
     try {
       await logAudit({
         event: "AGENDAMENTO_TRANSFER",
         req,
-        target: { type: TargetType.AGENDAMENTO, id }, // alvo: o agendamento original
+        target: { type: TargetType.AGENDAMENTO, id },
         metadata: {
           agendamentoOriginalId: id,
           novoAgendamentoId: novoAgendamento.id,
@@ -1193,7 +1123,6 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
   }
 
   try {
-    // 2) Carrega agendamento
     const agendamento = await prisma.agendamento.findUnique({
       where: { id },
       include: { jogadores: { select: { id: true } } },
@@ -1206,14 +1135,12 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
       return res.status(400).json({ erro: "Não é possível alterar jogadores deste agendamento" });
     }
 
-    // 3) Autorização
     const isAdmin = isAdminRole(reqCustom.usuario.usuarioLogadoTipo);
     const isOwner = agendamento.usuarioId === reqCustom.usuario.usuarioLogadoId;
     if (!isAdmin && !isOwner) {
       return res.status(403).json({ erro: "Sem permissão para alterar este agendamento" });
     }
 
-    // 4) Buscar usuários válidos por ID (se houver)
     const usuariosValidos = jogadoresIds.length
       ? await prisma.usuario.findMany({
           where: { id: { in: jogadoresIds } },
@@ -1225,7 +1152,6 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
       return res.status(400).json({ erro: "Um ou mais jogadores não existem" });
     }
 
-    // 5) Criar “convidados” (usuarios mínimos) e coletar IDs
     const hashDefault = await bcrypt.hash("convidado123", 10);
 
     const convidadosCriados: Array<{ id: string }> = [];
@@ -1238,7 +1164,7 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
         data: {
           nome,
           email: emailFake,
-          senha: hashDefault, // campo senha é obrigatório no seu schema
+          senha: hashDefault,
           tipo: "CLIENTE",
         },
         select: { id: true },
@@ -1247,7 +1173,6 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
       convidadosCriados.push({ id: novo.id });
     }
 
-    // 6) Evitar duplicatas (IDs já conectados no agendamento)
     const jaConectados = new Set(agendamento.jogadores.map((j) => j.id));
 
     const idsNovosExistentes = usuariosValidos
@@ -1256,7 +1181,6 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
 
     const idsConvidados = convidadosCriados.map((c) => c.id);
 
-    // Se não há nada novo, retorna o agendamento atual
     if (idsNovosExistentes.length === 0 && idsConvidados.length === 0) {
       const atual = await prisma.agendamento.findUnique({
         where: { id },
@@ -1265,7 +1189,6 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
       return res.json(atual);
     }
 
-    // 7) Conecta tudo de uma vez
     const atualizado = await prisma.agendamento.update({
       where: { id },
       data: {
