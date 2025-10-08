@@ -65,6 +65,14 @@ export default function Cadastro() {
   const [reenviando, setReenviando] = useState(false);
   const [cooldown, setCooldown] = useState(0); // segundos
 
+  // ⬇️ Expiração do código (30:00)
+  const [expireLeft, setExpireLeft] = useState(0); // segundos restantes
+  const formatMMSS = (total: number) => {
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  };
+
   const dadosClienteRef = useRef<BackendPayload | null>(null);
 
   // Termos
@@ -82,7 +90,8 @@ export default function Cadastro() {
     if (emailParaVerificar) {
       // entrou no passo OTP
       setCodigo(Array(6).fill(""));
-      setCooldown(60); // trava 60s para novo reenvio
+      setCooldown(60);        // trava 60s para novo reenvio
+      setExpireLeft(30 * 60); // inicia 30min
       // foca no primeiro campo
       setTimeout(() => focusInput(0), 50);
     }
@@ -94,6 +103,13 @@ export default function Cadastro() {
     const t = setInterval(() => setCooldown((s) => Math.max(0, s - 1)), 1000);
     return () => clearInterval(t);
   }, [cooldown]);
+
+  // Countdown da expiração do código
+  useEffect(() => {
+    if (expireLeft <= 0) return;
+    const t = setInterval(() => setExpireLeft((s) => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(t);
+  }, [expireLeft]);
 
   const handleCodeChange = (index: number, value: string) => {
     // apenas dígito
@@ -173,6 +189,7 @@ export default function Cadastro() {
       } else {
         toast.success(body?.mensagem || "Código reenviado!");
         setCooldown(60);
+        setExpireLeft(30 * 60); // reinicia validade para +30min
       }
     } catch {
       toast.error("Falha de conexão ao reenviar");
@@ -272,6 +289,11 @@ export default function Cadastro() {
   async function verificarEmail(e: React.FormEvent) {
     e.preventDefault();
 
+    if (expireLeft <= 0) {
+      toast.error("Código expirado. Reenvie um novo código.");
+      return;
+    }
+
     const code = codigo.join("");
     if (!/^\d{6}$/.test(code)) {
       toast.error("Informe os 6 dígitos do código.");
@@ -295,7 +317,6 @@ export default function Cadastro() {
       } else {
         const msg = body?.erro || "Erro ao verificar e-mail";
         toast.error(msg);
-        // sugestão: se expirado, habilitar reenvio imediatamente
         if (/expirad/i.test(String(msg))) setCooldown(0);
       }
     } catch {
@@ -479,6 +500,15 @@ export default function Cadastro() {
                 ))}
               </div>
 
+              {/* Aviso de expiração */}
+              <div className="text-center text-[12px] text-gray-600">
+                {expireLeft > 0 ? (
+                  <>Expira em <strong>{formatMMSS(expireLeft)}</strong></>
+                ) : (
+                  <span className="text-red-600">Código expirado — reenvie para continuar.</span>
+                )}
+              </div>
+
               <div className="flex items-center justify-between">
                 <button
                   type="button"
@@ -486,6 +516,7 @@ export default function Cadastro() {
                     // trocar e-mail (voltar para o formulário)
                     setEmailParaVerificar("");
                     setCodigo(Array(6).fill(""));
+                    setExpireLeft(0);
                   }}
                   className="text-sm text-gray-600 hover:underline"
                 >
@@ -508,15 +539,17 @@ export default function Cadastro() {
 
               <button
                 type="submit"
-                disabled={carregando}
+                disabled={carregando || expireLeft <= 0}
                 className="w-full rounded-md bg-orange-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-orange-400/60"
               >
                 {carregando ? (
                   <span className="inline-flex items-center gap-2">
                     <Spinner size="w-4 h-4" /> Verificando…
                   </span>
-                ) : (
+                ) : expireLeft > 0 ? (
                   "Verificar E-mail"
+                ) : (
+                  "Código expirado"
                 )}
               </button>
             </form>
