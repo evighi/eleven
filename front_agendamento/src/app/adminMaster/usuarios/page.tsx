@@ -92,8 +92,6 @@ export default function UsuariosAdmin() {
   // máscara leve: digita só números, montamos centavos
   const handleValorChange = (raw: string) => {
     setValorErro('')
-    // aceita digitação livre, mas vamos normalizar para BR com 2 casas
-    // estratégia: manter só dígitos e inserir vírgula para 2 casas
     const digits = onlyDigits(raw)
     if (!digits) {
       setValorQuadraStr('')
@@ -110,17 +108,18 @@ export default function UsuariosAdmin() {
     if (!usuarioSelecionado) return
     setSaving(true)
     try {
-      // valida se for professor
       let payload: any = { tipo: novoTipo }
 
       if (novoTipo === 'ADMIN_PROFESSORES') {
         const n = brToNumber(valorQuadraStr)
-        if (!Number.isFinite(n) || n < 0) {
-          setValorErro('Informe um valor válido (ex.: 120,00).')
+
+        // ✅ obrigatoriedade e mínimo 0,01
+        if (!Number.isFinite(n) || n < 0.01) {
+          setValorErro('Para professor, informe um valor maior ou igual a R$ 0,01.')
           setSaving(false)
           return
         }
-        payload.valorQuadra = n
+        payload.valorQuadra = Number(n.toFixed(2))
       }
 
       await axios.put(
@@ -225,7 +224,18 @@ export default function UsuariosAdmin() {
                 <select
                   className="w-full p-2 border rounded mb-3 cursor-pointer"
                   value={novoTipo}
-                  onChange={(e) => setNovoTipo(e.target.value)}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    setNovoTipo(v)
+                    if (v === 'ADMIN_PROFESSORES') {
+                      // ao virar professor, se não havia valor, força campo vazio e foca a atenção
+                      if (!valorQuadraStr) setValorQuadraStr('')
+                      setValorErro('')
+                    } else {
+                      // saindo de professor, limpa erro
+                      setValorErro('')
+                    }
+                  }}
                   disabled={saving}
                 >
                   {tipos.map((t) => (
@@ -252,9 +262,6 @@ export default function UsuariosAdmin() {
                     {valorErro && (
                       <p className="mt-1 text-xs text-red-600">{valorErro}</p>
                     )}
-                    <p className="mt-1 text-xs text-gray-500">
-                      Defina o valor da aula para professores (ex.: 120,00).
-                    </p>
                   </div>
                 )}
 
