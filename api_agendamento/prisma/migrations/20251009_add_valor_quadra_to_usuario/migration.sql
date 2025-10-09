@@ -1,0 +1,1 @@
+ALTER TABLE "Usuario" ADD COLUMN IF NOT EXISTS "valorQuadra" DECIMAL(10,2);
