@@ -55,6 +55,9 @@ model Usuario {
   codigoRecuperacao String?
   expiraEm          DateTime?
 
+  // 💰 novo campo (opcional)
+  valorQuadra       Decimal?    @db.Decimal(10, 2)
+
   agendamentos                        Agendamento[]                        @relation("AgendamentoFeitoPor")
   agendamentosPermanentes             AgendamentoPermanente[]
   participaDeAgendamentos             Agendamento[]                        @relation("JogadoresNoAgendamento")
@@ -71,7 +74,6 @@ model Usuario {
   agendamentosPermanenteChurrasqueiraCancelados   AgendamentoPermanenteChurrasqueira[] @relation("AgendamentoPermanenteChurrasqueiraCanceladoPor")
   agendamentosPermanenteChurrasqueiraTransferidos AgendamentoPermanenteChurrasqueira[] @relation("AgendamentoPermanenteChurrasqueiraTransferidoPor")
 
-  // NOVO: quem cria cancelamentos (exceções) dos permanentes de churrasqueira
   permanentesChurrasqueiraCancelamentosCriados AgendamentoPermanenteChurrasqueiraCancelamento[] @relation("UsuarioCriouCancelamentoPermanenteChurrasqueira")
 
   bloqueiosFeitos BloqueioQuadra[] @relation("UsuarioBloqueios")
@@ -81,6 +83,7 @@ model Usuario {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
 
 model Esporte {
   id     String  @id @default(uuid())
