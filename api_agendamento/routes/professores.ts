@@ -15,16 +15,6 @@ router.use(verificarToken);
 ========================= */
 const SP_TZ = "America/Sao_Paulo";
 
-function startOfDaySP(d: Date) {
-  // zera horas *no fuso de SP* (forma prática: cria ISO YYYY-MM-DD do dia em SP e volta para Date -03:00)
-  const ymd = toYMD_SP(d);
-  return new Date(`${ymd}T00:00:00-03:00`);
-}
-function endOfDaySP(d: Date) {
-  const ymd = toYMD_SP(d);
-  return new Date(`${ymd}T23:59:59.999-03:00`);
-}
-
 function toYMD_SP(d: Date): string {
   // formata para YYYY-MM-DD no fuso SP
   const fmt = new Intl.DateTimeFormat("en-CA", {
@@ -34,6 +24,16 @@ function toYMD_SP(d: Date): string {
     day: "2-digit",
   });
   return fmt.format(d); // YYYY-MM-DD
+}
+
+function startOfDaySP(d: Date) {
+  // zera horas *no fuso de SP* (forma prática: cria ISO YYYY-MM-DD do dia em SP e volta para Date -03:00)
+  const ymd = toYMD_SP(d);
+  return new Date(`${ymd}T00:00:00-03:00`);
+}
+function endOfDaySP(d: Date) {
+  const ymd = toYMD_SP(d);
+  return new Date(`${ymd}T23:59:59.999-03:00`);
 }
 
 function parseMesToRange(mes: string): { from: Date; to: Date } {
@@ -58,11 +58,9 @@ function addDays(d: Date, days: number) {
   return out;
 }
 
-function weekdaySP(d: Date): number {
-  // 0..6, DOM..SAB, no fuso de SP
-  const ymd = toYMD_SP(d);
-  const d2 = new Date(`${ymd}T00:00:00-03:00`);
-  return d2.getDay();
+function weekdayFromYMD_SP(ymd: string): number {
+  // 0..6 (Dom..Sáb) em São Paulo
+  return new Date(`${ymd}T00:00:00-03:00`).getDay();
 }
 
 function diaSemanaToIdx(ds: DiaSemana): number {
@@ -92,6 +90,10 @@ function overlaps(
   blockEnd: number
 ): boolean {
   return Math.max(slotStart, blockStart) < Math.min(slotEnd, blockEnd);
+}
+
+function inYmdRange(ymd: string, fromYMD: string, toYMD: string) {
+  return ymd >= fromYMD && ymd <= toYMD;
 }
 
 /* =========================
@@ -158,22 +160,28 @@ router.get("/me/resumo", async (req, res) => {
     });
     if (!professor) return res.status(404).json({ erro: "Usuário não encontrado" });
 
-    // Determina intervalo
-    let range: { from: Date; to: Date };
+    // Determina intervalo base
+    let baseRange: { from: Date; to: Date };
     if (mes) {
-      range = parseMesToRange(mes);
+      baseRange = parseMesToRange(mes);
     } else {
       const fromD = new Date(`${from}T00:00:00-03:00`);
       const toD = new Date(`${to}T00:00:00-03:00`);
-      range = { from: startOfDaySP(fromD), to: endOfDaySP(toD) };
+      baseRange = { from: startOfDaySP(fromD), to: endOfDaySP(toD) };
     }
 
-    // Busca agendamentos COMUNS do professor no intervalo
+    // Deriva YMD do intervalo e cria acolchoamento ±1 dia para query
+    const fromYMD = toYMD_SP(baseRange.from);
+    const toYMD = toYMD_SP(baseRange.to);
+    const padFrom = startOfDaySP(addDays(baseRange.from, -1));
+    const padTo = endOfDaySP(addDays(baseRange.to, 1));
+
+    // Busca agendamentos COMUNS do professor (com acolchoamento)
     const comuns = await prisma.agendamento.findMany({
       where: {
         usuarioId: userId,
         status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
-        data: { gte: range.from, lte: range.to },
+        data: { gte: padFrom, lte: padTo },
       },
       select: { id: true, data: true, horario: true, quadraId: true },
     });
@@ -196,10 +204,10 @@ router.get("/me/resumo", async (req, res) => {
       },
     });
 
-    // Busca BLOQUEIOS por dia no intervalo (só os que têm a quadra do professor)
+    // Busca BLOQUEIOS por dia (acolchoado)
     const bloqueios = await prisma.bloqueioQuadra.findMany({
       where: {
-        dataBloqueio: { gte: range.from, lte: range.to },
+        dataBloqueio: { gte: padFrom, lte: padTo },
       },
       select: {
         dataBloqueio: true,
@@ -233,12 +241,15 @@ router.get("/me/resumo", async (req, res) => {
     // Coletores por-dia
     const porDia = new Map<string, number>(); // ymd -> aulas
 
-    // 1) Joga COMUNS primeiro
+    // 1) Joga COMUNS primeiro (sempre baseado em ymd SP)
     for (const ag of comuns) {
       const ymd = toYMD_SP(ag.data);
 
+      // mantém apenas no intervalo final real
+      if (!inYmdRange(ymd, fromYMD, toYMD)) continue;
+
       // ⛔ regra: ignorar 18:00..23:00 em dias úteis (seg..sex)
-      const wd = weekdaySP(ag.data); // 0..6 no fuso SP
+      const wd = weekdayFromYMD_SP(ymd); // 0..6 no fuso SP
       if (isWeekdayIndex(wd) && EXCLUDE_EVENING.has(ag.horario)) {
         continue;
       }
@@ -266,25 +277,28 @@ router.get("/me/resumo", async (req, res) => {
 
       const targetWD = diaSemanaToIdx(p.diaSemana);
 
-      // ponto de partida = max(range.from, dataInicio?) no mesmo fuso
-      const start = p.dataInicio ? startOfDaySP(p.dataInicio) : startOfDaySP(range.from);
+      // ponto de partida = max(baseRange.from, dataInicio?) no mesmo fuso
+      const start = p.dataInicio ? startOfDaySP(p.dataInicio) : startOfDaySP(baseRange.from);
       let cursor = start;
 
-      // avança cursor até o primeiro dia com weekday = targetWD dentro do range
-      while (cursor < range.from) cursor = addDays(cursor, 1);
-      while (weekdaySP(cursor) !== targetWD) cursor = addDays(cursor, 1);
+      // avança cursor até o primeiro dia com weekday = targetWD dentro do acolchoamento
+      while (cursor < padFrom) cursor = addDays(cursor, 1);
+      while (weekdayFromYMD_SP(toYMD_SP(cursor)) !== targetWD) cursor = addDays(cursor, 1);
 
       const cancelYMD = new Set<string>((p.cancelamentos || []).map((c) => toYMD_SP(c.data)));
 
-      for (let d = cursor; d <= range.to; d = addDays(d, 7)) {
+      for (let d = cursor; d <= padTo; d = addDays(d, 7)) {
+        // converte a ocorrência para ymd SP
+        const ymd = toYMD_SP(d);
+
+        // mantém apenas no intervalo final real
+        if (!inYmdRange(ymd, fromYMD, toYMD)) continue;
+
         // não considerar antes do dataInicio
         if (p.dataInicio) {
           const ymdStart = toYMD_SP(p.dataInicio);
-          const ymdCur = toYMD_SP(d);
-          if (ymdCur < ymdStart) continue;
+          if (ymd < ymdStart) continue;
         }
-
-        const ymd = toYMD_SP(d);
 
         // exceção?
         if (cancelYMD.has(ymd)) continue;
@@ -320,9 +334,8 @@ router.get("/me/resumo", async (req, res) => {
 
     // Faixas do mês: 1-7, 8-14, 15-21, 22-fim
     const rangeForMonth = (() => {
-      // tenta derivar do 'mes', senão do 'to'
       if (mes) return parseMesToRange(mes);
-      const firstYMD = toYMD_SP(range.from).slice(0, 7) + "-01";
+      const firstYMD = fromYMD.slice(0, 7) + "-01";
       const first = new Date(`${firstYMD}T00:00:00-03:00`);
       const lastDay = new Date(first);
       lastDay.setMonth(lastDay.getMonth() + 1);
@@ -360,14 +373,14 @@ router.get("/me/resumo", async (req, res) => {
     return res.json({
       professor: { id: professor.id, nome: professor.nome, valorQuadra: valorAula },
       intervalo: {
-        from: toYMD_SP(range.from),
-        to: toYMD_SP(range.to),
+        from: fromYMD,
+        to: toYMD,
         duracaoMin,
       },
       totais: {
         porDia: porDiaArr, // [{ data: 'YYYY-MM-DD', aulas, valor }]
-        porFaixa, // [{ faixa: '1-7'|'8-14'|'15-21'|'22-31', aulas, valor }]
-        mes: totalMes, // { aulas, valor }
+        porFaixa,          // [{ faixa: '1-7'|'8-14'|'15-21'|'22-31', aulas, valor }]
+        mes: totalMes,     // { aulas, valor }
       },
     });
   } catch (err) {
