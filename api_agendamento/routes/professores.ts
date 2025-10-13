@@ -60,8 +60,6 @@ function addDays(d: Date, days: number) {
 
 function weekdaySP(d: Date): number {
   // 0..6, DOM..SAB, no fuso de SP
-  const fmt = new Intl.DateTimeFormat("en-US", { timeZone: SP_TZ, weekday: "short" });
-  // mais confiável: pegar ymd SP e criar Date local -03:00 para usar getDay()
   const ymd = toYMD_SP(d);
   const d2 = new Date(`${ymd}T00:00:00-03:00`);
   return d2.getDay();
@@ -96,6 +94,28 @@ function overlaps(
   return Math.max(slotStart, blockStart) < Math.min(slotEnd, blockEnd);
 }
 
+/* =========================
+   Regra NOVA (excluir noite em dias úteis)
+========================= */
+const EXCLUDE_EVENING = new Set([
+  "18:00",
+  "19:00",
+  "20:00",
+  "21:00",
+  "22:00",
+  "23:00",
+]);
+const WEEKDAY_DS = new Set<DiaSemana>([
+  "SEGUNDA",
+  "TERCA",
+  "QUARTA",
+  "QUINTA",
+  "SEXTA",
+] as DiaSemana[]);
+
+const isWeekdayIndex = (wd: number) => wd >= 1 && wd <= 5; // 1..5 = seg..sex
+const isWeekdayDiaSemana = (ds: DiaSemana) => WEEKDAY_DS.has(ds);
+
 /* =========================================================
    GET /professores/me/resumo?mes=YYYY-MM
    (alternativa opcional: from=YYYY-MM-DD&to=YYYY-MM-DD)
@@ -120,7 +140,9 @@ router.get("/me/resumo", async (req, res) => {
 
     const parsed = qSchema.safeParse(req.query);
     if (!parsed.success) {
-      return res.status(400).json({ erro: parsed.error.issues?.[0]?.message || "Parâmetros inválidos" });
+      return res
+        .status(400)
+        .json({ erro: parsed.error.issues?.[0]?.message || "Parâmetros inválidos" });
     }
 
     const { mes, from, to, duracaoMin = 60 } = parsed.data;
@@ -188,10 +210,7 @@ router.get("/me/resumo", async (req, res) => {
     });
 
     // Index de bloqueios por (YYYY-MM-DD + quadraId)
-    const bloqueiosMap = new Map<
-      string,
-      { inicio: number; fim: number }[]
-    >();
+    const bloqueiosMap = new Map<string, { inicio: number; fim: number }[]>();
     for (const b of bloqueios) {
       const ymd = toYMD_SP(b.dataBloqueio);
       const slot = {
@@ -207,7 +226,8 @@ router.get("/me/resumo", async (req, res) => {
     }
 
     // Deduplicador: chave = date|quadra|hora
-    const chave = (ymd: string, quadraId: string, horario: string) => `${ymd}|${quadraId}|${horario}`;
+    const chave = (ymd: string, quadraId: string, horario: string) =>
+      `${ymd}|${quadraId}|${horario}`;
     const vistos = new Set<string>();
 
     // Coletores por-dia
@@ -216,6 +236,13 @@ router.get("/me/resumo", async (req, res) => {
     // 1) Joga COMUNS primeiro
     for (const ag of comuns) {
       const ymd = toYMD_SP(ag.data);
+
+      // ⛔ regra: ignorar 18:00..23:00 em dias úteis (seg..sex)
+      const wd = weekdaySP(ag.data); // 0..6 no fuso SP
+      if (isWeekdayIndex(wd) && EXCLUDE_EVENING.has(ag.horario)) {
+        continue;
+      }
+
       const k = chave(ymd, ag.quadraId, ag.horario);
       if (vistos.has(k)) continue;
 
@@ -232,6 +259,11 @@ router.get("/me/resumo", async (req, res) => {
 
     // 2) Expande PERMANENTES dentro do intervalo e aplica exceções/bloqueios
     for (const p of permanentes) {
+      // ⛔ regra: se o permanente é em dia útil e no horário 18:00..23:00, ignora TODAS as ocorrências
+      if (isWeekdayDiaSemana(p.diaSemana) && EXCLUDE_EVENING.has(p.horario)) {
+        continue;
+      }
+
       const targetWD = diaSemanaToIdx(p.diaSemana);
 
       // ponto de partida = max(range.from, dataInicio?) no mesmo fuso
@@ -242,9 +274,7 @@ router.get("/me/resumo", async (req, res) => {
       while (cursor < range.from) cursor = addDays(cursor, 1);
       while (weekdaySP(cursor) !== targetWD) cursor = addDays(cursor, 1);
 
-      const cancelYMD = new Set<string>(
-        (p.cancelamentos || []).map((c) => toYMD_SP(c.data))
-      );
+      const cancelYMD = new Set<string>((p.cancelamentos || []).map((c) => toYMD_SP(c.data)));
 
       for (let d = cursor; d <= range.to; d = addDays(d, 7)) {
         // não considerar antes do dataInicio
@@ -294,7 +324,6 @@ router.get("/me/resumo", async (req, res) => {
       if (mes) return parseMesToRange(mes);
       const firstYMD = toYMD_SP(range.from).slice(0, 7) + "-01";
       const first = new Date(`${firstYMD}T00:00:00-03:00`);
-      const last = endOfDaySP(new Date(`${toYMD_SP(range.to)}T00:00:00-03:00`));
       const lastDay = new Date(first);
       lastDay.setMonth(lastDay.getMonth() + 1);
       lastDay.setDate(0);
@@ -336,9 +365,9 @@ router.get("/me/resumo", async (req, res) => {
         duracaoMin,
       },
       totais: {
-        porDia: porDiaArr,     // [{ data: 'YYYY-MM-DD', aulas, valor }]
-        porFaixa,              // [{ faixa: '1-7'|'8-14'|'15-21'|'22-31', aulas, valor }]
-        mes: totalMes,         // { aulas, valor }
+        porDia: porDiaArr, // [{ data: 'YYYY-MM-DD', aulas, valor }]
+        porFaixa, // [{ faixa: '1-7'|'8-14'|'15-21'|'22-31', aulas, valor }]
+        mes: totalMes, // { aulas, valor }
       },
     });
   } catch (err) {
