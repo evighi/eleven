@@ -7,74 +7,40 @@ import verificarToken from "../middleware/authMiddleware";
 const prisma = new PrismaClient();
 const router = Router();
 
-// Todas as rotas daqui exigem login
+// 🔒 exige login
 router.use(verificarToken);
 
 /* =========================
-   Helpers de data/fuso (SP)
+   Helpers — CONSISTENTES com agendamentos*.ts
 ========================= */
-const SP_TZ = "America/Sao_Paulo";
+const SP_TZ = process.env.TZ || "America/Sao_Paulo";
 
-function toYMD_SP(d: Date): string {
-  // formata para YYYY-MM-DD no fuso SP
-  const fmt = new Intl.DateTimeFormat("en-CA", {
-    timeZone: SP_TZ,
+function localYMD(d: Date, tz = SP_TZ) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  });
-  return fmt.format(d); // YYYY-MM-DD
+  }).format(d); // "YYYY-MM-DD"
 }
 
-function startOfDaySP(d: Date) {
-  // zera horas *no fuso de SP* (forma prática: cria ISO YYYY-MM-DD do dia em SP e volta para Date -03:00)
-  const ymd = toYMD_SP(d);
-  return new Date(`${ymd}T00:00:00-03:00`);
-}
-function endOfDaySP(d: Date) {
-  const ymd = toYMD_SP(d);
-  return new Date(`${ymd}T23:59:59.999-03:00`);
+function toISODateUTC(d: Date) {
+  return d.toISOString().slice(0, 10);
 }
 
-function parseMesToRange(mes: string): { from: Date; to: Date } {
-  // mes = "YYYY-MM"
-  const [yStr, mStr] = mes.split("-");
-  const y = Number(yStr);
-  const m = Number(mStr);
-  if (!y || !m) throw new Error("Parâmetro 'mes' inválido");
-  const first = new Date(`${yStr}-${mStr}-01T00:00:00-03:00`);
-  const lastDay = new Date(first);
-  lastDay.setMonth(lastDay.getMonth() + 1);
-  lastDay.setDate(0); // último dia do mês
-  return {
-    from: startOfDaySP(first),
-    to: endOfDaySP(lastDay),
-  };
+function toUtc00(isoYYYYMMDD: string) {
+  return new Date(`${isoYYYYMMDD}T00:00:00Z`);
 }
 
-function addDays(d: Date, days: number) {
-  const out = new Date(d);
-  out.setDate(out.getDate() + days);
-  return out;
+function localWeekdayIndexOfYMD(ymd: string): number {
+  // meio-dia -03:00 evita rollover
+  return new Date(`${ymd}T12:00:00-03:00`).getUTCDay(); // 0..6
 }
 
-function weekdayFromYMD_SP(ymd: string): number {
-  // 0..6 (Dom..Sáb) em São Paulo
-  return new Date(`${ymd}T00:00:00-03:00`).getDay();
-}
-
-function diaSemanaToIdx(ds: DiaSemana): number {
-  // Prisma DiaSemana: DOMINGO(0) .. SABADO(6)
-  const map: Record<DiaSemana, number> = {
-    DOMINGO: 0,
-    SEGUNDA: 1,
-    TERCA: 2,
-    QUARTA: 3,
-    QUINTA: 4,
-    SEXTA: 5,
-    SABADO: 6,
-  };
-  return map[ds];
+function addDaysLocalYMD(ymd: string, days: number): string {
+  const d = new Date(`${ymd}T12:00:00-03:00`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return localYMD(d);
 }
 
 function hhmmToMinutes(hhmm: string): number {
@@ -83,132 +49,106 @@ function hhmmToMinutes(hhmm: string): number {
   return Number(m[1]) * 60 + Number(m[2]);
 }
 
-function overlaps(
-  slotStart: number,
-  slotEnd: number,
-  blockStart: number,
-  blockEnd: number
-): boolean {
-  return Math.max(slotStart, blockStart) < Math.min(slotEnd, blockEnd);
+function overlaps(aStart: number, aEnd: number, bStart: number, bEnd: number) {
+  return Math.max(aStart, bStart) < Math.min(aEnd, bEnd);
 }
 
-function inYmdRange(ymd: string, fromYMD: string, toYMD: string) {
-  return ymd >= fromYMD && ymd <= toYMD;
+function faixaDoMes(day: number, lastDay: number) {
+  if (day >= 1 && day <= 7) return "1-7";
+  if (day >= 8 && day <= 14) return "8-14";
+  if (day >= 15 && day <= 21) return "15-21";
+  return `22-${lastDay}`;
 }
+
+const DIA_IDX: Record<DiaSemana, number> = {
+  DOMINGO: 0, SEGUNDA: 1, TERCA: 2, QUARTA: 3, QUINTA: 4, SEXTA: 5, SABADO: 6,
+};
 
 /* =========================
-   Regra NOVA (excluir noite em dias úteis)
+   Regra — excluir noite em dias úteis
 ========================= */
-const EXCLUDE_EVENING = new Set([
-  "18:00",
-  "19:00",
-  "20:00",
-  "21:00",
-  "22:00",
-  "23:00",
-]);
-const WEEKDAY_DS = new Set<DiaSemana>([
-  "SEGUNDA",
-  "TERCA",
-  "QUARTA",
-  "QUINTA",
-  "SEXTA",
-] as DiaSemana[]);
+const EXCLUDE_EVENING = new Set(["18:00","19:00","20:00","21:00","22:00","23:00"]);
+const isWeekdayIdx = (idx: number) => idx >= 1 && idx <= 5;
 
-const isWeekdayIndex = (wd: number) => wd >= 1 && wd <= 5; // 1..5 = seg..sex
-const isWeekdayDiaSemana = (ds: DiaSemana) => WEEKDAY_DS.has(ds);
+/* =========================
+   Parse de intervalo
+========================= */
+function parseMesToLocalRange(mes: string) {
+  // "YYYY-MM" em linha do tempo local
+  const [yStr, mStr] = mes.split("-");
+  const firstLocal = `${yStr}-${mStr}-01`;
+  const nextMonthLocal = addDaysLocalYMD(addDaysLocalYMD(firstLocal, 27), 4) // garante rolar
+    .slice(0, 7) + "-01";
+  const lastLocal = addDaysLocalYMD(nextMonthLocal, -1);
+  return { fromYMD: firstLocal, toYMD: lastLocal };
+}
 
 /* =========================================================
    GET /professores/me/resumo?mes=YYYY-MM
-   (alternativa opcional: from=YYYY-MM-DD&to=YYYY-MM-DD)
+   ou ?from=YYYY-MM-DD&to=YYYY-MM-DD
+   &duracaoMin=60 (opcional)
 ========================================================= */
 router.get("/me/resumo", async (req, res) => {
   try {
-    const qSchema = z
-      .object({
-        mes: z
-          .string()
-          .regex(/^\d{4}-\d{2}$/)
-          .optional(),
-        from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-        to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-        // duração padrão de aula em minutos (opcional, default 60)
-        duracaoMin: z.coerce.number().int().positive().optional(),
-      })
-      .refine(
-        (v) => !!v.mes || (!!v.from && !!v.to),
-        "Informe 'mes=YYYY-MM' OU 'from/to=YYYY-MM-DD'."
-      );
+    const qSchema = z.object({
+      mes: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+      from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      duracaoMin: z.coerce.number().int().positive().optional(),
+    }).refine(v => !!v.mes || (!!v.from && !!v.to),
+      "Informe 'mes=YYYY-MM' OU 'from/to=YYYY-MM-DD'.");
 
     const parsed = qSchema.safeParse(req.query);
     if (!parsed.success) {
-      return res
-        .status(400)
-        .json({ erro: parsed.error.issues?.[0]?.message || "Parâmetros inválidos" });
+      return res.status(400).json({ erro: parsed.error.issues?.[0]?.message || "Parâmetros inválidos" });
     }
-
     const { mes, from, to, duracaoMin = 60 } = parsed.data;
 
-    // Identifica o usuário logado
+    // usuário logado
     const userId = req.usuario?.usuarioLogadoId;
     if (!userId) return res.status(401).json({ erro: "Não autenticado" });
 
-    // Carrega o professor (valorQuadra)
+    // professor (valorQuadra)
     const professor = await prisma.usuario.findUnique({
       where: { id: userId },
-      select: { id: true, tipo: true, valorQuadra: true, nome: true },
+      select: { id: true, nome: true, valorQuadra: true },
     });
     if (!professor) return res.status(404).json({ erro: "Usuário não encontrado" });
 
-    // Determina intervalo base
-    let baseRange: { from: Date; to: Date };
-    if (mes) {
-      baseRange = parseMesToRange(mes);
-    } else {
-      const fromD = new Date(`${from}T00:00:00-03:00`);
-      const toD = new Date(`${to}T00:00:00-03:00`);
-      baseRange = { from: startOfDaySP(fromD), to: endOfDaySP(toD) };
-    }
+    // intervalo em YMD local
+    const { fromYMD, toYMD } = mes
+      ? parseMesToLocalRange(mes)
+      : { fromYMD: String(from), toYMD: String(to) };
 
-    // Deriva YMD do intervalo e cria acolchoamento ±1 dia para query
-    const fromYMD = toYMD_SP(baseRange.from);
-    const toYMD = toYMD_SP(baseRange.to);
-    const padFrom = startOfDaySP(addDays(baseRange.from, -1));
-    const padTo = endOfDaySP(addDays(baseRange.to, 1));
+    // boundaries de consulta em UTC00 (meio-aberto)
+    const inicioUTC = toUtc00(fromYMD);                  // >=
+    const fimUTCExcl = toUtc00(addDaysLocalYMD(toYMD, 1)); // <
 
-    // Busca agendamentos COMUNS do professor (com acolchoamento)
+    // === COMUNS no intervalo (UTC boundaries corretos)
     const comuns = await prisma.agendamento.findMany({
       where: {
         usuarioId: userId,
         status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
-        data: { gte: padFrom, lte: padTo },
+        data: { gte: inicioUTC, lt: fimUTCExcl },
       },
       select: { id: true, data: true, horario: true, quadraId: true },
     });
 
-    // Busca agendamentos PERMANENTES do professor
+    // === PERMANENTES ativos do professor
     const permanentes = await prisma.agendamentoPermanente.findMany({
       where: {
         usuarioId: userId,
         status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
       },
       select: {
-        id: true,
-        diaSemana: true,
-        horario: true,
-        quadraId: true,
-        dataInicio: true,
-        cancelamentos: {
-          select: { data: true },
-        },
+        id: true, diaSemana: true, horario: true, quadraId: true, dataInicio: true,
+        cancelamentos: { select: { data: true } },
       },
     });
 
-    // Busca BLOQUEIOS por dia (acolchoado)
+    // === BLOQUEIOS no intervalo (carrega tudo e indexa por (quadraId|YMD))
     const bloqueios = await prisma.bloqueioQuadra.findMany({
-      where: {
-        dataBloqueio: { gte: padFrom, lte: padTo },
-      },
+      where: { dataBloqueio: { gte: inicioUTC, lt: fimUTCExcl } },
       select: {
         dataBloqueio: true,
         inicioBloqueio: true,
@@ -217,145 +157,97 @@ router.get("/me/resumo", async (req, res) => {
       },
     });
 
-    // Index de bloqueios por (YYYY-MM-DD + quadraId)
-    const bloqueiosMap = new Map<string, { inicio: number; fim: number }[]>();
+    const bloqueiosMap = new Map<string, Array<{ ini: number; fim: number }>>();
     for (const b of bloqueios) {
-      const ymd = toYMD_SP(b.dataBloqueio);
-      const slot = {
-        inicio: hhmmToMinutes(b.inicioBloqueio),
-        fim: hhmmToMinutes(b.fimBloqueio),
-      };
+      const ymd = toISODateUTC(b.dataBloqueio);
+      const ini = hhmmToMinutes(b.inicioBloqueio);
+      const fim = hhmmToMinutes(b.fimBloqueio);
       for (const q of b.quadras) {
-        const key = `${ymd}|${q.id}`;
-        const arr = bloqueiosMap.get(key) || [];
-        arr.push(slot);
-        bloqueiosMap.set(key, arr);
+        const k = `${q.id}|${ymd}`;
+        const arr = bloqueiosMap.get(k) || [];
+        arr.push({ ini, fim });
+        bloqueiosMap.set(k, arr);
       }
     }
 
-    // Deduplicador: chave = date|quadra|hora
-    const chave = (ymd: string, quadraId: string, horario: string) =>
-      `${ymd}|${quadraId}|${horario}`;
-    const vistos = new Set<string>();
-
-    // Coletores por-dia
+    // === Coletores
+    const vistos = new Set<string>(); // dedupe por (ymd|quadra|hora)
     const porDia = new Map<string, number>(); // ymd -> aulas
 
-    // 1) Joga COMUNS primeiro (sempre baseado em ymd SP)
-    for (const ag of comuns) {
-      const ymd = toYMD_SP(ag.data);
-
-      // mantém apenas no intervalo final real
-      if (!inYmdRange(ymd, fromYMD, toYMD)) continue;
-
-      // ⛔ regra: ignorar 18:00..23:00 em dias úteis (seg..sex)
-      const wd = weekdayFromYMD_SP(ymd); // 0..6 no fuso SP
-      if (isWeekdayIndex(wd) && EXCLUDE_EVENING.has(ag.horario)) {
-        continue;
-      }
-
-      const k = chave(ymd, ag.quadraId, ag.horario);
-      if (vistos.has(k)) continue;
-
-      // Checa bloqueio
-      const slots = bloqueiosMap.get(`${ymd}|${ag.quadraId}`) || [];
-      const aulaIni = hhmmToMinutes(ag.horario);
-      const aulaFim = aulaIni + duracaoMin;
-      const bloqueado = slots.some((s) => overlaps(aulaIni, aulaFim, s.inicio, s.fim));
-      if (bloqueado) continue;
-
+    const pushAula = (ymd: string, quadraId: string, horario: string) => {
+      const k = `${ymd}|${quadraId}|${horario}`;
+      if (vistos.has(k)) return;
       vistos.add(k);
       porDia.set(ymd, (porDia.get(ymd) || 0) + 1);
-    }
-
-    // 2) Expande PERMANENTES dentro do intervalo e aplica exceções/bloqueios
-    for (const p of permanentes) {
-      // ⛔ regra: se o permanente é em dia útil e no horário 18:00..23:00, ignora TODAS as ocorrências
-      if (isWeekdayDiaSemana(p.diaSemana) && EXCLUDE_EVENING.has(p.horario)) {
-        continue;
-      }
-
-      const targetWD = diaSemanaToIdx(p.diaSemana);
-
-      // ponto de partida = max(baseRange.from, dataInicio?) no mesmo fuso
-      const start = p.dataInicio ? startOfDaySP(p.dataInicio) : startOfDaySP(baseRange.from);
-      let cursor = start;
-
-      // avança cursor até o primeiro dia com weekday = targetWD dentro do acolchoamento
-      while (cursor < padFrom) cursor = addDays(cursor, 1);
-      while (weekdayFromYMD_SP(toYMD_SP(cursor)) !== targetWD) cursor = addDays(cursor, 1);
-
-      const cancelYMD = new Set<string>((p.cancelamentos || []).map((c) => toYMD_SP(c.data)));
-
-      for (let d = cursor; d <= padTo; d = addDays(d, 7)) {
-        // converte a ocorrência para ymd SP
-        const ymd = toYMD_SP(d);
-
-        // mantém apenas no intervalo final real
-        if (!inYmdRange(ymd, fromYMD, toYMD)) continue;
-
-        // não considerar antes do dataInicio
-        if (p.dataInicio) {
-          const ymdStart = toYMD_SP(p.dataInicio);
-          if (ymd < ymdStart) continue;
-        }
-
-        // exceção?
-        if (cancelYMD.has(ymd)) continue;
-
-        // bloqueio?
-        const slots = bloqueiosMap.get(`${ymd}|${p.quadraId}`) || [];
-        const aulaIni = hhmmToMinutes(p.horario);
-        const aulaFim = aulaIni + duracaoMin;
-        const bloqueado = slots.some((s) => overlaps(aulaIni, aulaFim, s.inicio, s.fim));
-        if (bloqueado) continue;
-
-        // dedupe contra comuns gerados
-        const k = chave(ymd, p.quadraId, p.horario);
-        if (vistos.has(k)) continue;
-
-        vistos.add(k);
-        porDia.set(ymd, (porDia.get(ymd) || 0) + 1);
-      }
-    }
-
-    // Constrói resposta agregada
-    // Valor por aula (pode ser null) -> 0 por padrão
-    const valorAula = Number(professor.valorQuadra ?? 0) || 0;
-
-    // Totais por dia com valor
-    const porDiaArr = Array.from(porDia.entries())
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-      .map(([ymd, aulas]) => ({
-        data: ymd,
-        aulas,
-        valor: aulas * valorAula,
-      }));
-
-    // Faixas do mês: 1-7, 8-14, 15-21, 22-fim
-    const rangeForMonth = (() => {
-      if (mes) return parseMesToRange(mes);
-      const firstYMD = fromYMD.slice(0, 7) + "-01";
-      const first = new Date(`${firstYMD}T00:00:00-03:00`);
-      const lastDay = new Date(first);
-      lastDay.setMonth(lastDay.getMonth() + 1);
-      lastDay.setDate(0);
-      return { from: startOfDaySP(first), to: endOfDaySP(lastDay) };
-    })();
-
-    const lastDayNum = Number(toYMD_SP(rangeForMonth.to).split("-")[2]);
-    const faixaIdx = (day: number) => {
-      if (day >= 1 && day <= 7) return "1-7";
-      if (day >= 8 && day <= 14) return "8-14";
-      if (day >= 15 && day <= 21) return "15-21";
-      return `22-${lastDayNum}`;
     };
 
+    // === 1) COMUNS
+    for (const ag of comuns) {
+      // ymd local do comum (você salva 00:00Z do dia local -> pegar .toISOString().slice(0,10) é exato)
+      const ymd = toISODateUTC(ag.data);
+
+      // regra 18–23h apenas em dias úteis (SEG..SEX)
+      const wd = localWeekdayIndexOfYMD(ymd);
+      if (isWeekdayIdx(wd) && EXCLUDE_EVENING.has(ag.horario)) continue;
+
+      // bloqueio?
+      const slots = bloqueiosMap.get(`${ag.quadraId}|${ymd}`) || [];
+      const ini = hhmmToMinutes(ag.horario);
+      const fim = ini + duracaoMin;
+      if (slots.some(s => overlaps(ini, fim, s.ini, s.fim))) continue;
+
+      pushAula(ymd, ag.quadraId, ag.horario);
+    }
+
+    // === 2) PERMANENTES (expandindo em linha do tempo local)
+    for (const p of permanentes) {
+      // regra 18–23h para permanentes em dias úteis — ignora todo o slot
+      const dayIdx = DIA_IDX[p.diaSemana];
+      if (isWeekdayIdx(dayIdx) && EXCLUDE_EVENING.has(p.horario)) continue;
+
+      // início efetivo em YMD local
+      const dataInicioLocalYMD = p.dataInicio ? toISODateUTC(new Date(p.dataInicio)) : null;
+      const firstYMD = dataInicioLocalYMD && dataInicioLocalYMD > fromYMD ? dataInicioLocalYMD : fromYMD;
+
+      // encontra a primeira ocorrência do dia-da-semana >= firstYMD
+      const curIdx = localWeekdayIndexOfYMD(firstYMD);
+      const delta = (dayIdx - curIdx + 7) % 7;
+      let dYMD = addDaysLocalYMD(firstYMD, delta);
+
+      // exceções em Set<YMD>
+      const excSet = new Set<string>(p.cancelamentos.map(c => toISODateUTC(c.data)));
+
+      // percorre até toYMD, pulando exceções e bloqueios
+      while (dYMD <= toYMD) {
+        // respeita dataInicio
+        if (!dataInicioLocalYMD || dYMD >= dataInicioLocalYMD) {
+          if (!excSet.has(dYMD)) {
+            // bloqueio?
+            const slots = bloqueiosMap.get(`${p.quadraId}|${dYMD}`) || [];
+            const ini = hhmmToMinutes(p.horario);
+            const fim = ini + duracaoMin;
+            if (!slots.some(s => overlaps(ini, fim, s.ini, s.fim))) {
+              pushAula(dYMD, p.quadraId, p.horario);
+            }
+          }
+        }
+        dYMD = addDaysLocalYMD(dYMD, 7);
+      }
+    }
+
+    // === Totais / resposta
+    const valorAula = Number(professor.valorQuadra ?? 0) || 0;
+
+    const porDiaArr = Array.from(porDia.entries())
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([ymd, aulas]) => ({ data: ymd, aulas, valor: aulas * valorAula }));
+
+    // Faixas do mês baseadas no 'mes' (se houver) ou no 'toYMD'
+    const lastDayNum = Number((mes ? parseMesToLocalRange(mes).toYMD : toYMD).split("-")[2]);
     const porFaixaMap = new Map<string, { aulas: number; valor: number }>();
     for (const it of porDiaArr) {
-      const [, , dStr] = it.data.split("-");
-      const day = Number(dStr);
-      const f = faixaIdx(day);
+      const dia = Number(it.data.split("-")[2]);
+      const f = faixaDoMes(dia, lastDayNum);
       const cur = porFaixaMap.get(f) || { aulas: 0, valor: 0 };
       cur.aulas += it.aulas;
       cur.valor += it.valor;
@@ -372,15 +264,11 @@ router.get("/me/resumo", async (req, res) => {
 
     return res.json({
       professor: { id: professor.id, nome: professor.nome, valorQuadra: valorAula },
-      intervalo: {
-        from: fromYMD,
-        to: toYMD,
-        duracaoMin,
-      },
+      intervalo: { from: fromYMD, to: toYMD, duracaoMin },
       totais: {
-        porDia: porDiaArr, // [{ data: 'YYYY-MM-DD', aulas, valor }]
-        porFaixa,          // [{ faixa: '1-7'|'8-14'|'15-21'|'22-31', aulas, valor }]
-        mes: totalMes,     // { aulas, valor }
+        porDia: porDiaArr,
+        porFaixa,
+        mes: totalMes,
       },
     });
   } catch (err) {
