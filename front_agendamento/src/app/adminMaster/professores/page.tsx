@@ -32,13 +32,25 @@ type ResumoProfessorResponse = {
   }
 }
 
-/** ===== helpers ===== */
+/** ===== helpers comuns ===== */
 const collator = new Intl.Collator('pt-BR', { sensitivity: 'base', ignorePunctuation: true })
 
 const numberToBR = (n: number) =>
   (Number.isFinite(n) ? n : 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 const formatBRL = (n: number) => `R$ ${numberToBR(n)}`
+
+const currencyBRL = (n: number) =>
+  n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2 })
+
+const fmtBR = (iso: string) => {
+  const [y, m, d] = iso.split('-')
+  return `${d}/${m}/${y}`
+}
+const fmtDDMM = (iso: string) => {
+  const [y, m, d] = iso.split('-')
+  return `${d}/${m}`
+}
 
 const currentMonthSP = () => {
   const s = new Intl.DateTimeFormat('en-CA', {
@@ -48,6 +60,17 @@ const currentMonthSP = () => {
     day: '2-digit',
   }).format(new Date()) // YYYY-MM-DD
   return s.slice(0, 7) // YYYY-MM
+}
+
+// mesmas faixas usadas no quadro do professor
+function buildFaixasLabels(toDateISO: string) {
+  const lastDay = Number(toDateISO.split('-')[2])
+  return [
+    { id: '1-7', fromDay: 1, toDay: 7, label: '' },
+    { id: '8-14', fromDay: 8, toDay: 14, label: '' },
+    { id: '15-21', fromDay: 15, toDay: 21, label: '' },
+    { id: `22-${lastDay}`, fromDay: 22, toDay: lastDay, label: '' },
+  ] as Array<{ id: string; label: string; fromDay: number; toDay: number }>
 }
 
 export default function ProfessoresAdmin() {
@@ -65,6 +88,10 @@ export default function ProfessoresAdmin() {
   const [loadingQuadro, setLoadingQuadro] = useState(false)
   const [erroQuadro, setErroQuadro] = useState<string | null>(null)
 
+  // estados do “quadro” (iguais aos da tela do professor)
+  const [faixaSel, setFaixaSel] = useState<string>('') // '1-7', '8-14', ...
+  const [diaSel, setDiaSel] = useState<string>('')     // 'YYYY-MM-DD'
+
   const carregarProfessores = useCallback(async () => {
     setLoading(true)
     setErro(null)
@@ -74,7 +101,6 @@ export default function ProfessoresAdmin() {
         withCredentials: true,
       })
       const arr = Array.isArray(res.data?.professores) ? res.data.professores.slice() : []
-      // ordena por nome pt-BR
       arr.sort((a, b) => collator.compare(a?.nome ?? '', b?.nome ?? ''))
       setLista(arr)
     } catch (e: any) {
@@ -94,7 +120,9 @@ export default function ProfessoresAdmin() {
   const filtrados = useMemo(() => {
     const q = busca.trim()
     if (!q) return lista
-    return lista.filter(p => collator.compare(p.nome, q) === 0 || p.nome.toLowerCase().includes(q.toLowerCase()))
+    return lista.filter(p =>
+      collator.compare(p.nome, q) === 0 || p.nome.toLowerCase().includes(q.toLowerCase())
+    )
   }, [lista, busca])
 
   // carregar quadro ao selecionar
@@ -104,6 +132,8 @@ export default function ProfessoresAdmin() {
       setSelecionado(null)
       setQuadro(null)
       setErroQuadro(null)
+      setFaixaSel('')
+      setDiaSel('')
       return
     }
     setSelecionado(prof)
@@ -116,12 +146,80 @@ export default function ProfessoresAdmin() {
         withCredentials: true,
       })
       setQuadro(res.data)
+
+      // defaults do quadro replicando a tela do professor
+      const faixas = buildFaixasLabels(res.data.intervalo.to)
+      setFaixaSel(faixas[0]?.id || '')
+      setDiaSel('')
     } catch (e: any) {
       console.error(e)
       setErroQuadro(e?.response?.data?.erro || 'Falha ao carregar o quadro deste professor')
     } finally {
       setLoadingQuadro(false)
     }
+  }
+
+  // mapeia faixas -> labels e limites (como na tela do professor)
+  const faixasInfo = useMemo(() => {
+    if (!quadro) return []
+    const yearMonth = quadro.intervalo.to.slice(0, 7)
+    return buildFaixasLabels(quadro.intervalo.to).map((f, idx) => {
+      const fromISO = `${yearMonth}-${String(f.fromDay).padStart(2, '0')}`
+      const toISO = `${yearMonth}-${String(f.toDay).padStart(2, '0')}`
+      const semanaNum = String(idx + 1).padStart(2, '0')
+      const label = `SEMANA ${semanaNum} — ${fmtDDMM(fromISO)} À ${fmtDDMM(toISO)}`
+      return { ...f, label, fromISO, toISO }
+    })
+  }, [quadro])
+
+  // dias da faixa selecionada
+  const diasDaFaixa = useMemo(() => {
+    if (!quadro || !faixaSel) return []
+    const info = faixasInfo.find(f => f.id === faixaSel)
+    if (!info) return []
+    const inRange = (ymd: string) => {
+      const day = Number(ymd.split('-')[2])
+      return day >= info.fromDay && day <= info.toDay
+    }
+    return quadro.totais.porDia.filter(d => inRange(d.data))
+  }, [quadro, faixaSel, faixasInfo])
+
+  // default de dia quando muda a faixa
+  useEffect(() => {
+    if (diaSel) return
+    if (diasDaFaixa.length) {
+      setDiaSel(diasDaFaixa[0].data)
+    }
+  }, [diasDaFaixa, diaSel])
+
+  // totais da semana selecionada
+  const totaisSemanaSel = useMemo(() => {
+    if (!quadro || !faixaSel) return { aulas: 0, valor: 0 }
+    const f = quadro.totais.porFaixa.find(x => x.faixa === faixaSel)
+    return f ? { aulas: f.aulas, valor: f.valor } : { aulas: 0, valor: 0 }
+  }, [quadro, faixaSel])
+
+  // dia selecionado
+  const diaInfoSel = useMemo(() => {
+    if (!diaSel || !diasDaFaixa.length) return null
+    return diasDaFaixa.find(d => d.data === diaSel) || null
+  }, [diaSel, diasDaFaixa])
+
+  // navegação de mês
+  const incMes = (delta: number) => {
+    const [yStr, mStr] = mes.split('-')
+    const y = Number(yStr)
+    const m = Number(mStr) - 1
+    const d = new Date(Date.UTC(y, m, 1))
+    d.setUTCMonth(d.getUTCMonth() + delta)
+    const yy = d.getUTCFullYear()
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+    setMes(`${yy}-${mm}`)
+    // fechamos o painel aberto porque muda a referência do resumo
+    setSelecionado(null)
+    setQuadro(null)
+    setFaixaSel('')
+    setDiaSel('')
   }
 
   return (
@@ -150,12 +248,28 @@ export default function ProfessoresAdmin() {
           />
         </div>
 
-        <button
-          onClick={() => void carregarProfessores()}
-          className="bg-blue-600 text-white px-4 py-2 rounded h-[42px] md:mt-0"
-        >
-          Atualizar
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => incMes(-1)}
+            className="bg-gray-100 text-gray-800 px-3 py-2 rounded h-[42px]"
+            aria-label="Mês anterior"
+          >
+            ‹
+          </button>
+          <button
+            onClick={() => incMes(1)}
+            className="bg-gray-100 text-gray-800 px-3 py-2 rounded h-[42px]"
+            aria-label="Próximo mês"
+          >
+            ›
+          </button>
+          <button
+            onClick={() => void carregarProfessores()}
+            className="bg-orange-600 text-white px-4 py-2 rounded h-[42px]"
+          >
+            Atualizar
+          </button>
+        </div>
       </div>
 
       {loading && (
@@ -163,9 +277,7 @@ export default function ProfessoresAdmin() {
           <Spinner /> <span>Carregando professores…</span>
         </div>
       )}
-      {erro && (
-        <div className="mb-3 text-red-600 text-sm">{erro}</div>
-      )}
+      {erro && <div className="mb-3 text-red-600 text-sm">{erro}</div>}
 
       <ul className="border rounded divide-y">
         {!loading && filtrados.length === 0 && (
@@ -191,7 +303,7 @@ export default function ProfessoresAdmin() {
               </div>
             </div>
 
-            {/* painel do quadro (toggle) */}
+            {/* painel do quadro (replica a tela do professor) */}
             {selecionado?.id === p.id && (
               <div className="p-4 border-t bg-gray-50">
                 {loadingQuadro && (
@@ -199,70 +311,106 @@ export default function ProfessoresAdmin() {
                     <Spinner /> <span>Carregando quadro…</span>
                   </div>
                 )}
-                {erroQuadro && (
-                  <div className="text-red-600 text-sm">{erroQuadro}</div>
-                )}
+                {erroQuadro && <div className="text-red-600 text-sm">{erroQuadro}</div>}
+
                 {!loadingQuadro && quadro && (
-                  <div className="space-y-4">
-                    {/* cabeçalho */}
-                    <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
-                      <div>
-                        <h2 className="font-bold text-lg">{quadro.professor.nome}</h2>
-                        <p className="text-sm text-gray-600">
-                          Período: {quadro.intervalo.from} a {quadro.intervalo.to} · Duração padrão: {quadro.intervalo.duracaoMin} min
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-sm text-gray-600">Total do mês</div>
-                        <div className="font-semibold">
-                          {quadro.totais.mes.aulas} aulas · {formatBRL(quadro.totais.mes.valor)}
+                  <div className="max-w-sm">
+                    {/* header compacto */}
+                    <div className="mb-3">
+                      <h2 className="text-lg font-bold">{quadro.professor.nome}</h2>
+                      <p className="text-xs text-gray-600">
+                        Período: {quadro.intervalo.from} a {quadro.intervalo.to}
+                        {' · '}
+                        Duração: {quadro.intervalo.duracaoMin} min
+                      </p>
+                    </div>
+
+                    {/* Semana (select) */}
+                    <div className="mb-2">
+                      <div className="text-[11px] text-gray-500 mb-1">Semana</div>
+                      <select
+                        value={faixaSel}
+                        onChange={(e) => {
+                          setFaixaSel(e.target.value)
+                          setDiaSel('')
+                        }}
+                        className="w-full rounded-md bg-[#f3f3f3] px-3 py-2 text-[13px] font-semibold text-gray-700 cursor-pointer"
+                      >
+                        {faixasInfo.map((f, i) => (
+                          <option key={f.id} value={f.id}>
+                            {`SEMANA ${String(i + 1).padStart(2, '0')} — ${fmtDDMM(f.fromISO)} À ${fmtDDMM(f.toISO)}`}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Dia (select) */}
+                    <div className="mb-2">
+                      <div className="text-[11px] text-gray-500 mb-1">Dia</div>
+                      <select
+                        value={diaSel}
+                        onChange={(e) => setDiaSel(e.target.value)}
+                        className="w-full rounded-md bg-[#f3f3f3] px-3 py-2 text-[13px] font-semibold text-gray-700 cursor-pointer"
+                      >
+                        {diasDaFaixa.map((d) => (
+                          <option key={d.data} value={d.data}>
+                            {`Dia: ${fmtBR(d.data)}  |  Aulas: ${String(d.aulas).padStart(2, '0')}`}
+                          </option>
+                        ))}
+                        {diasDaFaixa.length === 0 && <option value="">Sem aulas nesta semana</option>}
+                      </select>
+                    </div>
+
+                    {/* Linha com dia selecionado */}
+                    {diaInfoSel && (
+                      <div className="grid grid-cols-2 gap-2 mb-2">
+                        <div className="rounded-md bg-gray-100 px-3 py-2 text-[13px] text-gray-600">
+                          <span className="opacity-70 mr-1">Dia:</span>
+                          <span className="font-semibold">{fmtBR(diaInfoSel.data)}</span>
+                        </div>
+                        <div className="rounded-md bg-gray-100 px-3 py-2 text-[13px] text-gray-600">
+                          <span className="opacity-70 mr-1">Aulas:</span>
+                          <span className="font-semibold text-orange-600">
+                            {String(diaInfoSel.aulas).padStart(2, '0')}
+                          </span>
                         </div>
                       </div>
-                    </div>
+                    )}
 
-                    {/* por faixa */}
-                    <div>
-                      <h3 className="font-medium mb-2">Resumo por faixa</h3>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        {quadro.totais.porFaixa.map((f) => (
-                          <div key={f.faixa} className="rounded border bg-white p-3 shadow-sm">
-                            <div className="text-xs text-gray-500">{f.faixa}</div>
-                            <div className="text-sm"><strong>{f.aulas}</strong> aulas</div>
-                            <div className="text-sm">{formatBRL(f.valor)}</div>
-                          </div>
-                        ))}
+                    {/* Totais da semana */}
+                    <div className="rounded-md bg-gray-200 px-3 py-2 text-[13px] text-gray-700 mb-2">
+                      <div className="flex items-center justify-between">
+                        <span>Total de Aulas:</span>
+                        <span className="font-semibold">{totaisSemanaSel.aulas}</span>
+                      </div>
+                    </div>
+                    <div className="rounded-md bg-gray-200 px-3 py-2 text-[13px] text-gray-700">
+                      <div className="flex items-center justify-between">
+                        <span>Total a pagar:</span>
+                        <span className="font-semibold">{currencyBRL(totaisSemanaSel.valor)}</span>
                       </div>
                     </div>
 
-                    {/* por dia (opcional: útil para conferência) */}
-                    <div>
-                      <h3 className="font-medium mb-2">Detalhe por dia</h3>
-                      <div className="overflow-auto border rounded">
-                        <table className="min-w-full text-sm">
-                          <thead>
-                            <tr className="bg-gray-100 text-left">
-                              <th className="px-3 py-2">Data</th>
-                              <th className="px-3 py-2">Aulas</th>
-                              <th className="px-3 py-2">Valor</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {quadro.totais.porDia.map((d) => (
-                              <tr key={d.data} className="border-t">
-                                <td className="px-3 py-2">{d.data}</td>
-                                <td className="px-3 py-2">{d.aulas}</td>
-                                <td className="px-3 py-2">{formatBRL(d.valor)}</td>
-                              </tr>
-                            ))}
-                            {quadro.totais.porDia.length === 0 && (
-                              <tr>
-                                <td className="px-3 py-2 text-gray-500" colSpan={3}>Sem aulas no período.</td>
-                              </tr>
-                            )}
-                          </tbody>
-                        </table>
+                    {/* separador */}
+                    <div className="my-3 border-t border-gray-200" />
+
+                    {/* Totais do mês */}
+                    <div className="rounded-md bg-gray-100 px-3 py-2 text-[13px] text-gray-700">
+                      <div className="flex items-center justify-between">
+                        <span>Total do mês — aulas:</span>
+                        <span className="font-semibold">{quadro.totais.mes.aulas}</span>
+                      </div>
+                      <div className="flex items-center justify-between mt-1">
+                        <span>Total do mês — a pagar:</span>
+                        <span className="font-semibold">{currencyBRL(quadro.totais.mes.valor)}</span>
                       </div>
                     </div>
+
+                    {/* rodapé */}
+                    <p className="mt-2 text-[11px] text-gray-500">
+                      Duração considerada por aula: {quadro.intervalo.duracaoMin} min · Valor por aula:{' '}
+                      {currencyBRL(quadro.professor.valorQuadra || 0)}
+                    </p>
                   </div>
                 )}
               </div>
