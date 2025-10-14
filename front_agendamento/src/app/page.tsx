@@ -21,19 +21,15 @@ type AgendamentoAPI = {
   horario: string;
   status?: Status;
 
-  // comuns
   data?: string;
 
-  // permanentes
   diaSemana?: "DOMINGO" | "SEGUNDA" | "TERCA" | "QUARTA" | "QUINTA" | "SEXTA" | "SABADO";
   proximaData?: string | null;
 
-  // 🔴 NOVOS (vindos do back para permanentes)
   proximaDataBloqueada?: boolean;
-  proximaDataBloqueioInicio?: string; // "HH:MM" (opcional)
-  proximaDataBloqueioFim?: string;    // "HH:MM" (opcional)
+  proximaDataBloqueioInicio?: string;
+  proximaDataBloqueioFim?: string;
 
-  // metadados (compat + novos)
   nome?: string;
   local?: string;
   logoUrl?: string | null;
@@ -42,12 +38,10 @@ type AgendamentoAPI = {
   quadraLogoUrl?: string | null;
   esporteNome?: string;
 
-  // 👇 novos campos vindos do back (/agendamentos/me)
   donoId?: string;
   donoNome?: string;
   euSouDono?: boolean;
 
-  // obrigatório
   tipoReserva: TipoReserva;
 };
 
@@ -57,22 +51,19 @@ type AgendamentoCard = {
   quadraNome: string;
   numero?: string;
   esporte: string;
-  dia: string;   // "dd/mm" ou "Quarta"
+  dia: string;
   hora: string;
   tipo: TipoReserva;
 
-  // dono/visibilidade
   donoNome?: string | null;
   euSouDono?: boolean;
 
-  // bloqueio (apenas permanentes)
   bloqueado?: boolean;
   bloqueioInicio?: string | null;
   bloqueioFim?: string | null;
 
-  // usados só para ordenação/seleção
-  nextISO: string | null; // "YYYY-MM-DD"
-  sortTs: number;         // timestamp do próximo evento (SP)
+  nextISO: string | null;
+  sortTs: number;
 };
 
 export default function Home() {
@@ -110,13 +101,11 @@ export default function Home() {
   const prettyDiaSemana = (d?: AgendamentoAPI["diaSemana"]) =>
     d ? d.charAt(0) + d.slice(1).toLowerCase() : "";
 
-  /** timestamp em UTC considerando o fuso de SP (-03:00) */
   function tsFromSP(ymd: string, hora: string) {
     const safeHora = /^\d{2}:\d{2}$/.test(hora) ? hora : "00:00";
     return new Date(`${ymd}T${safeHora}:00-03:00`).getTime();
   }
 
-  // 🔹 Fallback local p/ permanentes quando o back NÃO mandar `proximaData`
   function proximaDataLocalQuandoFaltar(
     diaSemana?: AgendamentoAPI["diaSemana"],
     horario?: string
@@ -130,7 +119,7 @@ export default function Home() {
     const tz = "America/Sao_Paulo";
     const now = new Date();
 
-    const cur = now.getDay(); // 0..6
+    const cur = now.getDay();
     const target = DIA_IDX[diaSemana];
     let delta = (target - cur + 7) % 7;
 
@@ -139,9 +128,7 @@ export default function Home() {
       const hmNow = new Intl.DateTimeFormat("en-GB", {
         timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false,
       }).format(now);
-      if (hmNow >= horario) {
-        delta = 7; // hoje já passou o horário -> próxima semana
-      }
+      if (hmNow >= horario) delta = 7;
     }
 
     const d = new Date(now);
@@ -159,7 +146,6 @@ export default function Home() {
       const logo = raw.quadraLogoUrl ?? raw.logoUrl ?? null;
       const quadraNome = raw.quadraNome || (raw.local?.split(" - Nº")[0] ?? "Quadra");
 
-      // número da quadra (novo ou extraído do legado)
       let numero: string | undefined;
       if (raw.quadraNumero != null && raw.quadraNumero !== "") {
         numero = String(raw.quadraNumero);
@@ -168,7 +154,6 @@ export default function Home() {
         if (m?.[1]) numero = m[1];
       }
 
-      // Define a data ISO usada para exibição e ordenação
       const nextISO =
         raw.tipoReserva === "COMUM"
           ? (raw.data ?? null)
@@ -176,12 +161,8 @@ export default function Home() {
 
       const sortTs = nextISO ? tsFromSP(nextISO, raw.horario) : Number.POSITIVE_INFINITY;
 
-      const dia =
-        nextISO
-          ? paraDDMM(nextISO)
-          : prettyDiaSemana(raw.diaSemana);
+      const dia = nextISO ? paraDDMM(nextISO) : prettyDiaSemana(raw.diaSemana);
 
-      // Sinalizadores de bloqueio (só fazem sentido para permanentes)
       const bloqueado = raw.tipoReserva === "PERMANENTE" ? !!raw.proximaDataBloqueada : false;
       const bloqueioInicio = raw.proximaDataBloqueioInicio ?? null;
       const bloqueioFim = raw.proximaDataBloqueioFim ?? null;
@@ -197,10 +178,8 @@ export default function Home() {
         tipo: raw.tipoReserva,
         nextISO,
         sortTs,
-
         donoNome: raw.donoNome ?? null,
         euSouDono: raw.euSouDono ?? false,
-
         bloqueado,
         bloqueioInicio,
         bloqueioFim,
@@ -230,7 +209,7 @@ export default function Home() {
 
         setTotalProximos(futuras.length);
         setTotalListados(futuras.length);
-        setAgendamentos(futuras.slice(0, 2)); // mostra só os 2 mais próximos
+        setAgendamentos(futuras.slice(0, 2));
       } catch {
         setAgendamentos([]);
         setTotalProximos(0);
@@ -245,6 +224,14 @@ export default function Home() {
 
   const emExibicao = Math.min(totalProximos, 2);
   const plural = (n: number, s: string, p: string) => (n === 1 ? s : p);
+
+  const ehProfessor = usuario?.tipo === "ADMIN_PROFESSORES";
+  const gridColsMd =
+    ehProfessor && HABILITAR_TRANSFERENCIA
+      ? "md:grid-cols-3"
+      : (ehProfessor || HABILITAR_TRANSFERENCIA)
+      ? "md:grid-cols-2"
+      : "md:grid-cols-1";
 
   if (isChecking) {
     return (
@@ -300,7 +287,6 @@ export default function Home() {
                     key={a.id}
                     className="flex items-center gap-3 sm:gap-4 rounded-xl bg-[#f3f3f3] px-3 sm:px-4 py-2.5 sm:py-3 shadow-sm"
                   >
-                    {/* Logo */}
                     <div className="shrink-0 w-28 h-12 sm:w-36 sm:h-14 md:w-40 md:h-16 flex items-center justify-center overflow-hidden">
                       <AppImage
                         src={a.logoUrl ?? undefined}
@@ -314,7 +300,6 @@ export default function Home() {
                       />
                     </div>
 
-                    {/* Texto */}
                     <div className="min-w-0 flex-1">
                       <p className="text-[13px] sm:text-[15px] font-semibold text-gray-800 truncate">
                         {a.quadraNome}
@@ -343,7 +328,6 @@ export default function Home() {
                         )}
                       </p>
 
-                      {/* Data/Hora (pinta de vermelho quando bloqueado) */}
                       <p
                         className={`text-[12px] sm:text-[13px] ${
                           isBloqueado ? "text-red-600 font-semibold" : "text-gray-500"
@@ -354,16 +338,16 @@ export default function Home() {
                           : <>Toda {a.dia} às {a.hora}</>}
                       </p>
 
-                      {/* Aviso de bloqueio (somente quando bloqueado na próxima ocorrência) */}
                       {isBloqueado && (
                         <p className="mt-0.5 text-[11px] sm:text-[12px] text-red-600">
-                          A quadra está bloqueada nesta data{a.bloqueioInicio && a.bloqueioFim ? (
+                          A quadra está bloqueada nesta data
+                          {a.bloqueioInicio && a.bloqueioFim ? (
                             <> (das {a.bloqueioInicio} às {a.bloqueioFim})</>
-                          ) : null}. Seu agendamento permanece, mas não será utilizável por conta do evento.
+                          ) : null}.
+                          Seu agendamento permanece, mas não será utilizável por conta do evento.
                         </p>
                       )}
 
-                      {/* Reservado por (quando não for o dono) */}
                       {!a.euSouDono && a.donoNome && (
                         <p className="text-[11px] sm:text-[12px] text-gray-500 italic">
                           Reservado por: {a.donoNome}
@@ -388,11 +372,7 @@ export default function Home() {
           </div>
 
           {/* Ações */}
-          <div
-            className={`mt-4 md:mt-6 grid grid-cols-1 ${
-              HABILITAR_TRANSFERENCIA ? "md:grid-cols-2" : "md:grid-cols-1"
-            } gap-4`}
-          >
+          <div className={`mt-4 md:mt-6 grid grid-cols-1 ${gridColsMd} gap-4`}>
             {/* Marcar */}
             <div className="rounded-2xl bg-white shadow-md p-3 md:p-4">
               <h3 className="text-[13px] sm:text-sm font-semibold text-gray-500 mb-2">
@@ -445,6 +425,36 @@ export default function Home() {
                     <div className="w-px h-10 sm:h-12 bg-gray-300" />
                     <span className="pl-3 text-[14px] sm:text-[15px] font-semibold text-orange-600 cursor-pointer">
                       Transfira a sua quadra
+                    </span>
+                  </div>
+                </button>
+              </div>
+            )}
+
+            {/* >>> NOVO: Quadro do Professor (apenas para ADMIN_PROFESSORES) */}
+            {ehProfessor && (
+              <div className="rounded-2xl bg-white shadow-md p-3 md:p-4">
+                <h3 className="text-[13px] sm:text-sm font-semibold text-gray-500 mb-2">
+                  Seu quadro de aulas
+                </h3>
+                <button
+                  onClick={() => router.push("/detalhesProfessor")}
+                  className="w-full rounded-xl bg-[#f3f3f3] px-3 sm:px-4 py-3 flex items-center justify-between hover:bg-[#ececec] transition"
+                >
+                  <div className="flex items-center gap-3 sm:gap-4">
+                    <div className="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center">
+                      <Image
+                        src="/icons/professor.png"
+                        alt=""
+                        width={40}
+                        height={40}
+                        className="w-9 h-9 sm:w-10 sm:h-10 opacity-70"
+                        priority
+                      />
+                    </div>
+                    <div className="w-px h-10 sm:h-12 bg-gray-300" />
+                    <span className="pl-3 text-[14px] sm:text-[15px] font-semibold text-orange-600 cursor-pointer">
+                      Ver seu quadro de aulas
                     </span>
                   </div>
                 </button>
