@@ -228,7 +228,7 @@ export default function DetalhesProfessorPage() {
             <>
               {/* Semana */}
               <div className="mb-2">
-                <div className="text-[11px] text-gray-500 mb-1">Semana</div>
+                <div className="text-[11px] text-gray-500 mb-1">Semanas do mês</div>
                 <div className="relative">
                   <select
                     value={faixaSel}
@@ -249,7 +249,7 @@ export default function DetalhesProfessorPage() {
 
               {/* Dia da semana selecionada */}
               <div className="mb-2">
-                <div className="text-[11px] text-gray-500 mb-1">Dia</div>
+                <div className="text-[11px] text-gray-500 mb-1">Dias da semana</div>
                 <div className="relative">
                   <select
                     value={diaSel}
