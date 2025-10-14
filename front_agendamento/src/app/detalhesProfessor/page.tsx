@@ -283,13 +283,13 @@ export default function DetalhesProfessorPage() {
               {/* Totais da semana */}
               <div className="rounded-md bg-gray-200 px-3 py-2 text-[13px] text-gray-700 mb-2">
                 <div className="flex items-center justify-between">
-                  <span>Total de Aulas:</span>
+                  <span>Total de Aulas da semana:</span>
                   <span className="font-semibold">{totaisSemanaSel.aulas}</span>
                 </div>
               </div>
               <div className="rounded-md bg-gray-200 px-3 py-2 text-[13px] text-gray-700">
                 <div className="flex items-center justify-between">
-                  <span>Total a pagar:</span>
+                  <span>Total a pagar da semana:</span>
                   <span className="font-semibold">
                     {currencyBRL(totaisSemanaSel.valor)}
                   </span>
@@ -302,11 +302,11 @@ export default function DetalhesProfessorPage() {
               {/* Totais do mês */}
               <div className="rounded-md bg-gray-100 px-3 py-2 text-[13px] text-gray-700">
                 <div className="flex items-center justify-between">
-                  <span>Total do mês — aulas:</span>
+                  <span>Total de aulas do mês:</span>
                   <span className="font-semibold">{data.totais.mes.aulas}</span>
                 </div>
                 <div className="flex items-center justify-between mt-1">
-                  <span>Total do mês — a pagar:</span>
+                  <span>Total a pagar do mês:</span>
                   <span className="font-semibold">
                     {currencyBRL(data.totais.mes.valor)}
                   </span>
