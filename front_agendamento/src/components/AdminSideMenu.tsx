@@ -86,9 +86,11 @@ export default function AdminSideMenu({ open, onClose }: Props) {
         >
           <nav className="space-y-2 mt-1">
             <Item href="/adminMaster/usuarios" label="Perfil de Usuários" icon="/icons/perfis.png" onClose={onClose} />
+            <Item href="/adminMaster/professores" label="Professores" icon="/icons/perfis.png" onClose={onClose} />
             <Item href="/adminMaster/esportes" label="Esportes" icon="/icons/editar.png" onClose={onClose} />
             <Item href="/adminMaster/quadras" label="Quadras" icon="/icons/editar.png" onClose={onClose} />
             <Item href="/adminMaster/churrasqueiras" label="Churrasqueiras" icon="/icons/editar.png" onClose={onClose} />
+            <Item href="/adminMaster/logs" label="Registros" icon="/icons/editar.png" onClose={onClose} />
             <Item href="/adminMaster/bloqueioQuadras" label="Bloqueio de Quadras" icon="/icons/bloq.png" onClose={onClose} />
 
             {/* ⇩ novo botão para ir ao perfil do cliente */}

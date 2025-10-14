@@ -28,6 +28,7 @@ export default function AdminHeader() {
 
   const opcoes = [
     { nome: "Perfil de Usuários", url: "/adminMaster/usuarios", imagem: "/icons/perfis.png" },
+    { nome: "Professores", url: "/adminMaster/professores", imagem: "/icons/perfis.png" },
     { nome: "Esportes", url: "/adminMaster/esportes", imagem: "/icons/editar.png" },
     { nome: "Quadras", url: "/adminMaster/quadras", imagem: "/icons/editar.png" },
     { nome: "Churrasqueiras", url: "/adminMaster/churrasqueiras", imagem: "/icons/editar.png" },
