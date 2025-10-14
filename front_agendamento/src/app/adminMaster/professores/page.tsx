@@ -39,7 +39,6 @@ const numberToBR = (n: number) =>
   (Number.isFinite(n) ? n : 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 const formatBRL = (n: number) => `R$ ${numberToBR(n)}`
-
 const currencyBRL = (n: number) =>
   n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2 })
 
@@ -62,11 +61,10 @@ const currentMonthSP = () => {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).format(new Date()) // YYYY-MM-DD
+  }).format(new Date())
   return s.slice(0, 7) // YYYY-MM
 }
 
-// mesmas faixas usadas no quadro do professor
 function buildFaixasLabels(toDateISO: string) {
   const lastDay = Number(toDateISO.split('-')[2])
   return [
@@ -86,13 +84,11 @@ export default function ProfessoresAdmin() {
   const [loading, setLoading] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
 
-  // seleção e quadro
   const [selecionado, setSelecionado] = useState<AdminProfessorRow | null>(null)
   const [quadro, setQuadro] = useState<ResumoProfessorResponse | null>(null)
   const [loadingQuadro, setLoadingQuadro] = useState(false)
   const [erroQuadro, setErroQuadro] = useState<string | null>(null)
 
-  // estados do “quadro”
   const [faixaSel, setFaixaSel] = useState<string>('') // '1-7', '8-14', ...
   const [diaSel, setDiaSel] = useState<string>('')     // 'YYYY-MM-DD'
 
@@ -120,7 +116,6 @@ export default function ProfessoresAdmin() {
     void carregarProfessores()
   }, [carregarProfessores])
 
-  // filtro client-side por nome
   const filtrados = useMemo(() => {
     const q = busca.trim()
     if (!q) return lista
@@ -129,10 +124,8 @@ export default function ProfessoresAdmin() {
     )
   }, [lista, busca])
 
-  // carregar quadro ao selecionar
   const abrirQuadro = async (prof: AdminProfessorRow) => {
     if (selecionado?.id === prof.id) {
-      // toggle fechar
       setSelecionado(null)
       setQuadro(null)
       setErroQuadro(null)
@@ -150,8 +143,6 @@ export default function ProfessoresAdmin() {
         withCredentials: true,
       })
       setQuadro(res.data)
-
-      // defaults do quadro replicando a tela do professor
       const faixas = buildFaixasLabels(res.data.intervalo.to)
       setFaixaSel(faixas[0]?.id || '')
       setDiaSel('')
@@ -163,7 +154,6 @@ export default function ProfessoresAdmin() {
     }
   }
 
-  // mapeia faixas -> labels e limites
   const faixasInfo = useMemo(() => {
     if (!quadro) return []
     const yearMonth = quadro.intervalo.to.slice(0, 7)
@@ -176,7 +166,6 @@ export default function ProfessoresAdmin() {
     })
   }, [quadro])
 
-  // dias da faixa selecionada
   const diasDaFaixa = useMemo(() => {
     if (!quadro || !faixaSel) return []
     const info = faixasInfo.find(f => f.id === faixaSel)
@@ -188,7 +177,6 @@ export default function ProfessoresAdmin() {
     return quadro.totais.porDia.filter(d => inRange(d.data))
   }, [quadro, faixaSel, faixasInfo])
 
-  // default de dia quando muda a faixa
   useEffect(() => {
     if (diaSel) return
     if (diasDaFaixa.length) {
@@ -196,20 +184,17 @@ export default function ProfessoresAdmin() {
     }
   }, [diasDaFaixa, diaSel])
 
-  // totais da semana selecionada
   const totaisSemanaSel = useMemo(() => {
     if (!quadro || !faixaSel) return { aulas: 0, valor: 0 }
     const f = quadro.totais.porFaixa.find(x => x.faixa === faixaSel)
     return f ? { aulas: f.aulas, valor: f.valor } : { aulas: 0, valor: 0 }
   }, [quadro, faixaSel])
 
-  // dia selecionado
   const diaInfoSel = useMemo(() => {
     if (!diaSel || !diasDaFaixa.length) return null
     return diasDaFaixa.find(d => d.data === diaSel) || null
   }, [diaSel, diasDaFaixa])
 
-  // navegação de mês
   const incMes = (delta: number) => {
     const [yStr, mStr] = mes.split('-')
     const y = Number(yStr)
@@ -219,7 +204,6 @@ export default function ProfessoresAdmin() {
     const yy = d.getUTCFullYear()
     const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
     setMes(`${yy}-${mm}`)
-    // fechamos o painel aberto porque muda a referência do resumo
     setSelecionado(null)
     setQuadro(null)
     setFaixaSel('')
@@ -240,7 +224,7 @@ export default function ProfessoresAdmin() {
               placeholder="Digite o nome do professor…"
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
-              className="p-2 border rounded-md w-full sm:w-60"
+              className="p-2 border rounded-md w-full sm:w-60 focus:outline-none focus:ring-2 focus:ring-orange-300"
             />
           </div>
 
@@ -250,28 +234,28 @@ export default function ProfessoresAdmin() {
               type="month"
               value={mes}
               onChange={(e) => setMes(e.target.value)}
-              className="p-2 border rounded-md cursor-pointer w-full sm:w-44"
+              className="p-2 border rounded-md cursor-pointer w-full sm:w-44 focus:outline-none focus:ring-2 focus:ring-orange-300"
             />
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             <button
               onClick={() => incMes(-1)}
-              className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded-md h-10 sm:h-[42px] cursor-pointer w-full sm:w-auto"
+              className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded-md h-10 sm:h-[42px] cursor-pointer w-full sm:w-auto focus:outline-none focus:ring-2 focus:ring-orange-300"
               aria-label="Mês anterior"
             >
               ‹
             </button>
             <button
               onClick={() => incMes(1)}
-              className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded-md h-10 sm:h-[42px] cursor-pointer w-full sm:w-auto"
+              className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded-md h-10 sm:h-[42px] cursor-pointer w-full sm:w-auto focus:outline-none focus:ring-2 focus:ring-orange-300"
               aria-label="Próximo mês"
             >
               ›
             </button>
             <button
               onClick={() => void carregarProfessores()}
-              className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-md h-10 sm:h-[42px] cursor-pointer col-span-2 sm:col-span-1 w-full sm:w-auto"
+              className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-md h-10 sm:h-[42px] cursor-pointer col-span-2 sm:col-span-1 w-full sm:w-auto focus:outline-none focus:ring-2 focus:ring-orange-300"
             >
               Atualizar
             </button>
@@ -310,7 +294,7 @@ export default function ProfessoresAdmin() {
               </div>
             </div>
 
-            {/* painel do quadro (replica a tela do professor) */}
+            {/* painel do quadro */}
             {selecionado?.id === p.id && (
               <div className="p-4 sm:p-5 border-t bg-gray-50">
                 {loadingQuadro && (
@@ -321,15 +305,15 @@ export default function ProfessoresAdmin() {
                 {erroQuadro && <div className="text-red-600 text-sm">{erroQuadro}</div>}
 
                 {!loadingQuadro && quadro && (
-                  // centralização do quadro + respiro lateral no mobile
                   <div className="w-full flex justify-center px-1 sm:px-0">
                     <div className="w-full max-w-sm">
-                      {/* header compacto (período formatado) */}
+                      {/* header compacto (período + duração) */}
                       <div className="mb-3">
                         <h2 className="text-base sm:text-lg font-bold">{quadro.professor.nome}</h2>
                         <p className="text-[11px] sm:text-xs text-gray-600">
                           Período: {fmtDDMMYYYYdash(quadro.intervalo.from)} a {fmtDDMMYYYYdash(quadro.intervalo.to)}
                           {' · '}
+                          Duração: {quadro.intervalo.duracaoMin} min
                         </p>
                       </div>
 
@@ -342,7 +326,7 @@ export default function ProfessoresAdmin() {
                             setFaixaSel(e.target.value)
                             setDiaSel('')
                           }}
-                          className="w-full rounded-md bg-[#f3f3f3] px-3 py-2 text-[13px] font-semibold text-gray-700 cursor-pointer"
+                          className="w-full rounded-md bg-[#f3f3f3] px-3 py-2 text-[13px] font-semibold text-gray-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-300"
                         >
                           {faixasInfo.map((f, i) => (
                             <option key={f.id} value={f.id}>
@@ -358,7 +342,7 @@ export default function ProfessoresAdmin() {
                         <select
                           value={diaSel}
                           onChange={(e) => setDiaSel(e.target.value)}
-                          className="w-full rounded-md bg-[#f3f3f3] px-3 py-2 text-[13px] font-semibold text-gray-700 cursor-pointer"
+                          className="w-full rounded-md bg-[#f3f3f3] px-3 py-2 text-[13px] font-semibold text-gray-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-300"
                         >
                           {diasDaFaixa.map((d) => (
                             <option key={d.data} value={d.data}>
@@ -369,7 +353,7 @@ export default function ProfessoresAdmin() {
                         </select>
                       </div>
 
-                      {/* Linha com dia selecionado */}
+                      {/* Dia selecionado */}
                       {diaInfoSel && (
                         <div className="grid grid-cols-2 gap-2 mb-2">
                           <div className="rounded-md bg-gray-100 px-3 py-2 text-[13px] text-gray-600">
@@ -388,13 +372,13 @@ export default function ProfessoresAdmin() {
                       {/* Totais da semana */}
                       <div className="rounded-md bg-gray-200 px-3 py-2 text-[13px] text-gray-700 mb-2">
                         <div className="flex items-center justify-between">
-                          <span>Total de Aulas:</span>
+                          <span>Total de Aulas da semana:</span>
                           <span className="font-semibold">{totaisSemanaSel.aulas}</span>
                         </div>
                       </div>
                       <div className="rounded-md bg-gray-200 px-3 py-2 text-[13px] text-gray-700">
                         <div className="flex items-center justify-between">
-                          <span>Total a pagar:</span>
+                          <span>Total a pagar da semana:</span>
                           <span className="font-semibold">{currencyBRL(totaisSemanaSel.valor)}</span>
                         </div>
                       </div>
@@ -405,11 +389,11 @@ export default function ProfessoresAdmin() {
                       {/* Totais do mês */}
                       <div className="rounded-md bg-gray-100 px-3 py-2 text-[13px] text-gray-700">
                         <div className="flex items-center justify-between">
-                          <span>Total do mês — aulas:</span>
+                          <span>Total de aulas do mês:</span>
                           <span className="font-semibold">{quadro.totais.mes.aulas}</span>
                         </div>
                         <div className="flex items-center justify-between mt-1">
-                          <span>Total do mês — a pagar:</span>
+                          <span>Total a pagar do mês:</span>
                           <span className="font-semibold">{currencyBRL(quadro.totais.mes.valor)}</span>
                         </div>
                       </div>
