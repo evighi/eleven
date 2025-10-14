@@ -435,7 +435,7 @@ export default function Home() {
             {ehProfessor && (
               <div className="rounded-2xl bg-white shadow-md p-3 md:p-4">
                 <h3 className="text-[13px] sm:text-sm font-semibold text-gray-500 mb-2">
-                  Seu quadro de aulas
+                  Suas aulas
                 </h3>
                 <button
                   onClick={() => router.push("/detalhesProfessor")}
@@ -444,7 +444,7 @@ export default function Home() {
                   <div className="flex items-center gap-3 sm:gap-4">
                     <div className="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center">
                       <Image
-                        src="/editar.png"
+                        src="/transfer.png"
                         alt=""
                         width={40}
                         height={40}
@@ -454,7 +454,7 @@ export default function Home() {
                     </div>
                     <div className="w-px h-10 sm:h-12 bg-gray-300" />
                     <span className="pl-3 text-[14px] sm:text-[15px] font-semibold text-orange-600 cursor-pointer">
-                      Ver seu quadro de aulas
+                      Veja as suas aulas
                     </span>
                   </div>
                 </button>
