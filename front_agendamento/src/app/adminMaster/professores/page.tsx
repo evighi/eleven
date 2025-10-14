@@ -51,6 +51,11 @@ const fmtDDMM = (iso: string) => {
   const [y, m, d] = iso.split('-')
   return `${d}/${m}`
 }
+// >>> novo: dd-mm-yyyy (com hífen)
+const fmtDDMMYYYYdash = (iso: string) => {
+  const [y, m, d] = iso.split('-')
+  return `${d}-${m}-${y}`
+}
 
 const currentMonthSP = () => {
   const s = new Intl.DateTimeFormat('en-CA', {
@@ -223,75 +228,77 @@ export default function ProfessoresAdmin() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto mt-10 p-6 bg-white rounded shadow">
-      <h1 className="text-2xl font-medium mb-4">Professores — Quadro e Pagamentos do Mês</h1>
+    <div className="max-w-6xl mx-auto mt-10 p-6 bg-white rounded-xl shadow-sm border border-gray-200">
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+        <h1 className="text-xl font-semibold tracking-tight">Professores — Quadro e Pagamentos do Mês</h1>
 
-      <div className="flex flex-col md:flex-row gap-4 mb-4 md:items-end">
-        <div className="flex-1 flex flex-col">
-          <label className="font-medium mb-1">Buscar por nome</label>
-          <input
-            type="text"
-            placeholder="Digite o nome do professor…"
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-            className="p-2 border rounded w-full"
-          />
+        <div className="flex items-end gap-3">
+          <div className="flex flex-col">
+            <label className="text-sm text-gray-600 mb-1">Buscar por nome</label>
+            <input
+              type="text"
+              placeholder="Digite o nome do professor…"
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              className="p-2 border rounded-md w-60"
+            />
+          </div>
+
+          <div className="flex flex-col">
+            <label className="text-sm text-gray-600 mb-1">Mês</label>
+            <input
+              type="month"
+              value={mes}
+              onChange={(e) => setMes(e.target.value)}
+              className="p-2 border rounded-md cursor-pointer w-44"
+            />
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              onClick={() => incMes(-1)}
+              className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded-md h-[42px] cursor-pointer"
+              aria-label="Mês anterior"
+            >
+              ‹
+            </button>
+            <button
+              onClick={() => incMes(1)}
+              className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded-md h-[42px] cursor-pointer"
+              aria-label="Próximo mês"
+            >
+              ›
+            </button>
+            <button
+              onClick={() => void carregarProfessores()}
+              className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-md h-[42px] cursor-pointer"
+            >
+              Atualizar
+            </button>
+          </div>
         </div>
 
-        <div className="w-full md:w-56 flex flex-col">
-          <label className="font-medium mb-1">Mês</label>
-          <input
-            type="month"
-            value={mes}
-            onChange={(e) => setMes(e.target.value)}
-            className="p-2 border rounded cursor-pointer"
-          />
-        </div>
-
-        <div className="flex gap-2">
-          <button
-            onClick={() => incMes(-1)}
-            className="bg-gray-100 text-gray-800 px-3 py-2 rounded h-[42px]"
-            aria-label="Mês anterior"
-          >
-            ‹
-          </button>
-          <button
-            onClick={() => incMes(1)}
-            className="bg-gray-100 text-gray-800 px-3 py-2 rounded h-[42px]"
-            aria-label="Próximo mês"
-          >
-            ›
-          </button>
-          <button
-            onClick={() => void carregarProfessores()}
-            className="bg-orange-600 text-white px-4 py-2 rounded h-[42px]"
-          >
-            Atualizar
-          </button>
-        </div>
+        {loading && (
+          <div className="flex items-center gap-2 text-gray-600 mb-3">
+            <Spinner /> <span>Carregando professores…</span>
+          </div>
+        )}
+        {erro && <div className="mb-3 text-red-600 text-sm">{erro}</div>}
       </div>
 
-      {loading && (
-        <div className="flex items-center gap-2 text-gray-600 mb-3">
-          <Spinner /> <span>Carregando professores…</span>
-        </div>
-      )}
-      {erro && <div className="mb-3 text-red-600 text-sm">{erro}</div>}
-
-      <ul className="border rounded divide-y">
+      <ul className="border rounded-lg divide-y">
         {!loading && filtrados.length === 0 && (
           <li className="p-4 text-sm text-gray-600">Nenhum professor encontrado.</li>
         )}
 
         {filtrados.map((p) => (
-          <li key={p.id}>
+          <li key={p.id} className="transition-colors">
             {/* linha do professor */}
             <div
-              className="p-3 hover:bg-gray-100 cursor-pointer flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1"
+              className="p-4 hover:bg-gray-50 cursor-pointer flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1"
               onClick={() => void abrirQuadro(p)}
             >
-              <div className="font-semibold">{p.nome}</div>
+              <div className="font-medium">{p.nome}</div>
               <div className="text-sm text-gray-700 flex flex-wrap gap-x-4 gap-y-1">
                 <span><strong>Aulas no mês:</strong> {p.aulasMes}</span>
                 <span><strong>Valor a pagar:</strong> {formatBRL(Number(p.valorMes || 0))}</span>
@@ -305,7 +312,7 @@ export default function ProfessoresAdmin() {
 
             {/* painel do quadro (replica a tela do professor) */}
             {selecionado?.id === p.id && (
-              <div className="p-4 border-t bg-gray-50">
+              <div className="p-5 border-t bg-gray-50">
                 {loadingQuadro && (
                   <div className="flex items-center gap-2 text-gray-600">
                     <Spinner /> <span>Carregando quadro…</span>
@@ -314,103 +321,106 @@ export default function ProfessoresAdmin() {
                 {erroQuadro && <div className="text-red-600 text-sm">{erroQuadro}</div>}
 
                 {!loadingQuadro && quadro && (
-                  <div className="max-w-sm">
-                    {/* header compacto */}
-                    <div className="mb-3">
-                      <h2 className="text-lg font-bold">{quadro.professor.nome}</h2>
-                      <p className="text-xs text-gray-600">
-                        Período: {quadro.intervalo.from} a {quadro.intervalo.to}
-                        {' · '}
-                        Duração: {quadro.intervalo.duracaoMin} min
+                  // >>> centralização do quadro
+                  <div className="w-full flex justify-center">
+                    <div className="max-w-sm w-full">
+                      {/* header compacto (só formatamos o período) */}
+                      <div className="mb-3">
+                        <h2 className="text-lg font-bold">{quadro.professor.nome}</h2>
+                        <p className="text-xs text-gray-600">
+                          Período: {fmtDDMMYYYYdash(quadro.intervalo.from)} a {fmtDDMMYYYYdash(quadro.intervalo.to)}
+                          {' · '}
+                          Duração: {quadro.intervalo.duracaoMin} min
+                        </p>
+                      </div>
+
+                      {/* Semana (select) */}
+                      <div className="mb-2">
+                        <div className="text-[11px] text-gray-500 mb-1">Semana</div>
+                        <select
+                          value={faixaSel}
+                          onChange={(e) => {
+                            setFaixaSel(e.target.value)
+                            setDiaSel('')
+                          }}
+                          className="w-full rounded-md bg-[#f3f3f3] px-3 py-2 text-[13px] font-semibold text-gray-700 cursor-pointer"
+                        >
+                          {faixasInfo.map((f, i) => (
+                            <option key={f.id} value={f.id}>
+                              {`SEMANA ${String(i + 1).padStart(2, '0')} — ${fmtDDMM(f.fromISO)} À ${fmtDDMM(f.toISO)}`}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Dia (select) */}
+                      <div className="mb-2">
+                        <div className="text-[11px] text-gray-500 mb-1">Dia</div>
+                        <select
+                          value={diaSel}
+                          onChange={(e) => setDiaSel(e.target.value)}
+                          className="w-full rounded-md bg-[#f3f3f3] px-3 py-2 text-[13px] font-semibold text-gray-700 cursor-pointer"
+                        >
+                          {diasDaFaixa.map((d) => (
+                            <option key={d.data} value={d.data}>
+                              {`Dia: ${fmtBR(d.data)}  |  Aulas: ${String(d.aulas).padStart(2, '0')}`}
+                            </option>
+                          ))}
+                          {diasDaFaixa.length === 0 && <option value="">Sem aulas nesta semana</option>}
+                        </select>
+                      </div>
+
+                      {/* Linha com dia selecionado */}
+                      {diaInfoSel && (
+                        <div className="grid grid-cols-2 gap-2 mb-2">
+                          <div className="rounded-md bg-gray-100 px-3 py-2 text-[13px] text-gray-600">
+                            <span className="opacity-70 mr-1">Dia:</span>
+                            <span className="font-semibold">{fmtBR(diaInfoSel.data)}</span>
+                          </div>
+                          <div className="rounded-md bg-gray-100 px-3 py-2 text-[13px] text-gray-600">
+                            <span className="opacity-70 mr-1">Aulas:</span>
+                            <span className="font-semibold text-orange-600">
+                              {String(diaInfoSel.aulas).padStart(2, '0')}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Totais da semana */}
+                      <div className="rounded-md bg-gray-200 px-3 py-2 text-[13px] text-gray-700 mb-2">
+                        <div className="flex items-center justify-between">
+                          <span>Total de Aulas:</span>
+                          <span className="font-semibold">{totaisSemanaSel.aulas}</span>
+                        </div>
+                      </div>
+                      <div className="rounded-md bg-gray-200 px-3 py-2 text-[13px] text-gray-700">
+                        <div className="flex items-center justify-between">
+                          <span>Total a pagar:</span>
+                          <span className="font-semibold">{currencyBRL(totaisSemanaSel.valor)}</span>
+                        </div>
+                      </div>
+
+                      {/* separador */}
+                      <div className="my-3 border-t border-gray-200" />
+
+                      {/* Totais do mês */}
+                      <div className="rounded-md bg-gray-100 px-3 py-2 text-[13px] text-gray-700">
+                        <div className="flex items-center justify-between">
+                          <span>Total do mês — aulas:</span>
+                          <span className="font-semibold">{quadro.totais.mes.aulas}</span>
+                        </div>
+                        <div className="flex items-center justify-between mt-1">
+                          <span>Total do mês — a pagar:</span>
+                          <span className="font-semibold">{currencyBRL(quadro.totais.mes.valor)}</span>
+                        </div>
+                      </div>
+
+                      {/* rodapé */}
+                      <p className="mt-2 text-[11px] text-gray-500">
+                        Duração considerada por aula: {quadro.intervalo.duracaoMin} min · Valor por aula:{' '}
+                        {currencyBRL(quadro.professor.valorQuadra || 0)}
                       </p>
                     </div>
-
-                    {/* Semana (select) */}
-                    <div className="mb-2">
-                      <div className="text-[11px] text-gray-500 mb-1">Semana</div>
-                      <select
-                        value={faixaSel}
-                        onChange={(e) => {
-                          setFaixaSel(e.target.value)
-                          setDiaSel('')
-                        }}
-                        className="w-full rounded-md bg-[#f3f3f3] px-3 py-2 text-[13px] font-semibold text-gray-700 cursor-pointer"
-                      >
-                        {faixasInfo.map((f, i) => (
-                          <option key={f.id} value={f.id}>
-                            {`SEMANA ${String(i + 1).padStart(2, '0')} — ${fmtDDMM(f.fromISO)} À ${fmtDDMM(f.toISO)}`}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Dia (select) */}
-                    <div className="mb-2">
-                      <div className="text-[11px] text-gray-500 mb-1">Dia</div>
-                      <select
-                        value={diaSel}
-                        onChange={(e) => setDiaSel(e.target.value)}
-                        className="w-full rounded-md bg-[#f3f3f3] px-3 py-2 text-[13px] font-semibold text-gray-700 cursor-pointer"
-                      >
-                        {diasDaFaixa.map((d) => (
-                          <option key={d.data} value={d.data}>
-                            {`Dia: ${fmtBR(d.data)}  |  Aulas: ${String(d.aulas).padStart(2, '0')}`}
-                          </option>
-                        ))}
-                        {diasDaFaixa.length === 0 && <option value="">Sem aulas nesta semana</option>}
-                      </select>
-                    </div>
-
-                    {/* Linha com dia selecionado */}
-                    {diaInfoSel && (
-                      <div className="grid grid-cols-2 gap-2 mb-2">
-                        <div className="rounded-md bg-gray-100 px-3 py-2 text-[13px] text-gray-600">
-                          <span className="opacity-70 mr-1">Dia:</span>
-                          <span className="font-semibold">{fmtBR(diaInfoSel.data)}</span>
-                        </div>
-                        <div className="rounded-md bg-gray-100 px-3 py-2 text-[13px] text-gray-600">
-                          <span className="opacity-70 mr-1">Aulas:</span>
-                          <span className="font-semibold text-orange-600">
-                            {String(diaInfoSel.aulas).padStart(2, '0')}
-                          </span>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Totais da semana */}
-                    <div className="rounded-md bg-gray-200 px-3 py-2 text-[13px] text-gray-700 mb-2">
-                      <div className="flex items-center justify-between">
-                        <span>Total de Aulas:</span>
-                        <span className="font-semibold">{totaisSemanaSel.aulas}</span>
-                      </div>
-                    </div>
-                    <div className="rounded-md bg-gray-200 px-3 py-2 text-[13px] text-gray-700">
-                      <div className="flex items-center justify-between">
-                        <span>Total a pagar:</span>
-                        <span className="font-semibold">{currencyBRL(totaisSemanaSel.valor)}</span>
-                      </div>
-                    </div>
-
-                    {/* separador */}
-                    <div className="my-3 border-t border-gray-200" />
-
-                    {/* Totais do mês */}
-                    <div className="rounded-md bg-gray-100 px-3 py-2 text-[13px] text-gray-700">
-                      <div className="flex items-center justify-between">
-                        <span>Total do mês — aulas:</span>
-                        <span className="font-semibold">{quadro.totais.mes.aulas}</span>
-                      </div>
-                      <div className="flex items-center justify-between mt-1">
-                        <span>Total do mês — a pagar:</span>
-                        <span className="font-semibold">{currencyBRL(quadro.totais.mes.valor)}</span>
-                      </div>
-                    </div>
-
-                    {/* rodapé */}
-                    <p className="mt-2 text-[11px] text-gray-500">
-                      Duração considerada por aula: {quadro.intervalo.duracaoMin} min · Valor por aula:{' '}
-                      {currencyBRL(quadro.professor.valorQuadra || 0)}
-                    </p>
                   </div>
                 )}
               </div>
