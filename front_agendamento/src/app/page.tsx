@@ -444,7 +444,7 @@ export default function Home() {
                   <div className="flex items-center gap-3 sm:gap-4">
                     <div className="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center">
                       <Image
-                        src="/icons/professor.png"
+                        src="/icons/editar.png"
                         alt=""
                         width={40}
                         height={40}
