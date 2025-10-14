@@ -51,7 +51,6 @@ const fmtDDMM = (iso: string) => {
   const [y, m, d] = iso.split('-')
   return `${d}/${m}`
 }
-// >>> novo: dd-mm-yyyy (com hífen)
 const fmtDDMMYYYYdash = (iso: string) => {
   const [y, m, d] = iso.split('-')
   return `${d}-${m}-${y}`
@@ -93,7 +92,7 @@ export default function ProfessoresAdmin() {
   const [loadingQuadro, setLoadingQuadro] = useState(false)
   const [erroQuadro, setErroQuadro] = useState<string | null>(null)
 
-  // estados do “quadro” (iguais aos da tela do professor)
+  // estados do “quadro”
   const [faixaSel, setFaixaSel] = useState<string>('') // '1-7', '8-14', ...
   const [diaSel, setDiaSel] = useState<string>('')     // 'YYYY-MM-DD'
 
@@ -164,7 +163,7 @@ export default function ProfessoresAdmin() {
     }
   }
 
-  // mapeia faixas -> labels e limites (como na tela do professor)
+  // mapeia faixas -> labels e limites
   const faixasInfo = useMemo(() => {
     if (!quadro) return []
     const yearMonth = quadro.intervalo.to.slice(0, 7)
@@ -228,11 +227,12 @@ export default function ProfessoresAdmin() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto mt-10 p-6 bg-white rounded-xl shadow-sm border border-gray-200">
-      <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
-        <h1 className="text-xl font-semibold tracking-tight">Professores — Quadro e Pagamentos do Mês</h1>
+    <div className="max-w-6xl mx-auto mt-6 sm:mt-10 p-4 sm:p-6 bg-white rounded-xl shadow-sm border border-gray-200">
+      {/* Header responsivo */}
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 sm:gap-4 mb-4">
+        <h1 className="text-lg sm:text-xl font-semibold tracking-tight">Professores — Quadro e Pagamentos do Mês</h1>
 
-        <div className="flex items-end gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-3 w-full sm:w-auto">
           <div className="flex flex-col">
             <label className="text-sm text-gray-600 mb-1">Buscar por nome</label>
             <input
@@ -240,7 +240,7 @@ export default function ProfessoresAdmin() {
               placeholder="Digite o nome do professor…"
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
-              className="p-2 border rounded-md w-60"
+              className="p-2 border rounded-md w-full sm:w-60"
             />
           </div>
 
@@ -250,41 +250,41 @@ export default function ProfessoresAdmin() {
               type="month"
               value={mes}
               onChange={(e) => setMes(e.target.value)}
-              className="p-2 border rounded-md cursor-pointer w-44"
+              className="p-2 border rounded-md cursor-pointer w-full sm:w-44"
             />
           </div>
 
-          <div className="flex gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             <button
               onClick={() => incMes(-1)}
-              className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded-md h-[42px] cursor-pointer"
+              className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded-md h-10 sm:h-[42px] cursor-pointer w-full sm:w-auto"
               aria-label="Mês anterior"
             >
               ‹
             </button>
             <button
               onClick={() => incMes(1)}
-              className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded-md h-[42px] cursor-pointer"
+              className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded-md h-10 sm:h-[42px] cursor-pointer w-full sm:w-auto"
               aria-label="Próximo mês"
             >
               ›
             </button>
             <button
               onClick={() => void carregarProfessores()}
-              className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-md h-[42px] cursor-pointer"
+              className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-md h-10 sm:h-[42px] cursor-pointer col-span-2 sm:col-span-1 w-full sm:w-auto"
             >
               Atualizar
             </button>
           </div>
         </div>
-
-        {loading && (
-          <div className="flex items-center gap-2 text-gray-600 mb-3">
-            <Spinner /> <span>Carregando professores…</span>
-          </div>
-        )}
-        {erro && <div className="mb-3 text-red-600 text-sm">{erro}</div>}
       </div>
+
+      {loading && (
+        <div className="flex items-center gap-2 text-gray-600 mb-3">
+          <Spinner /> <span>Carregando professores…</span>
+        </div>
+      )}
+      {erro && <div className="mb-3 text-red-600 text-sm">{erro}</div>}
 
       <ul className="border rounded-lg divide-y">
         {!loading && filtrados.length === 0 && (
@@ -295,11 +295,11 @@ export default function ProfessoresAdmin() {
           <li key={p.id} className="transition-colors">
             {/* linha do professor */}
             <div
-              className="p-4 hover:bg-gray-50 cursor-pointer flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1"
+              className="p-4 hover:bg-gray-50 cursor-pointer flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
               onClick={() => void abrirQuadro(p)}
             >
               <div className="font-medium">{p.nome}</div>
-              <div className="text-sm text-gray-700 flex flex-wrap gap-x-4 gap-y-1">
+              <div className="text-[13px] sm:text-sm text-gray-700 flex flex-col sm:flex-row flex-wrap gap-x-4 gap-y-1">
                 <span><strong>Aulas no mês:</strong> {p.aulasMes}</span>
                 <span><strong>Valor a pagar:</strong> {formatBRL(Number(p.valorMes || 0))}</span>
                 {p.valorQuadra != null && (
@@ -312,7 +312,7 @@ export default function ProfessoresAdmin() {
 
             {/* painel do quadro (replica a tela do professor) */}
             {selecionado?.id === p.id && (
-              <div className="p-5 border-t bg-gray-50">
+              <div className="p-4 sm:p-5 border-t bg-gray-50">
                 {loadingQuadro && (
                   <div className="flex items-center gap-2 text-gray-600">
                     <Spinner /> <span>Carregando quadro…</span>
@@ -321,22 +321,21 @@ export default function ProfessoresAdmin() {
                 {erroQuadro && <div className="text-red-600 text-sm">{erroQuadro}</div>}
 
                 {!loadingQuadro && quadro && (
-                  // >>> centralização do quadro
-                  <div className="w-full flex justify-center">
-                    <div className="max-w-sm w-full">
-                      {/* header compacto (só formatamos o período) */}
+                  // centralização do quadro + respiro lateral no mobile
+                  <div className="w-full flex justify-center px-1 sm:px-0">
+                    <div className="w-full max-w-sm">
+                      {/* header compacto (período formatado) */}
                       <div className="mb-3">
-                        <h2 className="text-lg font-bold">{quadro.professor.nome}</h2>
-                        <p className="text-xs text-gray-600">
+                        <h2 className="text-base sm:text-lg font-bold">{quadro.professor.nome}</h2>
+                        <p className="text-[11px] sm:text-xs text-gray-600">
                           Período: {fmtDDMMYYYYdash(quadro.intervalo.from)} a {fmtDDMMYYYYdash(quadro.intervalo.to)}
                           {' · '}
-                          Duração: {quadro.intervalo.duracaoMin} min
                         </p>
                       </div>
 
                       {/* Semana (select) */}
                       <div className="mb-2">
-                        <div className="text-[11px] text-gray-500 mb-1">Semana</div>
+                        <div className="text-[11px] text-gray-500 mb-1">Semanas do mês</div>
                         <select
                           value={faixaSel}
                           onChange={(e) => {
@@ -355,7 +354,7 @@ export default function ProfessoresAdmin() {
 
                       {/* Dia (select) */}
                       <div className="mb-2">
-                        <div className="text-[11px] text-gray-500 mb-1">Dia</div>
+                        <div className="text-[11px] text-gray-500 mb-1">Dias da semana</div>
                         <select
                           value={diaSel}
                           onChange={(e) => setDiaSel(e.target.value)}
