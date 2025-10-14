@@ -212,11 +212,13 @@ export default function ProfessoresAdmin() {
 
   return (
     <div className="max-w-6xl mx-auto mt-6 sm:mt-10 p-4 sm:p-6 bg-white rounded-xl shadow-sm border border-gray-200">
-      {/* Header responsivo */}
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 sm:gap-4 mb-4">
-        <h1 className="text-lg sm:text-xl font-semibold tracking-tight">Professores — Quadro e Pagamentos do Mês</h1>
+      {/* Header SEMPRE empilhado */}
+      <div className="flex flex-col gap-4 mb-4">
+        <h1 className="text-lg sm:text-xl font-semibold tracking-tight">
+          Professores — Quadro e Pagamentos do Mês
+        </h1>
 
-        <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-3 w-full sm:w-auto">
+        <div className="grid grid-cols-1 gap-3 w-full">
           <div className="flex flex-col">
             <label className="text-sm text-gray-600 mb-1">Buscar por nome</label>
             <input
@@ -224,7 +226,7 @@ export default function ProfessoresAdmin() {
               placeholder="Digite o nome do professor…"
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
-              className="p-2 border rounded-md w-full sm:w-60 focus:outline-none focus:ring-2 focus:ring-orange-300"
+              className="p-2 border rounded-md w-full focus:outline-none focus:ring-2 focus:ring-orange-300"
             />
           </div>
 
@@ -234,28 +236,28 @@ export default function ProfessoresAdmin() {
               type="month"
               value={mes}
               onChange={(e) => setMes(e.target.value)}
-              className="p-2 border rounded-md cursor-pointer w-full sm:w-44 focus:outline-none focus:ring-2 focus:ring-orange-300"
+              className="p-2 border rounded-md cursor-pointer w-full focus:outline-none focus:ring-2 focus:ring-orange-300"
             />
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          <div className="flex gap-2">
             <button
               onClick={() => incMes(-1)}
-              className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded-md h-10 sm:h-[42px] cursor-pointer w-full sm:w-auto focus:outline-none focus:ring-2 focus:ring-orange-300"
+              className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded-md h-10 cursor-pointer w-full sm:w-auto focus:outline-none focus:ring-2 focus:ring-orange-300"
               aria-label="Mês anterior"
             >
               ‹
             </button>
             <button
               onClick={() => incMes(1)}
-              className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded-md h-10 sm:h-[42px] cursor-pointer w-full sm:w-auto focus:outline-none focus:ring-2 focus:ring-orange-300"
+              className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded-md h-10 cursor-pointer w-full sm:w-auto focus:outline-none focus:ring-2 focus:ring-orange-300"
               aria-label="Próximo mês"
             >
               ›
             </button>
             <button
               onClick={() => void carregarProfessores()}
-              className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-md h-10 sm:h-[42px] cursor-pointer col-span-2 sm:col-span-1 w-full sm:w-auto focus:outline-none focus:ring-2 focus:ring-orange-300"
+              className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-md h-10 cursor-pointer w-full sm:w-auto focus:outline-none focus:ring-2 focus:ring-orange-300"
             >
               Atualizar
             </button>
