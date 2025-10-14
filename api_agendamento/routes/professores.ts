@@ -3,11 +3,12 @@ import { Router } from "express";
 import { PrismaClient, StatusAgendamento, DiaSemana } from "@prisma/client";
 import { z } from "zod";
 import verificarToken from "../middleware/authMiddleware";
+import { requireAdmin } from "../middleware/acl";
 
 const prisma = new PrismaClient();
 const router = Router();
 
-// 🔒 exige login
+// 🔒 exige login para tudo
 router.use(verificarToken);
 
 /* =========================
@@ -83,6 +84,113 @@ function parseMesToLocalRange(mes: string) {
   return { fromYMD: firstLocal, toYMD: lastLocal };
 }
 
+/* =========================
+   Cálculo core (p/ um professor) — usa datasets carregados
+========================= */
+type ComumRow = { data: Date; horario: string; quadraId: string };
+type PermRow = {
+  diaSemana: DiaSemana;
+  horario: string;
+  quadraId: string;
+  dataInicio: Date | null;
+  cancelamentos: { data: Date }[];
+};
+type BloqueiosMap = Map<string, Array<{ ini: number; fim: number }>>;
+
+function computeResumoProfessorFromDatasets(
+  professor: { id: string; nome: string; valorQuadra: any },
+  { fromYMD, toYMD, duracaoMin }: { fromYMD: string; toYMD: string; duracaoMin: number },
+  comuns: ComumRow[],
+  permanentes: PermRow[],
+  bloqueiosMap: BloqueiosMap
+) {
+  const vistos = new Set<string>();
+  const porDia = new Map<string, number>();
+
+  const pushAula = (ymd: string, quadraId: string, horario: string) => {
+    const k = `${ymd}|${quadraId}|${horario}`;
+    if (vistos.has(k)) return;
+    vistos.add(k);
+    porDia.set(ymd, (porDia.get(ymd) || 0) + 1);
+  };
+
+  // 1) Comuns
+  for (const ag of comuns) {
+    const ymd = toISODateUTC(ag.data); // seu storage é 00:00Z do dia local
+    // regra 18–23h seg–sex
+    const wd = localWeekdayIndexOfYMD(ymd);
+    if (isWeekdayIdx(wd) && EXCLUDE_EVENING.has(ag.horario)) continue;
+
+    // bloqueio?
+    const slots = bloqueiosMap.get(`${ag.quadraId}|${ymd}`) || [];
+    const ini = hhmmToMinutes(ag.horario);
+    const fim = ini + duracaoMin;
+    if (slots.some(s => overlaps(ini, fim, s.ini, s.fim))) continue;
+
+    pushAula(ymd, ag.quadraId, ag.horario);
+  }
+
+  // 2) Permanentes
+  for (const p of permanentes) {
+    const dayIdx = DIA_IDX[p.diaSemana];
+    if (isWeekdayIdx(dayIdx) && EXCLUDE_EVENING.has(p.horario)) continue;
+
+    const dataInicioLocalYMD = p.dataInicio ? toISODateUTC(new Date(p.dataInicio)) : null;
+    const firstYMD =
+      dataInicioLocalYMD && dataInicioLocalYMD > fromYMD ? dataInicioLocalYMD : fromYMD;
+
+    const curIdx = localWeekdayIndexOfYMD(firstYMD);
+    const delta = (dayIdx - curIdx + 7) % 7;
+    let dYMD = addDaysLocalYMD(firstYMD, delta);
+
+    const excSet = new Set<string>(p.cancelamentos.map(c => toISODateUTC(c.data)));
+
+    while (dYMD <= toYMD) {
+      if (!dataInicioLocalYMD || dYMD >= dataInicioLocalYMD) {
+        if (!excSet.has(dYMD)) {
+          const slots = bloqueiosMap.get(`${p.quadraId}|${dYMD}`) || [];
+          const ini = hhmmToMinutes(p.horario);
+          const fim = ini + duracaoMin;
+          if (!slots.some(s => overlaps(ini, fim, s.ini, s.fim))) {
+            pushAula(dYMD, p.quadraId, p.horario);
+          }
+        }
+      }
+      dYMD = addDaysLocalYMD(dYMD, 7);
+    }
+  }
+
+  const valorAula = Number(professor.valorQuadra ?? 0) || 0;
+
+  const porDiaArr = Array.from(porDia.entries())
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([ymd, aulas]) => ({ data: ymd, aulas, valor: aulas * valorAula }));
+
+  const lastDayNum = Number(toYMD.split("-")[2]);
+  const porFaixaMap = new Map<string, { aulas: number; valor: number }>();
+  for (const it of porDiaArr) {
+    const dia = Number(it.data.split("-")[2]);
+    const f = faixaDoMes(dia, lastDayNum);
+    const cur = porFaixaMap.get(f) || { aulas: 0, valor: 0 };
+    cur.aulas += it.aulas;
+    cur.valor += it.valor;
+    porFaixaMap.set(f, cur);
+  }
+  const porFaixa = Array.from(porFaixaMap.entries())
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([faixa, v]) => ({ faixa, aulas: v.aulas, valor: v.valor }));
+
+  const totalMes = porFaixa.reduce(
+    (acc, f) => ({ aulas: acc.aulas + f.aulas, valor: acc.valor + f.valor }),
+    { aulas: 0, valor: 0 }
+  );
+
+  return {
+    professor: { id: professor.id, nome: professor.nome, valorQuadra: valorAula },
+    totais: { porDia: porDiaArr, porFaixa, mes: totalMes },
+  };
+}
+
 /* =========================================================
    GET /professores/me/resumo?mes=YYYY-MM
    ou ?from=YYYY-MM-DD&to=YYYY-MM-DD
@@ -104,49 +212,42 @@ router.get("/me/resumo", async (req, res) => {
     }
     const { mes, from, to, duracaoMin = 60 } = parsed.data;
 
-    // usuário logado
     const userId = req.usuario?.usuarioLogadoId;
     if (!userId) return res.status(401).json({ erro: "Não autenticado" });
 
-    // professor (valorQuadra)
     const professor = await prisma.usuario.findUnique({
       where: { id: userId },
       select: { id: true, nome: true, valorQuadra: true },
     });
     if (!professor) return res.status(404).json({ erro: "Usuário não encontrado" });
 
-    // intervalo em YMD local
     const { fromYMD, toYMD } = mes
       ? parseMesToLocalRange(mes)
       : { fromYMD: String(from), toYMD: String(to) };
 
-    // boundaries de consulta em UTC00 (meio-aberto)
-    const inicioUTC = toUtc00(fromYMD);                  // >=
-    const fimUTCExcl = toUtc00(addDaysLocalYMD(toYMD, 1)); // <
+    const inicioUTC = toUtc00(fromYMD);
+    const fimUTCExcl = toUtc00(addDaysLocalYMD(toYMD, 1));
 
-    // === COMUNS no intervalo (UTC boundaries corretos)
     const comuns = await prisma.agendamento.findMany({
       where: {
         usuarioId: userId,
         status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
         data: { gte: inicioUTC, lt: fimUTCExcl },
       },
-      select: { id: true, data: true, horario: true, quadraId: true },
+      select: { data: true, horario: true, quadraId: true },
     });
 
-    // === PERMANENTES ativos do professor
     const permanentes = await prisma.agendamentoPermanente.findMany({
       where: {
         usuarioId: userId,
         status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
       },
       select: {
-        id: true, diaSemana: true, horario: true, quadraId: true, dataInicio: true,
+        diaSemana: true, horario: true, quadraId: true, dataInicio: true,
         cancelamentos: { select: { data: true } },
       },
     });
 
-    // === BLOQUEIOS no intervalo (carrega tudo e indexa por (quadraId|YMD))
     const bloqueios = await prisma.bloqueioQuadra.findMany({
       where: { dataBloqueio: { gte: inicioUTC, lt: fimUTCExcl } },
       select: {
@@ -157,7 +258,7 @@ router.get("/me/resumo", async (req, res) => {
       },
     });
 
-    const bloqueiosMap = new Map<string, Array<{ ini: number; fim: number }>>();
+    const bloqueiosMap: BloqueiosMap = new Map();
     for (const b of bloqueios) {
       const ymd = toISODateUTC(b.dataBloqueio);
       const ini = hhmmToMinutes(b.inicioBloqueio);
@@ -170,110 +271,269 @@ router.get("/me/resumo", async (req, res) => {
       }
     }
 
-    // === Coletores
-    const vistos = new Set<string>(); // dedupe por (ymd|quadra|hora)
-    const porDia = new Map<string, number>(); // ymd -> aulas
-
-    const pushAula = (ymd: string, quadraId: string, horario: string) => {
-      const k = `${ymd}|${quadraId}|${horario}`;
-      if (vistos.has(k)) return;
-      vistos.add(k);
-      porDia.set(ymd, (porDia.get(ymd) || 0) + 1);
-    };
-
-    // === 1) COMUNS
-    for (const ag of comuns) {
-      // ymd local do comum (você salva 00:00Z do dia local -> pegar .toISOString().slice(0,10) é exato)
-      const ymd = toISODateUTC(ag.data);
-
-      // regra 18–23h apenas em dias úteis (SEG..SEX)
-      const wd = localWeekdayIndexOfYMD(ymd);
-      if (isWeekdayIdx(wd) && EXCLUDE_EVENING.has(ag.horario)) continue;
-
-      // bloqueio?
-      const slots = bloqueiosMap.get(`${ag.quadraId}|${ymd}`) || [];
-      const ini = hhmmToMinutes(ag.horario);
-      const fim = ini + duracaoMin;
-      if (slots.some(s => overlaps(ini, fim, s.ini, s.fim))) continue;
-
-      pushAula(ymd, ag.quadraId, ag.horario);
-    }
-
-    // === 2) PERMANENTES (expandindo em linha do tempo local)
-    for (const p of permanentes) {
-      // regra 18–23h para permanentes em dias úteis — ignora todo o slot
-      const dayIdx = DIA_IDX[p.diaSemana];
-      if (isWeekdayIdx(dayIdx) && EXCLUDE_EVENING.has(p.horario)) continue;
-
-      // início efetivo em YMD local
-      const dataInicioLocalYMD = p.dataInicio ? toISODateUTC(new Date(p.dataInicio)) : null;
-      const firstYMD = dataInicioLocalYMD && dataInicioLocalYMD > fromYMD ? dataInicioLocalYMD : fromYMD;
-
-      // encontra a primeira ocorrência do dia-da-semana >= firstYMD
-      const curIdx = localWeekdayIndexOfYMD(firstYMD);
-      const delta = (dayIdx - curIdx + 7) % 7;
-      let dYMD = addDaysLocalYMD(firstYMD, delta);
-
-      // exceções em Set<YMD>
-      const excSet = new Set<string>(p.cancelamentos.map(c => toISODateUTC(c.data)));
-
-      // percorre até toYMD, pulando exceções e bloqueios
-      while (dYMD <= toYMD) {
-        // respeita dataInicio
-        if (!dataInicioLocalYMD || dYMD >= dataInicioLocalYMD) {
-          if (!excSet.has(dYMD)) {
-            // bloqueio?
-            const slots = bloqueiosMap.get(`${p.quadraId}|${dYMD}`) || [];
-            const ini = hhmmToMinutes(p.horario);
-            const fim = ini + duracaoMin;
-            if (!slots.some(s => overlaps(ini, fim, s.ini, s.fim))) {
-              pushAula(dYMD, p.quadraId, p.horario);
-            }
-          }
-        }
-        dYMD = addDaysLocalYMD(dYMD, 7);
-      }
-    }
-
-    // === Totais / resposta
-    const valorAula = Number(professor.valorQuadra ?? 0) || 0;
-
-    const porDiaArr = Array.from(porDia.entries())
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-      .map(([ymd, aulas]) => ({ data: ymd, aulas, valor: aulas * valorAula }));
-
-    // Faixas do mês baseadas no 'mes' (se houver) ou no 'toYMD'
-    const lastDayNum = Number((mes ? parseMesToLocalRange(mes).toYMD : toYMD).split("-")[2]);
-    const porFaixaMap = new Map<string, { aulas: number; valor: number }>();
-    for (const it of porDiaArr) {
-      const dia = Number(it.data.split("-")[2]);
-      const f = faixaDoMes(dia, lastDayNum);
-      const cur = porFaixaMap.get(f) || { aulas: 0, valor: 0 };
-      cur.aulas += it.aulas;
-      cur.valor += it.valor;
-      porFaixaMap.set(f, cur);
-    }
-    const porFaixa = Array.from(porFaixaMap.entries())
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-      .map(([faixa, v]) => ({ faixa, aulas: v.aulas, valor: v.valor }));
-
-    const totalMes = porFaixa.reduce(
-      (acc, f) => ({ aulas: acc.aulas + f.aulas, valor: acc.valor + f.valor }),
-      { aulas: 0, valor: 0 }
+    const resumo = computeResumoProfessorFromDatasets(
+      professor,
+      { fromYMD, toYMD, duracaoMin },
+      comuns,
+      permanentes,
+      bloqueiosMap
     );
 
     return res.json({
-      professor: { id: professor.id, nome: professor.nome, valorQuadra: valorAula },
+      professor: resumo.professor,
       intervalo: { from: fromYMD, to: toYMD, duracaoMin },
-      totais: {
-        porDia: porDiaArr,
-        porFaixa,
-        mes: totalMes,
-      },
+      totais: resumo.totais,
     });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ erro: "Erro ao calcular resumo do professor" });
+  }
+});
+
+/* =========================================================
+   GET /professores/:id/resumo  (ADMIN)
+   Parâmetros iguais ao /me/resumo
+========================================================= */
+router.get("/:id/resumo", requireAdmin, async (req, res) => {
+  try {
+    const qSchema = z.object({
+      mes: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+      from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      duracaoMin: z.coerce.number().int().positive().optional(),
+    }).refine(v => !!v.mes || (!!v.from && !!v.to),
+      "Informe 'mes=YYYY-MM' OU 'from/to=YYYY-MM-DD'.");
+
+    const parsed = qSchema.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ erro: parsed.error.issues?.[0]?.message || "Parâmetros inválidos" });
+    }
+    const { mes, from, to, duracaoMin = 60 } = parsed.data;
+
+    const profId = req.params.id;
+
+    const professor = await prisma.usuario.findUnique({
+      where: { id: profId },
+      select: { id: true, nome: true, valorQuadra: true },
+    });
+    if (!professor) return res.status(404).json({ erro: "Professor não encontrado" });
+
+    const { fromYMD, toYMD } = mes
+      ? parseMesToLocalRange(mes)
+      : { fromYMD: String(from), toYMD: String(to) };
+
+    const inicioUTC = toUtc00(fromYMD);
+    const fimUTCExcl = toUtc00(addDaysLocalYMD(toYMD, 1));
+
+    const comuns = await prisma.agendamento.findMany({
+      where: {
+        usuarioId: profId,
+        status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
+        data: { gte: inicioUTC, lt: fimUTCExcl },
+      },
+      select: { data: true, horario: true, quadraId: true },
+    });
+
+    const permanentes = await prisma.agendamentoPermanente.findMany({
+      where: {
+        usuarioId: profId,
+        status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
+      },
+      select: {
+        diaSemana: true, horario: true, quadraId: true, dataInicio: true,
+        cancelamentos: { select: { data: true } },
+      },
+    });
+
+    const bloqueios = await prisma.bloqueioQuadra.findMany({
+      where: { dataBloqueio: { gte: inicioUTC, lt: fimUTCExcl } },
+      select: {
+        dataBloqueio: true,
+        inicioBloqueio: true,
+        fimBloqueio: true,
+        quadras: { select: { id: true } },
+      },
+    });
+
+    const bloqueiosMap: BloqueiosMap = new Map();
+    for (const b of bloqueios) {
+      const ymd = toISODateUTC(b.dataBloqueio);
+      const ini = hhmmToMinutes(b.inicioBloqueio);
+      const fim = hhmmToMinutes(b.fimBloqueio);
+      for (const q of b.quadras) {
+        const k = `${q.id}|${ymd}`;
+        const arr = bloqueiosMap.get(k) || [];
+        arr.push({ ini, fim });
+        bloqueiosMap.set(k, arr);
+      }
+    }
+
+    const resumo = computeResumoProfessorFromDatasets(
+      professor,
+      { fromYMD, toYMD, duracaoMin },
+      comuns,
+      permanentes,
+      bloqueiosMap
+    );
+
+    return res.json({
+      professor: resumo.professor,
+      intervalo: { from: fromYMD, to: toYMD, duracaoMin },
+      totais: resumo.totais,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ erro: "Erro ao calcular resumo do professor" });
+  }
+});
+
+/* =========================================================
+   GET /professores/admin  (ADMIN)
+   Lista todos os professores com aulasMes e valorMes
+   Params: ?mes=YYYY-MM OU from/to=YYYY-MM-DD, &duracaoMin
+========================================================= */
+router.get("/admin", requireAdmin, async (req, res) => {
+  try {
+    const qSchema = z.object({
+      mes: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+      from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      duracaoMin: z.coerce.number().int().positive().optional(),
+    }).refine(v => !!v.mes || (!!v.from && !!v.to),
+      "Informe 'mes=YYYY-MM' OU 'from/to=YYYY-MM-DD'.");
+
+    const parsed = qSchema.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ erro: parsed.error.issues?.[0]?.message || "Parâmetros inválidos" });
+    }
+    const { mes, from, to, duracaoMin = 60 } = parsed.data;
+
+    const { fromYMD, toYMD } = mes
+      ? parseMesToLocalRange(mes)
+      : { fromYMD: String(from), toYMD: String(to) };
+
+    const inicioUTC = toUtc00(fromYMD);
+    const fimUTCExcl = toUtc00(addDaysLocalYMD(toYMD, 1));
+
+    // 1) Todos os professores
+    const professores = await prisma.usuario.findMany({
+      where: { tipo: "ADMIN_PROFESSORES" },
+      select: { id: true, nome: true, valorQuadra: true },
+      orderBy: { nome: "asc" },
+    });
+    const profIds = professores.map(p => p.id);
+    if (profIds.length === 0) {
+      return res.json({
+        intervalo: { from: fromYMD, to: toYMD, duracaoMin },
+        professores: [],
+        totalGeral: { aulas: 0, valor: 0 },
+      });
+    }
+
+    // 2) Carrega datasets em batch
+    const [comunsAll, permanentesAll, bloqueios] = await Promise.all([
+      prisma.agendamento.findMany({
+        where: {
+          usuarioId: { in: profIds },
+          status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
+          data: { gte: inicioUTC, lt: fimUTCExcl },
+        },
+        select: { data: true, horario: true, quadraId: true, usuarioId: true },
+      }),
+      prisma.agendamentoPermanente.findMany({
+        where: {
+          usuarioId: { in: profIds },
+          status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
+        },
+        select: {
+          usuarioId: true,
+          diaSemana: true, horario: true, quadraId: true, dataInicio: true,
+          cancelamentos: { select: { data: true } },
+        },
+      }),
+      prisma.bloqueioQuadra.findMany({
+        where: { dataBloqueio: { gte: inicioUTC, lt: fimUTCExcl } },
+        select: {
+          dataBloqueio: true,
+          inicioBloqueio: true,
+          fimBloqueio: true,
+          quadras: { select: { id: true } },
+        },
+      }),
+    ]);
+
+    // 3) Index por professor
+    const comunsByProf = new Map<string, ComumRow[]>();
+    for (const ag of comunsAll) {
+      const arr = comunsByProf.get(ag.usuarioId) || [];
+      arr.push({ data: ag.data, horario: ag.horario, quadraId: ag.quadraId });
+      comunsByProf.set(ag.usuarioId, arr);
+    }
+
+    const permsByProf = new Map<string, PermRow[]>();
+    for (const p of permanentesAll) {
+      const arr = permsByProf.get(p.usuarioId) || [];
+      arr.push({
+        diaSemana: p.diaSemana,
+        horario: p.horario,
+        quadraId: p.quadraId,
+        dataInicio: p.dataInicio,
+        cancelamentos: p.cancelamentos,
+      });
+      permsByProf.set(p.usuarioId, arr);
+    }
+
+    const bloqueiosMap: BloqueiosMap = new Map();
+    for (const b of bloqueios) {
+      const ymd = toISODateUTC(b.dataBloqueio);
+      const ini = hhmmToMinutes(b.inicioBloqueio);
+      const fim = hhmmToMinutes(b.fimBloqueio);
+      for (const q of b.quadras) {
+        const k = `${q.id}|${ymd}`;
+        const arr = bloqueiosMap.get(k) || [];
+        arr.push({ ini, fim });
+        bloqueiosMap.set(k, arr);
+      }
+    }
+
+    // 4) Agrega por professor
+    const resposta = [];
+    let totalAulasGeral = 0;
+    let totalValorGeral = 0;
+
+    for (const prof of professores) {
+      const resumo = computeResumoProfessorFromDatasets(
+        prof,
+        { fromYMD, toYMD, duracaoMin },
+        comunsByProf.get(prof.id) || [],
+        permsByProf.get(prof.id) || [],
+        bloqueiosMap
+      );
+
+      const aulasMes = resumo.totais.mes.aulas;
+      const valorMes = resumo.totais.mes.valor;
+
+      totalAulasGeral += aulasMes;
+      totalValorGeral += valorMes;
+
+      resposta.push({
+        id: resumo.professor.id,
+        nome: resumo.professor.nome,
+        valorQuadra: resumo.professor.valorQuadra,
+        aulasMes,
+        valorMes,
+        porFaixa: resumo.totais.porFaixa,
+      });
+    }
+
+    return res.json({
+      intervalo: { from: fromYMD, to: toYMD, duracaoMin },
+      professores: resposta,
+      totalGeral: { aulas: totalAulasGeral, valor: totalValorGeral },
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ erro: "Erro ao listar professores" });
   }
 });
 
