@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 import Spinner from '@/components/Spinner' // ✅ usa seu Spinner
 
@@ -35,12 +35,29 @@ const brToNumber = (s: string) => {
 const numberToBR = (n: number) =>
   n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
+// YYYY-MM-DD <- data ISO curta para <input type="date">
+const toDateInputValue = (isoOrNull: string | null) => {
+  if (!isoOrNull) return ''
+  const [y, m, d] = isoOrNull.split('T')[0].split('-')
+  return `${y}-${m}-${d}`
+}
+
 export default function UsuariosAdmin() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([])
   const [busca, setBusca] = useState('')
   const [filtroTipo, setFiltroTipo] = useState('')
   const [usuarioSelecionado, setUsuarioSelecionado] = useState<Usuario | null>(null)
-  const [novoTipo, setNovoTipo] = useState('')
+
+  // 🔧 modo de edição e estado dos campos editáveis
+  const [editMode, setEditMode] = useState(false)
+  const [form, setForm] = useState({
+    nome: '',
+    email: '',
+    celular: '',
+    nascimento: '', // yyyy-mm-dd
+    cpf: '',
+    tipo: '' as Usuario['tipo'],
+  })
 
   // 🔸 campo visual para valor (string formatada) + erro
   const [valorQuadraStr, setValorQuadraStr] = useState('')
@@ -75,18 +92,38 @@ export default function UsuariosAdmin() {
     return () => clearTimeout(delay)
   }, [carregarUsuarios])
 
-  // quando abre a aba de edição, preenche o valor (se já for professor e tiver valor)
+  // quando abre a aba de edição, preenche o valor/tipo e os campos do form
   useEffect(() => {
-    if (!usuarioSelecionado) return
+    if (!usuarioSelecionado) {
+      setEditMode(false)
+      setForm({ nome: '', email: '', celular: '', nascimento: '', cpf: '', tipo: '' as any })
+      setValorQuadraStr('')
+      setValorErro('')
+      return
+    }
+
+    // preencher form com dados atuais
+    setForm({
+      nome: usuarioSelecionado.nome ?? '',
+      email: usuarioSelecionado.email ?? '',
+      celular: usuarioSelecionado.celular ?? '',
+      nascimento: toDateInputValue(usuarioSelecionado.nascimento),
+      cpf: usuarioSelecionado.cpf ?? '',
+      tipo: usuarioSelecionado.tipo,
+    })
+
+    // valor de professor
     const ehProf = usuarioSelecionado.tipo === 'ADMIN_PROFESSORES'
     const v = usuarioSelecionado.valorQuadra
     if (ehProf && v != null && v !== '') {
       const num = typeof v === 'string' ? brToNumber(v) : Number(v)
       if (Number.isFinite(num)) setValorQuadraStr(numberToBR(num))
+      else setValorQuadraStr('')
     } else {
       setValorQuadraStr('')
     }
     setValorErro('')
+    setEditMode(false) // entra visualizando; clica em "Editar" para liberar
   }, [usuarioSelecionado])
 
   // máscara leve: digita só números, montamos centavos
@@ -104,35 +141,84 @@ export default function UsuariosAdmin() {
     setValorQuadraStr(`${intFmt},${fracPart}`)
   }
 
-  const salvarTipo = async () => {
+  const mostrarCampoProfessor = form.tipo === 'ADMIN_PROFESSORES'
+
+  // calcula o payload com apenas campos alterados
+  const diffPayload = useMemo(() => {
+    if (!usuarioSelecionado) return {}
+
+    const base: Record<string, any> = {}
+
+    if (form.nome !== (usuarioSelecionado.nome ?? '')) base.nome = form.nome
+    if (form.email !== (usuarioSelecionado.email ?? '')) base.email = form.email
+    if ((form.celular || '') !== (usuarioSelecionado.celular || '')) base.celular = form.celular || null
+    // nascimento vindo do input date
+    const nascOriginal = toDateInputValue(usuarioSelecionado.nascimento)
+    if ((form.nascimento || '') !== (nascOriginal || '')) {
+      base.nascimento = form.nascimento ? new Date(form.nascimento) : null
+    }
+    if ((form.cpf || '') !== (usuarioSelecionado.cpf || '')) base.cpf = form.cpf || null
+    if (form.tipo !== usuarioSelecionado.tipo) base.tipo = form.tipo
+
+    // valor do professor
+    if (form.tipo === 'ADMIN_PROFESSORES') {
+      // se mudou o tipo para professor ou alterou o valor
+      const originalNum = (() => {
+        const v = usuarioSelecionado.valorQuadra
+        if (v == null || v === '') return null
+        return typeof v === 'string' ? brToNumber(v) : Number(v)
+      })()
+      const novoNum = valorQuadraStr ? brToNumber(valorQuadraStr) : NaN
+
+      if (Number.isFinite(novoNum)) {
+        const arred = Number((novoNum).toFixed(2))
+        if (originalNum == null || Math.abs(arred - Number(originalNum)) > 0.0001) {
+          base.valorQuadra = arred
+        }
+      } else if (usuarioSelecionado.tipo === 'ADMIN_PROFESSORES' && !valorQuadraStr) {
+        // se limpou o valor e já era professor antes
+        base.valorQuadra = null
+      }
+    } else {
+      // se deixou de ser professor e havia valor
+      if (usuarioSelecionado.tipo === 'ADMIN_PROFESSORES' && usuarioSelecionado.valorQuadra != null) {
+        base.valorQuadra = null
+      }
+    }
+
+    return base
+  }, [usuarioSelecionado, form, valorQuadraStr])
+
+  const salvarEdicao = async () => {
     if (!usuarioSelecionado) return
+
+    // valida valor quando tipo = professor
+    if (form.tipo === 'ADMIN_PROFESSORES') {
+      const n = brToNumber(valorQuadraStr || '0')
+      if (!Number.isFinite(n) || n < 0.01) {
+        setValorErro('Para professor, informe um valor maior ou igual a R$ 0,01.')
+        return
+      }
+    }
+
+    // nada mudou?
+    if (Object.keys(diffPayload).length === 0) {
+      alert('Nenhuma alteração para salvar.')
+      return
+    }
+
     setSaving(true)
     try {
-      let payload: any = { tipo: novoTipo }
-
-      if (novoTipo === 'ADMIN_PROFESSORES') {
-        const n = brToNumber(valorQuadraStr)
-
-        // ✅ obrigatoriedade e mínimo 0,01
-        if (!Number.isFinite(n) || n < 0.01) {
-          setValorErro('Para professor, informe um valor maior ou igual a R$ 0,01.')
-          setSaving(false)
-          return
-        }
-        payload.valorQuadra = Number(n.toFixed(2))
-      }
-
-      await axios.put(
-        `${API_URL}/usuariosAdmin/${usuarioSelecionado.id}/tipo`,
-        payload,
-        { withCredentials: true }
-      )
-      alert('Tipo atualizado com sucesso!')
+      await axios.put(`${API_URL}/usuarios/${usuarioSelecionado.id}`, diffPayload, {
+        withCredentials: true,
+      })
+      alert('Usuário atualizado com sucesso!')
       setUsuarioSelecionado(null)
+      setEditMode(false)
       void carregarUsuarios()
     } catch (err: any) {
       console.error(err)
-      const msg = err?.response?.data?.erro || 'Erro ao atualizar tipo'
+      const msg = err?.response?.data?.erro || 'Erro ao atualizar usuário'
       alert(msg)
     } finally {
       setSaving(false)
@@ -144,8 +230,6 @@ export default function UsuariosAdmin() {
     const [ano, mes, dia] = data.split('T')[0].split('-')
     return `${dia}/${mes}/${ano}`
   }
-
-  const mostrarCampoProfessor = novoTipo === 'ADMIN_PROFESSORES'
 
   return (
     <div className="max-w-4xl mx-auto mt-10 p-6 bg-white rounded shadow">
@@ -202,7 +286,6 @@ export default function UsuariosAdmin() {
                   setUsuarioSelecionado(null)
                 } else {
                   setUsuarioSelecionado(u)
-                  setNovoTipo(u.tipo)
                 }
               }}
             >
@@ -213,67 +296,130 @@ export default function UsuariosAdmin() {
             {/* Aba de edição */}
             {usuarioSelecionado?.id === u.id && (
               <div className="p-4 border-t bg-gray-50">
-                <h2 className="font-bold mb-2">Editar Usuário</h2>
-                <p><strong>Nome:</strong> {usuarioSelecionado.nome}</p>
-                <p><strong>Email:</strong> {usuarioSelecionado.email}</p>
-                <p><strong>Celular:</strong> {mostrarCelular(usuarioSelecionado.celular)}</p>
-                <p><strong>Data de Nascimento:</strong> {formatarData(usuarioSelecionado.nascimento)}</p>
-                <p><strong>CPF:</strong> {usuarioSelecionado.cpf || '-'}</p>
+                <h2 className="font-bold mb-3">Editar Usuário</h2>
 
-                <label className="block mt-3 mb-1 font-medium">Tipo de Usuário</label>
-                <select
-                  className="w-full p-2 border rounded mb-3 cursor-pointer"
-                  value={novoTipo}
-                  onChange={(e) => {
-                    const v = e.target.value
-                    setNovoTipo(v)
-                    if (v === 'ADMIN_PROFESSORES') {
-                      // ao virar professor, se não havia valor, força campo vazio e foca a atenção
-                      if (!valorQuadraStr) setValorQuadraStr('')
-                      setValorErro('')
-                    } else {
-                      // saindo de professor, limpa erro
-                      setValorErro('')
-                    }
-                  }}
-                  disabled={saving}
-                >
-                  {tipos.map((t) => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
-                </select>
-
-                {/* ⬇️ Campo de valor só quando for professor */}
-                {mostrarCampoProfessor && (
-                  <div className="mt-2">
-                    <label className="block mb-1 font-medium">Valor cobrado (por aula)</label>
-                    <div className="flex items-stretch rounded-lg border overflow-hidden bg-white">
-                      <span className="px-3 py-2 text-sm font-semibold bg-gray-100 text-gray-700 select-none">R$</span>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        placeholder="0,00"
-                        value={valorQuadraStr}
-                        onChange={(e) => handleValorChange(e.target.value)}
-                        className="flex-1 px-3 py-2 text-sm outline-none"
-                        disabled={saving}
-                      />
-                    </div>
-                    {valorErro && (
-                      <p className="mt-1 text-xs text-red-600">{valorErro}</p>
-                    )}
+                {/* Campos */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Nome</label>
+                    <input
+                      type="text"
+                      value={form.nome}
+                      onChange={(e) => setForm(f => ({ ...f, nome: e.target.value }))}
+                      className="w-full p-2 border rounded"
+                      disabled={!editMode || saving}
+                    />
                   </div>
-                )}
 
-                <div className="flex gap-2 mt-3">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">E-mail</label>
+                    <input
+                      type="email"
+                      value={form.email}
+                      onChange={(e) => setForm(f => ({ ...f, email: e.target.value }))}
+                      className="w-full p-2 border rounded"
+                      disabled={!editMode || saving}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Celular</label>
+                    <input
+                      type="text"
+                      value={form.celular}
+                      onChange={(e) => setForm(f => ({ ...f, celular: e.target.value }))}
+                      className="w-full p-2 border rounded"
+                      disabled={!editMode || saving}
+                      placeholder="Somente dígitos (ex.: 53999999999)"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Data de Nascimento</label>
+                    <input
+                      type="date"
+                      value={form.nascimento}
+                      onChange={(e) => setForm(f => ({ ...f, nascimento: e.target.value }))}
+                      className="w-full p-2 border rounded"
+                      disabled={!editMode || saving}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1">CPF</label>
+                    <input
+                      type="text"
+                      value={form.cpf}
+                      onChange={(e) => setForm(f => ({ ...f, cpf: e.target.value }))}
+                      className="w-full p-2 border rounded"
+                      disabled={!editMode || saving}
+                      placeholder="Somente dígitos"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Tipo de Usuário</label>
+                    <select
+                      className="w-full p-2 border rounded cursor-pointer"
+                      value={form.tipo}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        setForm(f => ({ ...f, tipo: v }))
+                        if (v !== 'ADMIN_PROFESSORES') {
+                          setValorErro('')
+                        }
+                      }}
+                      disabled={!editMode || saving}
+                    >
+                      {tipos.map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Valor por aula quando professor */}
+                  {form.tipo === 'ADMIN_PROFESSORES' && (
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium mb-1">Valor cobrado (por aula)</label>
+                      <div className="flex items-stretch rounded-lg border overflow-hidden bg-white">
+                        <span className="px-3 py-2 text-sm font-semibold bg-gray-100 text-gray-700 select-none">R$</span>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="0,00"
+                          value={valorQuadraStr}
+                          onChange={(e) => handleValorChange(e.target.value)}
+                          className="flex-1 px-3 py-2 text-sm outline-none"
+                          disabled={!editMode || saving}
+                        />
+                      </div>
+                      {valorErro && (
+                        <p className="mt-1 text-xs text-red-600">{valorErro}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Ações */}
+                <div className="flex gap-2 mt-4">
                   <button
-                    onClick={salvarTipo}
+                    onClick={salvarEdicao}
                     disabled={saving}
                     className="bg-green-600 text-white px-4 py-2 rounded cursor-pointer disabled:opacity-60 flex items-center gap-2"
                   >
                     {saving && <Spinner size="w-4 h-4" />}
                     {saving ? 'Salvando…' : 'Salvar'}
                   </button>
+
+                  {/* ⬅️ Botão Editar ao lado do Salvar */}
+                  <button
+                    onClick={() => setEditMode((v) => !v)}
+                    disabled={saving}
+                    className={`px-4 py-2 rounded cursor-pointer disabled:opacity-60 ${editMode ? 'bg-orange-600 text-white' : 'bg-orange-600 text-white'}`}
+                  >
+                    {editMode ? 'Bloquear Edição' : 'Editar'}
+                  </button>
+
                   <button
                     onClick={() => setUsuarioSelecionado(null)}
                     disabled={saving}
@@ -282,6 +428,9 @@ export default function UsuariosAdmin() {
                     Cancelar
                   </button>
                 </div>
+
+                {/* Diferenças (debug opcional) */}
+                {/* <pre className="text-xs mt-3">{JSON.stringify(diffPayload, null, 2)}</pre> */}
               </div>
             )}
           </li>
