@@ -83,6 +83,15 @@ const HORARIOS = [
   "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00", "23:00",
 ] as const;
 
+/* ✅ NOVO: gerador de faixas de horário (ex.: 7..22 -> ["07:00", ... "22:00"]) */
+function rangeHours(start: number, end: number) {
+  const out: string[] = [];
+  for (let h = start; h <= end; h++) {
+    out.push(String(h).padStart(2, "0") + ":00");
+  }
+  return out;
+}
+
 const SP_TZ = "America/Sao_Paulo";
 const todayIsoSP = new Intl.DateTimeFormat("en-CA", {
   timeZone: SP_TZ,
@@ -466,6 +475,13 @@ export default function AgendarQuadraCliente() {
 
   const { usuario } = useAuthStore();
 
+  /* ✅ NOVO: horários dinâmicos por perfil */
+  const ehProfessor = usuario?.tipo === "ADMIN_PROFESSORES";
+  const HORARIOS_UI = useMemo(
+    () => (ehProfessor ? rangeHours(7, 22) : rangeHours(8, 23)),
+    [ehProfessor]
+  );
+
   // helpers URL
   const toAbs = useCallback(
     (u?: string | null) => {
@@ -642,9 +658,11 @@ export default function AgendarQuadraCliente() {
       }
 
       const isToday = diaISO === todayIsoSP;
+
+      /* ✅ trocado para HORARIOS_UI dinâmico */
       const hoursToCheck = isToday
-        ? HORARIOS.filter((h) => Number(h.slice(0, 2)) > hourNowSP)
-        : HORARIOS;
+        ? HORARIOS_UI.filter((h) => Number(h.slice(0, 2)) > hourNowSP)
+        : HORARIOS_UI;
 
       setCarregandoHorarios(true);
       try {
@@ -665,7 +683,8 @@ export default function AgendarQuadraCliente() {
         if (!alive) return;
 
         const map: Record<string, boolean> = {};
-        HORARIOS.forEach((h) => (map[h] = false));
+        /* ✅ inicia o mapa com HORARIOS_UI */
+        HORARIOS_UI.forEach((h) => (map[h] = false));
         results.forEach(([h, ok]) => (map[h] = ok));
         setHorariosMap(map);
       } finally {
@@ -676,7 +695,7 @@ export default function AgendarQuadraCliente() {
     return () => {
       alive = false;
     };
-  }, [API_URL, esporteId, diaISO, isChecking]);
+  }, [API_URL, esporteId, diaISO, isChecking, HORARIOS_UI]);
 
   useEffect(() => {
     if (isChecking) return;
@@ -1035,7 +1054,8 @@ export default function AgendarQuadraCliente() {
                 </div>
               )}
               <div className="grid grid-cols-4 gap-2">
-                {HORARIOS.map((h) => {
+                {/* ✅ usa HORARIOS_UI dinâmico */}
+                {HORARIOS_UI.map((h) => {
                   const ativo = horario === h;
                   const enabled = horariosMap[h] === true;
                   return (
