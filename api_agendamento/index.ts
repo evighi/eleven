@@ -29,6 +29,9 @@ import routesUsuarios from "./routes/usuarios";
 import routesAudit from "./routes/audit";
 import routesProfessores from "./routes/professores";
 
+// 👇 NOVO: rota de deleções (pendências + desfazer)
+import routesDelecoes from "./routes/delecoes";
+
 import verificarToken from "./middleware/authMiddleware";
 
 const app = express();
@@ -75,6 +78,9 @@ app.use("/bloqueios", routesBloqueios);
 app.use("/usuarios", routesUsuarios);
 app.use("/audit", routesAudit);
 app.use("/professores", routesProfessores);
+
+// 👇 NOVO: expõe as rotas de deleções (precisa ser protegida)
+app.use("/delecoes", routesDelecoes);
 
 // Health/root
 app.get("/", (_req, res) => {
