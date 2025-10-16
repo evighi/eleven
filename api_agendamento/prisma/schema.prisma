@@ -41,6 +41,19 @@ enum Turno {
   NOITE
 }
 
+enum DeletionStatus {
+  PENDING // aguardando janela de 90 dias
+  DONE // exclusão concluída
+  CANCELLED // cancelado pelo admin
+}
+
+enum InteractionType {
+  AG_COMUM
+  AG_PERM
+  CHURRAS
+  NONE // caso não haja interação conhecida
+}
+
 model Usuario {
   id                String      @id @default(uuid())
   nome              String
@@ -56,7 +69,7 @@ model Usuario {
   expiraEm          DateTime?
 
   // 💰 novo campo (opcional)
-  valorQuadra       Decimal?    @db.Decimal(10, 2)
+  valorQuadra Decimal? @db.Decimal(10, 2)
 
   agendamentos                        Agendamento[]                        @relation("AgendamentoFeitoPor")
   agendamentosPermanentes             AgendamentoPermanente[]
@@ -80,10 +93,21 @@ model Usuario {
 
   auditLogs AuditLog[] @relation("UsuarioAuditLogs")
 
+  // 🔒 controle de acesso e marcações de exclusão
+  disabledAt  DateTime? // bloqueia login enquanto pendente
+  deletedAt   DateTime? // marca remoção lógica (se usar soft delete)
+  deletedById String? // quem concluiu a exclusão (mantido sem FK)
+
+  // relações com a fila de exclusão
+  deletionQueue      UserDeletionQueue?  @relation("DeletionTargetUser")
+  deletionsRequested UserDeletionQueue[] @relation("DeletionRequestedBy")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-}
 
+  @@index([disabledAt])
+  @@index([deletedAt])
+}
 
 model Esporte {
   id     String  @id @default(uuid())
@@ -346,4 +370,39 @@ model AuditLog {
   @@index([actorId])
   @@index([targetType, targetId])
   @@index([createdAt])
+}
+
+model UserDeletionQueue {
+  id String @id @default(uuid())
+
+  // Usuário alvo (1:1)
+  usuarioId String  @unique
+  usuario   Usuario @relation("DeletionTargetUser", fields: [usuarioId], references: [id])
+
+  // Quem solicitou (opcional) — segunda relação com Usuario
+  requestedById String?
+  requestedBy   Usuario? @relation("DeletionRequestedBy", fields: [requestedById], references: [id])
+
+  status DeletionStatus @default(PENDING)
+
+  // Última interação para exibir no front
+  lastInteractionType InteractionType @default(NONE)
+  lastInteractionId   String?
+  lastInteractionDate DateTime?
+
+  // Data a partir da qual pode excluir (ex.: lastInteractionDate + 90d)
+  eligibleAt DateTime?
+
+  // Auditoria da fila
+  requestedAt DateTime  @default(now())
+  processedAt DateTime?
+  cancelledAt DateTime?
+  attempts    Int       @default(0)
+  reason      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, eligibleAt])
+  @@index([requestedAt])
 }

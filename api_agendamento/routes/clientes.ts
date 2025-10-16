@@ -5,6 +5,7 @@ import { z } from "zod";
 import { isValid } from "date-fns";
 import { enviarCodigoEmail } from "../utils/enviarEmail";
 import { gerarCodigoVerificacao } from "../utils/gerarCodigo";
+import { requestUserDeletion } from "../src/lib/userDeletion"; // topo do arquivo clientes.ts
 
 import verificarToken from "../middleware/authMiddleware";
 import { requireAdmin, requireSelfOrAdminParam, isAdmin } from "../middleware/acl";
@@ -402,8 +403,33 @@ router.patch("/:id", verificarToken, requireSelfOrAdminParam("id"), async (req, 
 
 router.delete("/:id", verificarToken, requireAdmin, async (req, res) => {
   try {
-    await prisma.usuario.delete({ where: { id: req.params.id } });
-    return res.json({ mensagem: "Usuário excluído com sucesso" });
+    const usuarioId = req.params.id;
+    const requestedById = req.usuario?.usuarioLogadoId ?? null;
+
+    const result = await requestUserDeletion(usuarioId, requestedById);
+
+    if (!result.ok) {
+      return res.status(result.code || 400).json({ erro: result.message || "Não foi possível excluir" });
+    }
+
+    // deletou agora (e estava elegível)
+    if ((result as any).deletedNow) {
+      return res.status(204).send();
+    }
+
+    // enfileirou (pendente)
+    if ((result as any).queued) {
+      const { eligibleAt, lastInteraction } = result as any;
+      return res.status(202).json({
+        mensagem:
+          "Usuário possui interação recente. Exclusão ficará pendente até completar 90 dias da última interação.",
+        eligibleAt,
+        lastInteraction,
+      });
+    }
+
+    // fallback
+    return res.json({ ok: true });
   } catch (error) {
     console.error(error);
     return res.status(500).json({ erro: "Erro ao excluir usuário" });

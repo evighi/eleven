@@ -31,7 +31,6 @@ router.post("/", async (req, res) => {
     let { email, senha } = req.body as { email?: string; senha?: string };
 
     if (!email || !senha) {
-      // Falha por body inválido
       await logAudit({
         event: "LOGIN_FAIL",
         req,
@@ -52,11 +51,13 @@ router.post("/", async (req, res) => {
         senha: true,
         tipo: true,
         verificado: true,
+        // 👇 adicionados para bloqueio no login
+        disabledAt: true,
+        deletedAt: true,
       },
     });
 
     if (!usuario) {
-      // Falha: usuário não encontrado
       await logAudit({
         event: "LOGIN_FAIL",
         req,
@@ -64,6 +65,44 @@ router.post("/", async (req, res) => {
         metadata: { reason: "user_not_found", email },
       });
       return res.status(404).json({ erro: "E-mail não cadastrado." });
+    }
+
+    // ❌ já excluído (soft delete)
+    if (usuario.deletedAt) {
+      await logAudit({
+        event: "LOGIN_FAIL",
+        req,
+        actor: { id: usuario.id, name: usuario.nome, type: usuario.tipo },
+        target: { type: TargetType.USUARIO, id: usuario.id },
+        metadata: { reason: "account_deleted", email: usuario.email },
+      });
+      return res.status(403).json({
+        erro: "Conta removida.",
+        code: "ACCOUNT_DELETED",
+      });
+    }
+
+    // 🔒 pendente de exclusão → bloqueia login e informa elegibilidade
+    if (usuario.disabledAt) {
+      const pendencia = await prisma.userDeletionQueue.findUnique({
+        where: { usuarioId: usuario.id },
+        select: { status: true, eligibleAt: true },
+      });
+
+      await logAudit({
+        event: "LOGIN_FAIL",
+        req,
+        actor: { id: usuario.id, name: usuario.nome, type: usuario.tipo },
+        target: { type: TargetType.USUARIO, id: usuario.id },
+        metadata: { reason: "account_disabled", email: usuario.email },
+      });
+
+      return res.status(403).json({
+        erro: "Conta pendente de exclusão.",
+        code: "ACCOUNT_DISABLED",
+        eligibleAt: pendencia?.eligibleAt ?? null,
+        status: pendencia?.status ?? "PENDING",
+      });
     }
 
     // 🔒 Auto-REENVIO se for CLIENTE e não verificado
@@ -79,7 +118,6 @@ router.post("/", async (req, res) => {
 
         await enviarCodigoEmail(usuario.email, codigo);
 
-        // Loga como falha de login por e-mail não verificado (com actor conhecido)
         await logAudit({
           event: "LOGIN_FAIL",
           req,
@@ -115,7 +153,6 @@ router.post("/", async (req, res) => {
 
     const senhaValida = await bcrypt.compare(senha, usuario.senha);
     if (!senhaValida) {
-      // Falha: senha incorreta
       await logAudit({
         event: "LOGIN_FAIL",
         req,
@@ -140,15 +177,14 @@ router.post("/", async (req, res) => {
     // 🍪 Cookie httpOnly persistido por 60 dias no dispositivo
     res.cookie("auth_token", token, {
       httpOnly: true,
-      secure: isProd,           // true em produção (HTTPS)
-      sameSite: "strict",       // se front e API estiverem em domínios diferentes, use "none"
+      secure: isProd,
+      sameSite: "strict",
       // sameSite: "none",
       maxAge: COOKIE_MAX_AGE_MS,
       path: "/",
       ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
     });
 
-    // Loga sucesso
     await logAudit({
       event: "LOGIN",
       req,
@@ -166,7 +202,6 @@ router.post("/", async (req, res) => {
   } catch (error) {
     console.error("Erro no login:", error);
 
-    // (Opcional) Logar erro interno de login — categorizando como falha
     await logAudit({
       event: "LOGIN_FAIL",
       req,
@@ -179,7 +214,6 @@ router.post("/", async (req, res) => {
 });
 
 router.post("/logout", async (req, res) => {
-  // tenta identificar o actor a partir do cookie/header (essa rota não usa auth middleware)
   let actorId: string | undefined;
   let actorName: string | undefined;
   let actorTipo: string | undefined;
@@ -207,7 +241,6 @@ router.post("/logout", async (req, res) => {
     ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
   });
 
-  // Loga logout (com ou sem actor identificado)
   await logAudit({
     event: "LOGOUT",
     req,
