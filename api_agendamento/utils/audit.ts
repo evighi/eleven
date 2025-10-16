@@ -6,7 +6,7 @@ import cron from "node-cron";
 const prisma = new PrismaClient();
 
 /** === Config fixas (sem .env) === */
-const RETENTION_DAYS = 45;          // manter logs por 45 dias
+const RETENTION_DAYS = 90;          // manter logs por 90 dias
 const CRON_EXPR = "10 3 * * *";     // todo dia às 03:10
 const CRON_TZ = "America/Sao_Paulo";
 
