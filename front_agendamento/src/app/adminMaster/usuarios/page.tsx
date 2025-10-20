@@ -42,6 +42,84 @@ const toDateInputValue = (isoOrNull: string | null) => {
   return `${y}-${m}-${d}`
 }
 
+/* ============================
+   🧱 Tipagens do fluxo de exclusão
+   ============================ */
+type QueueLastInteraction =
+  | {
+      type: "AG_COMUM";
+      id: string;
+      resumo: {
+        data: string;
+        horario: string;
+        status: string;
+        quadra?: { id: string; nome: string | null; numero: number | null } | null;
+        esporte?: { id: string; nome: string | null } | null;
+      };
+    }
+  | {
+      type: "AG_PERM";
+      id: string;
+      resumo: {
+        diaSemana: string;
+        horario: string;
+        status: string;
+        updatedAt: string;
+        quadra?: { id: string; nome: string | null; numero: number | null } | null;
+        esporte?: { id: string; nome: string | null } | null;
+      };
+    }
+  | {
+      type: "CHURRAS";
+      id: string;
+      resumo: {
+        data: string;
+        turno: "DIA" | "NOITE";
+        status: string;
+        churrasqueira?: { id: string; nome: string | null; numero: number | null } | null;
+      };
+    };
+
+type Delete202Queued = {
+  mensagem?: string;
+  eligibleAt: string; // ISO
+  lastInteraction?: QueueLastInteraction | null;
+};
+
+type Delete409HasConfirmed = {
+  code?: "HAS_CONFIRMED";
+  message?: string;
+  details?: {
+    agendamentos?: Array<{
+      tipo: "AG_COMUM" | "AG_PERM" | "CHURRAS";
+      id: string;
+      quando?: string;
+    }>;
+  };
+};
+
+/* ============================
+   ⏳ Helpers de data (UI)
+   ============================ */
+const fmtDateTimeBR = (iso?: string | null) => {
+  if (!iso) return '-'
+  try {
+    const d = new Date(iso)
+    const dd = d.toLocaleDateString('pt-BR')
+    const hh = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+    return `${dd} ${hh}`
+  } catch {
+    return iso!
+  }
+}
+
+const tipoInteracaoLabel = (t?: string) => {
+  if (t === 'AG_COMUM') return 'Agendamento comum (quadra)'
+  if (t === 'AG_PERM') return 'Agendamento permanente (quadra)'
+  if (t === 'CHURRAS') return 'Churrasqueira'
+  return 'Interação'
+}
+
 export default function UsuariosAdmin() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([])
   const [busca, setBusca] = useState('')
@@ -67,13 +145,21 @@ export default function UsuariosAdmin() {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
 
+  // 🆕 —— estados do fluxo de exclusão
+  const [abrirConfirmarExclusao, setAbrirConfirmarExclusao] = useState(false)
+  const [excluindo, setExcluindo] = useState(false)
+  const [resultadoExclusao204, setResultadoExclusao204] = useState<boolean>(false)
+  const [resultadoExclusao202, setResultadoExclusao202] = useState<Delete202Queued | null>(null)
+  const [resultadoExclusao409, setResultadoExclusao409] = useState<Delete409HasConfirmed | null>(null)
+
   const API_URL = process.env.NEXT_PUBLIC_URL_API || 'http://localhost:3001'
 
   const carregarUsuarios = useCallback(async () => {
     setLoading(true)
     try {
+      // Nota: o back de /usuariosAdmin aceita "tipos" (lista) ou "nome" — ajuste conforme seu endpoint
       const res = await axios.get(`${API_URL}/usuariosAdmin`, {
-        params: { nome: busca || undefined, tipo: filtroTipo || undefined },
+        params: { nome: busca || undefined, tipos: filtroTipo || undefined },
         withCredentials: true,
       })
       const lista: Usuario[] = Array.isArray(res.data) ? res.data : []
@@ -162,7 +248,6 @@ export default function UsuariosAdmin() {
 
     // valor do professor
     if (form.tipo === 'ADMIN_PROFESSORES') {
-      // se mudou o tipo para professor ou alterou o valor
       const originalNum = (() => {
         const v = usuarioSelecionado.valorQuadra
         if (v == null || v === '') return null
@@ -176,11 +261,9 @@ export default function UsuariosAdmin() {
           base.valorQuadra = arred
         }
       } else if (usuarioSelecionado.tipo === 'ADMIN_PROFESSORES' && !valorQuadraStr) {
-        // se limpou o valor e já era professor antes
         base.valorQuadra = null
       }
     } else {
-      // se deixou de ser professor e havia valor
       if (usuarioSelecionado.tipo === 'ADMIN_PROFESSORES' && usuarioSelecionado.valorQuadra != null) {
         base.valorQuadra = null
       }
@@ -229,6 +312,49 @@ export default function UsuariosAdmin() {
     if (!data) return '-'
     const [ano, mes, dia] = data.split('T')[0].split('-')
     return `${dia}/${mes}/${ano}`
+  }
+
+  /* ============================
+     🗑️ Fluxo de exclusão
+     ============================ */
+  const abrirConfirmacaoExcluir = () => {
+    if (!usuarioSelecionado) return
+    setResultadoExclusao204(false)
+    setResultadoExclusao202(null)
+    setResultadoExclusao409(null)
+    setAbrirConfirmarExclusao(true)
+  }
+
+  const confirmarExcluirUsuario = async () => {
+    if (!usuarioSelecionado) return
+    setExcluindo(true)
+    try {
+      const resp = await axios.delete(`${API_URL}/clientes/${usuarioSelecionado.id}`, {
+        withCredentials: true,
+        validateStatus: () => true,
+      })
+
+      if (resp.status === 204) {
+        setResultadoExclusao204(true)
+        await carregarUsuarios()
+        setUsuarioSelecionado(null)
+      } else if (resp.status === 202) {
+        setResultadoExclusao202(resp.data as Delete202Queued)
+        await carregarUsuarios()
+      } else if (resp.status === 409) {
+        setResultadoExclusao409(resp.data as Delete409HasConfirmed)
+      } else {
+        const msg =
+          (resp.data && (resp.data.erro || resp.data.message)) ||
+          `Falha ao excluir (HTTP ${resp.status})`
+        alert(msg)
+      }
+    } catch (e) {
+      console.error(e)
+      alert('Erro ao excluir usuário.')
+    } finally {
+      setExcluindo(false)
+    }
   }
 
   return (
@@ -378,7 +504,7 @@ export default function UsuariosAdmin() {
                   </div>
 
                   {/* Valor por aula quando professor */}
-                  {form.tipo === 'ADMIN_PROFESSORES' && (
+                  {mostrarCampoProfessor && (
                     <div className="md:col-span-2">
                       <label className="block text-sm font-medium mb-1">Valor cobrado (por aula)</label>
                       <div className="flex items-stretch rounded-lg border overflow-hidden bg-white">
@@ -427,15 +553,178 @@ export default function UsuariosAdmin() {
                   >
                     Cancelar
                   </button>
-                </div>
 
-                {/* Diferenças (debug opcional) */}
-                {/* <pre className="text-xs mt-3">{JSON.stringify(diffPayload, null, 2)}</pre> */}
+                  {/* 🗑️ Excluir usuário */}
+                  <button
+                    onClick={abrirConfirmacaoExcluir}
+                    disabled={saving}
+                    className="bg-red-600 text-white px-4 py-2 rounded cursor-pointer disabled:opacity-60"
+                    title="Excluir usuário (segue regra de 90 dias e pendências)"
+                  >
+                    Excluir usuário
+                  </button>
+                </div>
               </div>
             )}
           </li>
         ))}
       </ul>
+
+      {/* ================================
+          Modais do fluxo de exclusão
+         ================================ */}
+
+      {/* Confirmar exclusão */}
+      {abrirConfirmarExclusao && usuarioSelecionado && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[80]">
+          <div className="bg-white p-5 rounded-lg shadow-lg w-[360px]">
+            <h3 className="text-lg font-semibold mb-3">Excluir usuário</h3>
+            <p className="text-sm text-gray-700 mb-4">
+              Deseja excluir <b>{usuarioSelecionado.nome}</b>?<br />
+              A ação seguirá as regras (agendamentos confirmados e janela de 90 dias).
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setAbrirConfirmarExclusao(false)}
+                disabled={excluindo}
+                className="px-3 py-2 rounded bg-gray-300 hover:bg-gray-400"
+              >
+                Não
+              </button>
+              <button
+                onClick={confirmarExcluirUsuario}
+                disabled={excluindo}
+                className="px-3 py-2 rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                {excluindo ? 'Excluindo…' : 'Sim, excluir'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Excluído agora (204) */}
+      {resultadoExclusao204 && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[80]">
+          <div className="bg-white p-5 rounded-lg shadow-lg w-[340px]">
+            <h3 className="text-lg font-semibold mb-3">Usuário excluído</h3>
+            <p className="text-sm text-gray-700 mb-4">
+              O usuário foi excluído com sucesso.
+            </p>
+            <div className="flex justify-end">
+              <button
+                onClick={() => setResultadoExclusao204(false)}
+                className="px-3 py-2 rounded bg-orange-600 text-white hover:bg-orange-700"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Exclusão pendente (202) */}
+      {resultadoExclusao202 && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[80]">
+          <div className="bg-white p-5 rounded-lg shadow-lg w-[420px] max-w-[95vw]">
+            <h3 className="text-lg font-semibold mb-3">Exclusão agendada</h3>
+            <p className="text-sm text-gray-700">
+              O usuário foi marcado como <b>pendente de exclusão</b> e já está com o acesso bloqueado.
+            </p>
+
+            <div className="mt-3 text-sm">
+              <p><b>Elegível em:</b> {fmtDateTimeBR(resultadoExclusao202.eligibleAt)}</p>
+              {resultadoExclusao202.lastInteraction && (
+                <div className="mt-2 border rounded p-2 bg-gray-50">
+                  <p className="font-semibold mb-1">
+                    Última interação: {tipoInteracaoLabel(resultadoExclusao202.lastInteraction.type)}
+                  </p>
+
+                  {resultadoExclusao202.lastInteraction.type === "AG_COMUM" && (
+                    <ul className="text-xs space-y-1">
+                      <li>ID: {(resultadoExclusao202.lastInteraction as any).id}</li>
+                      <li>
+                        Data/Hora: {fmtDateTimeBR((resultadoExclusao202.lastInteraction as any).resumo?.data)}{" "}
+                        {((resultadoExclusao202.lastInteraction as any).resumo?.horario || "")}
+                      </li>
+                      <li>Status: {(resultadoExclusao202.lastInteraction as any).resumo?.status}</li>
+                    </ul>
+                  )}
+
+                  {resultadoExclusao202.lastInteraction.type === "AG_PERM" && (
+                    <ul className="text-xs space-y-1">
+                      <li>ID: {(resultadoExclusao202.lastInteraction as any).id}</li>
+                      <li>
+                        Dia/Horário: {(resultadoExclusao202.lastInteraction as any).resumo?.diaSemana}{" "}
+                        {(resultadoExclusao202.lastInteraction as any).resumo?.horario}
+                      </li>
+                      <li>Status: {(resultadoExclusao202.lastInteraction as any).resumo?.status}</li>
+                      <li>
+                        Atualizado em: {fmtDateTimeBR((resultadoExclusao202.lastInteraction as any).resumo?.updatedAt)}
+                      </li>
+                    </ul>
+                  )}
+
+                  {resultadoExclusao202.lastInteraction.type === "CHURRAS" && (
+                    <ul className="text-xs space-y-1">
+                      <li>ID: {(resultadoExclusao202.lastInteraction as any).id}</li>
+                      <li>
+                        Data/Turno: {fmtDateTimeBR((resultadoExclusao202.lastInteraction as any).resumo?.data)}{" "}
+                        ({(resultadoExclusao202.lastInteraction as any).resumo?.turno})
+                      </li>
+                      <li>Status: {(resultadoExclusao202.lastInteraction as any).resumo?.status}</li>
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end mt-4">
+              <button
+                onClick={() => setResultadoExclusao202(null)}
+                className="px-3 py-2 rounded bg-orange-600 text-white hover:bg-orange-700"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Impedido (409) — possui confirmados */}
+      {resultadoExclusao409 && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[80]">
+          <div className="bg-white p-5 rounded-lg shadow-lg w-[420px] max-w-[95vw]">
+            <h3 className="text-lg font-semibold mb-3">Não é possível excluir</h3>
+            <p className="text-sm text-gray-700">
+              {resultadoExclusao409.message || 'Existem agendamentos confirmados/futuros vinculados.'}
+            </p>
+
+            {resultadoExclusao409.details?.agendamentos?.length ? (
+              <div className="mt-3">
+                <p className="text-sm font-semibold">Agendamentos impedindo a exclusão:</p>
+                <ul className="mt-1 text-xs list-disc list-inside space-y-1">
+                  {resultadoExclusao409.details.agendamentos.map((a, i) => (
+                    <li key={`${a.id}-${i}`}>
+                      {tipoInteracaoLabel(a.tipo)} — ID {a.id}
+                      {a.quando ? ` — ${fmtDateTimeBR(a.quando)}` : ''}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            <div className="flex justify-end mt-4">
+              <button
+                onClick={() => setResultadoExclusao409(null)}
+                className="px-3 py-2 rounded bg-orange-600 text-white hover:bg-orange-700"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
