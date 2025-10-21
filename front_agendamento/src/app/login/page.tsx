@@ -455,17 +455,8 @@ export default function Login() {
               <p className="mt-2 text-sm text-red-900">
                 {bloqueadoInfo?.motivo === "ACCOUNT_DELETED"
                   ? "Esta conta foi removida e não pode mais acessar o sistema."
-                  : "Sua conta está bloqueada e pendente de exclusão. O acesso não é possível no momento."}
+                  : "Sua conta está bloqueada. O acesso não é possível no momento."}
               </p>
-
-              {bloqueadoInfo?.motivo === "ACCOUNT_DISABLED" && (
-                <ul className="mt-3 text-sm text-red-900 list-disc list-inside">
-                  {bloqueadoInfo?.status && <li>Status: {bloqueadoInfo.status}</li>}
-                  {bloqueadoInfo?.eligibleAt && (
-                    <li>Elegível para remoção em: {fmtDataSP(bloqueadoInfo.eligibleAt)}</li>
-                  )}
-                </ul>
-              )}
 
               <p className="mt-3 text-sm text-red-900">
                 Em caso de dúvidas, por favor, entre em contato com os administradores.
