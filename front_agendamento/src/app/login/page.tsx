@@ -15,9 +15,27 @@ type Inputs = {
   senha: string;
 };
 
-type Passo = "login" | "codigo";
+type Passo = "login" | "codigo" | "bloqueado";
 
 const OTP_LEN = 6;
+
+function fmtDataSP(iso?: string | null) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  try {
+    return new Intl.DateTimeFormat("pt-BR", {
+      timeZone: "America/Sao_Paulo",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(d);
+  } catch {
+    return d.toLocaleString("pt-BR");
+  }
+}
 
 export default function Login() {
   const {
@@ -31,32 +49,35 @@ export default function Login() {
   const { logaUsuario } = useAuthStore();
   const router = useRouter();
 
-  // Fluxo de verificação
+  // Fluxo
   const [passo, setPasso] = useState<Passo>("login");
   const [emailParaVerificar, setEmailParaVerificar] = useState<string>("");
   const [carregando, setCarregando] = useState(false);
   const [codigo, setCodigo] = useState<string[]>(Array(OTP_LEN).fill(""));
   const [ultimaTentativa, setUltimaTentativa] = useState<Inputs | null>(null);
 
-  // classe base dos inputs de código (estilo OTP)
+  // Estado para bloqueado
+  const [bloqueadoInfo, setBloqueadoInfo] = useState<{
+    motivo: "ACCOUNT_DISABLED" | "ACCOUNT_DELETED";
+    eligibleAt?: string | null;
+    status?: string | null;
+  } | null>(null);
+
   const inputCode =
     "w-12 h-12 text-center text-xl font-semibold tracking-widest rounded-md bg-gray-200 " +
     "focus:outline-none focus:ring-2 focus:ring-orange-500 disabled:opacity-60";
 
-  // Prefill opcional do último e-mail usado
   useEffect(() => {
     const last = typeof window !== "undefined" ? localStorage.getItem("lastEmail") : null;
     if (last) setValue("email", last);
   }, [setValue]);
 
-  // ========= Helpers OTP =========
   const focusInput = (idx: number) => {
     const el = document.getElementById(`codigo-${idx}`) as HTMLInputElement | null;
     if (el) el.focus();
   };
 
   const handleCodeChange = (index: number, raw: string) => {
-    // aceita apenas dígito
     const v = raw.replace(/\D/g, "").slice(0, 1);
     const novo = [...codigo];
     novo[index] = v;
@@ -86,7 +107,6 @@ export default function Login() {
       .fill("")
       .map((_, i) => clip[i] ?? "");
     setCodigo(arr);
-    // foca no próximo vazio ou no último
     const next = Math.min(OTP_LEN - 1, clip.length);
     focusInput(next);
   };
@@ -96,16 +116,12 @@ export default function Login() {
   // ========= Login =========
   async function verificaLogin(data: Inputs) {
     try {
-      setUltimaTentativa(data); // guarda para re-login após verificação
+      setUltimaTentativa(data);
       const response = await fetch(`${process.env.NEXT_PUBLIC_URL_API}/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include", // necessário p/ cookie httpOnly
-        body: JSON.stringify({
-          email: data.email,
-          senha: data.senha,
-          manter: true,
-        }),
+        credentials: "include",
+        body: JSON.stringify({ email: data.email, senha: data.senha, manter: true }),
       });
 
       const raw = await response.text();
@@ -126,14 +142,36 @@ export default function Login() {
             toast.error("Senha incorreta.");
             break;
           case 403: {
-            // e-mail não confirmado — backend já reenviou o código (segundo seu fluxo)
-            setEmailParaVerificar(data.email);
-            setCodigo(Array(OTP_LEN).fill(""));
-            setPasso("codigo");
-            toast.message(serverMsg || "E-mail não confirmado. Enviamos um novo código.");
-            // foca no primeiro campo
-            setTimeout(() => focusInput(0), 50);
-            break;
+            const code = body?.code as string | undefined;
+
+            if (code === "ACCOUNT_DISABLED") {
+              // Mostrar tela de bloqueio
+              setBloqueadoInfo({
+                motivo: "ACCOUNT_DISABLED",
+                eligibleAt: body?.eligibleAt ?? null,
+                status: body?.status ?? null,
+              });
+              setPasso("bloqueado");
+              return;
+            }
+
+            if (code === "ACCOUNT_DELETED") {
+              setBloqueadoInfo({ motivo: "ACCOUNT_DELETED" });
+              setPasso("bloqueado");
+              return;
+            }
+
+            if (code === "EMAIL_NAO_CONFIRMADO") {
+              setEmailParaVerificar(data.email);
+              setCodigo(Array(OTP_LEN).fill(""));
+              setPasso("codigo");
+              toast.message(body?.erro || "E-mail não confirmado. Enviamos um novo código.");
+              setTimeout(() => focusInput(0), 50);
+              return;
+            }
+
+            toast.error(serverMsg || "Acesso negado.");
+            return;
           }
           case 429:
             toast.error(serverMsg || "Muitas tentativas. Tente novamente em alguns minutos.");
@@ -148,14 +186,10 @@ export default function Login() {
       const dados: Omit<UsuarioLogadoItf, "token"> = body ?? {};
       logaUsuario({ ...dados, token: "" });
 
-      // Sempre lembrar o e-mail (não armazene senha)
       try {
         localStorage.setItem("lastEmail", data.email);
-      } catch {
-        /* ignore */
-      }
+      } catch {}
 
-      // Tenta salvar credencial (se suportado pelo browser)
       try {
         // @ts-ignore
         if ("credentials" in navigator && "PasswordCredential" in window) {
@@ -168,11 +202,8 @@ export default function Login() {
           // @ts-ignore
           await navigator.credentials.store(cred);
         }
-      } catch {
-        /* ok */
-      }
+      } catch {}
 
-      // Redireciona por tipo
       switch (dados.tipo) {
         case "CLIENTE":
           router.push("/");
@@ -214,20 +245,16 @@ export default function Login() {
       let data: any = null;
       try {
         data = raw ? JSON.parse(raw) : null;
-      } catch {
-        /* ignore */
-      }
+      } catch {}
       if (!resp.ok) {
         toast.error(data?.erro || "Código inválido. Tente novamente.");
         return;
       }
       toast.success("E-mail verificado com sucesso! Entrando…");
 
-      // se temos a última tentativa (email/senha), tenta logar diretamente
       if (ultimaTentativa) {
         await verificaLogin(ultimaTentativa);
       } else {
-        // volta para o formulário de login com o e-mail preenchido
         setPasso("login");
         setValue("email", emailParaVerificar);
       }
@@ -238,7 +265,6 @@ export default function Login() {
     }
   }
 
-  // Reenviar código manualmente
   async function reenviarCodigo() {
     if (!emailParaVerificar) return;
     setCarregando(true);
@@ -253,9 +279,7 @@ export default function Login() {
       let data: any = null;
       try {
         data = raw ? JSON.parse(raw) : null;
-      } catch {
-        /* ignore */
-      }
+      } catch {}
       if (!resp.ok) {
         toast.error(data?.erro || "Não foi possível reenviar o código.");
         return;
@@ -355,7 +379,6 @@ export default function Login() {
         )}
 
         {passo === "codigo" && (
-          // Etapa de verificação do e-mail (OTP)
           <form onSubmit={verificarEmail} className="space-y-4">
             <p className="text-center text-sm text-gray-600">
               Insira o código enviado para <strong>{emailParaVerificar}</strong>
@@ -419,6 +442,56 @@ export default function Login() {
               </button>
             </div>
           </form>
+        )}
+
+        {passo === "bloqueado" && (
+          <div className="space-y-4 text-left">
+            <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+              <h2 className="text-lg font-semibold text-red-800">
+                {bloqueadoInfo?.motivo === "ACCOUNT_DELETED"
+                  ? "Conta removida"
+                  : "Conta bloqueada"}
+              </h2>
+              <p className="mt-2 text-sm text-red-900">
+                {bloqueadoInfo?.motivo === "ACCOUNT_DELETED"
+                  ? "Esta conta foi removida e não pode mais acessar o sistema."
+                  : "Sua conta está bloqueada e pendente de exclusão. O acesso não é possível no momento."}
+              </p>
+
+              {bloqueadoInfo?.motivo === "ACCOUNT_DISABLED" && (
+                <ul className="mt-3 text-sm text-red-900 list-disc list-inside">
+                  {bloqueadoInfo?.status && <li>Status: {bloqueadoInfo.status}</li>}
+                  {bloqueadoInfo?.eligibleAt && (
+                    <li>Elegível para remoção em: {fmtDataSP(bloqueadoInfo.eligibleAt)}</li>
+                  )}
+                </ul>
+              )}
+
+              <p className="mt-3 text-sm text-red-900">
+                Em caso de dúvidas, por favor, entre em contato com os administradores.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setPasso("login");
+                setBloqueadoInfo(null);
+              }}
+              className="w-full bg-orange-600 hover:bg-orange-700 text-white py-2 rounded-md font-semibold cursor-pointer transition duration-200"
+            >
+              Voltar ao login
+            </button>
+
+            <div className="text-center text-xs text-gray-500">
+              <p>
+                Precisa de ajuda?{" "}
+                <Link href="/contato" className="text-orange-600 hover:underline">
+                  Fale conosco
+                </Link>
+              </p>
+            </div>
+          </div>
         )}
       </div>
     </main>
