@@ -1,6 +1,6 @@
 // routes/professores.ts
 import { Router } from "express";
-import { PrismaClient, StatusAgendamento, DiaSemana } from "@prisma/client";
+import { PrismaClient, StatusAgendamento, DiaSemana, TipoSessaoProfessor } from "@prisma/client";
 import { z } from "zod";
 import verificarToken from "../middleware/authMiddleware";
 import { requireAdmin } from "../middleware/acl";
@@ -78,8 +78,7 @@ function parseMesToLocalRange(mes: string) {
   // "YYYY-MM" em linha do tempo local
   const [yStr, mStr] = mes.split("-");
   const firstLocal = `${yStr}-${mStr}-01`;
-  const nextMonthLocal = addDaysLocalYMD(addDaysLocalYMD(firstLocal, 27), 4) // garante rolar
-    .slice(0, 7) + "-01";
+  const nextMonthLocal = addDaysLocalYMD(addDaysLocalYMD(firstLocal, 27), 4).slice(0, 7) + "-01";
   const lastLocal = addDaysLocalYMD(nextMonthLocal, -1);
   return { fromYMD: firstLocal, toYMD: lastLocal };
 }
@@ -87,13 +86,21 @@ function parseMesToLocalRange(mes: string) {
 /* =========================
    Cálculo core (p/ um professor) — usa datasets carregados
 ========================= */
-type ComumRow = { data: Date; horario: string; quadraId: string };
+type ComumRow = {
+  data: Date;
+  horario: string;
+  quadraId: string;
+  tipoSessao: TipoSessaoProfessor | null;
+  professorId: string | null; // apenas informativo aqui (datasets já filtrados por professor)
+};
 type PermRow = {
   diaSemana: DiaSemana;
   horario: string;
   quadraId: string;
   dataInicio: Date | null;
   cancelamentos: { data: Date }[];
+  tipoSessao: TipoSessaoProfessor | null;
+  professorId: string | null; // idem acima
 };
 type BloqueiosMap = Map<string, Array<{ ini: number; fim: number }>>;
 
@@ -114,10 +121,12 @@ function computeResumoProfessorFromDatasets(
     porDia.set(ymd, (porDia.get(ymd) || 0) + 1);
   };
 
-  // 1) Comuns
+  // 1) Comuns — somente AULA (ou legado null ⇒ conta)
   for (const ag of comuns) {
-    const ymd = toISODateUTC(ag.data); // seu storage é 00:00Z do dia local
-    // regra 18–23h seg–sex
+    if (ag.tipoSessao === "JOGO") continue;
+
+    const ymd = toISODateUTC(ag.data); // storage é 00:00Z do dia local
+    // regra: 18–23h seg–sex nunca conta como aula
     const wd = localWeekdayIndexOfYMD(ymd);
     if (isWeekdayIdx(wd) && EXCLUDE_EVENING.has(ag.horario)) continue;
 
@@ -130,8 +139,10 @@ function computeResumoProfessorFromDatasets(
     pushAula(ymd, ag.quadraId, ag.horario);
   }
 
-  // 2) Permanentes
+  // 2) Permanentes — somente AULA (ou legado null ⇒ conta)
   for (const p of permanentes) {
+    if (p.tipoSessao === "JOGO") continue;
+
     const dayIdx = DIA_IDX[p.diaSemana];
     if (isWeekdayIdx(dayIdx) && EXCLUDE_EVENING.has(p.horario)) continue;
 
@@ -201,7 +212,7 @@ router.get("/me/resumo", async (req, res) => {
     const qSchema = z.object({
       mes: z.string().regex(/^\d{4}-\d{2}$/).optional(),
       from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-      to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      to: z.string().regex(/^\d{4}-\d2-\d{2}$/).optional(),
       duracaoMin: z.coerce.number().int().positive().optional(),
     }).refine(v => !!v.mes || (!!v.from && !!v.to),
       "Informe 'mes=YYYY-MM' OU 'from/to=YYYY-MM-DD'.");
@@ -228,23 +239,51 @@ router.get("/me/resumo", async (req, res) => {
     const inicioUTC = toUtc00(fromYMD);
     const fimUTCExcl = toUtc00(addDaysLocalYMD(toYMD, 1));
 
+    // SOMENTE AULAS, e atribuição por professorId (ou legado por usuarioId)
     const comuns = await prisma.agendamento.findMany({
       where: {
-        usuarioId: userId,
         status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
         data: { gte: inicioUTC, lt: fimUTCExcl },
+        AND: [
+          {
+            OR: [
+              { professorId: userId },
+              { AND: [{ professorId: null }, { usuarioId: userId }] },
+            ],
+          },
+          {
+            OR: [
+              { tipoSessao: "AULA" },
+              { tipoSessao: null }, // legado: conta como aula
+            ],
+          },
+        ],
       },
-      select: { data: true, horario: true, quadraId: true },
+      select: { data: true, horario: true, quadraId: true, tipoSessao: true, professorId: true },
     });
 
     const permanentes = await prisma.agendamentoPermanente.findMany({
       where: {
-        usuarioId: userId,
         status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
+        AND: [
+          {
+            OR: [
+              { professorId: userId },
+              { AND: [{ professorId: null }, { usuarioId: userId }] },
+            ],
+          },
+          {
+            OR: [
+              { tipoSessao: "AULA" },
+              { tipoSessao: null }, // legado
+            ],
+          },
+        ],
       },
       select: {
         diaSemana: true, horario: true, quadraId: true, dataInicio: true,
         cancelamentos: { select: { data: true } },
+        tipoSessao: true, professorId: true,
       },
     });
 
@@ -327,21 +366,48 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
 
     const comuns = await prisma.agendamento.findMany({
       where: {
-        usuarioId: profId,
         status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
         data: { gte: inicioUTC, lt: fimUTCExcl },
+        AND: [
+          {
+            OR: [
+              { professorId: profId },
+              { AND: [{ professorId: null }, { usuarioId: profId }] },
+            ],
+          },
+          {
+            OR: [
+              { tipoSessao: "AULA" },
+              { tipoSessao: null },
+            ],
+          },
+        ],
       },
-      select: { data: true, horario: true, quadraId: true },
+      select: { data: true, horario: true, quadraId: true, tipoSessao: true, professorId: true },
     });
 
     const permanentes = await prisma.agendamentoPermanente.findMany({
       where: {
-        usuarioId: profId,
         status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
+        AND: [
+          {
+            OR: [
+              { professorId: profId },
+              { AND: [{ professorId: null }, { usuarioId: profId }] },
+            ],
+          },
+          {
+            OR: [
+              { tipoSessao: "AULA" },
+              { tipoSessao: null },
+            ],
+          },
+        ],
       },
       select: {
         diaSemana: true, horario: true, quadraId: true, dataInicio: true,
         cancelamentos: { select: { data: true } },
+        tipoSessao: true, professorId: true,
       },
     });
 
@@ -422,6 +488,8 @@ router.get("/admin", requireAdmin, async (req, res) => {
       orderBy: { nome: "asc" },
     });
     const profIds = professores.map(p => p.id);
+    const profIdSet = new Set(profIds);
+
     if (profIds.length === 0) {
       return res.json({
         intervalo: { from: fromYMD, to: toYMD, duracaoMin },
@@ -430,25 +498,52 @@ router.get("/admin", requireAdmin, async (req, res) => {
       });
     }
 
-    // 2) Carrega datasets em batch
+    // 2) Carrega datasets em batch — SOMENTE AULAS e atribuição por professorId || usuarioId (legado)
     const [comunsAll, permanentesAll, bloqueios] = await Promise.all([
       prisma.agendamento.findMany({
         where: {
-          usuarioId: { in: profIds },
           status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
           data: { gte: inicioUTC, lt: fimUTCExcl },
+          AND: [
+            {
+              OR: [
+                { professorId: { in: profIds } },
+                { AND: [{ professorId: null }, { usuarioId: { in: profIds } }] },
+              ],
+            },
+            {
+              OR: [
+                { tipoSessao: "AULA" },
+                { tipoSessao: null }, // legado
+              ],
+            },
+          ],
         },
-        select: { data: true, horario: true, quadraId: true, usuarioId: true },
+        select: { data: true, horario: true, quadraId: true, usuarioId: true, professorId: true, tipoSessao: true },
       }),
       prisma.agendamentoPermanente.findMany({
         where: {
-          usuarioId: { in: profIds },
           status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
+          AND: [
+            {
+              OR: [
+                { professorId: { in: profIds } },
+                { AND: [{ professorId: null }, { usuarioId: { in: profIds } }] },
+              ],
+            },
+            {
+              OR: [
+                { tipoSessao: "AULA" },
+                { tipoSessao: null },
+              ],
+            },
+          ],
         },
         select: {
           usuarioId: true,
           diaSemana: true, horario: true, quadraId: true, dataInicio: true,
           cancelamentos: { select: { data: true } },
+          professorId: true, tipoSessao: true,
         },
       }),
       prisma.bloqueioQuadra.findMany({
@@ -462,25 +557,37 @@ router.get("/admin", requireAdmin, async (req, res) => {
       }),
     ]);
 
-    // 3) Index por professor
+    // 3) Index por professor (chave = professorId ?? usuarioId)
     const comunsByProf = new Map<string, ComumRow[]>();
     for (const ag of comunsAll) {
-      const arr = comunsByProf.get(ag.usuarioId) || [];
-      arr.push({ data: ag.data, horario: ag.horario, quadraId: ag.quadraId });
-      comunsByProf.set(ag.usuarioId, arr);
+      const key = ag.professorId ?? ag.usuarioId;
+      if (!profIdSet.has(key)) continue;
+      const arr = comunsByProf.get(key) || [];
+      arr.push({
+        data: ag.data,
+        horario: ag.horario,
+        quadraId: ag.quadraId,
+        tipoSessao: ag.tipoSessao,
+        professorId: ag.professorId,
+      });
+      comunsByProf.set(key, arr);
     }
 
     const permsByProf = new Map<string, PermRow[]>();
     for (const p of permanentesAll) {
-      const arr = permsByProf.get(p.usuarioId) || [];
+      const key = p.professorId ?? p.usuarioId;
+      if (!profIdSet.has(key)) continue;
+      const arr = permsByProf.get(key) || [];
       arr.push({
         diaSemana: p.diaSemana,
         horario: p.horario,
         quadraId: p.quadraId,
         dataInicio: p.dataInicio,
         cancelamentos: p.cancelamentos,
+        tipoSessao: p.tipoSessao,
+        professorId: p.professorId,
       });
-      permsByProf.set(p.usuarioId, arr);
+      permsByProf.set(key, arr);
     }
 
     const bloqueiosMap: BloqueiosMap = new Map();
@@ -497,7 +604,14 @@ router.get("/admin", requireAdmin, async (req, res) => {
     }
 
     // 4) Agrega por professor
-    const resposta = [];
+    const resposta: Array<{
+      id: string;
+      nome: string;
+      valorQuadra: number;
+      aulasMes: number;
+      valorMes: number;
+      porFaixa: Array<{ faixa: string; aulas: number; valor: number }>;
+    }> = [];
     let totalAulasGeral = 0;
     let totalValorGeral = 0;
 

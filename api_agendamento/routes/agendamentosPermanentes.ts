@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { PrismaClient, DiaSemana } from "@prisma/client";
+import { PrismaClient, DiaSemana, TipoSessaoProfessor } from "@prisma/client";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
@@ -85,6 +85,10 @@ const schemaAgendamentoPermanente = z.object({
   usuarioId: z.string().uuid().optional(),
   dataInicio: z.string().optional(), // "YYYY-MM-DD" (dia local) — opcional
   convidadosNomes: z.array(z.string().trim().min(1)).optional().default([]),
+
+  // 🆕 novos (opcionais)
+  professorId: z.string().uuid().optional(),
+  tipoSessao: z.enum(["AULA", "JOGO"]).optional(),
 });
 
 async function criarConvidadoComoUsuario(nomeConvidado: string) {
@@ -161,6 +165,10 @@ router.post("/", async (req, res) => {
   const {
     diaSemana, horario, quadraId, esporteId,
     usuarioId: usuarioIdBody, dataInicio, convidadosNomes = [],
+
+    // 🆕 recebidos (opcionais)
+    professorId: professorIdBody,
+    tipoSessao: tipoSessaoBody,
   } = validacao.data;
 
   try {
@@ -208,6 +216,41 @@ router.post("/", async (req, res) => {
       }
     }
 
+    // ================= NOVO: professor/tipoSessao/multa =================
+    // (1) professorId: explícito ou inferido se o dono for ADMIN_PROFESSORES
+    let professorIdFinal: string | null = professorIdBody ?? null;
+    if (!professorIdFinal) {
+      const dono = await prisma.usuario.findUnique({
+        where: { id: usuarioIdDono },
+        select: { id: true, tipo: true },
+      });
+      if (dono?.tipo === "ADMIN_PROFESSORES") {
+        professorIdFinal = dono.id;
+      }
+    }
+    if (professorIdFinal) {
+      const prof = await prisma.usuario.findUnique({
+        where: { id: professorIdFinal },
+        select: { id: true, tipo: true },
+      });
+      if (!prof || prof.tipo !== "ADMIN_PROFESSORES") {
+        return res.status(400).json({ erro: "professorId inválido (usuário não é professor)" });
+      }
+    }
+
+    // (2) tipoSessao: >= 18:00 força JOGO; antes default AULA se não vier
+    const isNight = horario >= "18:00";
+    let tipoSessaoFinal: TipoSessaoProfessor | null = null;
+    if (professorIdFinal) {
+      if (isNight) {
+        tipoSessaoFinal = "JOGO";
+      } else {
+        tipoSessaoFinal = (tipoSessaoBody as TipoSessaoProfessor | undefined) ?? "AULA";
+      }
+    }
+
+    // ====================================================================
+
     const novo = await prisma.agendamentoPermanente.create({
       data: {
         diaSemana,
@@ -216,6 +259,9 @@ router.post("/", async (req, res) => {
         esporteId,
         usuarioId: usuarioIdDono,
         ...(dataInicio ? { dataInicio: toUtc00(dataInicio) } : {}),
+        // persistir novos campos
+        professorId: professorIdFinal,
+        tipoSessao: tipoSessaoFinal,
       },
       select: {
         id: true, diaSemana: true, horario: true, quadraId: true, esporteId: true,
@@ -237,6 +283,8 @@ router.post("/", async (req, res) => {
           quadraId,
           esporteId,
           dataInicio: novo.dataInicio ?? null,
+          professorId: professorIdFinal,
+          tipoSessao: tipoSessaoFinal,
         },
       });
     } catch (e) {
@@ -260,6 +308,7 @@ router.get("/", async (req, res) => {
       where,
       include: {
         usuario: { select: { id: true, nome: true, email: true } },
+        professor: { select: { id: true, nome: true, email: true } }, // 🆕
         quadra: { select: { id: true, nome: true, numero: true } },
         esporte: { select: { id: true, nome: true } },
       },
@@ -289,6 +338,7 @@ router.get(
         where: { id },
         include: {
           usuario: { select: { id: true, nome: true, email: true, celular: true } },
+          professor: { select: { id: true, nome: true, email: true } }, // 🆕
           quadra: { select: { nome: true, numero: true } },
           esporte: { select: { nome: true } },
         },
@@ -331,6 +381,13 @@ router.get(
         quadra: `${agendamento.quadra.nome} (Nº ${agendamento.quadra.numero})`,
 
         dataInicio: agendamento.dataInicio ? toISODateUTC(new Date(agendamento.dataInicio)) : null,
+
+        // 🆕 extras
+        professor: agendamento.professor
+          ? { id: agendamento.professor.id, nome: agendamento.professor.nome, email: agendamento.professor.email }
+          : null,
+        professorId: agendamento.professorId ?? null,
+        tipoSessao: agendamento.tipoSessao ?? null,
 
         proximaData, // "YYYY-MM-DD" | null
         excecoes: excecoes.map((e) => ({
@@ -802,6 +859,10 @@ router.patch(
             esporteId: perm.esporteId,
             usuarioId: novoUsuarioId,
             dataInicio: perm.dataInicio ?? null,
+
+            // 🆕 manter extras
+            professorId: perm.professorId ?? null,
+            tipoSessao: perm.tipoSessao ?? null,
           },
           include: {
             usuario: { select: { id: true, nome: true, email: true } },

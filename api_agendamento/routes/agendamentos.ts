@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { PrismaClient, DiaSemana, Prisma } from "@prisma/client";
+import { PrismaClient, DiaSemana, Prisma, TipoSessaoProfessor } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { z } from "zod";
@@ -196,9 +196,14 @@ const agendamentoSchema = z.object({
   horario: z.string().min(1),
   quadraId: z.string().uuid(),
   esporteId: z.string().uuid(),
-  usuarioId: z.string().uuid().optional(),
+  usuarioId: z.string().uuid().optional(), // apenas admin pode setar dono
   jogadoresIds: z.array(z.string().uuid()).optional().default([]),
   convidadosNomes: z.array(z.string().trim().min(1)).optional().default([]),
+
+  // 🆕 novos
+  professorId: z.string().uuid().optional(),
+  tipoSessao: z.enum(["AULA", "JOGO"]).optional(),
+  multa: z.coerce.number().min(0).optional(),
 });
 
 async function criarConvidadoComoUsuario(nomeConvidado: string) {
@@ -302,6 +307,9 @@ router.post("/", verificarToken, async (req, res) => {
     usuarioId: usuarioIdBody,
     jogadoresIds = [],
     convidadosNomes = [],
+    professorId: professorIdBody,
+    tipoSessao: tipoSessaoBody,
+    multa: multaBody,
   } = parsed.data;
 
   const usuarioIdDono =
@@ -357,6 +365,53 @@ router.post("/", verificarToken, async (req, res) => {
       }
     }
 
+    // ======================== NOVO: Professor + TipoSessao + Multa ========================
+    // 1) Checamos professorId explicitamente ou inferimos pelo dono (se o dono for professor)
+    let professorIdFinal: string | null = professorIdBody ?? null;
+
+    if (!professorIdFinal) {
+      // Se o dono for professor, inferimos professorId = dono
+      const dono = await prisma.usuario.findUnique({
+        where: { id: usuarioIdDono },
+        select: { id: true, tipo: true },
+      });
+      if (dono?.tipo === "ADMIN_PROFESSORES") {
+        professorIdFinal = dono.id;
+      }
+    }
+
+    if (professorIdFinal) {
+      const prof = await prisma.usuario.findUnique({
+        where: { id: professorIdFinal },
+        select: { id: true, tipo: true },
+      });
+      if (!prof || prof.tipo !== "ADMIN_PROFESSORES") {
+        return res.status(400).json({ erro: "professorId inválido (usuário não é professor)" });
+      }
+    }
+
+    // 2) Definir tipoSessao (regras 18:00+ = JOGO; antes = AULA se não vier do front)
+    const isNight = horario >= "18:00";
+    let tipoSessaoFinal: TipoSessaoProfessor | null = null;
+
+    if (professorIdFinal) {
+      if (isNight) {
+        tipoSessaoFinal = "JOGO";
+      } else {
+        // antes de 18h: se não vier nada, default AULA (compat compat com legado)
+        const t = (tipoSessaoBody as TipoSessaoProfessor | undefined) ?? "AULA";
+        tipoSessaoFinal = t;
+      }
+    }
+
+    // 3) Multa: aceita apenas número >= 0; se não vier, fica null
+    const multaFinal =
+      typeof multaBody === "number" && Number.isFinite(multaBody) && multaBody >= 0
+        ? Number(multaBody.toFixed(2))
+        : null;
+
+    // ================================================================================
+
     const convidadosCriadosIds: string[] = [];
     for (const nome of convidadosNomes) {
       const convidado = await criarConvidadoComoUsuario(nome);
@@ -376,10 +431,16 @@ router.post("/", verificarToken, async (req, res) => {
         usuarioId: usuarioIdDono,
         status: "CONFIRMADO",
         jogadores: { connect: connectIds },
+
+        // 🆕 persistência dos campos
+        professorId: professorIdFinal,
+        tipoSessao: tipoSessaoFinal,
+        multa: multaFinal,
       },
       include: {
         jogadores: { select: { id: true, nome: true, email: true } },
-        usuario: { select: { id: true, nome: true, email: true } },
+        usuario: { select: { id: true, nome: true, email: true, tipo: true } },
+        professor: { select: { id: true, nome: true, email: true } }, // nova relação
         quadra: { select: { id: true, nome: true, numero: true } },
         esporte: { select: { id: true, nome: true } },
       },
@@ -398,6 +459,9 @@ router.post("/", verificarToken, async (req, res) => {
           esporteId,
           donoId: usuarioIdDono,
           jogadoresIds: connectIds.map((c) => c.id),
+          professorId: professorIdFinal,
+          tipoSessao: tipoSessaoFinal,
+          multa: multaFinal,
         },
       });
     } catch (e) {
@@ -460,6 +524,9 @@ router.get("/", verificarToken, async (req, res) => {
           select: { id: true, nome: true, numero: true, tipoCamera: true, imagem: true },
         },
         usuario: {
+          select: { id: true, nome: true, email: true, tipo: true },
+        },
+        professor: {
           select: { id: true, nome: true, email: true },
         },
         jogadores: {
@@ -482,6 +549,9 @@ router.get("/", verificarToken, async (req, res) => {
         usuario: a.usuario
           ? { ...a.usuario, email: sanitizeEmail(a.usuario.email) }
           : a.usuario,
+        professor: a.professor
+          ? { ...a.professor, email: sanitizeEmail(a.professor.email) }
+          : null,
         jogadores: a.jogadores.map((j) => ({ ...j, email: sanitizeEmail(j.email) })),
         quadraLogoUrl: resolveQuadraImg(a.quadra?.imagem) || "/quadra.png",
         donoId: a.usuario?.id ?? a.usuarioId,
@@ -516,6 +586,7 @@ router.get("/me", verificarToken, async (req, res) => {
         quadra: { select: { id: true, nome: true, numero: true, imagem: true } },
         esporte: { select: { id: true, nome: true } },
         usuario: { select: { id: true, nome: true } },
+        professor: { select: { id: true, nome: true } },
       },
       orderBy: [{ data: "asc" }, { horario: "asc" }],
     });
@@ -540,6 +611,11 @@ router.get("/me", verificarToken, async (req, res) => {
         donoId: a.usuario?.id ?? a.usuarioId,
         donoNome: a.usuario?.nome ?? "",
         euSouDono,
+        // 🆕 extras
+        professorId: a.professor ? a.professor.id : null,
+        professorNome: a.professor ? a.professor.nome : null,
+        tipoSessao: a.tipoSessao ?? null,
+        multa: a.multa ?? null,
       };
     });
 
@@ -767,6 +843,7 @@ router.get("/:id", verificarToken, async (req, res) => {
       include: {
         usuario: { select: { id: true, nome: true, email: true, celular: true } },
         jogadores: { select: { id: true, nome: true, email: true, celular: true } },
+        professor: { select: { id: true, nome: true, email: true } },
         quadra: { select: { nome: true, numero: true } },
         esporte: { select: { nome: true } },
       },
@@ -807,6 +884,17 @@ router.get("/:id", verificarToken, async (req, res) => {
         email: sanitizeEmail(j.email),
         celular: sanitizePhone(j.celular),
       })),
+      // 🆕 extras
+      professor: agendamento.professor
+        ? {
+            id: agendamento.professor.id,
+            nome: agendamento.professor.nome,
+            email: sanitizeEmail(agendamento.professor.email),
+          }
+        : null,
+      professorId: agendamento.professorId ?? null,
+      tipoSessao: agendamento.tipoSessao ?? null,
+      multa: agendamento.multa ?? null,
     });
   } catch (err) {
     console.error(err);
@@ -1043,6 +1131,11 @@ router.patch("/:id/transferir", verificarToken, async (req, res) => {
           quadraId: agendamento.quadraId,
           esporteId: agendamento.esporteId,
           jogadores: { connect: [{ id: novoUsuarioId }] },
+
+          // mantém professor/tipoSessao/multa do original
+          professorId: agendamento.professorId ?? null,
+          tipoSessao: agendamento.tipoSessao ?? null,
+          multa: agendamento.multa ?? null,
         },
         include: {
           usuario: true,
