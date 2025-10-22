@@ -62,6 +62,8 @@ type ReservaPayloadBase = {
 type ReservaPayloadExtra = {
   jogadoresIds?: string[];
   convidadosNomes?: string[];
+  /* 🔸 NOVO: professor envia tipo da sessão */
+  tipoSessao?: TipoSessao;
 };
 
 /* 🔸 NOVO: estrutura para a tela de sucesso */
@@ -74,6 +76,9 @@ type ReservaSuccess = {
   data: string;    // YYYY-MM-DD
   horario: string; // HH:MM
 };
+
+/* 🔸 NOVO: tipo da sessão (somente p/ professor) */
+type TipoSessao = "AULA" | "JOGO";
 
 /* =========================================================
    Constantes e helpers
@@ -482,6 +487,9 @@ export default function AgendarQuadraCliente() {
     [ehProfessor]
   );
 
+  /* 🔸 NOVO: estado do tipo de sessão */
+  const [tipoSessao, setTipoSessao] = useState<TipoSessao | null>(null);
+
   // helpers URL
   const toAbs = useCallback(
     (u?: string | null) => {
@@ -756,6 +764,15 @@ export default function AgendarQuadraCliente() {
   /* 🔸 NOVO: estado com os dados da reserva confirmada */
   const [successInfo, setSuccessInfo] = useState<ReservaSuccess | null>(null);
 
+  /* 🔸 NOVO: ao professor definir horário, decide tipoSessao */
+  useEffect(() => {
+    if (!ehProfessor) { setTipoSessao(null); return; }
+    if (!horario) { setTipoSessao(null); return; }
+    // >= 18:00 sempre JOGO; antes, default AULA (pode mudar no UI do step 3)
+    if (horario >= "18:00") setTipoSessao("JOGO");
+    else setTipoSessao((prev) => prev ?? "AULA");
+  }, [ehProfessor, horario]);
+
   /* ========= Navegação ========= */
   const confirmarHorario = () => {
     if (!horario) return setMsg("Selecione um horário.");
@@ -819,6 +836,11 @@ export default function AgendarQuadraCliente() {
     const extra: ReservaPayloadExtra = {};
     if (jogadoresIds.length) extra.jogadoresIds = jogadoresIds;
     if (convidadosNomes.length) extra.convidadosNomes = convidadosNomes;
+
+    /* 🔸 NOVO: se professor, envia tipoSessao (>=18:00 força JOGO) */
+    if (ehProfessor) {
+      extra.tipoSessao = horario >= "18:00" ? "JOGO" : (tipoSessao ?? "AULA");
+    }
 
     const payload: ReservaPayloadBase & ReservaPayloadExtra = { ...base, ...extra };
 
@@ -1073,6 +1095,40 @@ export default function AgendarQuadraCliente() {
                   );
                 })}
               </div>
+
+              {/* 🔸 NOVO: escolha/indicador do tipo de sessão para professor */}
+              {ehProfessor && !!horario && (
+                <div className="mt-3 space-y-2">
+                  {horario >= "18:00" ? (
+                    <div className="text-[12px] rounded-md bg-gray-100 text-gray-800 px-3 py-2">
+                      Tipo de sessão: <strong>Jogo</strong> (automático para horários a partir das 18:00)
+                    </div>
+                  ) : (
+                    <div className="text-[12px]">
+                      <p className="mb-1 text-gray-600">Tipo de sessão:</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setTipoSessao("AULA")}
+                          className={`rounded-md border px-3 py-2 text-left transition ${tipoSessao === "AULA" ? "bg-orange-50 border-orange-500" : "bg-gray-50 border-gray-200 hover:border-gray-300"}`}
+                        >
+                          <div className="text-sm font-semibold text-gray-800">Aula</div>
+                          <div className="text-[11px] text-gray-600">Sessão didática (antes das 18h).</div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTipoSessao("JOGO")}
+                          className={`rounded-md border px-3 py-2 text-left transition ${tipoSessao === "JOGO" ? "bg-orange-50 border-orange-500" : "bg-gray-50 border-gray-200 hover:border-gray-300"}`}
+                        >
+                          <div className="text-sm font-semibold text-gray-800">Jogo</div>
+                          <div className="text-[11px] text-gray-600">Partida livre.</div>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <Btn className="mt-4 cursor-pointer" onClick={confirmarHorario} disabled={!horario || navLock}>
                 Confirmar
               </Btn>
@@ -1223,6 +1279,16 @@ export default function AgendarQuadraCliente() {
 
               <Resumo label="Escolha o Dia:" valor={formatarDiaCurto(diaISO)} onChange={() => setStep(2)} />
               <Resumo label="Escolha o Horário:" valor={horario} onChange={() => setStep(3)} />
+
+              {/* 🔸 NOVO: mostra tipo da sessão na confirmação para professor */}
+              {ehProfessor && (
+                <Resumo
+                  label="Tipo de Sessão:"
+                  valor={horario >= "18:00" ? "Jogo (automático)" : (tipoSessao === "JOGO" ? "Jogo" : "Aula")}
+                  onChange={() => setStep(3)}
+                />
+              )}
+
               <Resumo
                 label="Escolha o Esporte:"
                 valor={esporteNome}
@@ -1319,6 +1385,7 @@ export default function AgendarQuadraCliente() {
                     setStep(1);
                     setSuccessInfo(null);
                     setMsg("");
+                    setTipoSessao(null); /* 🔸 NOVO */
                   }}
                   className="w-full rounded-lg px-4 py-2 font-semibold transition bg-gray-200 text-gray-900 hover:bg-gray-300"
                 >
