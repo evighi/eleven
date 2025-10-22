@@ -9,10 +9,12 @@ import { toast } from 'sonner'
 type Esporte = { id: number | string; nome: string }
 
 // Agora traz também o celular (telefone)
+// ✅ acrescentado campo opcional "tipo" para sabermos se é ADMIN_PROFESSORES
 type Usuario = {
   id: number | string
   nome: string
   celular?: string | null
+  tipo?: string | null // ex.: 'ADMIN_PROFESSORES', 'CLIENTE', etc.
 }
 
 type Quadra = { quadraId: number | string; nome: string; numero: number }
@@ -62,6 +64,17 @@ export default function AgendamentoComum() {
   useEffect(() => {
     if (isNoite) setTipoSessao('JOGO')
   }, [isNoite])
+
+  // ✅ Quem é o DONO atual? (regra existente: primeiro jogador cadastrado vira dono inicial
+  // quando não há "convidado dono")
+  const ownerSelecionado = jogadores[0]
+  const selectedOwnerIsProfessor = useMemo(() => {
+    const t = (ownerSelecionado?.tipo || '').toString().toUpperCase()
+    return t === 'ADMIN_PROFESSORES'
+  }, [ownerSelecionado])
+
+  // ✅ Só exibir UI de TipoSessao se já houver horário E se o dono selecionado for professor
+  const showTipoSessaoUI = Boolean(horario) && selectedOwnerIsProfessor
 
   // ler params vindos da Home e pré-preencher
   useEffect(() => {
@@ -141,7 +154,7 @@ export default function AgendamentoComum() {
     buscarDisponibilidade()
   }, [API_URL, data, esporteSelecionado, horario])
 
-  // Busca de usuários cadastrados — agora esperamos { id, nome, celular }
+  // Busca de usuários cadastrados — agora esperamos { id, nome, celular, tipo? }
   useEffect(() => {
     const buscar = async () => {
       if (buscaUsuario.trim().length < 2) {
@@ -154,7 +167,7 @@ export default function AgendamentoComum() {
           params: { nome: buscaUsuario },
           withCredentials: true,
         })
-        // Back padronizado deve devolver nome + celular (telefone).
+        // Ideal: backend devolver também "tipo" (quando usuário for professor, vir 'ADMIN_PROFESSORES').
         setUsuariosEncontrados(data || [])
       } catch (err) {
         console.error(err)
@@ -220,7 +233,9 @@ export default function AgendamentoComum() {
       horario,
       esporteId: String(esporteSelecionado),
       quadraId: String(quadraSelecionada),
-      // ✅ Envia o tipo da sessão (AULA/JOGO)
+      // ✅ Envia o tipo da sessão (AULA/JOGO); já está coerente pois:
+      // - noite (>=18h) força 'JOGO' via useEffect
+      // - se não é professor, o seletor nem aparece e o state fica no padrão 'AULA' (dia)
       tipoSessao,
       jogadoresIds: jogadores.map((j) => String(j.id)),
       // concatena "Nome Telefone" para manter compatibilidade com o backend atual
@@ -354,8 +369,8 @@ export default function AgendamentoComum() {
         ))}
       </select>
 
-      {/* ✅ Tipo de Sessão (Aula/Jogo) */}
-      {horario && (
+      {/* ✅ Tipo de Sessão (Aula/Jogo) — só aparece se HÁ usuário e ele é ADMIN_PROFESSORES */}
+      {showTipoSessaoUI && (
         <div className="mb-4">
           <label className="block mb-1 font-medium">Tipo de Sessão</label>
 
@@ -442,6 +457,12 @@ export default function AgendamentoComum() {
                 title={u.celular || ''}
               >
                 <div className="font-medium">{u.nome}</div>
+                {/* opcional: exibe o tipo no resultado para facilitar */}
+                {u.tipo && (
+                  <div className="text-[11px] text-gray-500">
+                    {String(u.tipo).toUpperCase()}
+                  </div>
+                )}
                 {u.celular && <div className="text-xs text-gray-600">{u.celular}</div>}
               </li>
             ))}
@@ -459,6 +480,7 @@ export default function AgendamentoComum() {
                   title={j.celular || ''}
                 >
                   {j.nome}{j.celular ? ` (${j.celular})` : ''}
+                  {j.tipo && <span className="text-[10px] ml-1 opacity-70">{String(j.tipo).toUpperCase()}</span>}
                   <button
                     onClick={() => removerJogador(j.id)}
                     className="ml-1 text-red-500"
