@@ -54,6 +54,12 @@ enum InteractionType {
   NONE // caso não haja interação conhecida
 }
 
+/// 👇 NOVO: Diferenciação de sessões de professor
+enum TipoSessaoProfessor {
+  AULA
+  JOGO
+}
+
 model Usuario {
   id                String      @id @default(uuid())
   nome              String
@@ -101,6 +107,10 @@ model Usuario {
   // relações com a fila de exclusão
   deletionQueue      UserDeletionQueue?  @relation("DeletionTargetUser")
   deletionsRequested UserDeletionQueue[] @relation("DeletionRequestedBy")
+
+  // 👇 NOVO: relações como PROFESSOR nos agendamentos
+  agendamentosComoProfessor            Agendamento[]            @relation("ProfessorNosAgendamentos")
+  agendamentosPermanentesComoProfessor AgendamentoPermanente[] @relation("ProfessorNosPermanentes")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -186,8 +196,23 @@ model Agendamento {
   transferidoPor   Usuario? @relation("AgendamentoTransferidoPor", fields: [transferidoPorId], references: [id])
   transferidoPorId String?
 
+  // 👇 NOVOS CAMPOS (professor e sessão)
+  professorId String?
+  professor   Usuario? @relation("ProfessorNosAgendamentos", fields: [professorId], references: [id])
+
+  /// Se houver professor, indica se é aula ou jogo (default AULA p/ compat).
+  tipoSessao  TipoSessaoProfessor? @default(AULA)
+
+  /// 👇 NOVO: valor de multa (para uso futuro). Mantido opcional.
+  multa Decimal? @db.Decimal(10, 2)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([usuarioId])
+  @@index([quadraId, data])
+  /// Índice útil para relatórios por professor (contagem de aulas)
+  @@index([professorId, tipoSessao, data])
 }
 
 model AgendamentoPermanente {
@@ -217,8 +242,20 @@ model AgendamentoPermanente {
   // exceções por data (cancelar só um dia) — QUADRA
   cancelamentos AgendamentoPermanenteCancelamento[]
 
+  // 👇 NOVOS CAMPOS (professor e sessão) — também nos permanentes
+  professorId String?
+  professor   Usuario? @relation("ProfessorNosPermanentes", fields: [professorId], references: [id])
+
+  /// Se houver professor, indica se é aula ou jogo (default AULA p/ compat).
+  tipoSessao  TipoSessaoProfessor? @default(AULA)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  /// Índices úteis para relatórios por professor
+  @@index([usuarioId])
+  @@index([quadraId, diaSemana, horario])
+  @@index([professorId, tipoSessao, diaSemana])
 }
 
 model AgendamentoChurrasqueira {
