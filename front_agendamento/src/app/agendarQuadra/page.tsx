@@ -1101,11 +1101,11 @@ export default function AgendarQuadraCliente() {
                 <div className="mt-3 space-y-2">
                   {horario >= "18:00" ? (
                     <div className="text-[12px] rounded-md bg-gray-100 text-gray-800 px-3 py-2">
-                      Tipo de sessão: <strong>Jogo</strong> (automático para horários a partir das 18:00)
+                      Tipo de agendamento: <strong>Jogo</strong> (automático para horários pós 18:00)
                     </div>
                   ) : (
                     <div className="text-[12px]">
-                      <p className="mb-1 text-gray-600">Tipo de sessão:</p>
+                      <p className="mb-1 text-gray-600">Tipo de agendamento:</p>
                       <div className="grid grid-cols-2 gap-2">
                         <button
                           type="button"
@@ -1113,7 +1113,6 @@ export default function AgendarQuadraCliente() {
                           className={`rounded-md border px-3 py-2 text-left transition ${tipoSessao === "AULA" ? "bg-orange-50 border-orange-500" : "bg-gray-50 border-gray-200 hover:border-gray-300"}`}
                         >
                           <div className="text-sm font-semibold text-gray-800">Aula</div>
-                          <div className="text-[11px] text-gray-600">Sessão didática (antes das 18h).</div>
                         </button>
                         <button
                           type="button"
@@ -1121,7 +1120,6 @@ export default function AgendarQuadraCliente() {
                           className={`rounded-md border px-3 py-2 text-left transition ${tipoSessao === "JOGO" ? "bg-orange-50 border-orange-500" : "bg-gray-50 border-gray-200 hover:border-gray-300"}`}
                         >
                           <div className="text-sm font-semibold text-gray-800">Jogo</div>
-                          <div className="text-[11px] text-gray-600">Partida livre.</div>
                         </button>
                       </div>
                     </div>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 import Spinner from '@/components/Spinner'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -49,6 +49,19 @@ export default function AgendamentoComum() {
 
   // --- guardar o parâmetro de esporte (pode vir id OU nome) para mapear quando esportes carregarem
   const [esporteParam, setEsporteParam] = useState<string>('')
+
+  // ✅ NOVO: Aula x Jogo
+  const [tipoSessao, setTipoSessao] = useState<'AULA' | 'JOGO'>('AULA')
+  const isNoite = useMemo(() => {
+    if (!horario) return false
+    const hh = parseInt(horario.slice(0, 2), 10)
+    return hh >= 18
+  }, [horario])
+
+  // ✅ Se for 18h+ força JOGO automaticamente
+  useEffect(() => {
+    if (isNoite) setTipoSessao('JOGO')
+  }, [isNoite])
 
   // ler params vindos da Home e pré-preencher
   useEffect(() => {
@@ -207,6 +220,8 @@ export default function AgendamentoComum() {
       horario,
       esporteId: String(esporteSelecionado),
       quadraId: String(quadraSelecionada),
+      // ✅ Envia o tipo da sessão (AULA/JOGO)
+      tipoSessao,
       jogadoresIds: jogadores.map((j) => String(j.id)),
       // concatena "Nome Telefone" para manter compatibilidade com o backend atual
       convidadosNomes:
@@ -326,7 +341,7 @@ export default function AgendamentoComum() {
 
       <label className="block mb-2">Horário</label>
       <select
-        className="w-full p-2 border rounded mb-4"
+        className="w-full p-2 border rounded mb-2"
         value={horario}
         onChange={(e) => {
           setHorario(e.target.value)
@@ -338,6 +353,49 @@ export default function AgendamentoComum() {
           <option key={h} value={h}>{h}</option>
         ))}
       </select>
+
+      {/* ✅ Tipo de Sessão (Aula/Jogo) */}
+      {horario && (
+        <div className="mb-4">
+          <label className="block mb-1 font-medium">Tipo de Sessão</label>
+
+          {isNoite ? (
+            <div className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm bg-gray-100 border border-gray-200 text-gray-700">
+              <span className="font-semibold">Jogo</span>
+              <span className="text-[11px] text-gray-500">(automático a partir das 18h)</span>
+            </div>
+          ) : (
+            <div className="inline-flex gap-2">
+              <button
+                type="button"
+                onClick={() => setTipoSessao('AULA')}
+                className={`px-3 py-1 rounded-md border text-sm ${
+                  tipoSessao === 'AULA'
+                    ? 'bg-orange-100 border-orange-500 text-orange-700'
+                    : 'bg-gray-100 border-gray-300 text-gray-700'
+                }`}
+              >
+                Aula
+              </button>
+              <button
+                type="button"
+                onClick={() => setTipoSessao('JOGO')}
+                className={`px-3 py-1 rounded-md border text-sm ${
+                  tipoSessao === 'JOGO'
+                    ? 'bg-orange-100 border-orange-500 text-orange-700'
+                    : 'bg-gray-100 border-gray-300 text-gray-700'
+                }`}
+              >
+                Jogo
+              </button>
+            </div>
+          )}
+
+          <p className="text-[11px] text-gray-500 mt-1">
+            A partir das 18:00 o sistema define automaticamente como <b>Jogo</b>.
+          </p>
+        </div>
+      )}
 
       {/* Dono convidado (opcional) */}
       <div className="mb-4">
