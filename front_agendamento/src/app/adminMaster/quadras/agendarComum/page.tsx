@@ -253,6 +253,13 @@ export default function AgendamentoComum() {
         withCredentials: true,
       })
 
+      // 🔔 AVISO DE MULTA (somente se o backend aplicou multa automática)
+      const multaValor = Number(novo?.multa || 0)
+      if (multaValor > 0) {
+        const valorFmt = multaValor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+        toast.warning(`Multa aplicada de ${valorFmt} por agendar em horário que já passou.`)
+      }
+
       // 2) se tiver “convidado dono”, transfere titularidade
       if (ownerGuestNome.trim()) {
         const alvoNome = ownerGuestNome.trim().toLowerCase()

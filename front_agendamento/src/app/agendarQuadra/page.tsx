@@ -490,6 +490,9 @@ export default function AgendarQuadraCliente() {
   /* 🔸 NOVO: estado do tipo de sessão */
   const [tipoSessao, setTipoSessao] = useState<TipoSessao | null>(null);
 
+  // ⭐ NOVO: guardaremos a multa retornada pelo backend para avisar no sucesso
+  const [multaValor, setMultaValor] = useState<number>(0); // ⭐
+
   // helpers URL
   const toAbs = useCallback(
     (u?: string | null) => {
@@ -667,10 +670,11 @@ export default function AgendarQuadraCliente() {
 
       const isToday = diaISO === todayIsoSP;
 
-      /* ✅ trocado para HORARIOS_UI dinâmico */
-      const hoursToCheck = isToday
+      /* ⭐ ALTERAÇÃO: para professor, não filtramos horários passados no dia atual */
+      const hoursToCheck = isToday && !ehProfessor
         ? HORARIOS_UI.filter((h) => Number(h.slice(0, 2)) > hourNowSP)
         : HORARIOS_UI;
+      /* fim ⭐ */
 
       setCarregandoHorarios(true);
       try {
@@ -703,7 +707,7 @@ export default function AgendarQuadraCliente() {
     return () => {
       alive = false;
     };
-  }, [API_URL, esporteId, diaISO, isChecking, HORARIOS_UI]);
+  }, [API_URL, esporteId, diaISO, isChecking, HORARIOS_UI, ehProfessor]); // ⭐ inclui ehProfessor
 
   useEffect(() => {
     if (isChecking) return;
@@ -848,9 +852,12 @@ export default function AgendarQuadraCliente() {
     setMsg("");
     setIsConcurrencyErr(false);
     try {
-      // Podemos usar a resposta do backend se ela trouxer dados do agendamento,
-      // mas para garantir mostramos as escolhas atuais que já temos.
-      await axios.post(`${API_URL}/agendamentos`, payload, { withCredentials: true });
+      // ⭐ pegamos a resposta para verificar possível multa
+      const { data: novo } = await axios.post(`${API_URL}/agendamentos`, payload, { withCredentials: true }); // ⭐
+
+      // ⭐ se o backend aplicou multa, guardamos p/ exibir no sucesso
+      const multa = Number(novo?.multa || 0); // ⭐
+      setMultaValor(Number.isFinite(multa) ? multa : 0); // ⭐
 
       // 🔸 NOVO: preencher o card de sucesso com as infos da seleção atual
       const quadra = quadras.find((q) => String(q.quadraId) === String(quadraId));
@@ -1355,8 +1362,8 @@ export default function AgendarQuadraCliente() {
                         {successInfo.esporte}
                         <span
                           className={`text-[10px] px-2 py-[2px] rounded-full ${successInfo.tipo === "PERMANENTE"
-                              ? "bg-gray-200 text-gray-800"
-                              : "bg-orange-100 text-orange-600"
+                            ? "bg-gray-200 text-gray-800"
+                            : "bg-orange-100 text-orange-600"
                             }`}
                         >
                           {successInfo.tipo === "PERMANENTE" ? "Permanente" : "Comum"}
@@ -1372,6 +1379,14 @@ export default function AgendarQuadraCliente() {
                       )}
                     </div>
                   </div>
+
+                  {/* ⭐ AVISO DE MULTA harmonizado no card de sucesso */}
+                  {multaValor > 0 && (
+                    <div className="mt-3 text-[12px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                      Uma multa de <strong>{multaValor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</strong> foi aplicada por agendar em horário que já passou.
+                    </div>
+                  )}
+                  {/* fim ⭐ */}
                 </div>
               )}
 
@@ -1383,7 +1398,8 @@ export default function AgendarQuadraCliente() {
                     setStep(1);
                     setSuccessInfo(null);
                     setMsg("");
-                    setTipoSessao(null); /* 🔸 NOVO */
+                    setTipoSessao(null);
+                    setMultaValor(0); // ⭐ limpa multa para próximo fluxo
                   }}
                   className="w-full rounded-lg px-4 py-2 font-semibold transition bg-gray-200 text-gray-900 hover:bg-gray-300"
                 >
@@ -1401,7 +1417,11 @@ export default function AgendarQuadraCliente() {
 /* =========================================================
    Subcomponentes
 ========================================================= */
-function Resumo({ label, valor, onChange }: { label: string; valor: string; onChange: () => void }) {
+function Resumo({
+  label,
+  valor,
+  onChange,
+}: { label: string; valor: string; onChange: () => void }) {
   return (
     <div className="flex items-center justify-between gap-2 bg-gray-100 rounded-lg px-3 py-2 mb-2">
       <div>
@@ -1417,3 +1437,4 @@ function Resumo({ label, valor, onChange }: { label: string; valor: string; onCh
     </div>
   );
 }
+

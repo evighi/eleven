@@ -202,6 +202,30 @@ function computeResumoProfessorFromDatasets(
   };
 }
 
+/* =========================
+   NOVO — soma de multa por período e professor
+   (conta CONFIRMADO/FINALIZADO; professorId || legado usuarioId)
+========================= */
+async function sumMultaPeriodoProfessor(
+  profId: string,
+  inicioUTC: Date,
+  fimUTCExcl: Date
+): Promise<number> {
+  const agg = await prisma.agendamento.aggregate({
+    _sum: { multa: true },
+    where: {
+      status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
+      data: { gte: inicioUTC, lt: fimUTCExcl },
+      OR: [
+        { professorId: profId },
+        { AND: [{ professorId: null }, { usuarioId: profId }] }, // legado
+      ],
+      multa: { not: null },
+    },
+  });
+  return Number(agg._sum.multa ?? 0);
+}
+
 /* =========================================================
    GET /professores/me/resumo?mes=YYYY-MM
    ou ?from=YYYY-MM-DD&to=YYYY-MM-DD
@@ -239,7 +263,7 @@ router.get("/me/resumo", async (req, res) => {
     const inicioUTC = toUtc00(fromYMD);
     const fimUTCExcl = toUtc00(addDaysLocalYMD(toYMD, 1));
 
-    // SOMENTE AULAS, e atribuição por professorId (ou legado por usuarioId)
+    // SOMENTE AULAS (para contagem de aulas/valor)
     const comuns = await prisma.agendamento.findMany({
       where: {
         status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
@@ -318,10 +342,18 @@ router.get("/me/resumo", async (req, res) => {
       bloqueiosMap
     );
 
+    // 🔢 NOVO — soma multa do período (indep. do tipoSessao)
+    const multaMes = await sumMultaPeriodoProfessor(userId, inicioUTC, fimUTCExcl);
+    const totalMesComMulta = resumo.totais.mes.valor + multaMes;
+
     return res.json({
       professor: resumo.professor,
       intervalo: { from: fromYMD, to: toYMD, duracaoMin },
-      totais: resumo.totais,
+      totais: {
+        ...resumo.totais,
+        multaMes,
+        valorMesComMulta: totalMesComMulta,
+      },
     });
   } catch (err) {
     console.error(err);
@@ -442,10 +474,18 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
       bloqueiosMap
     );
 
+    // 🔢 NOVO — multa do período
+    const multaMes = await sumMultaPeriodoProfessor(profId, inicioUTC, fimUTCExcl);
+    const totalMesComMulta = resumo.totais.mes.valor + multaMes;
+
     return res.json({
       professor: resumo.professor,
       intervalo: { from: fromYMD, to: toYMD, duracaoMin },
-      totais: resumo.totais,
+      totais: {
+        ...resumo.totais,
+        multaMes,
+        valorMesComMulta: totalMesComMulta,
+      },
     });
   } catch (err) {
     console.error(err);
@@ -499,7 +539,7 @@ router.get("/admin", requireAdmin, async (req, res) => {
     }
 
     // 2) Carrega datasets em batch — SOMENTE AULAS e atribuição por professorId || usuarioId (legado)
-    const [comunsAll, permanentesAll, bloqueios] = await Promise.all([
+    const [comunsAll, permanentesAll, bloqueios, multasAll] = await Promise.all([
       prisma.agendamento.findMany({
         where: {
           status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
@@ -555,12 +595,25 @@ router.get("/admin", requireAdmin, async (req, res) => {
           quadras: { select: { id: true } },
         },
       }),
+      // 🔢 NOVO — multas do período (sem filtrar tipoSessao)
+      prisma.agendamento.findMany({
+        where: {
+          status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
+          data: { gte: inicioUTC, lt: fimUTCExcl },
+          OR: [
+            { professorId: { in: profIds } },
+            { AND: [{ professorId: null }, { usuarioId: { in: profIds } }] },
+          ],
+          multa: { not: null },
+        },
+        select: { multa: true, professorId: true, usuarioId: true },
+      }),
     ]);
 
     // 3) Index por professor (chave = professorId ?? usuarioId)
     const comunsByProf = new Map<string, ComumRow[]>();
     for (const ag of comunsAll) {
-      const key = ag.professorId ?? ag.usuarioId;
+      const key = ag.professorId ?? ag.usuarioId!;
       if (!profIdSet.has(key)) continue;
       const arr = comunsByProf.get(key) || [];
       arr.push({
@@ -575,7 +628,7 @@ router.get("/admin", requireAdmin, async (req, res) => {
 
     const permsByProf = new Map<string, PermRow[]>();
     for (const p of permanentesAll) {
-      const key = p.professorId ?? p.usuarioId;
+      const key = p.professorId ?? p.usuarioId!;
       if (!profIdSet.has(key)) continue;
       const arr = permsByProf.get(key) || [];
       arr.push({
@@ -603,6 +656,15 @@ router.get("/admin", requireAdmin, async (req, res) => {
       }
     }
 
+    // 🔢 NOVO — somatório de multa por professor
+    const multaByProf = new Map<string, number>();
+    for (const m of multasAll) {
+      const key = m.professorId ?? m.usuarioId!;
+      if (!profIdSet.has(key)) continue;
+      if (!multaByProf.has(key)) multaByProf.set(key, 0);
+      multaByProf.set(key, Number(multaByProf.get(key)) + Number(m.multa ?? 0));
+    }
+
     // 4) Agrega por professor
     const resposta: Array<{
       id: string;
@@ -610,6 +672,8 @@ router.get("/admin", requireAdmin, async (req, res) => {
       valorQuadra: number;
       aulasMes: number;
       valorMes: number;
+      multaMes: number;              // 👈 NOVO
+      valorMesComMulta: number;      // 👈 NOVO
       porFaixa: Array<{ faixa: string; aulas: number; valor: number }>;
     }> = [];
     let totalAulasGeral = 0;
@@ -626,9 +690,11 @@ router.get("/admin", requireAdmin, async (req, res) => {
 
       const aulasMes = resumo.totais.mes.aulas;
       const valorMes = resumo.totais.mes.valor;
+      const multaMes = Number(multaByProf.get(prof.id) ?? 0);
+      const valorMesComMulta = valorMes + multaMes;
 
       totalAulasGeral += aulasMes;
-      totalValorGeral += valorMes;
+      totalValorGeral += valorMesComMulta; // total geral já inclui multa
 
       resposta.push({
         id: resumo.professor.id,
@@ -636,6 +702,8 @@ router.get("/admin", requireAdmin, async (req, res) => {
         valorQuadra: resumo.professor.valorQuadra,
         aulasMes,
         valorMes,
+        multaMes,
+        valorMesComMulta,
         porFaixa: resumo.totais.porFaixa,
       });
     }
@@ -643,7 +711,7 @@ router.get("/admin", requireAdmin, async (req, res) => {
     return res.json({
       intervalo: { from: fromYMD, to: toYMD, duracaoMin },
       professores: resposta,
-      totalGeral: { aulas: totalAulasGeral, valor: totalValorGeral },
+      totalGeral: { aulas: totalAulasGeral, valor: totalValorGeral }, // valor inclui multa
     });
   } catch (err) {
     console.error(err);
