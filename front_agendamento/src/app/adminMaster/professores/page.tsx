@@ -24,6 +24,16 @@ type AdminListResponse = {
   totalGeral: { aulas: number; valor: number } // (valor já inclui multa no back)
 }
 
+// ⬇️ tipos para o painel detalhado (mesmo da página de professores)
+type MultaDetalhe = {
+  id: string
+  data: string // ISO datetime
+  horario: string // "HH:MM"
+  multa: number
+  quadra?: { id: string; numero: number | null; nome: string | null } | null
+  esporte?: { id: string; nome: string | null } | null
+}
+
 type ResumoProfessorResponse = {
   professor: { id: string; nome: string; valorQuadra: number }
   intervalo: { from: string; to: string; duracaoMin: number }
@@ -34,6 +44,7 @@ type ResumoProfessorResponse = {
     multaMes?: number              // 👈 NOVO
     valorMesComMulta?: number      // 👈 NOVO
   }
+  multasDetalhes?: MultaDetalhe[]  // 👈 NOVO
 }
 
 /** ===== helpers comuns ===== */
@@ -57,6 +68,17 @@ const fmtDDMM = (iso: string) => {
 const fmtDDMMYYYYdash = (iso: string) => {
   const [y, m, d] = iso.split('-')
   return `${d}-${m}-${y}`
+}
+
+// normaliza ISO datetime → "YYYY-MM-DD"
+const ymdFromISODateTime = (isoDT: string) => (isoDT.includes('T') ? isoDT.split('T')[0] : isoDT)
+
+// exibe "Quadra X" priorizando número, senão nome
+const quadraLabel = (q?: MultaDetalhe['quadra']) => {
+  if (!q) return '-'
+  if (q?.numero != null) return `Quadra ${q.numero}`
+  if (q?.nome) return q.nome
+  return 'Quadra'
 }
 
 const currentMonthSP = () => {
@@ -95,6 +117,7 @@ export default function ProfessoresAdmin() {
 
   const [faixaSel, setFaixaSel] = useState<string>('') // '1-7', '8-14', ...
   const [diaSel, setDiaSel] = useState<string>('')     // 'YYYY-MM-DD'
+  const [mostrarMultas, setMostrarMultas] = useState(false) // 👈 NOVO
 
   const carregarProfessores = useCallback(async () => {
     setLoading(true)
@@ -135,6 +158,7 @@ export default function ProfessoresAdmin() {
       setErroQuadro(null)
       setFaixaSel('')
       setDiaSel('')
+      setMostrarMultas(false)
       return
     }
     setSelecionado(prof)
@@ -150,6 +174,7 @@ export default function ProfessoresAdmin() {
       const faixas = buildFaixasLabels(res.data.intervalo.to)
       setFaixaSel(faixas[0]?.id || '')
       setDiaSel('')
+      setMostrarMultas((res.data.multasDetalhes?.length || 0) > 0) // abre se houver multas
     } catch (e: any) {
       console.error(e)
       setErroQuadro(e?.response?.data?.erro || 'Falha ao carregar o quadro deste professor')
@@ -212,10 +237,16 @@ export default function ProfessoresAdmin() {
     setQuadro(null)
     setFaixaSel('')
     setDiaSel('')
+    setMostrarMultas(false)
   }
 
+  const multasDetalhes = (quadro?.multasDetalhes || []).map(m => ({
+    ...m,
+    ymd: ymdFromISODateTime(m.data),
+  }))
+
   return (
-    <div className="max-w-6xl mx-auto mt-6 sm:mt-10 p-4 sm:p-6 bg-white rounded-xl shadow-sm border border-gray-2 00">
+    <div className="max-w-6xl mx-auto mt-6 sm:mt-10 p-4 sm:p-6 bg-white rounded-xl shadow-sm border border-gray-200">
       {/* Header SEMPRE empilhado */}
       <div className="flex flex-col gap-4 mb-4">
         <h1 className="text-lg sm:text-xl font-semibold tracking-tight">
@@ -425,6 +456,40 @@ export default function ProfessoresAdmin() {
                             </span>
                           </div>
                         </div>
+
+                        {/* Multas detalhadas (colapsável) — igual ao de professores */}
+                        {multasDetalhes.length > 0 && (
+                          <div className="mt-3">
+                            <button
+                              onClick={() => setMostrarMultas(v => !v)}
+                              className="w-full flex items-center justify-between rounded-md bg-gray-100 hover:bg-gray-200 transition px-3 py-2 text-[13px] text-gray-700 cursor-pointer"
+                              aria-expanded={mostrarMultas}
+                            >
+                              <span className="font-semibold">
+                                Multas do mês ({multasDetalhes.length})
+                              </span>
+                              <span className="text-gray-500">{mostrarMultas ? '▲' : '▼'}</span>
+                            </button>
+
+                            {mostrarMultas && (
+                              <ul className="mt-2 divide-y rounded-md border border-gray-200 overflow-hidden">
+                                {multasDetalhes.map((m) => (
+                                  <li key={m.id} className="px-3 py-2 text-[13px] flex flex-col gap-0.5 bg-white">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-gray-700">
+                                        {fmtBR(m.ymd)} · {m.horario}
+                                      </span>
+                                      <span className="font-semibold">{currencyBRL(m.multa)}</span>
+                                    </div>
+                                    <div className="text-[12px] text-gray-600">
+                                      {quadraLabel(m.quadra)}{m.esporte?.nome ? ` · ${m.esporte?.nome}` : ''}
+                                    </div>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        )}
 
                         {/* rodapé */}
                         <p className="mt-2 text-[11px] text-gray-500">

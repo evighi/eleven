@@ -379,7 +379,7 @@ export default function AgendamentoComum() {
       {/* ✅ Tipo de Sessão (Aula/Jogo) — só aparece se HÁ usuário e ele é ADMIN_PROFESSORES */}
       {showTipoSessaoUI && (
         <div className="mb-4">
-          <label className="block mb-1 font-medium">Tipo de Sessão</label>
+          <label className="block mb-1 font-medium">Tipo de Agendamento</label>
 
           {isNoite ? (
             <div className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm bg-gray-100 border border-gray-200 text-gray-700">
