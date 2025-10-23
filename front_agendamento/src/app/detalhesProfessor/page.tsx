@@ -385,7 +385,7 @@ export default function DetalhesProfessorPage() {
                   </button>
 
                   {mostrarMultas && (
-                    <ul className="mt-2 divide-y rounded-md border border-gray-200 overflow-hidden">
+                    <ul className="mt-2 divide-y rounded-md border-gray-200 overflow-hidden">
                       {multasDetalhes.map((m) => (
                         <li key={m.id} className="px-3 py-2 text-[13px] flex flex-col gap-0.5 bg-white">
                           <div className="flex items-center justify-between">

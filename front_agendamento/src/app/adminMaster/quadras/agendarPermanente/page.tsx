@@ -55,6 +55,13 @@ function proximaDataParaDiaSemana(diaSemana: string, horario?: string): string {
   return format(d, "yyyy-MM-dd");
 }
 
+// < 18:00 ?
+const horarioAntesDe18 = (h: string) => {
+  if (!/^\d{2}:\d{2}$/.test(h)) return false;
+  const [hh] = h.split(":").map(Number);
+  return hh < 18;
+};
+
 export default function CadastrarPermanente() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -63,6 +70,10 @@ export default function CadastrarPermanente() {
   const [esporteId, setEsporteId] = useState<string>("");
   const [quadraId, setQuadraId] = useState<string>("");
   const [horario, setHorario] = useState<string>("");
+
+  // NEW — tipo da sessão (só aparece para professor < 18:00)
+  const [tipoSessao, setTipoSessao] = useState<"" | "AULA" | "JOGO">("");
+  const [isProfessorRole, setIsProfessorRole] = useState<boolean>(false);
 
   // Dono cadastrado
   const [usuarioId, setUsuarioId] = useState<string>("");
@@ -91,6 +102,25 @@ export default function CadastrarPermanente() {
   // UI
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
+
+  /* ===== Detectar perfil do usuário (para liberar Tipo Sessão) =====
+     Ajuste a URL/campo se seu endpoint for diferente.
+  */
+  useEffect(() => {
+    const run = async () => {
+      try {
+        const res = await axios.get<{ tipo?: string }>(`${API_URL}/usuarios/me`, {
+          withCredentials: true,
+        });
+        const tipo = res.data?.tipo || "";
+        setIsProfessorRole(tipo === "ADMIN_PROFESSORES");
+      } catch {
+        // se der erro, mantém false (não mostra o campo)
+        setIsProfessorRole(false);
+      }
+    };
+    run();
+  }, []);
 
   /* ===== Ler parâmetros da URL e pré-preencher base ===== */
   useEffect(() => {
@@ -280,6 +310,8 @@ export default function CadastrarPermanente() {
     return "Falha ao cadastrar permanente.";
   }
 
+  const showTipoSessao = isProfessorRole && horarioAntesDe18(horario);
+
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setFeedback(null);
@@ -302,6 +334,12 @@ export default function CadastrarPermanente() {
       return;
     }
 
+    // se o seletor de tipo estiver visível, exigir escolha
+    if (showTipoSessao && !tipoSessao) {
+      setFeedback({ kind: "error", text: "Informe se é AULA ou JOGO." });
+      return;
+    }
+
     if (existeAgendamentoComum && proximasDatasDisponiveis.length > 0 && !dataInicio) {
       setFeedback({ kind: "error", text: "Selecione uma data de início válida." });
       return;
@@ -312,6 +350,7 @@ export default function CadastrarPermanente() {
       esporteId,
       quadraId,
       horario,
+      ...(showTipoSessao && tipoSessao ? { tipoSessao } : {}), // 👈 envia só quando aplicável
       ...(usuarioId
         ? { usuarioId }
         : {
@@ -339,6 +378,7 @@ export default function CadastrarPermanente() {
       setConvidadoDonoNome("");
       setConvidadoDonoTelefone("");
       setQuadraId("");
+      setTipoSessao("");
 
       setTimeout(() => {
         const params = new URLSearchParams({ data: redirectYmd });
@@ -427,6 +467,7 @@ export default function CadastrarPermanente() {
             onChange={(e) => {
               setHorario(e.target.value);
               setFeedback(null);
+              // se trocar o horário e o campo tipo estava visível, mantemos seleção; validação cobre no submit
             }}
             className="w-full border rounded p-2"
             required
@@ -442,6 +483,24 @@ export default function CadastrarPermanente() {
               );
             })}
           </select>
+          {/* Campo tipo da sessão — só para professor e antes das 18h */}
+          {showTipoSessao && (
+            <div className="mt-2">
+              <label className="block font-semibold mb-1">
+                Tipo da sessão <span className="text-xs text-gray-500">(apenas para professores, antes das 18h)</span>
+              </label>
+              <select
+                value={tipoSessao}
+                onChange={(e) => setTipoSessao(e.target.value as "AULA" | "JOGO" | "")}
+                className="w-full border rounded p-2"
+                required={showTipoSessao}
+              >
+                <option value="">Selecione</option>
+                <option value="AULA">Aula</option>
+                <option value="JOGO">Jogo</option>
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Quadra */}

@@ -1288,7 +1288,7 @@ export default function AgendarQuadraCliente() {
               {/* 🔸 NOVO: mostra tipo da sessão na confirmação para professor */}
               {ehProfessor && (
                 <Resumo
-                  label="Tipo de Sessão:"
+                  label="Tipo de agendamento:"
                   valor={horario >= "18:00" ? "Jogo (automático)" : (tipoSessao === "JOGO" ? "Jogo" : "Aula")}
                   onChange={() => setStep(3)}
                 />
