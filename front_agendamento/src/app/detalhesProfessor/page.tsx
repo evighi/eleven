@@ -9,6 +9,16 @@ type PorDia = { data: string; aulas: number; valor: number };
 type PorFaixa = { faixa: string; aulas: number; valor: number };
 type MesTotais = { aulas: number; valor: number };
 
+// ⬇️ tipos das multas detalhadas vindas do back
+type MultaDetalhe = {
+  id: string;
+  data: string; // ISO datetime
+  horario: string; // "HH:MM"
+  multa: number;
+  quadra?: { id: string; numero: number | null; nome: string | null } | null;
+  esporte?: { id: string; nome: string | null } | null;
+};
+
 type ResumoResponse = {
   professor: { id: string; nome: string; valorQuadra: number };
   intervalo: { from: string; to: string; duracaoMin: number };
@@ -16,34 +26,48 @@ type ResumoResponse = {
     porDia: PorDia[];
     porFaixa: PorFaixa[];
     mes: MesTotais;
+    // ⬇️ novos campos vindos do back
+    multaMes?: number;
+    valorMesComMulta?: number;
   };
+  // ⬇️ novo array de detalhes de multas
+  multasDetalhes?: MultaDetalhe[];
 };
 
 const currencyBRL = (n: number) =>
   n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2 });
 
-const fmtBR = (iso: string) => {
-  const [y, m, d] = iso.split('-');
+const fmtBR = (isoYMD: string) => {
+  const [y, m, d] = isoYMD.split('-');
   return `${d}/${m}/${y}`;
 };
 
-const fmtDDMM = (iso: string) => {
-  const [y, m, d] = iso.split('-');
+const fmtDDMM = (isoYMD: string) => {
+  const [y, m, d] = isoYMD.split('-');
   return `${d}/${m}`;
 };
 
-function getMonthYYYYMM(d = new Date(), tzOffset = -3) {
-  // formata pro mês atual no fuso de SP (-03:00)
-  const z = new Date(d);
-  // só para garantir não cruzar dia por fuso, usamos Intl:
+// normaliza ISO datetime → "YYYY-MM-DD"
+const ymdFromISODateTime = (isoDT: string) => (isoDT.includes('T') ? isoDT.split('T')[0] : isoDT);
+
+// exibe "Quadra X" priorizando número, senão nome
+const quadraLabel = (q?: MultaDetalhe['quadra']) => {
+  if (!q) return '-';
+  if (q?.numero != null) return `Quadra ${q.numero}`;
+  if (q?.nome) return q.nome;
+  return 'Quadra';
+};
+
+function getMonthYYYYMM(d = new Date()) {
+  // mês atual no fuso de SP
   const y = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Sao_Paulo',
     year: 'numeric',
-  }).format(z);
+  }).format(d);
   const m = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Sao_Paulo',
     month: '2-digit',
-  }).format(z);
+  }).format(d);
   return `${y}-${m}`;
 }
 
@@ -73,6 +97,9 @@ export default function DetalhesProfessorPage() {
   const [faixaSel, setFaixaSel] = useState<string>(''); // '1-7', '8-14', ...
   const [diaSel, setDiaSel] = useState<string>(''); // 'YYYY-MM-DD'
 
+  // UI: toggle lista de multas (colapsável)
+  const [mostrarMultas, setMostrarMultas] = useState(false);
+
   const carregar = useCallback(async () => {
     setLoading(true);
     try {
@@ -89,6 +116,8 @@ export default function DetalhesProfessorPage() {
 
       // quando definirmos a faixa, o dia será decidido no useEffect abaixo
       setDiaSel('');
+      // por padrão: abrir multas se existir pelo menos 1 (experiência mais clara)
+      setMostrarMultas((data.multasDetalhes?.length || 0) > 0);
     } catch (e) {
       console.error(e);
       setData(null);
@@ -105,7 +134,6 @@ export default function DetalhesProfessorPage() {
   // mapeia faixas -> range de dias
   const faixasInfo = useMemo(() => {
     if (!data) return [];
-    const lastDay = Number(data.intervalo.to.split('-')[2]);
     const yearMonth = data.intervalo.to.slice(0, 7); // 'YYYY-MM'
 
     const faixas = buildFaixasLabels(data.intervalo.to).map((f, idx) => {
@@ -124,7 +152,6 @@ export default function DetalhesProfessorPage() {
     if (!data || !faixaSel) return [];
     const info = faixasInfo.find((f) => f.id === faixaSel);
     if (!info) return [];
-    const [y, m] = data.intervalo.to.split('-');
     const inRange = (ymd: string) => {
       const day = Number(ymd.split('-')[2]);
       return day >= info.fromDay && day <= info.toDay;
@@ -175,6 +202,19 @@ export default function DetalhesProfessorPage() {
     );
   }
 
+  // valores com fallback quando o back ainda não tinha os campos
+  const multaMes = Number(data?.totais.multaMes || 0);
+  const totalMesSomenteAulas = Number(data?.totais.mes.valor || 0);
+  const totalMesComMulta =
+    Number.isFinite(Number(data?.totais.valorMesComMulta))
+      ? Number(data?.totais.valorMesComMulta)
+      : totalMesSomenteAulas + multaMes;
+
+  const multasDetalhes = (data?.multasDetalhes || []).map((m) => ({
+    ...m,
+    ymd: ymdFromISODateTime(m.data),
+  }));
+
   return (
     <main className="min-h-screen bg-[#f5f5f5]">
       {/* Header */}
@@ -192,7 +232,7 @@ export default function DetalhesProfessorPage() {
               ‹
             </button>
             <div className="text-sm font-semibold">
-              {mes.split('-').reverse().join('/')} {/* MM/YYYY → exibindo como YYYY/MM? vamos exibir MÊS/ANO */}
+              {mes.split('-').reverse().join('/')}
             </div>
             <button
               onClick={() => incMes(1)}
@@ -266,7 +306,7 @@ export default function DetalhesProfessorPage() {
                 </div>
               </div>
 
-              {/* Linha de dia selecionado (só exibição, igual ao mock) */}
+              {/* Linha de dia selecionado */}
               {diaInfoSel && (
                 <div className="grid grid-cols-2 gap-2 mb-2">
                   <div className="rounded-md bg-gray-100 px-3 py-2 text-[13px] text-gray-600">
@@ -305,13 +345,64 @@ export default function DetalhesProfessorPage() {
                   <span>Total de aulas do mês:</span>
                   <span className="font-semibold">{data.totais.mes.aulas}</span>
                 </div>
+
                 <div className="flex items-center justify-between mt-1">
-                  <span>Total a pagar do mês:</span>
+                  <span>Total (aulas):</span>
                   <span className="font-semibold">
-                    {currencyBRL(data.totais.mes.valor)}
+                    {currencyBRL(totalMesSomenteAulas)}
+                  </span>
+                </div>
+
+                {multaMes !== 0 && (
+                  <div className="flex items-center justify-between mt-1">
+                    <span>Multas do mês:</span>
+                    <span className="font-semibold">
+                      {currencyBRL(multaMes)}
+                    </span>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between mt-1">
+                  <span>Total do mês (com multa):</span>
+                  <span className="font-semibold">
+                    {currencyBRL(totalMesComMulta)}
                   </span>
                 </div>
               </div>
+
+              {/* Multas detalhadas (colapsável) */}
+              {multasDetalhes.length > 0 && (
+                <div className="mt-3">
+                  <button
+                    onClick={() => setMostrarMultas(v => !v)}
+                    className="w-full flex items-center justify-between rounded-md bg-gray-100 hover:bg-gray-200 transition px-3 py-2 text-[13px] text-gray-700 cursor-pointer"
+                    aria-expanded={mostrarMultas}
+                  >
+                    <span className="font-semibold">
+                      Multas do mês ({multasDetalhes.length})
+                    </span>
+                    <span className="text-gray-500">{mostrarMultas ? '▲' : '▼'}</span>
+                  </button>
+
+                  {mostrarMultas && (
+                    <ul className="mt-2 divide-y rounded-md border border-gray-200 overflow-hidden">
+                      {multasDetalhes.map((m) => (
+                        <li key={m.id} className="px-3 py-2 text-[13px] flex flex-col gap-0.5 bg-white">
+                          <div className="flex items-center justify-between">
+                            <span className="text-gray-700">
+                              {fmtBR(m.ymd)} · {m.horario}
+                            </span>
+                            <span className="font-semibold">{currencyBRL(m.multa)}</span>
+                          </div>
+                          <div className="text-[12px] text-gray-600">
+                            {quadraLabel(m.quadra)}{m.esporte?.nome ? ` · ${m.esporte?.nome}` : ''}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
 
               {/* mini nota de rodapé */}
               <p className="mt-2 text-[11px] text-gray-500">
