@@ -7,6 +7,7 @@ import cron from "node-cron"; // ⏰ cron para finalizar vencidos
 import verificarToken from "../middleware/authMiddleware";
 import { r2PublicUrl } from "../src/lib/r2";
 import { logAudit, TargetType } from "../utils/audit"; // 👈 AUDITORIA
+import { valorMultaPadrao } from "../utils/multa";     // 👈 multa fixa
 
 // Mapa DiaSemana -> número JS (0=Dom..6=Sáb)
 const DIA_IDX: Record<DiaSemana, number> = {
@@ -320,6 +321,14 @@ router.post("/", verificarToken, async (req, res) => {
     const dataYMD = toISODateUTC(data); // "YYYY-MM-DD"
     const diaSemanaEnum = diasEnum[localWeekdayIndexOfYMD(dataYMD)] as DiaSemana;
 
+    // 💸 Multa automática por “marcar horário que já passou” (base SP)
+    const hojeLocalYMD = localYMD(new Date(), SP_TZ);
+    const agoraLocalHM = localHM(new Date(), SP_TZ);
+    let multaPorHorarioPassado: number | null = null;
+    if (dataYMD === hojeLocalYMD && horario < agoraLocalHM) {
+      multaPorHorarioPassado = Number(valorMultaPadrao().toFixed(2)); // 50.00
+    }
+
     // Janela [00:00Z do dia local, 00:00Z do próximo dia local]
     const dataInicio = toUtc00(dataYMD);
     const dataFim = toUtc00(addDaysLocalYMD(dataYMD, 1));
@@ -404,11 +413,12 @@ router.post("/", verificarToken, async (req, res) => {
       }
     }
 
-    // 3) Multa: aceita apenas número >= 0; se não vier, fica null
-    const multaFinal =
+    // 3) Multa: aceita número >=0 do body, mas prioriza a automática (horário passado hoje)
+    const multaBodySan =
       typeof multaBody === "number" && Number.isFinite(multaBody) && multaBody >= 0
         ? Number(multaBody.toFixed(2))
         : null;
+    const multaPersistir = multaPorHorarioPassado ?? multaBodySan;
 
     // ================================================================================
 
@@ -435,7 +445,7 @@ router.post("/", verificarToken, async (req, res) => {
         // 🆕 persistência dos campos
         professorId: professorIdFinal,
         tipoSessao: tipoSessaoFinal,
-        multa: multaFinal,
+        multa: multaPersistir ?? null,
       },
       include: {
         jogadores: { select: { id: true, nome: true, email: true } },
@@ -461,7 +471,7 @@ router.post("/", verificarToken, async (req, res) => {
           jogadoresIds: connectIds.map((c) => c.id),
           professorId: professorIdFinal,
           tipoSessao: tipoSessaoFinal,
-          multa: multaFinal,
+          multa: multaPersistir ?? null,
         },
       });
     } catch (e) {
