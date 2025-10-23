@@ -50,12 +50,18 @@ type ResumoProfessorResponse = {
 /** ===== helpers comuns ===== */
 const collator = new Intl.Collator('pt-BR', { sensitivity: 'base', ignorePunctuation: true })
 
-const numberToBR = (n: number) =>
-  (Number.isFinite(n) ? n : 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const toNumber = (v: unknown) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
 
-const formatBRL = (n: number) => `R$ ${numberToBR(n)}`
-const currencyBRL = (n: number) =>
-  (Number.isFinite(n) ? n : 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2 })
+const numberToBR = (n: number | string) =>
+  toNumber(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const formatBRL = (n: number | string) => `R$ ${numberToBR(n)}`;
+
+const currencyBRL = (n: number | string) =>
+  toNumber(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2 });
 
 const fmtBR = (iso: string) => {
   const [y, m, d] = iso.split('-')
@@ -479,7 +485,7 @@ export default function ProfessoresAdmin() {
                                       <span className="text-gray-700">
                                         {fmtBR(m.ymd)} · {m.horario}
                                       </span>
-                                      <span className="font-semibold">{currencyBRL(m.multa)}</span>
+                                      <span className="font-semibold">{currencyBRL(Number(m.multa))}</span>
                                     </div>
                                     <div className="text-[12px] text-gray-600">
                                       {quadraLabel(m.quadra)}{m.esporte?.nome ? ` · ${m.esporte?.nome}` : ''}

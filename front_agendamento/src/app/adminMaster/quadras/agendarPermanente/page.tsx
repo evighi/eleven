@@ -17,8 +17,8 @@ type QuadraDisponivel = {
 
 type Esporte = { id: string; nome: string };
 
-// agora esperamos celular (telefone) no resultado da busca
-type UsuarioBusca = { id: string; nome: string; celular?: string | null };
+// ✅ agora também recebemos "tipo" para saber se é professor
+type UsuarioBusca = { id: string; nome: string; celular?: string | null; tipo?: string | null };
 
 type ProximasDatasResp = { proximasDatasDisponiveis: string[]; dataUltimoConflito: string | null };
 
@@ -37,8 +37,6 @@ const DIA_IDX: Record<(typeof diasEnum)[number], number> = {
   SABADO: 6,
 };
 
-// próxima data (YYYY-MM-DD) para o dia da semana escolhido;
-// se for o mesmo dia, considera o horário: se já passou, pula p/ semana seguinte.
 function proximaDataParaDiaSemana(diaSemana: string, horario?: string): string {
   const target = DIA_IDX[diaSemana as (typeof diasEnum)[number]] ?? 0;
   const now = new Date();
@@ -46,8 +44,7 @@ function proximaDataParaDiaSemana(diaSemana: string, horario?: string): string {
 
   if (delta === 0 && horario && /^\d{2}:\d{2}$/.test(horario)) {
     const [hh, mm] = horario.split(":").map(Number);
-    const passou =
-      now.getHours() > hh || (now.getHours() === hh && now.getMinutes() >= (mm ?? 0));
+    const passou = now.getHours() > hh || (now.getHours() === hh && now.getMinutes() >= (mm ?? 0));
     if (passou) delta = 7;
   }
 
@@ -71,9 +68,9 @@ export default function CadastrarPermanente() {
   const [quadraId, setQuadraId] = useState<string>("");
   const [horario, setHorario] = useState<string>("");
 
-  // NEW — tipo da sessão (só aparece para professor < 18:00)
+  // ✅ tipo da sessão (mostra/exige quando DONO selecionado for professor e horário < 18:00)
   const [tipoSessao, setTipoSessao] = useState<"" | "AULA" | "JOGO">("");
-  const [isProfessorRole, setIsProfessorRole] = useState<boolean>(false);
+  const [selectedOwnerIsProfessor, setSelectedOwnerIsProfessor] = useState<boolean>(false);
 
   // Dono cadastrado
   const [usuarioId, setUsuarioId] = useState<string>("");
@@ -102,25 +99,6 @@ export default function CadastrarPermanente() {
   // UI
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
-
-  /* ===== Detectar perfil do usuário (para liberar Tipo Sessão) =====
-     Ajuste a URL/campo se seu endpoint for diferente.
-  */
-  useEffect(() => {
-    const run = async () => {
-      try {
-        const res = await axios.get<{ tipo?: string }>(`${API_URL}/usuarios/me`, {
-          withCredentials: true,
-        });
-        const tipo = res.data?.tipo || "";
-        setIsProfessorRole(tipo === "ADMIN_PROFESSORES");
-      } catch {
-        // se der erro, mantém false (não mostra o campo)
-        setIsProfessorRole(false);
-      }
-    };
-    run();
-  }, []);
 
   /* ===== Ler parâmetros da URL e pré-preencher base ===== */
   useEffect(() => {
@@ -260,7 +238,7 @@ export default function CadastrarPermanente() {
       });
   }, [diaSemana, horario, quadraId, quadras]);
 
-  /* ===== Busca usuários (apenas com a lista aberta) — agora recebendo celular ===== */
+  /* ===== Busca usuários (apenas com a lista aberta) — recebe celular e tipo ===== */
   useEffect(() => {
     let cancel = false;
     const run = async () => {
@@ -310,7 +288,8 @@ export default function CadastrarPermanente() {
     return "Falha ao cadastrar permanente.";
   }
 
-  const showTipoSessao = isProfessorRole && horarioAntesDe18(horario);
+  // ✅ regra de exibição igual ao Comum: dono selecionado é professor e horário < 18
+  const showTipoSessao = selectedOwnerIsProfessor && horarioAntesDe18(horario);
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -350,7 +329,7 @@ export default function CadastrarPermanente() {
       esporteId,
       quadraId,
       horario,
-      ...(showTipoSessao && tipoSessao ? { tipoSessao } : {}), // 👈 envia só quando aplicável
+      ...(showTipoSessao && tipoSessao ? { tipoSessao } : {}), // envia apenas quando aplicável
       ...(usuarioId
         ? { usuarioId }
         : {
@@ -459,7 +438,7 @@ export default function CadastrarPermanente() {
           </select>
         </div>
 
-        {/* Horário */}
+        {/* Horário + Tipo de Sessão (condicional) */}
         <div>
           <label className="block font-semibold mb-1">Horário</label>
           <select
@@ -467,7 +446,6 @@ export default function CadastrarPermanente() {
             onChange={(e) => {
               setHorario(e.target.value);
               setFeedback(null);
-              // se trocar o horário e o campo tipo estava visível, mantemos seleção; validação cobre no submit
             }}
             className="w-full border rounded p-2"
             required
@@ -483,7 +461,8 @@ export default function CadastrarPermanente() {
               );
             })}
           </select>
-          {/* Campo tipo da sessão — só para professor e antes das 18h */}
+
+          {/* ✅ Campo tipo da sessão — aparece quando dono é professor e horário < 18h */}
           {showTipoSessao && (
             <div className="mt-2">
               <label className="block font-semibold mb-1">
@@ -571,10 +550,19 @@ export default function CadastrarPermanente() {
                       setListaAberta(false);
                       setConvidadoDonoNome("");
                       setConvidadoDonoTelefone("");
+
+                      // ✅ DONO selecionado é professor?
+                      const t = (u.tipo || "").toString().toUpperCase();
+                      setSelectedOwnerIsProfessor(t === "ADMIN_PROFESSORES");
+                      // ao trocar dono, zera tipoSessao para forçar escolha novamente se campo estiver visível
+                      setTipoSessao("");
                     }}
                     title={u.celular || ""}
                   >
                     <div className="font-medium text-gray-800">{u.nome}</div>
+                    {u.tipo && (
+                      <div className="text-[11px] text-gray-500">{String(u.tipo).toUpperCase()}</div>
+                    )}
                     {u.celular && <div className="text-xs text-gray-500">{u.celular}</div>}
                   </li>
                 ))}
@@ -604,6 +592,8 @@ export default function CadastrarPermanente() {
                     setBusca("");
                     setUsuariosEncontrados([]);
                     setListaAberta(false);
+                    setSelectedOwnerIsProfessor(false); // convidado não tem papel de professor no sistema
+                    setTipoSessao("");
                   }
                   setFeedback(null);
                 }}
