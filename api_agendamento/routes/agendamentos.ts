@@ -205,6 +205,11 @@ const agendamentoSchema = z.object({
   professorId: z.string().uuid().optional(),
   tipoSessao: z.enum(["AULA", "JOGO"]).optional(),
   multa: z.coerce.number().min(0).optional(),
+
+  // 🆕 APOIADO (compatível, não quebra nada)
+  isApoiado: z.coerce.boolean().optional().default(false),
+  apoiadoUsuarioId: z.string().uuid().optional(),
+  obs: z.string().max(1000).optional(),
 });
 
 async function criarConvidadoComoUsuario(nomeConvidado: string) {
@@ -311,6 +316,11 @@ router.post("/", verificarToken, async (req, res) => {
     professorId: professorIdBody,
     tipoSessao: tipoSessaoBody,
     multa: multaBody,
+
+    // 🆕 APOIADO
+    isApoiado: isApoiadoBody = false,
+    apoiadoUsuarioId,
+    obs: obsBody,
   } = parsed.data;
 
   const usuarioIdDono =
@@ -420,7 +430,34 @@ router.post("/", verificarToken, async (req, res) => {
         : null;
     const multaPersistir = multaPorHorarioPassado ?? multaBodySan;
 
-    // ================================================================================
+    // ======================== NOVO: APOIADO (compat, sem migração) ========================
+    let isApoiadoFinal = false;
+    let apoiadoUsuarioIdFinal: string | null = null;
+
+    if (professorIdFinal && tipoSessaoFinal === "AULA") {
+      if (isApoiadoBody === true) {
+        if (!apoiadoUsuarioId) {
+          return res.status(400).json({
+            erro: "apoiadoUsuarioId é obrigatório quando 'isApoiado' for true em AULA com professor",
+          });
+        }
+        const apoiadoUser = await prisma.usuario.findUnique({
+          where: { id: apoiadoUsuarioId },
+          select: { id: true, tipo: true },
+        });
+        if (!apoiadoUser) {
+          return res.status(404).json({ erro: "Usuário apoiado não encontrado" });
+        }
+        const tipoOk = ["CLIENTE", "CLIENTE_APOIADO", "CLIENTE_APOIADO_MENSAL"].includes(
+          String(apoiadoUser.tipo)
+        );
+        if (!tipoOk) {
+          return res.status(422).json({ erro: "Usuário selecionado como apoiado não é cliente" });
+        }
+        isApoiadoFinal = true;
+        apoiadoUsuarioIdFinal = apoiadoUser.id;
+      }
+    }
 
     const convidadosCriadosIds: string[] = [];
     for (const nome of convidadosNomes) {
@@ -428,9 +465,18 @@ router.post("/", verificarToken, async (req, res) => {
       convidadosCriadosIds.push(convidado.id);
     }
 
-    const connectIds = Array.from(
-      new Set<string>([usuarioIdDono, ...jogadoresIds, ...convidadosCriadosIds])
-    ).map((id) => ({ id }));
+    // garante connect do apoiado como jogador quando aplicável
+    const baseIds = [usuarioIdDono, ...jogadoresIds, ...convidadosCriadosIds];
+    if (isApoiadoFinal && apoiadoUsuarioIdFinal) baseIds.push(apoiadoUsuarioIdFinal);
+
+    const connectIds = Array.from(new Set<string>(baseIds)).map((id) => ({ id }));
+
+    // monta obs final com a tag de apoiado, preservando obs existente
+    let obsFinal: string | undefined = obsBody;
+    if (isApoiadoFinal && apoiadoUsuarioIdFinal) {
+      const tag = `[APOIADO:${apoiadoUsuarioIdFinal}]`;
+      obsFinal = obsBody ? `${obsBody}\n${tag}` : tag;
+    }
 
     const novoAgendamento = await prisma.agendamento.create({
       data: {
@@ -446,6 +492,9 @@ router.post("/", verificarToken, async (req, res) => {
         professorId: professorIdFinal,
         tipoSessao: tipoSessaoFinal,
         multa: multaPersistir ?? null,
+
+        // 🆕 compat para apoiado (sem migração)
+        obs: obsFinal,
       },
       include: {
         jogadores: { select: { id: true, nome: true, email: true } },
@@ -472,6 +521,9 @@ router.post("/", verificarToken, async (req, res) => {
           professorId: professorIdFinal,
           tipoSessao: tipoSessaoFinal,
           multa: multaPersistir ?? null,
+          // 🆕 trilha do apoiado
+          isApoiado: isApoiadoFinal,
+          apoiadoUsuarioId: apoiadoUsuarioIdFinal,
         },
       });
     } catch (e) {
