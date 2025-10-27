@@ -9,18 +9,22 @@ import { toast } from 'sonner'
 type Esporte = { id: number | string; nome: string }
 
 // Agora traz também o celular (telefone)
-// ✅ acrescentado campo opcional "tipo" para sabermos se é ADMIN_PROFESSORES
+// ✅ acrescentado campo opcional "tipo" para sabermos se é ADMIN_PROFESSORES / CLIENTE_APOIADO etc.
 type Usuario = {
   id: number | string
   nome: string
   celular?: string | null
-  tipo?: string | null // ex.: 'ADMIN_PROFESSORES', 'CLIENTE', etc.
+  tipo?: string | null // ex.: 'ADMIN_PROFESSORES', 'CLIENTE', 'CLIENTE_APOIADO', etc.
 }
 
 type Quadra = { quadraId: number | string; nome: string; numero: number }
 type DisponibilidadeQuadra = Quadra & { disponivel: boolean }
 
 type Feedback = { kind: 'success' | 'error' | 'info'; text: string }
+
+/* ===== Helpers mínimos ===== */
+const norm = (s?: string | null) => String(s || '').trim().toUpperCase()
+const isClienteApoiado = (u?: Usuario | null) => norm(u?.tipo) === 'CLIENTE_APOIADO'
 
 export default function AgendamentoComum() {
   const API_URL = process.env.NEXT_PUBLIC_URL_API || 'http://localhost:3001'
@@ -69,7 +73,7 @@ export default function AgendamentoComum() {
   // quando não há "convidado dono")
   const ownerSelecionado = jogadores[0]
   const selectedOwnerIsProfessor = useMemo(() => {
-    const t = (ownerSelecionado?.tipo || '').toString().toUpperCase()
+    const t = norm(ownerSelecionado?.tipo)
     return t === 'ADMIN_PROFESSORES'
   }, [ownerSelecionado])
 
@@ -189,7 +193,7 @@ export default function AgendamentoComum() {
           params: { nome: buscaUsuario },
           withCredentials: true,
         })
-        // Ideal: backend devolver também "tipo" (quando usuário for professor, vir 'ADMIN_PROFESSORES').
+        // Ideal: backend devolver também "tipo" (quando usuário for professor/apoiado)
         setUsuariosEncontrados(data || [])
       } catch (err) {
         console.error(err)
@@ -270,12 +274,18 @@ export default function AgendamentoComum() {
     }
 
     // Validação extra do fluxo Apoiado
-    if (showApoiadoUI && isApoiado && !apoiadoSelecionado?.id) {
-      setFeedback({
-        kind: 'error',
-        text: 'Selecione o usuário que receberá o apoio.'
-      })
-      return
+    if (showApoiadoUI && isApoiado) {
+      if (!apoiadoSelecionado?.id) {
+        setFeedback({ kind: 'error', text: 'Selecione o usuário que receberá o apoio.' })
+        return
+      }
+      // 🚦 NOVO: só permite se o selecionado for CLIENTE_APOIADO
+      if (!isClienteApoiado(apoiadoSelecionado)) {
+        const msg = 'O apoiado selecionado não é do tipo CLIENTE_APOIADO.'
+        setFeedback({ kind: 'error', text: msg })
+        toast.error('O apoiado selecionado não é apoiado.')
+        return
+      }
     }
 
     const usuarioIdTemp = jogadores[0]?.id
@@ -285,9 +295,7 @@ export default function AgendamentoComum() {
       horario,
       esporteId: String(esporteSelecionado),
       quadraId: String(quadraSelecionada),
-      // ✅ Envia o tipo da sessão (AULA/JOGO); já está coerente pois:
-      // - noite (>=18h) força 'JOGO' via useEffect
-      // - se não é professor, o seletor nem aparece e o state fica no padrão 'AULA' (dia)
+      // ✅ Envia o tipo da sessão (AULA/JOGO)
       tipoSessao,
       jogadoresIds: jogadores.map((j) => String(j.id)),
       // concatena "Nome Telefone" para manter compatibilidade com o backend atual
@@ -385,6 +393,14 @@ export default function AgendamentoComum() {
       : feedback?.kind === 'error'
       ? 'border-red-200 bg-red-50 text-red-800'
       : 'border-sky-200 bg-sky-50 text-sky-800'
+
+  // 🔧 garante boolean (evita 'boolean | Usuario | null')
+  const selecionadoInvalido: boolean = !!(
+    showApoiadoUI &&
+    isApoiado &&
+    apoiadoSelecionado &&
+    !isClienteApoiado(apoiadoSelecionado)
+  )
 
   return (
     <div className="max-w-xl mx-auto mt-10 p-6 bg-white shadow rounded-xl">
@@ -499,7 +515,7 @@ export default function AgendamentoComum() {
                 checked={isApoiado}
                 onChange={(e) => setIsApoiado(e.target.checked)}
               />
-              <span>Este agendamento é apoiado?</span>
+              <span>Este agendamento é de aluno apoiado?</span>
             </label>
           </div>
 
@@ -521,44 +537,46 @@ export default function AgendamentoComum() {
                 {/* resultados de busca */}
                 {apoiadoResultados.length > 0 && !apoiadoSelecionado && (
                   <ul className="border rounded mb-2 max-h-60 overflow-y-auto divide-y">
-                    {apoiadoResultados.map((u) => (
-                      <li
-                        key={String(u.id)}
-                        className="p-2 hover:bg-gray-100 cursor-pointer"
-                        onClick={() => {
-                          setApoiadoSelecionado(u)
-                          setApoiadoResultados([])
-                          setApoiadoBusca(u.nome)
-                        }}
-                        title={u.celular || ''}
-                      >
-                        <div className="font-medium">{u.nome}</div>
-                        {u.celular && <div className="text-xs text-gray-600">{u.celular}</div>}
-                      </li>
-                    ))}
+                    {apoiadoResultados.map((u) => {
+                      const tag = norm(u.tipo)
+                      const ehApoiado = tag === 'CLIENTE_APOIADO'
+                      return (
+                        <li
+                          key={String(u.id)}
+                          className="p-2 hover:bg-gray-100 cursor-pointer"
+                          onClick={() => {
+                            setApoiadoSelecionado(u)
+                            setApoiadoResultados([])
+                            setApoiadoBusca(u.nome)
+                          }}
+                          title={u.celular || ''}
+                        >
+                          <div className="font-medium">{u.nome}</div>
+                          <div className="text-[11px] text-gray-600">
+                            {tag || 'SEM TIPO'}{ehApoiado ? ' • elegível' : ' • não elegível'}
+                          </div>
+                          {u.celular && <div className="text-xs text-gray-600">{u.celular}</div>}
+                        </li>
+                      )
+                    })}
                   </ul>
                 )}
 
                 {/* selecionado */}
                 {apoiadoSelecionado && (
-                  <div className="text-sm text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">
+                  <div className={`text-sm rounded px-3 py-2 border
+                    ${isClienteApoiado(apoiadoSelecionado)
+                      ? 'text-green-700 bg-green-50 border-green-200'
+                      : 'text-amber-800 bg-amber-50 border-amber-200'}
+                  `}>
                     Usuário apoiado selecionado: <b>{apoiadoSelecionado.nome}</b>
+                    {!isClienteApoiado(apoiadoSelecionado) && (
+                      <span className="block text-[11px] mt-1">
+                        Atenção: este usuário não é do tipo <b>CLIENTE_APOIADO</b>.
+                      </span>
+                    )}
                   </div>
                 )}
-              </div>
-
-              <div className="mt-3">
-                <label className="block mb-1 font-medium">Observação</label>
-                <textarea
-                  className="w-full p-2 border rounded"
-                  rows={3}
-                  placeholder="Observações do agendamento (opcional)"
-                  value={obs}
-                  onChange={(e) => setObs(e.target.value)}
-                />
-                <p className="text-[11px] text-gray-500 mt-1">
-                  Observações serão salvas no agendamento. O sistema também anota uma tag técnica associando o usuário apoiado.
-                </p>
               </div>
             </>
           )}
@@ -613,7 +631,7 @@ export default function AgendamentoComum() {
                 {/* opcional: exibe o tipo no resultado para facilitar */}
                 {u.tipo && (
                   <div className="text-[11px] text-gray-500">
-                    {String(u.tipo).toUpperCase()}
+                    {norm(u.tipo)}
                   </div>
                 )}
                 {u.celular && <div className="text-xs text-gray-600">{u.celular}</div>}
@@ -633,7 +651,7 @@ export default function AgendamentoComum() {
                   title={j.celular || ''}
                 >
                   {j.nome}{j.celular ? ` (${j.celular})` : ''}
-                  {j.tipo && <span className="text-[10px] ml-1 opacity-70">{String(j.tipo).toUpperCase()}</span>}
+                  {j.tipo && <span className="text-[10px] ml-1 opacity-70">{norm(j.tipo)}</span>}
                   <button
                     onClick={() => removerJogador(j.id)}
                     className="ml-1 text-red-500"
@@ -677,8 +695,9 @@ export default function AgendamentoComum() {
               salvando ? 'bg-orange-500/70 cursor-not-allowed' : 'bg-orange-600 hover:bg-orange-700'
             }`}
             onClick={agendar}
-            disabled={salvando}
+            disabled={salvando || selecionadoInvalido}
             aria-busy={salvando}
+            title={selecionadoInvalido ? 'O usuário selecionado não é CLIENTE_APOIADO' : undefined}
           >
             {salvando ? (
               <span className="inline-flex items-center gap-2">
@@ -688,6 +707,13 @@ export default function AgendamentoComum() {
               'Confirmar Agendamento'
             )}
           </button>
+
+          {/* dica quando estiver inválido */}
+          {selecionadoInvalido && (
+            <p className="mt-2 text-[12px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+              O apoiado selecionado não é do tipo <b>CLIENTE_APOIADO</b>. Selecione um usuário elegível.
+            </p>
+          )}
         </div>
       )}
     </div>
