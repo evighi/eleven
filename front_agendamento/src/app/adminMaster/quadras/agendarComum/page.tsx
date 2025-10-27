@@ -76,6 +76,28 @@ export default function AgendamentoComum() {
   // ✅ Só exibir UI de TipoSessao se já houver horário E se o dono selecionado for professor
   const showTipoSessaoUI = Boolean(horario) && selectedOwnerIsProfessor
 
+  // ===== ✅ APOIADO (apenas se DONO é professor e tipoSessao = AULA) =====
+  const showApoiadoUI = showTipoSessaoUI && tipoSessao === 'AULA' && !isNoite
+  const [isApoiado, setIsApoiado] = useState<boolean>(false)
+
+  // busca/seleção de usuário apoiado
+  const [apoiadoBusca, setApoiadoBusca] = useState<string>('')
+  const [apoiadoResultados, setApoiadoResultados] = useState<Usuario[]>([])
+  const [apoiadoSelecionado, setApoiadoSelecionado] = useState<Usuario | null>(null)
+
+  // observação (vai para campo obs no backend)
+  const [obs, setObs] = useState<string>('')
+
+  // limpar UI de apoiado quando deixar de ser aplicável
+  useEffect(() => {
+    if (!showApoiadoUI) {
+      setIsApoiado(false)
+      setApoiadoBusca('')
+      setApoiadoResultados([])
+      setApoiadoSelecionado(null)
+    }
+  }, [showApoiadoUI])
+
   // ler params vindos da Home e pré-preencher
   useEffect(() => {
     const d = searchParams.get('data')
@@ -178,6 +200,27 @@ export default function AgendamentoComum() {
     return () => clearTimeout(delay)
   }, [API_URL, buscaUsuario])
 
+  // Busca de usuário APOIADO
+  useEffect(() => {
+    const buscar = async () => {
+      if (!isApoiado || apoiadoBusca.trim().length < 2) {
+        setApoiadoResultados([])
+        return
+      }
+      try {
+        const { data } = await axios.get<Usuario[]>(`${API_URL}/clientes`, {
+          params: { nome: apoiadoBusca },
+          withCredentials: true,
+        })
+        setApoiadoResultados(data || [])
+      } catch (err) {
+        console.error(err)
+      }
+    }
+    const delay = setTimeout(buscar, 300)
+    return () => clearTimeout(delay)
+  }, [API_URL, isApoiado, apoiadoBusca])
+
   const adicionarJogador = (usuario: Usuario) => {
     setJogadores((prev) =>
       prev.find((j) => String(j.id) === String(usuario.id)) ? prev : [...prev, usuario]
@@ -226,6 +269,15 @@ export default function AgendamentoComum() {
       return
     }
 
+    // Validação extra do fluxo Apoiado
+    if (showApoiadoUI && isApoiado && !apoiadoSelecionado?.id) {
+      setFeedback({
+        kind: 'error',
+        text: 'Selecione o usuário que receberá o apoio.'
+      })
+      return
+    }
+
     const usuarioIdTemp = jogadores[0]?.id
 
     const payload: any = {
@@ -245,6 +297,17 @@ export default function AgendamentoComum() {
           : undefined,
     }
     if (usuarioIdTemp) payload.usuarioId = String(usuarioIdTemp)
+
+    // Campos Apoiado (apenas se aplicável)
+    if (showApoiadoUI) {
+      payload.isApoiado = Boolean(isApoiado)
+      if (isApoiado && apoiadoSelecionado?.id) {
+        payload.apoiadoUsuarioId = String(apoiadoSelecionado.id)
+      }
+      if (obs.trim()) payload.obs = obs.trim()
+    } else {
+      if (obs.trim()) payload.obs = obs.trim()
+    }
 
     setSalvando(true)
     try {
@@ -290,6 +353,11 @@ export default function AgendamentoComum() {
       setJogadores([])
       setOwnerGuestNome('')
       setOwnerGuestTelefone('')
+      setApoiadoBusca('')
+      setApoiadoResultados([])
+      setApoiadoSelecionado(null)
+      setIsApoiado(false)
+      setObs('')
 
       // redirect (mantém o toast visível)
       const params = new URLSearchParams({ data })
@@ -416,6 +484,84 @@ export default function AgendamentoComum() {
           <p className="text-[11px] text-gray-500 mt-1">
             A partir das 18:00 o sistema define automaticamente como <b>Jogo</b>.
           </p>
+        </div>
+      )}
+
+      {/* ===== ✅ Fluxo APOIADO (só quando dono é professor e tipo=AULA) ===== */}
+      {showApoiadoUI && (
+        <div className="mb-4 rounded-lg border border-gray-200 p-3 bg-gray-50">
+          <div className="flex items-center justify-between">
+            <label className="font-medium">Apoiado</label>
+            <label className="inline-flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={isApoiado}
+                onChange={(e) => setIsApoiado(e.target.checked)}
+              />
+              <span>Este agendamento é apoiado?</span>
+            </label>
+          </div>
+
+          {isApoiado && (
+            <>
+              <div className="mt-3">
+                <label className="block mb-1 font-medium">Selecionar Usuário Apoiado</label>
+                <input
+                  type="text"
+                  className="w-full p-2 border rounded mb-2"
+                  placeholder="Buscar por nome do usuário apoiado"
+                  value={apoiadoBusca}
+                  onChange={(e) => {
+                    setApoiadoBusca(e.target.value)
+                    setApoiadoSelecionado(null)
+                  }}
+                />
+
+                {/* resultados de busca */}
+                {apoiadoResultados.length > 0 && !apoiadoSelecionado && (
+                  <ul className="border rounded mb-2 max-h-60 overflow-y-auto divide-y">
+                    {apoiadoResultados.map((u) => (
+                      <li
+                        key={String(u.id)}
+                        className="p-2 hover:bg-gray-100 cursor-pointer"
+                        onClick={() => {
+                          setApoiadoSelecionado(u)
+                          setApoiadoResultados([])
+                          setApoiadoBusca(u.nome)
+                        }}
+                        title={u.celular || ''}
+                      >
+                        <div className="font-medium">{u.nome}</div>
+                        {u.celular && <div className="text-xs text-gray-600">{u.celular}</div>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {/* selecionado */}
+                {apoiadoSelecionado && (
+                  <div className="text-sm text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">
+                    Usuário apoiado selecionado: <b>{apoiadoSelecionado.nome}</b>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-3">
+                <label className="block mb-1 font-medium">Observação</label>
+                <textarea
+                  className="w-full p-2 border rounded"
+                  rows={3}
+                  placeholder="Observações do agendamento (opcional)"
+                  value={obs}
+                  onChange={(e) => setObs(e.target.value)}
+                />
+                <p className="text-[11px] text-gray-500 mt-1">
+                  Observações serão salvas no agendamento. O sistema também anota uma tag técnica associando o usuário apoiado.
+                </p>
+              </div>
+            </>
+          )}
         </div>
       )}
 
