@@ -12,6 +12,7 @@ enum TipoUsuario {
   ADMIN_MASTER
   ADMIN_ATENDENTE
   ADMIN_PROFESSORES
+  CLIENTE_APOIADO      // 👈 NOVO
 }
 
 enum StatusAgendamento {
@@ -54,7 +55,7 @@ enum InteractionType {
   NONE // caso não haja interação conhecida
 }
 
-/// 👇 NOVO: Diferenciação de sessões de professor
+/// 👇 Diferenciação de sessões de professor (mantido)
 enum TipoSessaoProfessor {
   AULA
   JOGO
@@ -74,8 +75,13 @@ model Usuario {
   codigoRecuperacao String?
   expiraEm          DateTime?
 
-  // 💰 novo campo (opcional)
+  // 💰 valor por aula do professor (opcional)
   valorQuadra Decimal? @db.Decimal(10, 2)
+
+  // 👇 NOVO: controles de apoio (benefício de isenção)
+  apoioAtivo          Boolean @default(false)  // habilita/desabilita benefício para CLIENTE_APOIADO
+  apoioMensalMaxAulas Int?                     // limite de isenções/mês (null = ilimitado)
+  apoioObs            String?                  // observações internas
 
   agendamentos                        Agendamento[]                        @relation("AgendamentoFeitoPor")
   agendamentosPermanentes             AgendamentoPermanente[]
@@ -102,15 +108,18 @@ model Usuario {
   // 🔒 controle de acesso e marcações de exclusão
   disabledAt  DateTime? // bloqueia login enquanto pendente
   deletedAt   DateTime? // marca remoção lógica (se usar soft delete)
-  deletedById String? // quem concluiu a exclusão (mantido sem FK)
+  deletedById String?   // quem concluiu a exclusão (mantido sem FK)
 
   // relações com a fila de exclusão
   deletionQueue      UserDeletionQueue?  @relation("DeletionTargetUser")
   deletionsRequested UserDeletionQueue[] @relation("DeletionRequestedBy")
 
-  // 👇 NOVO: relações como PROFESSOR nos agendamentos
+  // 👇 relações como PROFESSOR nos agendamentos
   agendamentosComoProfessor            Agendamento[]            @relation("ProfessorNosAgendamentos")
   agendamentosPermanentesComoProfessor AgendamentoPermanente[] @relation("ProfessorNosPermanentes")
+
+  // 👇 NOVO: relação inversa — agendamentos nos quais o usuário foi o APOIADO isento
+  agendamentosIsentosComoApoiado Agendamento[] @relation("ApoiadoNosAgendamentos")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -196,14 +205,20 @@ model Agendamento {
   transferidoPor   Usuario? @relation("AgendamentoTransferidoPor", fields: [transferidoPorId], references: [id])
   transferidoPorId String?
 
-  // 👇 NOVOS CAMPOS (professor e sessão)
+  // 👇 professor e sessão
   professorId String?
-  professor   Usuario? @relation("ProfessorNosAgendamentos", fields: [professorId], references: [id])
-
-  /// Se houver professor, indica se é aula ou jogo (default AULA p/ compat).
+  professor   Usuario?             @relation("ProfessorNosAgendamentos", fields: [professorId], references: [id])
   tipoSessao  TipoSessaoProfessor? @default(AULA)
 
-  /// 👇 NOVO: valor de multa (para uso futuro). Mantido opcional.
+  /// 👇 NOVO: isenção para CLIENTE_APOIADO
+  isencaoApoiado     Boolean  @default(false) // true = essa aula/jogo foi isenta para um apoiado
+  apoiadoUsuarioId   String?
+  apoiadoUsuario     Usuario? @relation("ApoiadoNosAgendamentos", fields: [apoiadoUsuarioId], references: [id])
+
+  /// 👇 NOVO: valor efetivamente cobrado (pós-isencão/descontos), se quiser registrar
+  valorQuadraCobrado Decimal? @db.Decimal(10, 2)
+
+  /// Valor de multa (existente; mantido opcional)
   multa Decimal? @db.Decimal(10, 2)
 
   createdAt DateTime @default(now())
@@ -211,8 +226,9 @@ model Agendamento {
 
   @@index([usuarioId])
   @@index([quadraId, data])
-  /// Índice útil para relatórios por professor (contagem de aulas)
+  /// Índices úteis para relatórios
   @@index([professorId, tipoSessao, data])
+  @@index([apoiadoUsuarioId, data]) // 👈 para contagem mensal de isenções do apoiado
 }
 
 model AgendamentoPermanente {
@@ -242,11 +258,9 @@ model AgendamentoPermanente {
   // exceções por data (cancelar só um dia) — QUADRA
   cancelamentos AgendamentoPermanenteCancelamento[]
 
-  // 👇 NOVOS CAMPOS (professor e sessão) — também nos permanentes
+  // professor e sessão (também nos permanentes)
   professorId String?
-  professor   Usuario? @relation("ProfessorNosPermanentes", fields: [professorId], references: [id])
-
-  /// Se houver professor, indica se é aula ou jogo (default AULA p/ compat).
+  professor   Usuario?             @relation("ProfessorNosPermanentes", fields: [professorId], references: [id])
   tipoSessao  TipoSessaoProfessor? @default(AULA)
 
   createdAt DateTime @default(now())
