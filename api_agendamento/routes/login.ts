@@ -105,8 +105,12 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // 🔒 Auto-REENVIO se for CLIENTE e não verificado
-    if (usuario.tipo === TipoUsuario.CLIENTE && !usuario.verificado) {
+    // 🔒 Auto-REENVIO se for CLIENTE **ou CLIENTE_APOIADO** e não verificado
+    if (
+      (usuario.tipo === TipoUsuario.CLIENTE ||
+        usuario.tipo === TipoUsuario.CLIENTE_APOIADO) &&
+      !usuario.verificado
+    ) {
       try {
         const codigo = gerarCodigoVerificacao();
         const expira = new Date(Date.now() + 30 * 60 * 1000); // 30min
@@ -123,7 +127,11 @@ router.post("/", async (req, res) => {
           req,
           actor: { id: usuario.id, name: usuario.nome, type: usuario.tipo },
           target: { type: TargetType.USUARIO, id: usuario.id },
-          metadata: { reason: "email_not_verified", email: usuario.email, resent: true },
+          metadata: {
+            reason: "email_not_verified",
+            email: usuario.email,
+            resent: true,
+          },
         });
 
         return res.status(403).json({
@@ -139,7 +147,11 @@ router.post("/", async (req, res) => {
           req,
           actor: { id: usuario.id, name: usuario.nome, type: usuario.tipo },
           target: { type: TargetType.USUARIO, id: usuario.id },
-          metadata: { reason: "email_not_verified_resend_failed", email: usuario.email, resent: false },
+          metadata: {
+            reason: "email_not_verified_resend_failed",
+            email: usuario.email,
+            resent: false,
+          },
         });
 
         return res.status(403).json({

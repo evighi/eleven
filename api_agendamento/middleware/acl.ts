@@ -1,6 +1,11 @@
 import { Request, Response, NextFunction } from "express";
 
-type Tipo = "CLIENTE" | "ADMIN_MASTER" | "ADMIN_ATENDENTE" | "ADMIN_PROFESSORES";
+type Tipo =
+  | "CLIENTE"
+  | "CLIENTE_APOIADO"
+  | "ADMIN_MASTER"
+  | "ADMIN_ATENDENTE"
+  | "ADMIN_PROFESSORES";
 
 export function isAdmin(tipo?: Tipo) {
   return (
@@ -12,7 +17,7 @@ export function isAdmin(tipo?: Tipo) {
 
 export function requireAdmin(req: Request, res: Response, next: NextFunction) {
   if (!req.usuario) return res.status(401).json({ erro: "Não autenticado" });
-  const tipo = req.usuario.usuarioLogadoTipo;
+  const tipo = req.usuario.usuarioLogadoTipo as Tipo;
   if (!isAdmin(tipo)) return res.status(403).json({ erro: "Sem permissão (admin)" });
   return next();
 }
@@ -21,12 +26,12 @@ export function requireSelfOrAdminParam(paramName: string) {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.usuario) return res.status(401).json({ erro: "Não autenticado" });
 
-    const alvoId = req.params[paramName];
+    const alvoId = (req.params as any)[paramName];
     if (!alvoId) return res.status(400).json({ erro: "Parâmetro ausente" });
 
-    const { usuarioLogadoId, usuarioLogadoTipo } = req.usuario;
+    const { usuarioLogadoId, usuarioLogadoTipo } = req.usuario as any;
 
-    if (isAdmin(usuarioLogadoTipo) || usuarioLogadoId === alvoId) {
+    if (isAdmin(usuarioLogadoTipo as Tipo) || usuarioLogadoId === alvoId) {
       return next();
     }
     return res.status(403).json({ erro: "Sem permissão (somente dono ou admin)" });
@@ -47,9 +52,9 @@ export function requireOwnerByRecord(
         return res.status(404).json({ erro: "Recurso não encontrado" });
       }
 
-      const { usuarioLogadoId, usuarioLogadoTipo } = req.usuario;
+      const { usuarioLogadoId, usuarioLogadoTipo } = req.usuario as any;
 
-      if (isAdmin(usuarioLogadoTipo) || usuarioLogadoId === ownerId) {
+      if (isAdmin(usuarioLogadoTipo as Tipo) || usuarioLogadoId === ownerId) {
         return next();
       }
 

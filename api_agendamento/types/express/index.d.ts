@@ -6,7 +6,7 @@ declare global {
       usuario?: {
         usuarioLogadoId: string;
         usuarioLogadoNome: string;
-        usuarioLogadoTipo: "CLIENTE" | "ADMIN_MASTER" | "ADMIN_ATENDENTE" | "ADMIN_PROFESSORES";
+        usuarioLogadoTipo: "CLIENTE" | "ADMIN_MASTER" | "ADMIN_ATENDENTE" | "ADMIN_PROFESSORES" | "CLIENTE_APOIADO";
       };
     }
   }
