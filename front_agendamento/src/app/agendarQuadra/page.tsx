@@ -62,11 +62,15 @@ type ReservaPayloadBase = {
 type ReservaPayloadExtra = {
   jogadoresIds?: string[];
   convidadosNomes?: string[];
-  /* 🔸 NOVO: professor envia tipo da sessão */
+  /* 🔸 professor envia tipo da sessão */
   tipoSessao?: TipoSessao;
+  /* 🔸 Aula apoiada */
+  isApoiado?: boolean;
+  apoiadoUsuarioId?: string;
+  obs?: string;
 };
 
-/* 🔸 NOVO: estrutura para a tela de sucesso */
+/* estrutura para a tela de sucesso */
 type ReservaSuccess = {
   tipo: "COMUM" | "PERMANENTE";
   esporte: string;
@@ -77,7 +81,7 @@ type ReservaSuccess = {
   horario: string; // HH:MM
 };
 
-/* 🔸 NOVO: tipo da sessão (somente p/ professor) */
+/* tipo da sessão (somente p/ professor) */
 type TipoSessao = "AULA" | "JOGO";
 
 /* =========================================================
@@ -88,7 +92,7 @@ const HORARIOS = [
   "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00", "23:00",
 ] as const;
 
-/* ✅ NOVO: gerador de faixas de horário (ex.: 7..22 -> ["07:00", ... "22:00"]) */
+/* gerador de faixas de horário (ex.: 7..22 -> ["07:00", ... "22:00"]) */
 function rangeHours(start: number, end: number) {
   const out: string[] = [];
   for (let h = start; h <= end; h++) {
@@ -192,8 +196,8 @@ function StepTrail({
           const isDone = it.step < currentStep;
           const label = (it.value && String(it.value)) || it.hint;
 
-          const base =
-            "whitespace-nowrap rounded-full border px-3 py-1 text-[12px] font-semibold transition";
+        const base =
+          "whitespace-nowrap rounded-full border px-3 py-1 text-[12px] font-semibold transition";
 
           const cls = isCurrent
             ? "bg-orange-600 border-orange-600 text-white"
@@ -243,6 +247,8 @@ type UserPickerProps = {
   onSelect(user: UsuarioBusca): void;
   onClear?(): void;
   excludeIds?: string[];
+  /** 🔸 extra params (ex.: { tipos: "CLIENTE_APOIADO,CLIENTE_APOIADO_MENSAL" }) */
+  extraParams?: Record<string, string | number | boolean>;
 };
 
 function UserPicker({
@@ -252,6 +258,7 @@ function UserPicker({
   onSelect,
   onClear,
   excludeIds = [],
+  extraParams,
 }: UserPickerProps) {
   const [open, setOpen] = useState(false);
   const [term, setTerm] = useState(value || "");
@@ -295,6 +302,7 @@ function UserPicker({
             params: {
               q,
               limit: 10,
+              ...(extraParams || {}), // 🔸 inclui filtros extras (apoiados, etc.)
             },
             withCredentials: true,
             signal: controller.signal,
@@ -318,7 +326,7 @@ function UserPicker({
       controller.abort();
       clearTimeout(t);
     };
-  }, [open, term, apiUrl, excludeIds]);
+  }, [open, term, apiUrl, excludeIds, extraParams]);
 
   return (
     <div ref={wrapRef} className="relative">
@@ -480,18 +488,22 @@ export default function AgendarQuadraCliente() {
 
   const { usuario } = useAuthStore();
 
-  /* ✅ NOVO: horários dinâmicos por perfil */
+  /* horários dinâmicos por perfil */
   const ehProfessor = usuario?.tipo === "ADMIN_PROFESSORES";
   const HORARIOS_UI = useMemo(
     () => (ehProfessor ? rangeHours(7, 22) : rangeHours(8, 23)),
     [ehProfessor]
   );
 
-  /* 🔸 NOVO: estado do tipo de sessão */
+  /* estado do tipo de sessão */
   const [tipoSessao, setTipoSessao] = useState<TipoSessao | null>(null);
 
-  // ⭐ NOVO: guardaremos a multa retornada pelo backend para avisar no sucesso
+  // ⭐ multa retornada pelo backend
   const [multaValor, setMultaValor] = useState<number>(0); // ⭐
+
+  // 🔸 Aula apoiada
+  const [isApoiado, setIsApoiado] = useState<boolean>(false);
+  const [apoiadoSel, setApoiadoSel] = useState<UsuarioBusca | null>(null);
 
   // helpers URL
   const toAbs = useCallback(
@@ -599,7 +611,7 @@ export default function AgendarQuadraCliente() {
   const updatePlayer = (id: string, patch: Partial<Player>) =>
     setPlayers((cur) => cur.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   const removePlayer = (id: string) =>
-    setPlayers((cur) => cur.filter((p) => p.id !== id || p.kind === "owner"));
+    setPlayers((cur) => cur.filter((p) => p.id === id || p.kind !== "owner"));
   const addRegisteredField = () =>
     setPlayers((cur) => [...cur, { id: cryptoRandom(), kind: "registered", value: "" }]);
   const addGuestField = () =>
@@ -670,11 +682,10 @@ export default function AgendarQuadraCliente() {
 
       const isToday = diaISO === todayIsoSP;
 
-      /* ⭐ ALTERAÇÃO: para professor, não filtramos horários passados no dia atual */
+      /* para professor, não filtramos horários passados no dia atual */
       const hoursToCheck = isToday && !ehProfessor
         ? HORARIOS_UI.filter((h) => Number(h.slice(0, 2)) > hourNowSP)
         : HORARIOS_UI;
-      /* fim ⭐ */
 
       setCarregandoHorarios(true);
       try {
@@ -695,7 +706,6 @@ export default function AgendarQuadraCliente() {
         if (!alive) return;
 
         const map: Record<string, boolean> = {};
-        /* ✅ inicia o mapa com HORARIOS_UI */
         HORARIOS_UI.forEach((h) => (map[h] = false));
         results.forEach(([h, ok]) => (map[h] = ok));
         setHorariosMap(map);
@@ -707,7 +717,7 @@ export default function AgendarQuadraCliente() {
     return () => {
       alive = false;
     };
-  }, [API_URL, esporteId, diaISO, isChecking, HORARIOS_UI, ehProfessor]); // ⭐ inclui ehProfessor
+  }, [API_URL, esporteId, diaISO, isChecking, HORARIOS_UI, ehProfessor]);
 
   useEffect(() => {
     if (isChecking) return;
@@ -765,10 +775,10 @@ export default function AgendarQuadraCliente() {
     [esporteId, esporteNome, diaISO, horario, quadraSel, isVoleiSelected]
   );
 
-  /* 🔸 NOVO: estado com os dados da reserva confirmada */
+  /* estado com os dados da reserva confirmada */
   const [successInfo, setSuccessInfo] = useState<ReservaSuccess | null>(null);
 
-  /* 🔸 NOVO: ao professor definir horário, decide tipoSessao */
+  /* ao professor definir horário, decide tipoSessao */
   useEffect(() => {
     if (!ehProfessor) { setTipoSessao(null); return; }
     if (!horario) { setTipoSessao(null); return; }
@@ -841,9 +851,21 @@ export default function AgendarQuadraCliente() {
     if (jogadoresIds.length) extra.jogadoresIds = jogadoresIds;
     if (convidadosNomes.length) extra.convidadosNomes = convidadosNomes;
 
-    /* 🔸 NOVO: se professor, envia tipoSessao (>=18:00 força JOGO) */
+    /* se professor, envia tipoSessao (>=18:00 força JOGO) */
     if (ehProfessor) {
       extra.tipoSessao = horario >= "18:00" ? "JOGO" : (tipoSessao ?? "AULA");
+    }
+
+    /* 🔸 Aula apoiada: exige apoiado quando marcado em AULA */
+    if (ehProfessor && extra.tipoSessao === "AULA" && isApoiado && !apoiadoSel?.id) {
+      setMsg("Selecione o cliente apoiado para continuar.");
+      setIsConcurrencyErr(false);
+      return;
+    }
+    if (ehProfessor && extra.tipoSessao === "AULA" && isApoiado && apoiadoSel?.id) {
+      extra.isApoiado = true;
+      extra.apoiadoUsuarioId = apoiadoSel.id;
+      // opcional: extra.obs = `[APOIADO:${apoiadoSel.id}]`;
     }
 
     const payload: ReservaPayloadBase & ReservaPayloadExtra = { ...base, ...extra };
@@ -859,7 +881,7 @@ export default function AgendarQuadraCliente() {
       const multa = Number(novo?.multa || 0); // ⭐
       setMultaValor(Number.isFinite(multa) ? multa : 0); // ⭐
 
-      // 🔸 NOVO: preencher o card de sucesso com as infos da seleção atual
+      // preencher o card de sucesso com as infos da seleção atual
       const quadra = quadras.find((q) => String(q.quadraId) === String(quadraId));
       setSuccessInfo({
         tipo: "COMUM",
@@ -1083,7 +1105,7 @@ export default function AgendarQuadraCliente() {
                 </div>
               )}
               <div className="grid grid-cols-4 gap-2">
-                {/* ✅ usa HORARIOS_UI dinâmico */}
+                {/* usa HORARIOS_UI dinâmico */}
                 {HORARIOS_UI.map((h) => {
                   const ativo = horario === h;
                   const enabled = horariosMap[h] === true;
@@ -1103,7 +1125,7 @@ export default function AgendarQuadraCliente() {
                 })}
               </div>
 
-              {/* 🔸 NOVO: escolha/indicador do tipo de sessão para professor */}
+              {/* escolha/indicador do tipo de sessão para professor + Aula apoiada */}
               {ehProfessor && !!horario && (
                 <div className="mt-3 space-y-2">
                   {horario >= "18:00" ? (
@@ -1111,30 +1133,87 @@ export default function AgendarQuadraCliente() {
                       Tipo de agendamento: <strong>Jogo</strong> (automático para horários pós 18:00)
                     </div>
                   ) : (
-                    <div className="text-[12px]">
-                      <p className="mb-1 text-gray-600">Tipo de agendamento:</p>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setTipoSessao("AULA")}
-                          className={`rounded-md border px-3 py-2 text-left transition ${tipoSessao === "AULA" ? "bg-orange-50 border-orange-500" : "bg-gray-50 border-gray-200 hover:border-gray-300"}`}
-                        >
-                          <div className="text-sm font-semibold text-gray-800">Aula</div>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setTipoSessao("JOGO")}
-                          className={`rounded-md border px-3 py-2 text-left transition ${tipoSessao === "JOGO" ? "bg-orange-50 border-orange-500" : "bg-gray-50 border-gray-200 hover:border-gray-300"}`}
-                        >
-                          <div className="text-sm font-semibold text-gray-800">Jogo</div>
-                        </button>
+                    <>
+                      <div className="text-[12px]">
+                        <p className="mb-1 text-gray-600">Tipo de agendamento:</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setTipoSessao("AULA")}
+                            className={`rounded-md border px-3 py-2 text-left transition ${tipoSessao === "AULA" ? "bg-orange-50 border-orange-500" : "bg-gray-50 border-gray-200 hover:border-gray-300"}`}
+                          >
+                            <div className="text-sm font-semibold text-gray-800">Aula</div>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setTipoSessao("JOGO")}
+                            className={`rounded-md border px-3 py-2 text-left transition ${tipoSessao === "JOGO" ? "bg-orange-50 border-orange-500" : "bg-gray-50 border-gray-200 hover:border-gray-300"}`}
+                          >
+                            <div className="text-sm font-semibold text-gray-800">Jogo</div>
+                          </button>
+                        </div>
                       </div>
-                    </div>
+
+                      {/* 🔸 Aula apoiada: aparece somente quando for AULA */}
+                      {tipoSessao === "AULA" && (
+                        <div className="mt-2 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[13px] font-semibold text-gray-700">
+                              Aula apoiada?
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsApoiado((v) => !v);
+                                if (!isApoiado) setApoiadoSel(null);
+                              }}
+                              className={`px-3 py-1 rounded-md text-sm font-semibold transition ${
+                                isApoiado
+                                  ? "bg-orange-600 text-white"
+                                  : "bg-gray-200 text-gray-800 hover:bg-gray-300"
+                              }`}
+                            >
+                              {isApoiado ? "Sim" : "Não"}
+                            </button>
+                          </div>
+
+                          {isApoiado && (
+                            <div className="space-y-2">
+                              <p className="text-[12px] text-gray-600">
+                                Selecione o cliente apoiado (apenas perfis apoiados são listados).
+                              </p>
+                              <UserPicker
+                                apiUrl={API_URL}
+                                value={apoiadoSel?.nome || ""}
+                                onSelect={(u) => setApoiadoSel(u)}
+                                onClear={() => setApoiadoSel(null)}
+                                excludeIds={[usuario?.id ?? ""]}
+                                /* 🔸 utilize qualquer uma que seu back aceite */
+                                extraParams={{
+                                  tipos: "CLIENTE_APOIADO,CLIENTE_APOIADO_MENSAL",
+                                  apenasApoiados: 1,
+                                }}
+                                placeholder="Buscar cliente apoiado…"
+                              />
+                              {!apoiadoSel && (
+                                <div className="text-[12px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                                  É obrigatório escolher o cliente apoiado quando a opção “Aula apoiada” estiver marcada.
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               )}
 
-              <Btn className="mt-4 cursor-pointer" onClick={confirmarHorario} disabled={!horario || navLock}>
+              <Btn
+                className="mt-4 cursor-pointer"
+                onClick={confirmarHorario}
+                disabled={!horario || navLock}
+              >
                 Confirmar
               </Btn>
             </Card>
@@ -1285,11 +1364,20 @@ export default function AgendarQuadraCliente() {
               <Resumo label="Escolha o Dia:" valor={formatarDiaCurto(diaISO)} onChange={() => setStep(2)} />
               <Resumo label="Escolha o Horário:" valor={horario} onChange={() => setStep(3)} />
 
-              {/* 🔸 NOVO: mostra tipo da sessão na confirmação para professor */}
+              {/* mostra tipo da sessão na confirmação para professor */}
               {ehProfessor && (
                 <Resumo
                   label="Tipo de agendamento:"
                   valor={horario >= "18:00" ? "Jogo (automático)" : (tipoSessao === "JOGO" ? "Jogo" : "Aula")}
+                  onChange={() => setStep(3)}
+                />
+              )}
+
+              {/* 🔸 Aula apoiada na confirmação (somente quando AULA) */}
+              {ehProfessor && tipoSessao !== "JOGO" && (
+                <Resumo
+                  label="Aula apoiada:"
+                  valor={isApoiado ? (apoiadoSel?.nome || "—") : "Não"}
                   onChange={() => setStep(3)}
                 />
               )}
@@ -1315,7 +1403,15 @@ export default function AgendarQuadraCliente() {
                 onChange={() => setStep(5)}
               />
 
-              <Btn className="mt-2 cursor-pointer" onClick={realizarReserva} disabled={loading || navLock}>
+              <Btn
+                className="mt-2 cursor-pointer"
+                onClick={realizarReserva}
+                disabled={
+                  loading ||
+                  navLock ||
+                  (ehProfessor && tipoSessao !== "JOGO" && isApoiado && !apoiadoSel?.id) // 🔸 trava sem apoiado
+                }
+              >
                 {loading ? "Enviando..." : "Realizar Reserva"}
               </Btn>
             </Card>
@@ -1337,7 +1433,7 @@ export default function AgendarQuadraCliente() {
 
               <h2 className="text-xl font-extrabold text-orange-600 mb-2">Reserva Realizada!</h2>
 
-              {/* 🔸 NOVO: card com dados da quadra/esporte/horário */}
+              {/* card com dados da quadra/esporte/horário */}
               {successInfo && (
                 <div className="w-full mt-3 rounded-xl bg-[#f7f7f7] pt-3 pb-2 px-3 shadow-sm">
                   <div className="flex items-center gap-3">
@@ -1400,6 +1496,8 @@ export default function AgendarQuadraCliente() {
                     setMsg("");
                     setTipoSessao(null);
                     setMultaValor(0); // ⭐ limpa multa para próximo fluxo
+                    setIsApoiado(false);
+                    setApoiadoSel(null);
                   }}
                   className="w-full rounded-lg px-4 py-2 font-semibold transition bg-gray-200 text-gray-900 hover:bg-gray-300"
                 >
@@ -1437,4 +1535,3 @@ function Resumo({
     </div>
   );
 }
-
