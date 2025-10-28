@@ -1156,7 +1156,7 @@ export default function AgendarQuadraCliente() {
 
                       {/* 🔸 Aula apoiada: aparece somente quando for AULA */}
                       {tipoSessao === "AULA" && (
-                        <div className="mt-2 space-y-4">
+                        <div className="mt-2 space-y-2">
                           <div className="flex items-center justify-between">
                             <label className="text-[13px] font-semibold text-gray-700">
                               Aula apoiada?
@@ -1196,7 +1196,7 @@ export default function AgendarQuadraCliente() {
                                 placeholder="Buscar cliente apoiado…"
                               />
                               {!apoiadoSel && (
-                                <div className="text-[12px] text-amber-800 bg-amber-50 border-amber-200 rounded-md px-3 py-2">
+                                <div className="text-[12px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
                                   É obrigatório escolher o cliente apoiado quando a opção “Aula apoiada” estiver marcada.
                                 </div>
                               )}

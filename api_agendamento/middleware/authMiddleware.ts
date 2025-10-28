@@ -4,19 +4,20 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-interface JwtPayload {
-  usuarioLogadoId: string;
-  usuarioLogadoNome: string;
-  usuarioLogadoTipo: "CLIENTE" | "ADMIN_MASTER" | "ADMIN_ATENDENTE" | "ADMIN_PROFESSORES";
-}
+// (Opcional) use localmente se quiser reusar o tipo do token em validações
+type TipoJWT =
+  | "CLIENTE"
+  | "CLIENTE_APOIADO"
+  | "ADMIN_MASTER"
+  | "ADMIN_ATENDENTE"
+  | "ADMIN_PROFESSORES";
 
-interface CustomRequest extends Request {
-  usuario?: JwtPayload;
-}
-
-const verificarToken = async (req: CustomRequest, res: Response, next: NextFunction) => {
+const verificarToken = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const token = req.headers["authorization"]?.split(" ")[1] || req.cookies?.auth_token;
+    const token =
+      req.headers["authorization"]?.split(" ")[1] ||
+      (req as any)?.cookies?.auth_token;
+
     if (!token) {
       return res.status(401).json({ erro: "Token não fornecido." });
     }
@@ -28,8 +29,8 @@ const verificarToken = async (req: CustomRequest, res: Response, next: NextFunct
       return res.status(401).json({ erro: "Token inválido ou expirado." });
     }
 
-    // Anexa payload ao request (mantém compatibilidade com ACLs existentes)
-    req.usuario = decoded as JwtPayload;
+    // Anexa payload ao request (compatível com a tipagem global de Request)
+    (req as any).usuario = decoded;
 
     // 🔎 Checa status atual do usuário no banco (bloqueio dinâmico)
     const user = await prisma.usuario.findUnique({
@@ -51,7 +52,6 @@ const verificarToken = async (req: CustomRequest, res: Response, next: NextFunct
 
     // 🔒 Conta pendente de exclusão (sem acesso)
     if (user.disabledAt) {
-      // tenta trazer a data de elegibilidade para o front exibir
       const pendencia = await prisma.userDeletionQueue.findUnique({
         where: { usuarioId: user.id },
         select: { status: true, eligibleAt: true },

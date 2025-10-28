@@ -15,7 +15,7 @@ interface Usuario {
   valorQuadra?: number | string | null // ⬅️ novo (vem do back)
 }
 
-const tipos = ["CLIENTE", "ADMIN_MASTER", "ADMIN_ATENDENTE", "ADMIN_PROFESSORES"]
+const tipos = ["CLIENTE", "CLIENTE_APOIADO", "ADMIN_MASTER", "ADMIN_ATENDENTE", "ADMIN_PROFESSORES"]
 
 // Collator para ordenar sem diferenciar acentos/maiúsculas
 const collator = new Intl.Collator('pt-BR', { sensitivity: 'base', ignorePunctuation: true })
@@ -157,7 +157,7 @@ export default function UsuariosAdmin() {
   const carregarUsuarios = useCallback(async () => {
     setLoading(true)
     try {
-      // Nota: o back de /usuariosAdmin aceita "tipos" (lista) ou "nome" — ajuste conforme seu endpoint
+      // Nota: o back de /usuariosAdmin aceita "tipos" (lista) ou "nome"
       const res = await axios.get(`${API_URL}/usuariosAdmin`, {
         params: { nome: busca || undefined, tipos: filtroTipo || undefined },
         withCredentials: true,
@@ -416,7 +416,13 @@ export default function UsuariosAdmin() {
               }}
             >
               <strong>{u.nome}</strong> — {mostrarCelular(u.celular)} —{' '}
-              <span className="italic">{u.tipo}</span>
+              <span
+                className={`italic px-2 py-[2px] rounded text-xs
+                  ${u.tipo === 'CLIENTE_APOIADO' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-700'}
+                `}
+              >
+                {u.tipo}
+              </span>
             </div>
 
             {/* Aba de edição */}
