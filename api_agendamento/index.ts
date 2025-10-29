@@ -28,9 +28,11 @@ import routesBloqueios from "./routes/bloqueios";
 import routesUsuarios from "./routes/usuarios";
 import routesAudit from "./routes/audit";
 import routesProfessores from "./routes/professores";
-
 // 👇 NOVO: rota de deleções (pendências + desfazer)
 import routesDelecoes from "./routes/delecoes";
+
+// 👇 NOVO: próximas datas para permanente de churrasqueira
+import proximaDataPermanenteDisponivelChurrasqueira from "./routes/proximaDataPermanenteDisponivelChurrasqueira";
 
 import verificarToken from "./middleware/authMiddleware";
 
@@ -78,9 +80,10 @@ app.use("/bloqueios", routesBloqueios);
 app.use("/usuarios", routesUsuarios);
 app.use("/audit", routesAudit);
 app.use("/professores", routesProfessores);
-
 // 👇 NOVO: expõe as rotas de deleções (precisa ser protegida)
 app.use("/delecoes", routesDelecoes);
+// 👇 NOVO: próximas datas para permanente de churrasqueira
+app.use("/proximaDataPermanenteDisponivelChurrasqueira", proximaDataPermanenteDisponivelChurrasqueira);
 
 // Health/root
 app.get("/", (_req, res) => {
