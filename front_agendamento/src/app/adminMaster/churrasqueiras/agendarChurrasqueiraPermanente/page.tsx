@@ -1,309 +1,543 @@
-'use client'
+"use client";
 
-import { useEffect, useState } from 'react'
-import axios from 'axios'
-import Image from 'next/image'
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import axios from "axios";
+import { format, parseISO, addDays } from "date-fns";
+import { toast } from "sonner";
 
-interface Churrasqueira {
-  churrasqueiraId: string
-  nome: string
-  numero: number
-  imagem?: string | null
-  imagemUrl?: string | null
-  logoUrl?: string | null
-  disponivel?: boolean
+type ChurrasqueiraDisponivel = {
+  churrasqueiraId: string;
+  nome: string;
+  numero: number;
+  disponivel: boolean;
+  conflitoComum?: boolean;
+  conflitoPermanente?: boolean;
+  imagem?: string | null;
+  imagemUrl?: string | null;
+  logoUrl?: string | null;
+};
+
+// Busca de usuários (inclui tipo opcional se sua API retornar)
+type UsuarioBusca = { id: string; nome: string; celular?: string | null; tipo?: string | null };
+
+type ProximasDatasResp = { proximasDatasDisponiveis: string[]; dataUltimoConflito: string | null };
+
+type Feedback = { kind: "success" | "error" | "info"; text: string };
+
+const diasEnum = ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"] as const;
+const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
+
+const DIA_IDX: Record<(typeof diasEnum)[number], number> = {
+  DOMINGO: 0,
+  SEGUNDA: 1,
+  TERCA: 2,
+  QUARTA: 3,
+  QUINTA: 4,
+  SEXTA: 5,
+  SABADO: 6,
+};
+
+function proximaDataParaDiaSemana(diaSemana: string): string {
+  const target = DIA_IDX[diaSemana as (typeof diasEnum)[number]] ?? 0;
+  const now = new Date();
+  const delta = (target - now.getDay() + 7) % 7;
+  const d = addDays(now, delta);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
 }
 
-// Agora também esperamos o celular (telefone)
-type UsuarioBusca = { id: string; nome: string; celular?: string | null }
+export default function AgendarChurrasqueiraPermanente() {
+  const [diaSemana, setDiaSemana] = useState<string>("");
+  const [turno, setTurno] = useState<string>("");
 
-export default function AgendamentoChurrasqueiraPermanente() {
-  const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001"
+  const [churrasqueiras, setChurrasqueiras] = useState<ChurrasqueiraDisponivel[]>([]);
+  const [churrasqueiraId, setChurrasqueiraId] = useState<string>("");
 
-  const [diaSemana, setDiaSemana] = useState('')
-  const [turno, setTurno] = useState('')
-  const [churrasqueirasDisponiveis, setChurrasqueirasDisponiveis] = useState<Churrasqueira[]>([])
-  const [churrasqueiraSelecionada, setChurrasqueiraSelecionada] = useState('')
-  const [mensagem, setMensagem] = useState('')
+  const [existeAgendamentoComum, setExisteAgendamentoComum] = useState<boolean>(false);
+  const [dataUltimoConflito, setDataUltimoConflito] = useState<string | null>(null);
+  const [proximasDatasDisponiveis, setProximasDatasDisponiveis] = useState<string[]>([]);
+  const [dataInicio, setDataInicio] = useState<string>("");
 
   // Dono cadastrado
-  const [buscaUsuario, setBuscaUsuario] = useState('')
-  const [usuariosEncontrados, setUsuariosEncontrados] = useState<UsuarioBusca[]>([])
-  const [usuarioSelecionado, setUsuarioSelecionado] = useState<UsuarioBusca | null>(null)
-  const [buscandoUsuarios, setBuscandoUsuarios] = useState(false)
+  const [usuarioId, setUsuarioId] = useState<string>("");
+  const [busca, setBusca] = useState<string>("");
+  const [usuariosEncontrados, setUsuariosEncontrados] = useState<UsuarioBusca[]>([]);
+  const [carregandoUsuarios, setCarregandoUsuarios] = useState<boolean>(false);
+  const [listaAberta, setListaAberta] = useState<boolean>(false);
 
   // Convidado como dono
-  const [convidadoDonoNome, setConvidadoDonoNome] = useState('')
+  const [convidadoDonoNome, setConvidadoDonoNome] = useState<string>("");
+  const [convidadoDonoTelefone, setConvidadoDonoTelefone] = useState<string>("");
 
-  const diasEnum = ["DOMINGO","SEGUNDA","TERCA","QUARTA","QUINTA","SEXTA","SABADO"] as const
-  const DIA_IDX: Record<string, number> = { DOMINGO:0, SEGUNDA:1, TERCA:2, QUARTA:3, QUINTA:4, SEXTA:5, SABADO:6 }
+  // UI
+  const [submitting, setSubmitting] = useState(false);
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
 
-  function nextISOForDiaSemana(dia: string): string | null {
-    const target = DIA_IDX[dia]
-    if (typeof target !== 'number') return null
-    const hoje = new Date()
-    const delta = (target - hoje.getDay() + 7) % 7
-    const dt = new Date(hoje)
-    dt.setDate(hoje.getDate() + delta)
-    const y = dt.getFullYear()
-    const m = String(dt.getMonth() + 1).padStart(2, '0')
-    const d = String(dt.getDate()).padStart(2, '0')
-    return `${y}-${m}-${d}`
-  }
+  // estabilizar seleção entre recargas de lista
+  const prefillRef = useRef(true);
 
-  const toImgUrl = (c: Churrasqueira) => {
-    const v = c.imagemUrl ?? c.logoUrl ?? c.imagem ?? ''
-    if (!v) return '/churrasqueira.png'
-    if (/^https?:\/\//i.test(v)) return v
-    if (v.startsWith('/uploads/')) return `${API_URL}${v}`
-    return `${API_URL}/uploads/churrasqueiras/${v}`
-  }
-
-  const canOptimize = (url: string) => {
-    try {
-      const u = new URL(url)
-      return u.protocol === 'https:' &&
-        (u.hostname.endsWith('r2.dev') || u.hostname.endsWith('cloudflarestorage.com'))
-    } catch { return false }
-  }
-
-  // Disponibilidade: diaSemana -> próxima data ISO
+  /* ===== Disponibilidade (permanente) ===== */
   useEffect(() => {
-    const buscar = async () => {
-      if (!diaSemana || !turno) {
-        setChurrasqueirasDisponiveis([])
-        setMensagem('')
-        return
-      }
-      const data = nextISOForDiaSemana(diaSemana)
-      if (!data) {
-        setChurrasqueirasDisponiveis([])
-        setMensagem('Dia da semana inválido.')
-        return
-      }
-      try {
-        const res = await axios.get(`${API_URL}/disponibilidadeChurrasqueiras`, {
-          params: { data, turno },
-          withCredentials: true,
-        })
-        const lista: Churrasqueira[] = Array.isArray(res.data) ? res.data : []
-        const disponiveis = lista.filter(c => c.disponivel !== false)
-        setChurrasqueirasDisponiveis(disponiveis)
-        setMensagem(disponiveis.length === 0 ? 'Nenhuma churrasqueira disponível.' : '')
-      } catch (err) {
-        console.error(err)
-        setMensagem('Erro ao verificar disponibilidade.')
-      }
+    if (!diaSemana || !turno) {
+      setChurrasqueiras([]);
+      setExisteAgendamentoComum(false);
+      setDataInicio("");
+      setDataUltimoConflito(null);
+      setProximasDatasDisponiveis([]);
+      return;
     }
-    buscar()
-  }, [diaSemana, turno, API_URL])
 
-  // Buscar usuários (nome + celular)
-  useEffect(() => {
-    const q = buscaUsuario.trim()
-    if (q.length < 2) {
-      setUsuariosEncontrados([])
-      setBuscandoUsuarios(false)
-      return
-    }
-    const ctrl = new AbortController()
-    setBuscandoUsuarios(true)
-    const t = setTimeout(async () => {
-      try {
-        const { data } = await axios.get<UsuarioBusca[]>(
-          `${API_URL}/clientes`,
-          { params: { nome: q }, withCredentials: true, signal: ctrl.signal as any }
-        )
-        setUsuariosEncontrados(Array.isArray(data) ? data : [])
-      } catch (err:any) {
-        if (err?.name !== 'CanceledError' && err?.code !== 'ERR_CANCELED') {
-          console.error('Falha ao buscar usuários:', err)
+    setFeedback(null);
+
+    // Disponibilidade de churrasqueiras usa DATA + TURNO.
+    // Vamos perguntar a disponibilidade na **próxima data** que cai no diaSemana escolhido.
+    const data = proximaDataParaDiaSemana(diaSemana);
+
+    axios
+      .get<ChurrasqueiraDisponivel[]>(`${API_URL}/disponibilidadeChurrasqueiras`, {
+        params: { data, turno },
+        withCredentials: true,
+      })
+      .then((res) => {
+        const lista = res.data || [];
+        setChurrasqueiras(lista);
+
+        const existeConflitoComum = lista.some(
+          (c) => !c.disponivel && c.conflitoComum && !c.conflitoPermanente
+        );
+        setExisteAgendamentoComum(existeConflitoComum);
+        setDataInicio("");
+        setDataUltimoConflito(null);
+        setProximasDatasDisponiveis([]);
+
+        // --------- estabiliza a seleção da churrasqueira ----------
+        if (prefillRef.current && !churrasqueiraId) {
+          // 1ª carga: se existir alguma disponível, sugere a primeira
+          const firstViable = lista.find(
+            (c) => c.disponivel || c.conflitoComum || c.conflitoPermanente
+          );
+          if (firstViable) setChurrasqueiraId(firstViable.churrasqueiraId);
+        } else {
+          // cargas subsequentes: mantém se ainda for válida
+          const selecionadaAindaExiste = lista.some(
+            (c) =>
+              c.churrasqueiraId === churrasqueiraId &&
+              (c.disponivel || c.conflitoComum || c.conflitoPermanente)
+          );
+          if (!selecionadaAindaExiste) setChurrasqueiraId("");
         }
-        setUsuariosEncontrados([])
-      } finally {
-        setBuscandoUsuarios(false)
-      }
-    }, 300)
-    return () => { clearTimeout(t); ctrl.abort() }
-  }, [buscaUsuario, API_URL])
+        prefillRef.current = false;
+        // ---------------------------------------------------------
+      })
+      .catch((err) => {
+        console.error(err);
+        setChurrasqueiras([]);
+        setExisteAgendamentoComum(false);
+        setDataInicio("");
+        setDataUltimoConflito(null);
+        setProximasDatasDisponiveis([]);
+        setFeedback({ kind: "error", text: "Erro ao buscar disponibilidade." });
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [diaSemana, turno]);
 
-  const agendar = async () => {
-    if (!diaSemana || !turno || !churrasqueiraSelecionada || (!usuarioSelecionado && !convidadoDonoNome.trim())) {
-      setMensagem('Selecione dia, turno, churrasqueira e um usuário OU informe um convidado.')
-      return
+  /* ===== Próximas datas quando há conflito comum ===== */
+  useEffect(() => {
+    if (!diaSemana || !turno || !churrasqueiraId) {
+      setProximasDatasDisponiveis([]);
+      setDataUltimoConflito(null);
+      setDataInicio("");
+      return;
+    }
+
+    const selecionada = churrasqueiras.find((c) => c.churrasqueiraId === churrasqueiraId);
+    const deveBuscarDatas = selecionada?.conflitoComum && !selecionada?.conflitoPermanente;
+
+    if (!deveBuscarDatas) {
+      setProximasDatasDisponiveis([]);
+      setDataUltimoConflito(null);
+      setDataInicio("");
+      return;
+    }
+
+    axios
+      .get<ProximasDatasResp>(`${API_URL}/proximaDataPermanenteDisponivelChurrasqueira`, {
+        params: { diaSemana, turno, churrasqueiraId },
+        withCredentials: true,
+      })
+      .then((res) => {
+        setProximasDatasDisponiveis(res.data.proximasDatasDisponiveis || []);
+        setDataUltimoConflito(res.data.dataUltimoConflito || null);
+        setDataInicio("");
+        if (!res.data.proximasDatasDisponiveis || res.data.proximasDatasDisponiveis.length === 0) {
+          setFeedback({
+            kind: "info",
+            text: "Sem datas futuras disponíveis para iniciar este permanente.",
+          });
+        }
+      })
+      .catch((err) => {
+        console.error(err);
+        setProximasDatasDisponiveis([]);
+        setDataUltimoConflito(null);
+        setDataInicio("");
+        setFeedback({ kind: "error", text: "Erro ao consultar próximas datas." });
+      });
+  }, [diaSemana, turno, churrasqueiraId, churrasqueiras]);
+
+  /* ===== Busca usuários (apenas com a lista aberta) ===== */
+  useEffect(() => {
+    let cancel = false;
+    const run = async () => {
+      if (!listaAberta) {
+        if (!cancel) setUsuariosEncontrados([]);
+        return;
+      }
+      const termo = busca.trim();
+      if (termo.length < 2) {
+        if (!cancel) setUsuariosEncontrados([]);
+        return;
+      }
+      setCarregandoUsuarios(true);
+      try {
+        const res = await axios.get<UsuarioBusca[]>(`${API_URL}/clientes`, {
+          params: { nome: termo },
+          withCredentials: true,
+        });
+        if (!cancel) setUsuariosEncontrados(res.data || []);
+      } catch {
+        if (!cancel) setUsuariosEncontrados([]);
+      } finally {
+        if (!cancel) setCarregandoUsuarios(false);
+      }
+    };
+    const t = setTimeout(run, 300);
+    return () => {
+      cancel = true;
+      clearTimeout(t);
+    };
+  }, [busca, listaAberta]);
+
+  function mensagemErroAxios(error: any): string {
+    if (axios.isAxiosError(error)) {
+      const status = error.response?.status;
+      const data = error.response?.data as any;
+      const serverMsg =
+        data && (data.erro || data.message || data.msg)
+          ? String(data.erro || data.message || data.msg)
+          : "";
+      if (status === 409) return serverMsg || "Conflito: horário já reservado.";
+      if (status === 400 || status === 422) return serverMsg || "Requisição inválida.";
+      if (status === 401) return "Não autorizado.";
+      return serverMsg || "Falha ao cadastrar permanente.";
+    }
+    return "Falha ao cadastrar permanente.";
+  }
+
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setFeedback(null);
+
+    // precisa de um dono: usuarioId OU convidadoDonoNome
+    if (!usuarioId && convidadoDonoNome.trim() === "") {
+      setFeedback({
+        kind: "error",
+        text: "Informe um usuário (selecionando da lista) OU um convidado como dono.",
+      });
+      return;
+    }
+    // se for convidado, exigir telefone
+    if (convidadoDonoNome.trim() && !convidadoDonoTelefone.trim()) {
+      setFeedback({ kind: "error", text: "Informe o telefone do convidado dono." });
+      return;
+    }
+    if (!diaSemana || !turno || !churrasqueiraId) {
+      setFeedback({ kind: "error", text: "Selecione dia, turno e a churrasqueira." });
+      return;
+    }
+    if (existeAgendamentoComum && proximasDatasDisponiveis.length > 0 && !dataInicio) {
+      setFeedback({ kind: "error", text: "Selecione uma data de início válida." });
+      return;
     }
 
     const body: Record<string, any> = {
       diaSemana,
       turno,
-      churrasqueiraId: churrasqueiraSelecionada,
-      ...(usuarioSelecionado
-        ? { usuarioId: usuarioSelecionado.id }
-        : { convidadosNomes: [convidadoDonoNome.trim()] } // chave esperada pelo backend
-      ),
-    }
+      churrasqueiraId,
+      ...(usuarioId
+        ? { usuarioId }
+        : {
+            // concatena "Nome Telefone" como no de quadras, compatível com o backend
+            convidadosNomes: [
+              `${convidadoDonoNome.trim()} ${convidadoDonoTelefone.trim()}`.trim(),
+            ],
+          }),
+      ...(existeAgendamentoComum ? { dataInicio } : {}),
+    };
 
     try {
-      await axios.post(`${API_URL}/agendamentosPermanentesChurrasqueiras`, body, { withCredentials: true })
-      setMensagem('✅ Agendamento permanente realizado com sucesso!')
-      setChurrasqueiraSelecionada('')
-      setUsuarioSelecionado(null)
-      setBuscaUsuario('')
-      setUsuariosEncontrados([])
-      setConvidadoDonoNome('')
-    } catch (err: any) {
-      console.error(err)
-      const msg =
-        err?.response?.data?.erro ||
-        err?.response?.data?.message ||
-        'Erro ao realizar agendamento permanente.'
-      setMensagem(msg)
-    }
-  }
+      setSubmitting(true);
+      await axios.post(`${API_URL}/agendamentosPermanentesChurrasqueiras`, body, {
+        withCredentials: true,
+      });
 
-  const botaoDesabilitado =
-    !diaSemana || !turno || !churrasqueiraSelecionada || (!usuarioSelecionado && !convidadoDonoNome.trim())
+      setFeedback({ kind: "success", text: "Agendamento permanente cadastrado com sucesso!" });
+      toast.success("Agendamento permanente cadastrado com sucesso!");
+
+      // limpar campos principais
+      setUsuarioId("");
+      setConvidadoDonoNome("");
+      setConvidadoDonoTelefone("");
+      setChurrasqueiraId("");
+      setDataInicio("");
+    } catch (error) {
+      console.error(error);
+      const msg = mensagemErroAxios(error);
+      setFeedback({ kind: "error", text: msg });
+      toast.error(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const alertClasses =
+    feedback?.kind === "success"
+      ? "border-green-200 bg-green-50 text-green-800"
+      : feedback?.kind === "error"
+      ? "border-red-200 bg-red-50 text-red-800"
+      : "border-sky-200 bg-sky-50 text-sky-800";
 
   return (
-    <div className="max-w-xl mx-auto mt-10 p-6 bg-white shadow rounded-xl">
-      <h1 className="text-2xl font-bold mb-4">Agendar Churrasqueira (Permanente)</h1>
+    <div className="max-w-md mx-auto mt-10 p-6 bg-white rounded shadow">
+      <h1 className="text-2xl font-bold mb-6">Cadastrar Permanente (Churrasqueira)</h1>
 
-      <label className="block mb-2">Dia da Semana</label>
-      <select
-        className="w-full p-2 border rounded mb-4"
-        value={diaSemana}
-        onChange={(e) => setDiaSemana(e.target.value)}
-      >
-        <option value="">Selecione o dia</option>
-        {diasEnum.map((d) => <option key={d} value={d}>{d}</option>)}
-      </select>
-
-      <label className="block mb-2">Turno</label>
-      <select
-        className="w-full p-2 border rounded mb-4"
-        value={turno}
-        onChange={(e) => setTurno(e.target.value)}
-      >
-        <option value="">Selecione o turno</option>
-        <option value="DIA">Dia</option>
-        <option value="NOITE">Noite</option>
-      </select>
-
-      {/* Dono do agendamento */}
-      <div className="space-y-2 mb-4">
-        <label className="block font-semibold">Dono do agendamento</label>
-
-        {/* Busca usuário cadastrado */}
-        <div>
-          <input
-            type="text"
-            className="w-full p-2 border rounded mb-2"
-            placeholder="Buscar usuário por nome"
-            value={buscaUsuario}
-            onChange={(e) => {
-              setBuscaUsuario(e.target.value)
-              setUsuarioSelecionado(null)
-            }}
-          />
-          {buscandoUsuarios && <div className="text-xs text-gray-500 mb-1">Buscando…</div>}
-          {usuariosEncontrados.length > 0 && (
-            <ul className="border rounded mb-2 max-h-40 overflow-y-auto">
-              {usuariosEncontrados.map((u) => (
-                <li
-                  key={u.id}
-                  className="p-2 hover:bg-gray-100 cursor-pointer"
-                  onClick={() => {
-                    setUsuarioSelecionado(u)
-                    setBuscaUsuario('')
-                    setUsuariosEncontrados([])
-                    setConvidadoDonoNome('')
-                  }}
-                  title={u.celular || ""}
-                >
-                  <div className="font-medium">{u.nome}</div>
-                  {u.celular && <div className="text-xs text-gray-600">{u.celular}</div>}
-                </li>
-              ))}
-            </ul>
-          )}
-          {usuarioSelecionado && (
-            <p className="text-xs text-green-700">
-              Usuário selecionado: <strong>{usuarioSelecionado.nome}</strong>
-              {usuarioSelecionado.celular ? (
-                <> — <span className="text-gray-700">{usuarioSelecionado.celular}</span></>
-              ) : null}
-            </p>
-          )}
-        </div>
-
-        {/* Convidado dono */}
-        <div>
-          <input
-            type="text"
-            className="w-full p-2 border rounded"
-            placeholder="Ou informe um convidado como dono (ex.: Nome do Convidado)"
-            value={convidadoDonoNome}
-            onChange={(e) => {
-              setConvidadoDonoNome(e.target.value)
-              if (e.target.value.trim()) {
-                setUsuarioSelecionado(null)
-                setBuscaUsuario('')
-                setUsuariosEncontrados([])
-              }
-            }}
-          />
-          <p className="text-[11px] text-gray-500 mt-1">
-            Preencha <strong>um</strong> dos dois: usuário cadastrado <em>ou</em> convidado dono.
-          </p>
-        </div>
-      </div>
-
-      {/* Lista de churrasqueiras */}
-      {churrasqueirasDisponiveis.length > 0 && (
-        <div className="mb-4">
-          <h2 className="mb-2 font-semibold">Churrasqueiras Disponíveis</h2>
-          <div className="grid grid-cols-2 gap-3">
-            {churrasqueirasDisponiveis.map((c) => {
-              const img = toImgUrl(c)
-              const isActive = churrasqueiraSelecionada === String(c.churrasqueiraId)
-              return (
-                <button
-                  key={c.churrasqueiraId}
-                  type="button"
-                  className={`p-2 rounded border text-left bg-gray-50 hover:bg-gray-100 transition ${isActive ? 'ring-2 ring-green-600 bg-green-50' : ''}`}
-                  onClick={() => setChurrasqueiraSelecionada(String(c.churrasqueiraId))}
-                >
-                  <div className="relative w-full aspect-[4/3] rounded overflow-hidden bg-white border mb-2">
-                    <Image
-                      src={img}
-                      alt={c.nome}
-                      fill
-                      sizes="(max-width: 640px) 50vw, 33vw"
-                      className="object-cover"
-                      unoptimized={!canOptimize(img)}
-                      onError={(e) => { (e.currentTarget as any).src = '/churrasqueira.png' }}
-                    />
-                  </div>
-                  <div className="text-sm">
-                    <p className="font-semibold">{c.nome}</p>
-                    <p className="text-gray-600">Nº {c.numero}</p>
-                  </div>
-                </button>
-              )
-            })}
-          </div>
-
-          <button
-            className="mt-4 bg-orange-600 text-white px-4 py-2 rounded disabled:opacity-60"
-            onClick={agendar}
-            disabled={botaoDesabilitado}
-          >
-            Confirmar Agendamento
-          </button>
+      {/* ALERTA */}
+      {feedback && (
+        <div
+          className={`mb-4 rounded-md border px-3 py-2 text-sm ${alertClasses}`}
+          role={feedback.kind === "error" ? "alert" : "status"}
+          aria-live={feedback.kind === "error" ? "assertive" : "polite"}
+        >
+          {feedback.text}
         </div>
       )}
 
-      {mensagem && <p className="mt-4 text-center text-sm text-gray-700">{mensagem}</p>}
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Dia da Semana */}
+        <div>
+          <label className="block font-semibold mb-1">Dia da Semana</label>
+          <select
+            value={diaSemana}
+            onChange={(e) => {
+              setDiaSemana(e.target.value);
+              setFeedback(null);
+            }}
+            className="w-full border rounded p-2"
+            required
+          >
+            <option value="">Selecione</option>
+            {diasEnum.map((dia) => (
+              <option key={dia} value={dia}>
+                {dia}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Turno */}
+        <div>
+          <label className="block font-semibold mb-1">Turno</label>
+          <select
+            value={turno}
+            onChange={(e) => {
+              setTurno(e.target.value);
+              setFeedback(null);
+            }}
+            className="w-full border rounded p-2"
+            required
+          >
+            <option value="">Selecione o turno</option>
+            <option value="DIA">Dia</option>
+            <option value="NOITE">Noite</option>
+          </select>
+        </div>
+
+        {/* Churrasqueira (select como quadra) */}
+        <div>
+          <label className="block font-semibold mb-1">Churrasqueira</label>
+          <select
+            value={churrasqueiraId}
+            onChange={(e) => {
+              setChurrasqueiraId(e.target.value);
+              setFeedback(null);
+            }}
+            className="w-full border rounded p-2"
+            required
+            disabled={!churrasqueiras.length}
+          >
+            <option value="">Selecione</option>
+            {churrasqueiras.map((c) => {
+              const podeMostrar = c.disponivel || c.conflitoComum || c.conflitoPermanente;
+              if (!podeMostrar) return null;
+
+              const desabilitar = c.conflitoPermanente || (!c.disponivel && !c.conflitoComum);
+
+              return (
+                <option key={c.churrasqueiraId} value={c.churrasqueiraId} disabled={desabilitar}>
+                  {c.nome} - {c.numero}
+                  {!c.disponivel ? " (Indisponível)" : ""}
+                  {c.conflitoComum ? " (Conflito com agendamento comum)" : ""}
+                  {c.conflitoPermanente ? " (Conflito com agendamento permanente)" : ""}
+                </option>
+              );
+            })}
+          </select>
+        </div>
+
+        {/* Dono cadastrado OU Convidado dono (com telefone) */}
+        <div className="space-y-2">
+          <label className="block font-semibold">Dono do agendamento</label>
+
+          {/* Busca usuário cadastrado */}
+          <div>
+            <input
+              type="text"
+              value={busca}
+              onChange={(e) => {
+                setBusca(e.target.value);
+                setUsuarioId("");
+                setListaAberta(true);
+                setFeedback(null);
+              }}
+              onFocus={() => setListaAberta(true)}
+              placeholder="Buscar usuário por nome"
+              className="w-full border rounded p-2"
+            />
+
+            {carregandoUsuarios && <div className="text-sm text-gray-500 mt-1">Buscando...</div>}
+
+            {listaAberta && usuariosEncontrados.length > 0 && (
+              <ul className="mt-1 border rounded w-full max-h-48 overflow-y-auto divide-y">
+                {usuariosEncontrados.map((u) => (
+                  <li
+                    key={u.id}
+                    className="px-3 py-2 hover:bg-orange-50 cursor-pointer"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setUsuarioId(u.id);
+                      setBusca(u.nome);
+                      setUsuariosEncontrados([]);
+                      setListaAberta(false);
+                      // ao escolher usuário, zera convidado
+                      setConvidadoDonoNome("");
+                      setConvidadoDonoTelefone("");
+                    }}
+                    title={u.celular || ""}
+                  >
+                    <div className="font-medium text-gray-800">{u.nome}</div>
+                    {u.celular && <div className="text-xs text-gray-500">{u.celular}</div>}
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {listaAberta &&
+              busca.trim().length >= 2 &&
+              !carregandoUsuarios &&
+              usuariosEncontrados.length === 0 && (
+                <div className="text-xs text-gray-500 mt-1">Nenhum usuário encontrado.</div>
+              )}
+
+            {usuarioId && <div className="text-xs text-green-700 mt-1">Usuário selecionado.</div>}
+          </div>
+
+          {/* Convidado dono (nome + telefone) */}
+          <div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <input
+                type="text"
+                value={convidadoDonoNome}
+                onChange={(e) => {
+                  setConvidadoDonoNome(e.target.value);
+                  if (e.target.value.trim()) {
+                    setUsuarioId("");
+                    setBusca("");
+                    setUsuariosEncontrados([]);
+                    setListaAberta(false);
+                  }
+                  setFeedback(null);
+                }}
+                placeholder="Convidado: nome (obrigatório se usar convidado)"
+                className="w-full border rounded p-2"
+              />
+              <input
+                type="tel"
+                value={convidadoDonoTelefone}
+                onChange={(e) => {
+                  setConvidadoDonoTelefone(e.target.value);
+                  if (e.target.value.trim()) {
+                    setUsuarioId("");
+                  }
+                  setFeedback(null);
+                }}
+                placeholder="Convidado: telefone (obrigatório)"
+                className="w-full border rounded p-2"
+              />
+            </div>
+            <p className="text-[11px] text-gray-500 mt-1">
+              Preencha <strong>um</strong> dos dois: usuário cadastrado <em>ou</em> convidado dono.
+              Se usar convidado, informe também o telefone.
+            </p>
+          </div>
+        </div>
+
+        {/* Conflito + datas de início (quando há comum) */}
+        {dataUltimoConflito && proximasDatasDisponiveis.length > 0 && (
+          <div className="mt-4 p-4 border border-yellow-400 bg-yellow-100 rounded">
+            <p className="mb-2 font-semibold text-yellow-700">
+              A churrasqueira selecionada possui conflito com agendamento comum no dia{" "}
+              {format(parseISO(dataUltimoConflito), "dd/MM/yyyy")}. Selecione uma data de início
+              disponível:
+            </p>
+
+            <div className="grid grid-cols-3 gap-2">
+              {proximasDatasDisponiveis.map((dataStr) => {
+                const dataFormatada = format(parseISO(dataStr), "dd/MM/yyyy");
+                return (
+                  <button
+                    key={dataStr}
+                    type="button"
+                    className={`py-2 px-3 border rounded ${
+                      dataInicio === dataStr ? "bg-orange-500 text-white" : "bg-white"
+                    }`}
+                    onClick={() => setDataInicio(dataStr)}
+                  >
+                    {dataFormatada}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={submitting}
+          className={`w-full text-white font-semibold py-2 px-4 rounded mt-4 transition
+            ${submitting ? "bg-orange-400 cursor-not-allowed" : "bg-orange-600 hover:bg-orange-700"}`}
+        >
+          {submitting ? (
+            <span className="inline-flex items-center gap-2">
+              <span className="h-4 w-4 rounded-full border-2 border-white/60 border-t-transparent animate-spin" />
+              Cadastrando…
+            </span>
+          ) : (
+            "Cadastrar"
+          )}
+        </button>
+      </form>
     </div>
-  )
+  );
 }

@@ -75,6 +75,65 @@ const schemaAgendamentoPermanenteChurrasqueira = z.object({
 // 🔒 todas as rotas exigem autenticação
 router.use(verificarToken);
 
+/* =========================================================
+   📌 NOVOS HELPERS PARA SUGESTÕES DE DATAINICIO
+   ========================================================= */
+// Retorna a próxima data (>= base) que cai no dia-da-semana desejado (UTC)
+function nextOnWeekdayUtc(base: Date, targetIdx: number) {
+  const curIdx = base.getUTCDay();
+  const delta = (targetIdx - curIdx + 7) % 7;
+  const d = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate()));
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d;
+}
+
+// Próximas datas elegíveis (sem conflito COMUM) para usar como dataInicio
+async function nextStartDateCandidatesChurras(params: {
+  churrasqueiraId: string;
+  diaSemana: DiaSemana;
+  turno: Turno;
+  fromISO?: string;      // YYYY-MM-DD; default = hoje UTC
+  maxSemanas?: number;   // horizonte; default=26
+  maxSugestoes?: number; // qtde; default=6
+}) {
+  const { churrasqueiraId, diaSemana, turno, fromISO, maxSemanas = 26, maxSugestoes = 6 } = params;
+
+  const hojeISO = new Date().toISOString().slice(0, 10);
+  const base = fromISO ? toUtc00(fromISO) : toUtc00(hojeISO);
+
+  const targetIdx = DIA_IDX[diaSemana];
+  let d = nextOnWeekdayUtc(base, targetIdx);
+
+  const sugestoes: string[] = [];
+  let semanas = 0;
+
+  while (semanas <= maxSemanas && sugestoes.length < maxSugestoes) {
+    // conflito COMUM no mesmo dia+turno+churrasqueira?
+    const conflitoComum = await prisma.agendamentoChurrasqueira.findFirst({
+      where: {
+        churrasqueiraId,
+        data: d,
+        turno,
+        status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+      },
+      select: { id: true },
+    });
+
+    if (!conflitoComum) {
+      sugestoes.push(toISODateUTC(d));
+    }
+
+    // avança 7 dias
+    d = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 7));
+    semanas++;
+  }
+
+  return {
+    proximaDataDisponivel: sugestoes[0] ?? null,
+    alternativas: sugestoes,
+  };
+}
+
 /**
  * POST /churrasqueiras/permanentes
  * Criar agendamento permanente de churrasqueira (ADMIN)
@@ -132,10 +191,18 @@ router.post("/", requireAdmin, async (req, res) => {
     });
     const targetIdx = DIA_IDX[diaSemana];
     const possuiConflitoComum = comuns.some((c) => new Date(c.data).getUTCDay() === targetIdx);
+
     if (possuiConflitoComum && !dataInicio) {
+      const sugestoes = await nextStartDateCandidatesChurras({
+        churrasqueiraId,
+        diaSemana,
+        turno,
+      });
+
       return res.status(409).json({
         erro:
           "Conflito com agendamento comum existente nesse dia da semana e turno. Informe uma dataInicio.",
+        sugestoes,
       });
     }
 
@@ -183,49 +250,61 @@ router.post("/", requireAdmin, async (req, res) => {
   }
 });
 
+/* =========================================================
+   📌 NOVO ENDPOINT — Próxima(s) data(s) disponível(is)
+   (posicionado ANTES do GET /:id para não conflitar)
+   ========================================================= */
 /**
- * GET /churrasqueiras/permanentes
- * Listar agendamentos permanentes
- * - Admin: vê todos (pode filtrar por usuarioId/churrasqueiraId)
- * - Cliente: vê apenas os seus (usuarioId = do token)
+ * GET /churrasqueiras/permanentes/proxima-data-disponivel
+ * Params (query):
+ *   - churrasqueiraId (uuid) [obrigatório]
+ *   - diaSemana (enum DiaSemana) [obrigatório]
+ *   - turno (DIA|NOITE) [obrigatório]
+ *   - from (YYYY-MM-DD) [opcional]
+ *   - maxSemanas (1..52) [opcional]
+ *   - maxSugestoes (1..20) [opcional]
  */
-router.get("/", async (req, res) => {
-  if (!req.usuario) return res.status(401).json({ erro: "Não autenticado" });
+router.get("/proxima-data-disponivel", async (req, res) => {
+  const churrasqueiraId = String(req.query.churrasqueiraId || "");
+  const diaSemana = req.query.diaSemana as DiaSemana | undefined;
+  const turno = req.query.turno as Turno | undefined;
+  const from = typeof req.query.from === "string" ? req.query.from : undefined;
 
-  const isAdmin = ["ADMIN_MASTER", "ADMIN_ATENDENTE", "ADMIN_PROFESSORES"].includes(
-    req.usuario.usuarioLogadoTipo
-  );
+  const maxSemanas = Math.max(1, Math.min(52, Number(req.query.maxSemanas ?? 26)));
+  const maxSugestoes = Math.max(1, Math.min(20, Number(req.query.maxSugestoes ?? 6)));
 
-  const usuarioIdParam =
-    typeof req.query.usuarioId === "string" ? req.query.usuarioId : undefined;
-  const churrasqueiraId =
-    typeof req.query.churrasqueiraId === "string"
-      ? req.query.churrasqueiraId
-      : undefined;
-
-  const where: any = {
-    ...(churrasqueiraId ? { churrasqueiraId } : {}),
-  };
-
-  if (isAdmin) {
-    if (usuarioIdParam) where.usuarioId = usuarioIdParam;
-  } else {
-    where.usuarioId = req.usuario.usuarioLogadoId;
+  if (!isUUID(churrasqueiraId) || !diaSemana || !turno) {
+    return res.status(400).json({ erro: "Parâmetros obrigatórios: churrasqueiraId, diaSemana, turno." });
+  }
+  if (from && !/^\d{4}-\d{2}-\d{2}$/.test(from)) {
+    return res.status(400).json({ erro: "Parâmetro 'from' deve ser YYYY-MM-DD." });
   }
 
   try {
-    const lista = await prisma.agendamentoPermanenteChurrasqueira.findMany({
-      where,
-      include: {
-        churrasqueira: { select: { id: true, nome: true, numero: true } },
-        usuario: { select: { id: true, nome: true } },
-      },
-      orderBy: [{ diaSemana: "asc" }, { turno: "asc" }],
+    // valida existência da churrasqueira
+    const exists = await prisma.churrasqueira.findUnique({
+      where: { id: churrasqueiraId },
+      select: { id: true },
     });
-    return res.json(lista);
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ erro: "Erro ao listar" });
+    if (!exists) return res.status(404).json({ erro: "Churrasqueira não encontrada." });
+
+    const out = await nextStartDateCandidatesChurras({
+      churrasqueiraId,
+      diaSemana,
+      turno,
+      fromISO: from,
+      maxSemanas,
+      maxSugestoes,
+    });
+
+    return res.json(out);
+  } catch (e) {
+    console.error("Erro em GET /churrasqueiras/permanentes/proxima-data-disponivel", e);
+    return res.status(500).json({ erro: "Erro ao calcular próxima data disponível." });
+  }
+
+  function isUUID(id: string) {
+    return /^[0-9a-fA-F-]{36}$/.test(id);
   }
 });
 
