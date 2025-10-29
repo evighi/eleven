@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { PrismaClient, DiaSemana, Turno, BloqueioQuadra } from "@prisma/client";
-import { addDays, getDay, startOfDay } from "date-fns"; // ⬅️ addDays/startOfDay adicionados
+import { addDays, getDay, startOfDay } from "date-fns";
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -24,9 +24,9 @@ type UsuarioSelecionado = {
 
 type AgendamentoComUsuario =
   | {
-      id: string;
-      usuario: UsuarioSelecionado;
-    }
+    id: string;
+    usuario: UsuarioSelecionado;
+  }
   | null;
 
 // horário dentro do intervalo de bloqueio [início, fim)
@@ -75,39 +75,47 @@ function toISODateUTC(d: Date) {
   return d.toISOString().slice(0, 10);
 }
 /** Próxima data do permanente PULANDO exceções (usa hoje como base ou dataInicio se no futuro) */
+/** Próxima data do permanente PULANDO exceções (usa hoje como base ou dataInicio se no futuro) */
 async function proximaDataPermanenteSemExcecao(p: {
   id: string;
   diaSemana: DiaSemana;
   dataInicio: Date | null;
 }): Promise<string | null> {
   const hoje = startOfDay(new Date());
+
   const base =
     p.dataInicio && startOfDay(new Date(p.dataInicio)) > hoje
       ? startOfDay(new Date(p.dataInicio))
       : hoje;
 
-  const cur = base.getDay(); // 0..6 local
-  const target = DIA_IDX[p.diaSemana] ?? 0; // 0..6
+  const cur = base.getDay();                      // 0..6 local
+  const target = DIA_IDX[p.diaSemana] ?? 0;       // 0..6
   const delta = (target - cur + 7) % 7;
 
   let tentativa = addDays(base, delta);
+
   // Limite defensivo ~2 anos
   for (let i = 0; i < 120; i++) {
     const iso = toISODateUTC(tentativa); // "YYYY-MM-DD"
+
     const exc = await prisma.agendamentoPermanenteCancelamento.findFirst({
       where: { agendamentoPermanenteId: p.id, data: toUtc00(iso) },
       select: { id: true },
     });
+
     if (!exc) return iso;
     tentativa = addDays(tentativa, 7);
   }
+
   return null;
 }
+
 
 /**
  * /disponibilidadeGeral/geral
  * Parâmetros: data (ou diaSemana) + horario  [opcional: esporteId]
  * Regra: se vier "data", desconsidera permanente se houver exceção para aquele dia.
+ *        E NÃO deixa permanente sobrepor comum quando o permanente só começa depois.
  */
 router.get("/geral", async (req, res) => {
   const { data, diaSemana, horario, esporteId } = req.query;
@@ -148,7 +156,7 @@ router.get("/geral", async (req, res) => {
 
     const quadrasDisponibilidade = await Promise.all(
       quadras.map(async (quadra) => {
-        // 1) Permanente (se tiver "data", checa exceção para esse dia)
+        // 1) Permanente (se tiver "data", checa exceção e início do contrato)
         let conflitoPermanente: AgendamentoComUsuario = null;
 
         const per = await prisma.agendamentoPermanente.findFirst({
@@ -273,7 +281,7 @@ router.get("/geral", async (req, res) => {
       {} as Record<string, (typeof quadrasDisponibilidade)[number][]>
     );
 
-    // -------------------- CHURRASQUEIRAS (AGORA COM EXCEÇÕES) --------------------
+    // -------------------- CHURRASQUEIRAS (COM INÍCIO & EXCEÇÕES) --------------------
     const churrasqueiras = await prisma.churrasqueira.findMany();
     const turnos: Turno[] = ["DIA", "NOITE"];
 
@@ -281,14 +289,14 @@ router.get("/geral", async (req, res) => {
       churrasqueiras.map(async (churrasqueira) => {
         const disponibilidadesPorTurno = await Promise.all(
           turnos.map(async (turno) => {
-            // Permanente
+            // Permanente — só vale se já começou (ou sem dataInicio)
             const per = await prisma.agendamentoPermanenteChurrasqueira.findFirst({
               where: {
                 diaSemana: diaSemanaFinal,
                 turno,
                 churrasqueiraId: churrasqueira.id,
                 status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
-                // ...(range ? { OR: [{ dataInicio: null }, { dataInicio: { lte: range.inicio } }] } : {}),
+                ...(range ? { OR: [{ dataInicio: null }, { dataInicio: { lte: range.inicio } }] } : {}),
               },
               select: {
                 id: true,
@@ -382,6 +390,7 @@ router.get("/geral", async (req, res) => {
  * Parâmetros: ?data=YYYY-MM-DD  (obrigatório)
  * Retorna horas (07..23) por esporte, com slots por quadra.
  * Regra: desconsidera permanentes que tenham exceção para o dia.
+ *        (Agora inclui CHURRASQUEIRAS por turno para o mesmo dia)
  */
 router.get("/dia", async (req, res) => {
   const { data } = req.query;
@@ -400,13 +409,13 @@ router.get("/dia", async (req, res) => {
   try {
     const horas = horasDoDia();
 
-    // QUADRAS + esportes
+    // ========== QUADRAS + esportes ==========
     const quadras = await prisma.quadra.findMany({
       include: { quadraEsportes: { include: { esporte: true } } },
       orderBy: { numero: "asc" },
     });
 
-    // Permanentes do dia-da-semana, removendo os que têm exceção no dia
+    // Permanentes do dia-da-semana, removendo os que têm exceção no dia e que ainda não iniciaram
     const permanentes = await prisma.agendamentoPermanente.findMany({
       where: {
         diaSemana: diaSemanaFinal,
@@ -541,7 +550,83 @@ router.get("/dia", async (req, res) => {
       blk.grupos = chunk(blk.quadras, 6);
     });
 
-    return res.json({ data, horas, esportes: esportesMap });
+    // ========== CHURRASQUEIRAS por turno no mesmo dia ==========
+    const churrasqueiras = await prisma.churrasqueira.findMany({ orderBy: { numero: "asc" } });
+    const turnos: Turno[] = ["DIA", "NOITE"];
+
+    const churrasqueirasDisponibilidade = await Promise.all(
+      churrasqueiras.map(async (ch) => {
+        const disponibilidade = await Promise.all(
+          turnos.map(async (turno) => {
+            // Permanente do dia/turno, que já tenha começado, e sem exceção no dia
+            const per = await prisma.agendamentoPermanenteChurrasqueira.findFirst({
+              where: {
+                diaSemana: diaSemanaFinal,
+                turno,
+                churrasqueiraId: ch.id,
+                status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+                OR: [{ dataInicio: null }, { dataInicio: { lte: inicio } }],
+                cancelamentos: { none: { data: { gte: inicio, lt: fim } } },
+              },
+              select: {
+                id: true,
+                usuario: { select: { nome: true, email: true, celular: true } },
+              },
+            });
+
+            // Comum do dia/turno
+            const com = await prisma.agendamentoChurrasqueira.findFirst({
+              where: {
+                data: { gte: inicio, lt: fim },
+                turno,
+                churrasqueiraId: ch.id,
+                status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+              },
+              select: {
+                id: true,
+                usuario: { select: { nome: true, email: true, celular: true } },
+              },
+            });
+
+            let tipoReserva: "permanente" | "comum" | null = null;
+            let usuario: UsuarioSelecionado | null = null;
+            let agendamentoId: string | null = null;
+
+            if (per) {
+              tipoReserva = "permanente";
+              usuario = per.usuario as UsuarioSelecionado;
+              agendamentoId = per.id;
+            } else if (com) {
+              tipoReserva = "comum";
+              usuario = com.usuario as UsuarioSelecionado;
+              agendamentoId = com.id;
+            }
+
+            return {
+              turno,
+              disponivel: !tipoReserva,
+              tipoReserva,
+              usuario,
+              agendamentoId,
+            };
+          })
+        );
+
+        return {
+          churrasqueiraId: ch.id,
+          nome: ch.nome,
+          numero: ch.numero,
+          disponibilidade,
+        };
+      })
+    );
+
+    return res.json({
+      data,
+      horas,
+      esportes: esportesMap,
+      churrasqueiras: churrasqueirasDisponibilidade,
+    });
   } catch (err) {
     console.error("Erro /disponibilidadeGeral/dia:", err);
     return res.status(500).json({ erro: "Erro ao montar disponibilidade do dia" });
@@ -568,6 +653,7 @@ router.get("/permanentes", async (req, res) => {
   try {
     const horas = horasDoDia();
 
+    /* ===================== QUADRAS ===================== */
     // QUADRAS + esportes (opcional filtro por esporte)
     const quadras = await prisma.quadra.findMany({
       where: esporteId
@@ -637,7 +723,7 @@ router.get("/permanentes", async (req, res) => {
       });
     });
 
-    // estrutura final (só permanentes)
+    // estrutura final (só permanentes) — QUADRAS
     type SlotInfoPerm = {
       disponivel: boolean;
       tipoReserva?: "permanente";
@@ -703,7 +789,114 @@ router.get("/permanentes", async (req, res) => {
       blk.grupos = chunk(blk.quadras, 6);
     });
 
-    return res.json({ diaSemana: diaSemanaFinal, horas, esportes: esportesMap });
+    /* ===================== CHURRASQUEIRAS (NOVO) ===================== */
+    // carrega churrasqueiras e permanentes por turno do dia
+    const churrasqueiras = await prisma.churrasqueira.findMany({
+      orderBy: { numero: "asc" },
+    });
+
+    // permanentes de churrasqueiras ativos no dia
+    const perChurras = await prisma.agendamentoPermanenteChurrasqueira.findMany({
+      where: {
+        diaSemana: diaSemanaFinal,
+        status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+      },
+      select: {
+        id: true,
+        churrasqueiraId: true,
+        turno: true,
+        dataInicio: true,
+        usuario: { select: { nome: true, email: true, celular: true } },
+        cancelamentos: { select: { id: true, data: true, motivo: true }, orderBy: { data: "asc" } },
+      },
+    });
+
+    // calcula próxima data (pulando exceções) para cada permanente de churrasqueira
+    const metaChByPermId = new Map<
+      string,
+      { proximaData: string | null; dataInicio: string | null; excecoes: { id: string; data: string; motivo: string | null }[] }
+    >();
+
+    await Promise.all(
+      perChurras.map(async (p) => {
+        const proximaData = await proximaDataPermanenteSemExcecao({
+          id: p.id,
+          diaSemana: diaSemanaFinal,
+          dataInicio: p.dataInicio ? new Date(p.dataInicio) : null,
+        });
+
+        metaChByPermId.set(p.id, {
+          proximaData,
+          dataInicio: p.dataInicio ? String(p.dataInicio).slice(0, 10) : null,
+          excecoes: p.cancelamentos.map((c) => ({
+            id: c.id,
+            data: toISODateUTC(new Date(c.data)),
+            motivo: c.motivo ?? null,
+          })),
+        });
+      })
+    );
+
+    // index por (churrasqueira|turno)
+    const perChByKey = new Map<
+      string,
+      {
+        id: string;
+        usuario: UsuarioSelecionado;
+        meta: { proximaData: string | null; dataInicio: string | null; excecoes: { id: string; data: string; motivo: string | null }[] };
+      }
+    >();
+    perChurras.forEach((p) => {
+      const key = `${p.churrasqueiraId}|${p.turno}`;
+      perChByKey.set(key, {
+        id: p.id,
+        usuario: p.usuario as UsuarioSelecionado,
+        meta: metaChByPermId.get(p.id)!,
+      });
+    });
+
+    const turnos: Turno[] = ["DIA", "NOITE"];
+    const churrasqueirasDisponibilidade = await Promise.all(
+      churrasqueiras.map(async (ch) => {
+        const disponibilidade = await Promise.all(
+          turnos.map(async (turno) => {
+            const perm = perChByKey.get(`${ch.id}|${turno}`) || null;
+
+            if (perm) {
+              return {
+                turno,
+                disponivel: false,
+                tipoReserva: "permanente" as const,
+                usuario: perm.usuario,
+                agendamentoId: perm.id,
+                permanenteMeta: perm.meta,
+              };
+            }
+
+            // Se não tem permanente, o slot fica livre para criar permanente (no painel você só abre/cancela)
+            return {
+              turno,
+              disponivel: true,
+            };
+          })
+        );
+
+        return {
+          churrasqueiraId: ch.id,
+          nome: ch.nome,
+          numero: ch.numero,
+          disponibilidade,
+        };
+      })
+    );
+
+    /* ===================== RESPOSTA ===================== */
+    return res.json({
+      diaSemana: diaSemanaFinal,
+      horas,
+      esportes: esportesMap,
+      churrasqueiras: churrasqueirasDisponibilidade,
+    });
   } catch (err) {
     console.error("Erro /disponibilidadeGeral/permanentes:", err);
     return res.status(500).json({ erro: "Erro ao montar grade de permanentes" });

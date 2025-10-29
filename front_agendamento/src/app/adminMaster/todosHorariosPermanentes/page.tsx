@@ -37,10 +37,31 @@ type EsporteBlock = {
   grupos: QuadraSlots[][];
 };
 
+/* ====== NOVO: Tipos para Churrasqueiras ====== */
+type Turno = "DIA" | "NOITE";
+
+type ChurrasqueiraTurnoSlot = {
+  turno: Turno;
+  disponivel: boolean;
+  tipoReserva?: "permanente";
+  usuario?: Usuario;
+  agendamentoId?: string;
+  permanenteMeta?: PermMeta;
+};
+
+type ChurrasqueiraLinha = {
+  churrasqueiraId: string;
+  nome: string;
+  numero: number;
+  disponibilidade: ChurrasqueiraTurnoSlot[]; // sempre dois: DIA e NOITE
+};
+
 type ApiResp = {
   diaSemana: DiaSemana;  // "SEGUNDA" | ...
   horas: string[];       // ["07:00", ... "23:00"]
   esportes: Record<string, EsporteBlock>;
+  // NOVO (opcional, mas esperado para este recurso):
+  churrasqueiras?: ChurrasqueiraLinha[];
 };
 
 type DiaSemana =
@@ -61,11 +82,13 @@ type AgendamentoSelecionado = {
   esporte?: string | null;
   tipoReserva: "permanente";
   agendamentoId: string;
-  tipoLocal: "quadra";
+  tipoLocal: "quadra" | "churrasqueira";
   diaSemana?: string | null;
   dataInicio?: string | null; // YYYY-MM-DD
   proximaData?: string | null;
   excecoes?: { id: string; data: string; motivo: string | null }[];
+  // para churrasqueiras ajuda mostrar o turno clicado
+  turno?: Turno | null;
 };
 
 /* ===== Helpers ===== */
@@ -157,6 +180,7 @@ export default function PermanentesGridPage() {
 
   const [horas, setHoras] = useState<string[]>([]);
   const [esportes, setEsportes] = useState<Record<string, EsporteBlock> | null>(null);
+  const [churrasqueiras, setChurrasqueiras] = useState<ChurrasqueiraLinha[] | null>(null);
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -178,7 +202,7 @@ export default function PermanentesGridPage() {
   const [loadingTransferencia, setLoadingTransferencia] = useState(false);
   const [copiarExcecoes, setCopiarExcecoes] = useState(true);
 
-  // >>> NOVO: confirmação de agendar permanente rápido (slot livre)
+  // >>> NOVO: confirmação de agendar permanente rápido (slot livre de quadra)
   const [confirmAgendar, setConfirmAgendar] = useState(false);
   const [agendarCtx, setAgendarCtx] = useState<{
     hora: string;
@@ -209,9 +233,11 @@ export default function PermanentesGridPage() {
 
         setHoras(resp.horas || []);
         setEsportes(resp.esportes || {});
+        setChurrasqueiras(resp.churrasqueiras ?? []); // NOVO
       } catch (e) {
         console.error(e);
         setEsportes(null);
+        setChurrasqueiras(null);
         setErro("Erro ao carregar a grade de permanentes.");
       } finally {
         setLoading(false);
@@ -228,7 +254,7 @@ export default function PermanentesGridPage() {
     if (diaSemana) carregar(diaSemana);
   }, [carregar, diaSemana]);
 
-  // Detalhes do PERMANENTE
+  // Detalhes do PERMANENTE — QUADRA
   const abrirDetalhes = useCallback(
     async (agendamentoId: string, horario: string, esporte: string, meta?: PermMeta) => {
       if (!agendamentoId) return;
@@ -275,7 +301,52 @@ export default function PermanentesGridPage() {
     [API_URL]
   );
 
-  /* ====== REDIRECIONAR para agendar PERMANENTE (slot livre) ====== */
+  /* ====== Detalhes do PERMANENTE — CHURRASQUEIRA (novo) ====== */
+  const abrirDetalhesChurrasqueira = useCallback(
+    async (agendamentoId: string, turno: Turno, meta?: PermMeta) => {
+      if (!agendamentoId) return;
+
+      try {
+        setLoadingDetalhes(true);
+        const { data: det } = await axios.get(
+          `${API_URL}/agendamentosPermanentesChurrasqueiras/${agendamentoId}`,
+          { withCredentials: true }
+        );
+
+        const usuarioValor: string | Usuario =
+          typeof det?.usuario === "object" || typeof det?.usuario === "string"
+            ? det.usuario
+            : "—";
+
+        const dataInicioYmd = normalizeDateYmdSP(meta?.dataInicio ?? (det as any)?.dataInicio ?? null);
+        const proximaDataYmd = normalizeDateYmdSP(meta?.proximaData ?? (det as any)?.proximaData ?? null);
+        const excecoesNorm = (meta?.excecoes ?? []).map((e) => ({
+          ...e,
+          data: normalizeDateYmdSP(e.data) ?? e.data,
+        }));
+
+        setAgendamentoSelecionado({
+          horario: turno, // para churrasqueiras usamos o turno no campo "horario" exibido
+          usuario: usuarioValor,
+          tipoReserva: "permanente",
+          agendamentoId,
+          tipoLocal: "churrasqueira",
+          diaSemana: det?.diaSemana ?? null,
+          dataInicio: dataInicioYmd,
+          proximaData: proximaDataYmd,
+          excecoes: excecoesNorm,
+          turno,
+        });
+      } catch (err) {
+        console.error("Erro ao buscar detalhes (churrasqueira):", err);
+      } finally {
+        setLoadingDetalhes(false);
+      }
+    },
+    [API_URL]
+  );
+
+  /* ====== REDIRECIONAR para agendar PERMANENTE (slot livre de QUADRA) ====== */
   const irParaAgendarPermanente = useCallback(
     (hora: string, esporte: string, q: { quadraId: string; nome: string; numero: number }) => {
       const params = new URLSearchParams({
@@ -289,7 +360,7 @@ export default function PermanentesGridPage() {
     [router, diaSemana]
   );
 
-  // >>> NOVO: abrir confirmação antes de redirecionar
+  // >>> NOVO: abrir confirmação antes de redirecionar (quadras)
   const abrirConfirmAgendar = useCallback(
     (hora: string, esporte: string, q: { quadraId: string; nome: string; numero: number }) => {
       setAgendarCtx({
@@ -313,11 +384,15 @@ export default function PermanentesGridPage() {
     if (!agendamentoSelecionado?.agendamentoId) return;
     try {
       setLoadingCancelamento(true);
-      await axios.post(
-        `${API_URL}/agendamentosPermanentes/cancelar/${agendamentoSelecionado.agendamentoId}`,
-        {},
-        { withCredentials: true }
-      );
+
+      // Rota depende do tipo local:
+      const rota =
+        agendamentoSelecionado.tipoLocal === "churrasqueira"
+          ? `${API_URL}/agendamentosPermanentesChurrasqueiras/cancelar/${agendamentoSelecionado.agendamentoId}`
+          : `${API_URL}/agendamentosPermanentes/cancelar/${agendamentoSelecionado.agendamentoId}`;
+
+      await axios.post(rota, {}, { withCredentials: true });
+
       alert("Agendamento permanente cancelado para sempre!");
       setAgendamentoSelecionado(null);
       setConfirmarCancelamentoForever(false);
@@ -376,7 +451,10 @@ export default function PermanentesGridPage() {
 
     setLoadingTransferencia(true);
     try {
-      const rota = `agendamentosPermanentes/${agendamentoSelecionado.agendamentoId}/transferir`;
+      const rota =
+        agendamentoSelecionado.tipoLocal === "churrasqueira"
+          ? `agendamentosPermanentesChurrasqueiras/${agendamentoSelecionado.agendamentoId}/transferir`
+          : `agendamentosPermanentes/${agendamentoSelecionado.agendamentoId}/transferir`;
 
       await axios.patch(
         `${API_URL}/${rota}`,
@@ -404,7 +482,7 @@ export default function PermanentesGridPage() {
     }
   };
 
-  // ====== CÉLULA ======
+  // ====== CÉLULAS — QUADRAS ======
   const Cell = ({
     slot,
     hora,
@@ -470,6 +548,62 @@ export default function PermanentesGridPage() {
     );
   };
 
+  /* ====== CÉLULAS — CHURRASQUEIRAS (novo) ====== */
+  const CellChurrasqueira = ({
+    slot,
+    turno,
+    churrasqueira,
+  }: {
+    slot: ChurrasqueiraTurnoSlot;
+    turno: Turno;
+    churrasqueira: { id: string; nome: string; numero: number };
+  }) => {
+    const isPerm = slot.tipoReserva === "permanente";
+    const base =
+      "min-h-9 text-[10px] sm:text-xs rounded-none border flex items-center justify-center text-center px-2 py-2 whitespace-normal break-words leading-tight";
+
+    let cls = "bg-white text-gray-900 border-gray-300";
+    if (isPerm) cls = "bg-emerald-600 text-white border-emerald-700";
+
+    const label = isPerm
+      ? `${firstName(slot.usuario?.nome)} — ${turno}`
+      : `Sem permanente — ${turno}`;
+
+    const hasPermAgendado = isPerm && !!slot.agendamentoId;
+    const clickable = hasPermAgendado; // por enquanto, só abrir detalhes/cancelar
+
+    const onClick = () => {
+      if (!clickable) return;
+      abrirDetalhesChurrasqueira(slot.agendamentoId!, turno, slot.permanenteMeta);
+    };
+
+    const title = isPerm
+      ? [
+          slot.usuario?.nome,
+          slot.permanenteMeta?.proximaData
+            ? `Próxima: ${normalizeDateYmdSP(slot.permanenteMeta.proximaData)}`
+            : null,
+          slot.permanenteMeta?.dataInicio
+            ? `Início: ${normalizeDateYmdSP(slot.permanenteMeta.dataInicio)}`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" | ")
+      : "Sem permanente";
+
+    return (
+      <button
+        type="button"
+        disabled={!clickable}
+        onClick={onClick}
+        title={title}
+        className={`${base} ${cls} ${clickable ? "cursor-pointer hover:brightness-95" : "cursor-default"}`}
+      >
+        <span>{label}</span>
+      </button>
+    );
+  };
+
   const Conteudo = useMemo(() => {
     if (loading) {
       return (
@@ -481,77 +615,144 @@ export default function PermanentesGridPage() {
     if (erro) {
       return <div className="text-red-600 text-sm">{erro}</div>;
     }
-    if (!esportes || horas.length === 0) {
+    if ((!esportes || Object.keys(esportes).length === 0) && (!churrasqueiras || churrasqueiras.length === 0)) {
       return <div className="text-gray-500 text-sm">Nada para mostrar.</div>;
     }
 
     return (
-      <div className="space-y-10">
-        {Object.entries(esportes).map(([esporte, bloco]) => {
-          if (!bloco?.grupos?.length) return null;
+      <div className="space-y-12">
+        {/* ====== QUADRAS ====== */}
+        {esportes && Object.keys(esportes).length > 0 && (
+          <div className="space-y-10">
+            {Object.entries(esportes).map(([esporte, bloco]) => {
+              if (!bloco?.grupos?.length) return null;
 
-          return (
-            <div key={esporte} className="space-y-10">
-              {bloco.grupos.map((grupo, gi) => {
-                if (!grupo?.length) return null;
+              return (
+                <div key={esporte} className="space-y-10">
+                  {bloco.grupos.map((grupo, gi) => {
+                    if (!grupo?.length) return null;
 
-                const minNum = Math.min(...grupo.map((q) => q.numero));
-                const maxNum = Math.max(...grupo.map((q) => q.numero));
+                    const minNum = Math.min(...grupo.map((q) => q.numero));
+                    const maxNum = Math.max(...grupo.map((q) => q.numero));
 
-                return (
-                  <section key={`${esporte}-${gi}`}>
-                    {/* Cabeçalho por grupo */}
-                    <h2 className="text-center text-xl sm:text-2xl md:text-3xl font-extrabold text-gray-900 mb-3">
-                      {esporte} – {minNum} - {maxNum}
-                    </h2>
+                    return (
+                      <section key={`${esporte}-${gi}`}>
+                        {/* Cabeçalho por grupo */}
+                        <h2 className="text-center text-xl sm:text-2xl md:text-3xl font-extrabold text-gray-900 mb-3">
+                          {esporte} – {minNum} - {maxNum}
+                        </h2>
 
-                    {/* Linha com os números das quadras */}
-                    <div className="grid grid-cols-6 gap-0">
-                      {grupo.map((q) => (
-                        <div
-                          key={q.quadraId}
-                          className="min-h-7 xs:min-h-8 sm:min-h-9 md:min-h-10 rounded-none border border-gray-300 bg-gray-100 text-gray-700 text-[9px] xs:text-[10px] sm:text-[11px] md:text-xs flex items-center justify-center font-semibold"
-                          title={q.nome}
-                        >
-                          {q.numero}
-                        </div>
-                      ))}
-                      {Array.from({ length: Math.max(0, 6 - grupo.length) }).map((_, i) => (
-                        <div key={`void-${i}`} className="border border-transparent" />
-                      ))}
-                    </div>
-
-                    {/* Grade: horas x quadras */}
-                    <div className="space-y-0">
-                      {horas.map((hora) => (
-                        <div key={hora} className="grid grid-cols-6 gap-0">
-                          {grupo.map((q) => {
-                            const slot = q.slots[hora] || { disponivel: true };
-                            return (
-                              <Cell
-                                key={`${q.quadraId}-${hora}`}
-                                slot={slot}
-                                hora={hora}
-                                esporte={esporte}
-                                quadra={{ quadraId: q.quadraId, nome: q.nome, numero: q.numero }}
-                              />
-                            );
-                          })}
+                        {/* Linha com os números das quadras */}
+                        <div className="grid grid-cols-6 gap-0">
+                          {grupo.map((q) => (
+                            <div
+                              key={q.quadraId}
+                              className="min-h-7 xs:min-h-8 sm:min-h-9 md:min-h-10 rounded-none border border-gray-300 bg-gray-100 text-gray-700 text-[9px] xs:text-[10px] sm:text-[11px] md:text-xs flex items-center justify-center font-semibold"
+                              title={q.nome}
+                            >
+                              {q.numero}
+                            </div>
+                          ))}
                           {Array.from({ length: Math.max(0, 6 - grupo.length) }).map((_, i) => (
-                            <div key={`pad-${i}`} className="border border-transparent" />
+                            <div key={`void-${i}`} className="border border-transparent" />
                           ))}
                         </div>
-                      ))}
+
+                        {/* Grade: horas x quadras */}
+                        <div className="space-y-0">
+                          {horas.map((hora) => (
+                            <div key={hora} className="grid grid-cols-6 gap-0">
+                              {grupo.map((q) => {
+                                const slot = q.slots[hora] || { disponivel: true };
+                                return (
+                                  <Cell
+                                    key={`${q.quadraId}-${hora}`}
+                                    slot={slot}
+                                    hora={hora}
+                                    esporte={esporte}
+                                    quadra={{ quadraId: q.quadraId, nome: q.nome, numero: q.numero }}
+                                  />
+                                );
+                              })}
+                              {Array.from({ length: Math.max(0, 6 - grupo.length) }).map((_, i) => (
+                                <div key={`pad-${i}`} className="border border-transparent" />
+                              ))}
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ====== CHURRASQUEIRAS (NOVO) ====== */}
+        {churrasqueiras && churrasqueiras.length > 0 && (
+          <section>
+            <h2 className="text-center text-2xl md:text-3xl font-extrabold text-gray-900 mb-6">
+              Churrasqueiras — Permanentes
+            </h2>
+
+            <div className="space-y-3">
+              {/* Cabeçalho dos turnos */}
+              <div className="grid grid-cols-3 gap-0">
+                <div className="min-h-9 rounded-none border border-gray-300 bg-gray-100 text-gray-700 text-xs sm:text-sm flex items-center justify-center font-semibold">
+                  Churrasqueira
+                </div>
+                <div className="min-h-9 rounded-none border border-gray-300 bg-gray-100 text-gray-700 text-xs sm:text-sm flex items-center justify-center font-semibold">
+                  Dia
+                </div>
+                <div className="min-h-9 rounded-none border border-gray-300 bg-gray-100 text-gray-700 text-xs sm:text-sm flex items-center justify-center font-semibold">
+                  Noite
+                </div>
+              </div>
+
+              {/* Linhas */}
+              {churrasqueiras
+                .slice()
+                .sort((a, b) => a.numero - b.numero)
+                .map((ch) => {
+                  const dia = ch.disponibilidade.find((d) => d.turno === "DIA") || {
+                    turno: "DIA",
+                    disponivel: true,
+                  };
+                  const noite = ch.disponibilidade.find((d) => d.turno === "NOITE") || {
+                    turno: "NOITE",
+                    disponivel: true,
+                  };
+
+                  return (
+                    <div key={ch.churrasqueiraId} className="grid grid-cols-3 gap-0">
+                      <div
+                        className="min-h-9 rounded-none border border-gray-300 bg-white text-gray-900 text-xs sm:text-sm flex items-center justify-center font-semibold"
+                        title={ch.nome}
+                      >
+                        {ch.numero} — {ch.nome}
+                      </div>
+
+                      <CellChurrasqueira
+                        slot={dia as ChurrasqueiraTurnoSlot}
+                        turno="DIA"
+                        churrasqueira={{ id: ch.churrasqueiraId, nome: ch.nome, numero: ch.numero }}
+                      />
+
+                      <CellChurrasqueira
+                        slot={noite as ChurrasqueiraTurnoSlot}
+                        turno="NOITE"
+                        churrasqueira={{ id: ch.churrasqueiraId, nome: ch.nome, numero: ch.numero }}
+                      />
                     </div>
-                  </section>
-                );
-              })}
+                  );
+                })}
             </div>
-          );
-        })}
+          </section>
+        )}
       </div>
     );
-  }, [loading, erro, esportes, horas, abrirDetalhes, abrirConfirmAgendar]);
+  }, [loading, erro, esportes, horas, churrasqueiras, abrirDetalhes, abrirDetalhesChurrasqueira, abrirConfirmAgendar]);
 
   return (
     <div className="px-2 sm:px-3 md:px-4 py-4">
@@ -596,8 +797,15 @@ export default function PermanentesGridPage() {
             <h2 className="text-lg font-semibold mb-4">Agendamento Permanente</h2>
 
             <p><strong>Dia da semana:</strong> {agendamentoSelecionado.diaSemana ?? "-"}</p>
-            <p><strong>Horário:</strong> {agendamentoSelecionado.horario}</p>
-            {agendamentoSelecionado.esporte && <p><strong>Esporte:</strong> {agendamentoSelecionado.esporte}</p>}
+            <p>
+              <strong>{agendamentoSelecionado.tipoLocal === "churrasqueira" ? "Turno" : "Horário"}:</strong>{" "}
+              {agendamentoSelecionado.tipoLocal === "churrasqueira"
+                ? (agendamentoSelecionado.turno ?? "—")
+                : agendamentoSelecionado.horario}
+            </p>
+            {agendamentoSelecionado.tipoLocal === "quadra" && agendamentoSelecionado.esporte && (
+              <p><strong>Esporte:</strong> {agendamentoSelecionado.esporte}</p>
+            )}
             <p>
               <strong>Usuário:</strong>{" "}
               {typeof agendamentoSelecionado.usuario === "string"
@@ -674,7 +882,7 @@ export default function PermanentesGridPage() {
         </div>
       )}
 
-      {/* >>> NOVO: CONFIRMAÇÃO DE AGENDAMENTO PERMANENTE (slot livre) */}
+      {/* >>> CONFIRMAÇÃO DE AGENDAMENTO PERMANENTE (slot livre de QUADRA) */}
       {confirmAgendar && agendarCtx && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[65]">
           <div className="bg-white rounded-lg p-5 w-[90%] max-w-md">
