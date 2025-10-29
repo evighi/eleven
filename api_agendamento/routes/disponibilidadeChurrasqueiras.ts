@@ -15,13 +15,20 @@ function toUtc00(isoYYYYMMDD: string) {
 function diaSemanaFromUTC00(d: Date): DiaSemana {
   return DIAS[d.getUTCDay()];
 }
+// Janela UTC [início, fim) para a data informada
+function getUtcDayRange(isoYYYYMMDD: string) {
+  const inicio = toUtc00(isoYYYYMMDD);
+  const fim = new Date(inicio);
+  fim.setUTCDate(fim.getUTCDate() + 1);
+  return { inicio, fim };
+}
 
 /**
  * GET /disponibilidadeChurrasqueiras?data=YYYY-MM-DD&turno=DIA|NOITE[&churrasqueiraId=...]
  * Retorna lista de churrasqueiras e se o slot está disponível.
  * - Conflito COMUM: (data, turno, churrasqueiraId) ativo
  * - Conflito PERMANENTE: (diaSemana(data), turno, churrasqueiraId) ativo e dataInicio <= data (ou null)
- *   **mas ignora se houver exceção registrada para essa data**
+ *   **mas ignora se houver exceção registrada para essa data** (usa janela [início,fim))
  */
 router.get("/", async (req, res) => {
   const dataStr = typeof req.query.data === "string" ? req.query.data : undefined;
@@ -39,6 +46,7 @@ router.get("/", async (req, res) => {
   const dataUTC = toUtc00(dataStr);
   const diaSemana = diaSemanaFromUTC00(dataUTC);
   const turno = turnoStr as Turno;
+  const { inicio, fim } = getUtcDayRange(dataStr);
 
   try {
     // Filtra 1 churrasqueira específica, se vier na query; senão busca todas
@@ -49,7 +57,7 @@ router.get("/", async (req, res) => {
     const resultado = await Promise.all(
       churrasqueiras.map(async (churrasqueira) => {
         // Conflito PERMANENTE (ativo e respeitando dataInicio <= data)
-        // ✅ ignora se existir uma exceção (cancelamento) exatamente nessa data
+        // ✅ ignora se existir uma exceção (cancelamento) **nesta data** usando janela [início,fim)
         const conflitoPermanente = await prisma.agendamentoPermanenteChurrasqueira.findFirst({
           where: {
             churrasqueiraId: churrasqueira.id,
@@ -57,7 +65,7 @@ router.get("/", async (req, res) => {
             turno,
             status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
             OR: [{ dataInicio: null }, { dataInicio: { lte: dataUTC } }],
-            cancelamentos: { none: { data: dataUTC } }, // << AQUI: exceção impede o bloqueio
+            cancelamentos: { none: { data: { gte: inicio, lt: fim } } },
           },
           select: { id: true },
         });
@@ -77,8 +85,8 @@ router.get("/", async (req, res) => {
           churrasqueiraId: churrasqueira.id,
           nome: churrasqueira.nome,
           numero: churrasqueira.numero,
-          // campos de imagem (se tiver no schema/db; se não tiver imagemUrl/logoUrl, retornam null)
-          imagem: churrasqueira.imagem ?? null,
+          // campos de imagem (dependem do seu schema)
+          imagem: (churrasqueira as any).imagem ?? null,
           imagemUrl: (churrasqueira as any).imagemUrl ?? null,
           logoUrl: (churrasqueira as any).logoUrl ?? null,
 
