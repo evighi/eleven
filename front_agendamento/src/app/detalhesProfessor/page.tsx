@@ -9,12 +9,21 @@ type PorDia = { data: string; aulas: number; valor: number };
 type PorFaixa = { faixa: string; aulas: number; valor: number };
 type MesTotais = { aulas: number; valor: number };
 
-// ⬇️ tipos das multas detalhadas vindas do back
+// ⬇️ tipos de detalhes
 type MultaDetalhe = {
   id: string;
-  data: string; // ISO datetime
+  data: string;   // ISO datetime
   horario: string; // "HH:MM"
   multa: number;
+  quadra?: { id: string; numero: number | null; nome: string | null } | null;
+  esporte?: { id: string; nome: string | null } | null;
+};
+
+// 👇 NOVO: detalhes de aulas apoiadas
+type ApoiadasDetalhe = {
+  id: string;
+  data: string;   // ISO datetime
+  horario: string; // "HH:MM"
   quadra?: { id: string; numero: number | null; nome: string | null } | null;
   esporte?: { id: string; nome: string | null } | null;
 };
@@ -26,12 +35,13 @@ type ResumoResponse = {
     porDia: PorDia[];
     porFaixa: PorFaixa[];
     mes: MesTotais;
-    // ⬇️ novos campos vindos do back
+    // ⬇️ campos extras (opcionais)
     multaMes?: number;
     valorMesComMulta?: number;
+    apoiadasMes?: number; // 👈 NOVO
   };
-  // ⬇️ novo array de detalhes de multas
   multasDetalhes?: MultaDetalhe[];
+  apoiadasDetalhes?: ApoiadasDetalhe[]; // 👈 NOVO
 };
 
 const currencyBRL = (n: number) =>
@@ -51,7 +61,7 @@ const fmtDDMM = (isoYMD: string) => {
 const ymdFromISODateTime = (isoDT: string) => (isoDT.includes('T') ? isoDT.split('T')[0] : isoDT);
 
 // exibe "Quadra X" priorizando número, senão nome
-const quadraLabel = (q?: MultaDetalhe['quadra']) => {
+const quadraLabel = (q?: { id: string; numero: number | null; nome: string | null } | null) => {
   if (!q) return '-';
   if (q?.numero != null) return `Quadra ${q.numero}`;
   if (q?.nome) return q.nome;
@@ -59,7 +69,6 @@ const quadraLabel = (q?: MultaDetalhe['quadra']) => {
 };
 
 function getMonthYYYYMM(d = new Date()) {
-  // mês atual no fuso de SP
   const y = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Sao_Paulo',
     year: 'numeric',
@@ -73,7 +82,7 @@ function getMonthYYYYMM(d = new Date()) {
 
 // gera as 4 faixas do mês e rótulos bonitinhos
 function buildFaixasLabels(toDateISO: string) {
-  const lastDay = Number(toDateISO.split('-')[2]); // dia do "to"
+  const lastDay = Number(toDateISO.split('-')[2]);
   const faixas: Array<{ id: string; label: string; fromDay: number; toDay: number }> = [
     { id: '1-7', fromDay: 1, toDay: 7, label: '' },
     { id: '8-14', fromDay: 8, toDay: 14, label: '' },
@@ -84,9 +93,7 @@ function buildFaixasLabels(toDateISO: string) {
 }
 
 export default function DetalhesProfessorPage() {
-  // só professores (e master pode ver também)
   const { isChecking } = useRequireAuth(['ADMIN_PROFESSORES', 'ADMIN_MASTER']);
-
   const API_URL = process.env.NEXT_PUBLIC_URL_API || 'http://localhost:3001';
 
   const [mes, setMes] = useState(getMonthYYYYMM());
@@ -97,8 +104,9 @@ export default function DetalhesProfessorPage() {
   const [faixaSel, setFaixaSel] = useState<string>(''); // '1-7', '8-14', ...
   const [diaSel, setDiaSel] = useState<string>(''); // 'YYYY-MM-DD'
 
-  // UI: toggle lista de multas (colapsável)
+  // toggles colapsáveis
   const [mostrarMultas, setMostrarMultas] = useState(false);
+  const [mostrarApoiadas, setMostrarApoiadas] = useState(false); // 👈 NOVO
 
   const carregar = useCallback(async () => {
     setLoading(true);
@@ -109,15 +117,15 @@ export default function DetalhesProfessorPage() {
       });
       setData(data);
 
-      // defaults de seleção
       const faixas = buildFaixasLabels(data.intervalo.to);
       const primeiraFaixa = faixas[0]?.id || '';
       setFaixaSel(primeiraFaixa);
 
-      // quando definirmos a faixa, o dia será decidido no useEffect abaixo
       setDiaSel('');
-      // por padrão: abrir multas se existir pelo menos 1 (experiência mais clara)
+
+      // abrir automaticamente quando houver itens
       setMostrarMultas((data.multasDetalhes?.length || 0) > 0);
+      setMostrarApoiadas((data.apoiadasDetalhes?.length || 0) > 0);
     } catch (e) {
       console.error(e);
       setData(null);
@@ -135,7 +143,6 @@ export default function DetalhesProfessorPage() {
   const faixasInfo = useMemo(() => {
     if (!data) return [];
     const yearMonth = data.intervalo.to.slice(0, 7); // 'YYYY-MM'
-
     const faixas = buildFaixasLabels(data.intervalo.to).map((f, idx) => {
       const fromISO = `${yearMonth}-${String(f.fromDay).padStart(2, '0')}`;
       const toISO = `${yearMonth}-${String(f.toDay).padStart(2, '0')}`;
@@ -143,11 +150,10 @@ export default function DetalhesProfessorPage() {
       const label = `SEMANA ${semanaNum} – ${fmtDDMM(fromISO)} À ${fmtDDMM(toISO)}`;
       return { ...f, label, fromISO, toISO };
     });
-
     return faixas;
   }, [data]);
 
-  // dias da faixa selecionada (filtra `porDia`)
+  // dias da faixa selecionada
   const diasDaFaixa = useMemo(() => {
     if (!data || !faixaSel) return [];
     const info = faixasInfo.find((f) => f.id === faixaSel);
@@ -159,15 +165,13 @@ export default function DetalhesProfessorPage() {
     return data.totais.porDia.filter((d) => inRange(d.data));
   }, [data, faixaSel, faixasInfo]);
 
-  // set default dia quando troca a faixa
+  // default dia quando troca a faixa
   useEffect(() => {
     if (diaSel) return;
-    if (diasDaFaixa.length) {
-      setDiaSel(diasDaFaixa[0].data);
-    }
+    if (diasDaFaixa.length) setDiaSel(diasDaFaixa[0].data);
   }, [diasDaFaixa, diaSel]);
 
-  // totais da semana selecionada (pega direto do porFaixa da API)
+  // totais da semana selecionada
   const totaisSemanaSel = useMemo(() => {
     if (!data || !faixaSel) return { aulas: 0, valor: 0 };
     const f = data.totais.porFaixa.find((x) => x.faixa === faixaSel);
@@ -202,7 +206,7 @@ export default function DetalhesProfessorPage() {
     );
   }
 
-  // valores com fallback quando o back ainda não tinha os campos
+  // valores c/ fallback
   const multaMes = Number(data?.totais.multaMes || 0);
   const totalMesSomenteAulas = Number(data?.totais.mes.valor || 0);
   const totalMesComMulta =
@@ -215,6 +219,26 @@ export default function DetalhesProfessorPage() {
     ymd: ymdFromISODateTime(m.data),
   }));
 
+  // 👇 NOVOS derivados: apoiadas
+  const apoiadasDetalhes = (data?.apoiadasDetalhes || []).map((a) => ({
+    ...a,
+    ymd: ymdFromISODateTime(a.data),
+  }));
+
+  // 👇 chip de “apoiadas nesta semana” (filtra por faixa selecionada)
+  const apoiadasNaSemanaSel = useMemo(() => {
+    if (!data || !faixaSel || apoiadasDetalhes.length === 0) return 0;
+    const info = faixasInfo.find((f) => f.id === faixaSel);
+    if (!info) return 0;
+    const yearMonth = data.intervalo.to.slice(0, 7);
+    const inRange = (ymd: string) => {
+      const day = Number(ymd.split('-')[2]);
+      return day >= info.fromDay && day <= info.toDay;
+    };
+    // só conta o mês atual do filtro
+    return apoiadasDetalhes.filter((a) => a.ymd.startsWith(yearMonth) && inRange(a.ymd)).length;
+  }, [data, faixaSel, faixasInfo, apoiadasDetalhes]);
+
   return (
     <main className="min-h-screen bg-[#f5f5f5]">
       {/* Header */}
@@ -222,7 +246,7 @@ export default function DetalhesProfessorPage() {
         <div className="max-w-sm mx-auto">
           <h1 className="text-2xl font-extrabold tracking-wide drop-shadow-sm">Reservas Anteriores</h1>
 
-          {/* seletor de mês simples */}
+          {/* seletor de mês */}
           <div className="mt-3 flex items-center gap-2">
             <button
               onClick={() => incMes(-1)}
@@ -251,19 +275,16 @@ export default function DetalhesProfessorPage() {
             Quantidade de Aulas marcadas:
           </p>
 
-          {/* estado de carregamento */}
           {loading && (
             <div className="flex items-center gap-2 text-gray-600 mb-3">
               <Spinner /> <span>Carregando resumo…</span>
             </div>
           )}
 
-          {/* erro ou vazio */}
           {!loading && !data && (
             <div className="text-sm text-gray-600">Não foi possível carregar os dados.</div>
           )}
 
-          {/* conteúdo */}
           {!loading && !!data && (
             <>
               {/* Semana */}
@@ -285,6 +306,13 @@ export default function DetalhesProfessorPage() {
                     ))}
                   </select>
                 </div>
+                {/* 👇 chip de apoiadas na semana (aparece só se houver) */}
+                {apoiadasNaSemanaSel > 0 && (
+                  <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-orange-50 px-2 py-0.5 text-[11px] text-orange-700 border border-orange-200">
+                    <span className="font-semibold">{apoiadasNaSemanaSel}</span>
+                    <span>aula{apoiadasNaSemanaSel > 1 ? 's' : ''} apoiada{apoiadasNaSemanaSel > 1 ? 's' : ''} nesta semana</span>
+                  </div>
+                )}
               </div>
 
               {/* Dia da semana selecionada */}
@@ -368,7 +396,53 @@ export default function DetalhesProfessorPage() {
                     {currencyBRL(totalMesComMulta)}
                   </span>
                 </div>
+
+                {/* 👇 NOVO: resumo mês de apoiadas, se existir */}
+                {typeof data.totais.apoiadasMes === 'number' && data.totais.apoiadasMes > 0 && (
+                  <div className="mt-2 text-[12px] text-gray-600">
+                    <span className="inline-flex items-center gap-1 rounded-md bg-orange-50 px-2 py-1 border border-orange-200">
+                      <strong className="text-orange-700">{data.totais.apoiadasMes}</strong>
+                      <span>aula{data.totais.apoiadasMes > 1 ? 's' : ''} apoiada{data.totais.apoiadasMes > 1 ? 's' : ''} no mês (não remuneradas)</span>
+                    </span>
+                  </div>
+                )}
               </div>
+
+              {/* 👇 NOVO: Aulas apoiadas detalhadas (colapsável) */}
+              {apoiadasDetalhes.length > 0 && (
+                <div className="mt-3">
+                  <button
+                    onClick={() => setMostrarApoiadas(v => !v)}
+                    className="w-full flex items-center justify-between rounded-md bg-gray-100 hover:bg-gray-200 transition px-3 py-2 text-[13px] text-gray-700 cursor-pointer"
+                    aria-expanded={mostrarApoiadas}
+                  >
+                    <span className="font-semibold">
+                      Aulas apoiadas ({apoiadasDetalhes.length})
+                    </span>
+                    <span className="text-gray-500">{mostrarApoiadas ? '▲' : '▼'}</span>
+                  </button>
+
+                  {mostrarApoiadas && (
+                    <ul className="mt-2 divide-y rounded-md border border-gray-200 overflow-hidden">
+                      {apoiadasDetalhes.map((a) => (
+                        <li key={`${a.ymd}-${a.horario}-${a.quadra?.id ?? ''}`} className="px-3 py-2 text-[13px] flex flex-col gap-0.5 bg-white">
+                          <div className="flex items-center justify-between">
+                            <span className="text-gray-700">
+                              {fmtBR(a.ymd)} · {a.horario}
+                            </span>
+                            <span className="text-[11px] rounded-full bg-orange-50 text-orange-700 border border-orange-200 px-2 py-0.5">
+                              isento
+                            </span>
+                          </div>
+                          <div className="text-[12px] text-gray-600">
+                            {quadraLabel(a.quadra)}{a.esporte?.nome ? ` · ${a.esporte?.nome}` : ''}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
 
               {/* Multas detalhadas (colapsável) */}
               {multasDetalhes.length > 0 && (
@@ -404,7 +478,7 @@ export default function DetalhesProfessorPage() {
                 </div>
               )}
 
-              {/* mini nota de rodapé */}
+              {/* nota de rodapé */}
               <p className="mt-2 text-[11px] text-gray-500">
                 Duração considerada por aula: {data.intervalo.duracaoMin} min · Valor por aula: {currencyBRL(data.professor.valorQuadra || 0)}
               </p>
