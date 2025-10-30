@@ -9,14 +9,24 @@ type PorDia = { data: string; aulas: number; valor: number };
 type PorFaixa = { faixa: string; aulas: number; valor: number };
 type MesTotais = { aulas: number; valor: number };
 
-// ⬇️ tipos das multas detalhadas vindas do back
 type MultaDetalhe = {
   id: string;
-  data: string; // ISO datetime
-  horario: string; // "HH:MM"
+  data: string;            // ISO datetime
+  horario: string;         // "HH:MM"
   multa: number;
   quadra?: { id: string; numero: number | null; nome: string | null } | null;
   esporte?: { id: string; nome: string | null } | null;
+};
+
+/** 👇 corresponde ao back: "apoiosDetalhes" */
+type ApoioDetalhe = {
+  id: string;
+  data: string;            // ISO datetime
+  horario: string;         // "HH:MM"
+  quadra?: { id: string; numero: number | null; nome: string | null } | null;
+  esporte?: { id: string; nome: string | null } | null;
+  // pode vir no payload:
+  apoiadoUsuario?: { id: string; nome: string | null; email: string | null } | null;
 };
 
 type ResumoResponse = {
@@ -26,12 +36,15 @@ type ResumoResponse = {
     porDia: PorDia[];
     porFaixa: PorFaixa[];
     mes: MesTotais;
-    // ⬇️ novos campos vindos do back
     multaMes?: number;
     valorMesComMulta?: number;
+    /** 👇 novos do back */
+    apoiadasMes?: number;
+    valorApoioDescontadoMes?: number;
   };
-  // ⬇️ novo array de detalhes de multas
   multasDetalhes?: MultaDetalhe[];
+  /** 👇 novo bloco do back */
+  apoiosDetalhes?: ApoioDetalhe[];
 };
 
 const currencyBRL = (n: number) =>
@@ -47,11 +60,11 @@ const fmtDDMM = (isoYMD: string) => {
   return `${d}/${m}`;
 };
 
-// normaliza ISO datetime → "YYYY-MM-DD"
+// ISO datetime -> "YYYY-MM-DD"
 const ymdFromISODateTime = (isoDT: string) => (isoDT.includes('T') ? isoDT.split('T')[0] : isoDT);
 
-// exibe "Quadra X" priorizando número, senão nome
-const quadraLabel = (q?: MultaDetalhe['quadra']) => {
+// "Quadra X" priorizando número
+const quadraLabel = (q?: { id: string; numero: number | null; nome: string | null } | null) => {
   if (!q) return '-';
   if (q?.numero != null) return `Quadra ${q.numero}`;
   if (q?.nome) return q.nome;
@@ -59,21 +72,13 @@ const quadraLabel = (q?: MultaDetalhe['quadra']) => {
 };
 
 function getMonthYYYYMM(d = new Date()) {
-  // mês atual no fuso de SP
-  const y = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Sao_Paulo',
-    year: 'numeric',
-  }).format(d);
-  const m = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Sao_Paulo',
-    month: '2-digit',
-  }).format(d);
+  const y = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric' }).format(d);
+  const m = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', month: '2-digit' }).format(d);
   return `${y}-${m}`;
 }
 
-// gera as 4 faixas do mês e rótulos bonitinhos
 function buildFaixasLabels(toDateISO: string) {
-  const lastDay = Number(toDateISO.split('-')[2]); // dia do "to"
+  const lastDay = Number(toDateISO.split('-')[2]);
   const faixas: Array<{ id: string; label: string; fromDay: number; toDay: number }> = [
     { id: '1-7', fromDay: 1, toDay: 7, label: '' },
     { id: '8-14', fromDay: 8, toDay: 14, label: '' },
@@ -84,7 +89,6 @@ function buildFaixasLabels(toDateISO: string) {
 }
 
 export default function DetalhesProfessorPage() {
-  // só professores (e master pode ver também)
   const { isChecking } = useRequireAuth(['ADMIN_PROFESSORES', 'ADMIN_MASTER']);
 
   const API_URL = process.env.NEXT_PUBLIC_URL_API || 'http://localhost:3001';
@@ -94,11 +98,12 @@ export default function DetalhesProfessorPage() {
   const [data, setData] = useState<ResumoResponse | null>(null);
 
   // seleção UI
-  const [faixaSel, setFaixaSel] = useState<string>(''); // '1-7', '8-14', ...
-  const [diaSel, setDiaSel] = useState<string>(''); // 'YYYY-MM-DD'
+  const [faixaSel, setFaixaSel] = useState<string>(''); // '1-7', ...
+  const [diaSel, setDiaSel] = useState<string>('');     // 'YYYY-MM-DD'
 
-  // UI: toggle lista de multas (colapsável)
+  // toggles
   const [mostrarMultas, setMostrarMultas] = useState(false);
+  const [mostrarApoios, setMostrarApoios] = useState(false);
 
   const carregar = useCallback(async () => {
     setLoading(true);
@@ -109,15 +114,14 @@ export default function DetalhesProfessorPage() {
       });
       setData(data);
 
-      // defaults de seleção
+      // defaults
       const faixas = buildFaixasLabels(data.intervalo.to);
       const primeiraFaixa = faixas[0]?.id || '';
       setFaixaSel(primeiraFaixa);
-
-      // quando definirmos a faixa, o dia será decidido no useEffect abaixo
       setDiaSel('');
-      // por padrão: abrir multas se existir pelo menos 1 (experiência mais clara)
+
       setMostrarMultas((data.multasDetalhes?.length || 0) > 0);
+      setMostrarApoios((data.apoiosDetalhes?.length || 0) > 0);
     } catch (e) {
       console.error(e);
       setData(null);
@@ -131,23 +135,20 @@ export default function DetalhesProfessorPage() {
     void carregar();
   }, [carregar, isChecking]);
 
-  // mapeia faixas -> range de dias
+  // faixas -> ranges
   const faixasInfo = useMemo(() => {
     if (!data) return [];
-    const yearMonth = data.intervalo.to.slice(0, 7); // 'YYYY-MM'
-
-    const faixas = buildFaixasLabels(data.intervalo.to).map((f, idx) => {
+    const yearMonth = data.intervalo.to.slice(0, 7);
+    return buildFaixasLabels(data.intervalo.to).map((f, idx) => {
       const fromISO = `${yearMonth}-${String(f.fromDay).padStart(2, '0')}`;
       const toISO = `${yearMonth}-${String(f.toDay).padStart(2, '0')}`;
       const semanaNum = String(idx + 1).padStart(2, '0');
       const label = `SEMANA ${semanaNum} – ${fmtDDMM(fromISO)} À ${fmtDDMM(toISO)}`;
       return { ...f, label, fromISO, toISO };
     });
-
-    return faixas;
   }, [data]);
 
-  // dias da faixa selecionada (filtra `porDia`)
+  // dias da faixa selecionada
   const diasDaFaixa = useMemo(() => {
     if (!data || !faixaSel) return [];
     const info = faixasInfo.find((f) => f.id === faixaSel);
@@ -159,28 +160,26 @@ export default function DetalhesProfessorPage() {
     return data.totais.porDia.filter((d) => inRange(d.data));
   }, [data, faixaSel, faixasInfo]);
 
-  // set default dia quando troca a faixa
+  // default do dia quando muda a faixa
   useEffect(() => {
     if (diaSel) return;
-    if (diasDaFaixa.length) {
-      setDiaSel(diasDaFaixa[0].data);
-    }
+    if (diasDaFaixa.length) setDiaSel(diasDaFaixa[0].data);
   }, [diasDaFaixa, diaSel]);
 
-  // totais da semana selecionada (pega direto do porFaixa da API)
+  // totais da semana ativa
   const totaisSemanaSel = useMemo(() => {
     if (!data || !faixaSel) return { aulas: 0, valor: 0 };
     const f = data.totais.porFaixa.find((x) => x.faixa === faixaSel);
     return f ? { aulas: f.aulas, valor: f.valor } : { aulas: 0, valor: 0 };
   }, [data, faixaSel]);
 
-  // item do dia selecionado
+  // dados do dia selecionado
   const diaInfoSel = useMemo(() => {
     if (!diaSel || !diasDaFaixa.length) return null;
     return diasDaFaixa.find((d) => d.data === diaSel) || null;
   }, [diaSel, diasDaFaixa]);
 
-  // helpers de navegação do mês
+  // navegação de mês
   const incMes = (delta: number) => {
     const [yStr, mStr] = mes.split('-');
     const y = Number(yStr);
@@ -202,7 +201,7 @@ export default function DetalhesProfessorPage() {
     );
   }
 
-  // valores com fallback quando o back ainda não tinha os campos
+  // agregados com fallback
   const multaMes = Number(data?.totais.multaMes || 0);
   const totalMesSomenteAulas = Number(data?.totais.mes.valor || 0);
   const totalMesComMulta =
@@ -215,6 +214,12 @@ export default function DetalhesProfessorPage() {
     ymd: ymdFromISODateTime(m.data),
   }));
 
+  // 👇 novo derivado seguro
+  const apoiosDetalhes = (data?.apoiosDetalhes || []).map((a) => ({
+    ...a,
+    ymd: ymdFromISODateTime(a.data),
+  }));
+
   return (
     <main className="min-h-screen bg-[#f5f5f5]">
       {/* Header */}
@@ -222,7 +227,7 @@ export default function DetalhesProfessorPage() {
         <div className="max-w-sm mx-auto">
           <h1 className="text-2xl font-extrabold tracking-wide drop-shadow-sm">Reservas Anteriores</h1>
 
-          {/* seletor de mês simples */}
+          {/* seletor de mês */}
           <div className="mt-3 flex items-center gap-2">
             <button
               onClick={() => incMes(-1)}
@@ -231,9 +236,7 @@ export default function DetalhesProfessorPage() {
             >
               ‹
             </button>
-            <div className="text-sm font-semibold">
-              {mes.split('-').reverse().join('/')}
-            </div>
+            <div className="text-sm font-semibold">{mes.split('-').reverse().join('/')}</div>
             <button
               onClick={() => incMes(1)}
               className="rounded-md bg-white/15 hover:bg-white/25 transition px-2 py-1 cursor-pointer"
@@ -251,14 +254,14 @@ export default function DetalhesProfessorPage() {
             Quantidade de Aulas marcadas:
           </p>
 
-          {/* estado de carregamento */}
+          {/* loading */}
           {loading && (
             <div className="flex items-center gap-2 text-gray-600 mb-3">
               <Spinner /> <span>Carregando resumo…</span>
             </div>
           )}
 
-          {/* erro ou vazio */}
+          {/* erro */}
           {!loading && !data && (
             <div className="text-sm text-gray-600">Não foi possível carregar os dados.</div>
           )}
@@ -287,7 +290,7 @@ export default function DetalhesProfessorPage() {
                 </div>
               </div>
 
-              {/* Dia da semana selecionada */}
+              {/* Dia */}
               <div className="mb-2">
                 <div className="text-[11px] text-gray-500 mb-1">Dias da semana</div>
                 <div className="relative">
@@ -306,7 +309,7 @@ export default function DetalhesProfessorPage() {
                 </div>
               </div>
 
-              {/* Linha de dia selecionado */}
+              {/* Linha do dia selecionado */}
               {diaInfoSel && (
                 <div className="grid grid-cols-2 gap-2 mb-2">
                   <div className="rounded-md bg-gray-100 px-3 py-2 text-[13px] text-gray-600">
@@ -330,13 +333,11 @@ export default function DetalhesProfessorPage() {
               <div className="rounded-md bg-gray-200 px-3 py-2 text-[13px] text-gray-700">
                 <div className="flex items-center justify-between">
                   <span>Total a pagar da semana:</span>
-                  <span className="font-semibold">
-                    {currencyBRL(totaisSemanaSel.valor)}
-                  </span>
+                  <span className="font-semibold">{currencyBRL(totaisSemanaSel.valor)}</span>
                 </div>
               </div>
 
-              {/* Separador */}
+              {/* separador */}
               <div className="my-3 border-t border-gray-200" />
 
               {/* Totais do mês */}
@@ -348,27 +349,76 @@ export default function DetalhesProfessorPage() {
 
                 <div className="flex items-center justify-between mt-1">
                   <span>Total (aulas):</span>
-                  <span className="font-semibold">
-                    {currencyBRL(totalMesSomenteAulas)}
-                  </span>
+                  <span className="font-semibold">{currencyBRL(totalMesSomenteAulas)}</span>
                 </div>
 
                 {multaMes !== 0 && (
                   <div className="flex items-center justify-between mt-1">
                     <span>Multas do mês:</span>
-                    <span className="font-semibold">
-                      {currencyBRL(multaMes)}
-                    </span>
+                    <span className="font-semibold">{currencyBRL(multaMes)}</span>
                   </div>
                 )}
 
                 <div className="flex items-center justify-between mt-1">
                   <span>Total do mês (com multa):</span>
-                  <span className="font-semibold">
-                    {currencyBRL(totalMesComMulta)}
-                  </span>
+                  <span className="font-semibold">{currencyBRL(totalMesComMulta)}</span>
                 </div>
+
+                {/* 👇 resumo dos apoios do mês (se existir) */}
+                {typeof data.totais.apoiadasMes === 'number' && data.totais.apoiadasMes > 0 && (
+                  <div className="mt-2 text-[12px] text-gray-700">
+                    <div className="flex items-center justify-between">
+                      <span>Aulas apoiadas no mês:</span>
+                      <span className="font-semibold">{data.totais.apoiadasMes}</span>
+                    </div>
+                    {typeof data.totais.valorApoioDescontadoMes === 'number' && (
+                      <div className="flex items-center justify-between">
+                        <span>Valor “descontado” (apoio):</span>
+                        <span className="font-semibold">
+                          {currencyBRL(data.totais.valorApoioDescontadoMes)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
+
+              {/* 👇 Aulas apoiadas (colapsável) */}
+              {apoiosDetalhes.length > 0 && (
+                <div className="mt-3">
+                  <button
+                    onClick={() => setMostrarApoios(v => !v)}
+                    className="w-full flex items-center justify-between rounded-md bg-gray-100 hover:bg-gray-200 transition px-3 py-2 text-[13px] text-gray-700 cursor-pointer"
+                    aria-expanded={mostrarApoios}
+                  >
+                    <span className="font-semibold">
+                      Aulas apoiadas ({apoiosDetalhes.length})
+                    </span>
+                    <span className="text-gray-500">{mostrarApoios ? '▲' : '▼'}</span>
+                  </button>
+
+                  {mostrarApoios && (
+                    <ul className="mt-2 divide-y rounded-md border border-gray-200 overflow-hidden">
+                      {apoiosDetalhes.map((a) => (
+                        <li key={a.id} className="px-3 py-2 text-[13px] flex flex-col gap-0.5 bg-white">
+                          <div className="flex items-center justify-between">
+                            <span className="text-gray-700">
+                              {fmtBR(a.ymd)} · {a.horario}
+                            </span>
+                            <span className="text-[11px] rounded-full bg-orange-50 text-orange-700 border border-orange-200 px-2 py-0.5">
+                              isento
+                            </span>
+                          </div>
+                          <div className="text-[12px] text-gray-600">
+                            {quadraLabel(a.quadra)}{a.esporte?.nome ? ` · ${a.esporte?.nome}` : ''}
+                            {a.apoiadoUsuario?.nome ? ` · ${a.apoiadoUsuario.nome}` : ''}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
 
               {/* Multas detalhadas (colapsável) */}
               {multasDetalhes.length > 0 && (
@@ -404,7 +454,7 @@ export default function DetalhesProfessorPage() {
                 </div>
               )}
 
-              {/* mini nota de rodapé */}
+              {/* nota rodapé */}
               <p className="mt-2 text-[11px] text-gray-500">
                 Duração considerada por aula: {data.intervalo.duracaoMin} min · Valor por aula: {currencyBRL(data.professor.valorQuadra || 0)}
               </p>
