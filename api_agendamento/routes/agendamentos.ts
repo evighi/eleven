@@ -115,7 +115,7 @@ function horarioDentroIntervalo(h: string, ini: string, fim: string) {
 
 // ===== novos helpers para trabalhar sempre no "dia local" =====
 function localWeekdayIndexOfYMD(ymd: string): number {
-  // meio-dia -03:00 evita rollover
+  // meio-dia -03:00 evita rollover (sem DST no BR atualmente)
   return new Date(`${ymd}T12:00:00-03:00`).getUTCDay(); // 0..6
 }
 function addDaysLocalYMD(ymd: string, days: number): string {
@@ -203,7 +203,7 @@ const agendamentoSchema = z.object({
 
   // 🆕 novos
   professorId: z.string().uuid().optional(),
-  tipoSessao: z.enum(["AULA", "JOGO"]).optional(),
+  tipoSessao: z.nativeEnum(TipoSessaoProfessor).optional(),
   multa: z.coerce.number().min(0).optional(),
 
   // 🆕 APOIADO (compatível, não quebra nada)
@@ -384,8 +384,7 @@ router.post("/", verificarToken, async (req, res) => {
       }
     }
 
-    // ======================== NOVO: Professor + TipoSessao + Multa ========================
-    // 1) Checamos professorId explicitamente ou inferimos pelo dono (se o dono for professor)
+    // ======================== Professor + TipoSessao + Multa ========================
     let professorIdFinal: string | null = professorIdBody ?? null;
 
     if (!professorIdFinal) {
@@ -409,7 +408,6 @@ router.post("/", verificarToken, async (req, res) => {
       }
     }
 
-    // 2) Definir tipoSessao (regras 18:00+ = JOGO; antes = AULA se não vier do front)
     const isNight = horario >= "18:00";
     let tipoSessaoFinal: TipoSessaoProfessor | null = null;
 
@@ -417,20 +415,18 @@ router.post("/", verificarToken, async (req, res) => {
       if (isNight) {
         tipoSessaoFinal = "JOGO";
       } else {
-        // antes de 18h: se não vier nada, default AULA (compat compat com legado)
         const t = (tipoSessaoBody as TipoSessaoProfessor | undefined) ?? "AULA";
         tipoSessaoFinal = t;
       }
     }
 
-    // 3) Multa: aceita número >=0 do body, mas prioriza a automática (horário passado hoje)
     const multaBodySan =
       typeof multaBody === "number" && Number.isFinite(multaBody) && multaBody >= 0
         ? Number(multaBody.toFixed(2))
         : null;
     const multaPersistir = multaPorHorarioPassado ?? multaBodySan;
 
-    // ======================== NOVO: APOIADO (compat, sem migração) ========================
+    // ======================== APOIADO (compat, sem migração) ========================
     let isApoiadoFinal = false;
     let apoiadoUsuarioIdFinal: string | null = null;
 
@@ -488,18 +484,18 @@ router.post("/", verificarToken, async (req, res) => {
         status: "CONFIRMADO",
         jogadores: { connect: connectIds },
 
-        // 🆕 persistência dos campos
+        // persistência dos campos
         professorId: professorIdFinal,
         tipoSessao: tipoSessaoFinal,
         multa: multaPersistir ?? null,
 
-        // 🆕 compat para apoiado (sem migração)
+        // compat para apoiado (sem migração)
         obs: obsFinal,
       },
       include: {
         jogadores: { select: { id: true, nome: true, email: true } },
         usuario: { select: { id: true, nome: true, email: true, tipo: true } },
-        professor: { select: { id: true, nome: true, email: true } }, // nova relação
+        professor: { select: { id: true, nome: true, email: true } },
         quadra: { select: { id: true, nome: true, numero: true } },
         esporte: { select: { id: true, nome: true } },
       },
@@ -521,7 +517,6 @@ router.post("/", verificarToken, async (req, res) => {
           professorId: professorIdFinal,
           tipoSessao: tipoSessaoFinal,
           multa: multaPersistir ?? null,
-          // 🆕 trilha do apoiado
           isApoiado: isApoiadoFinal,
           apoiadoUsuarioId: apoiadoUsuarioIdFinal,
         },
@@ -673,7 +668,7 @@ router.get("/me", verificarToken, async (req, res) => {
         donoId: a.usuario?.id ?? a.usuarioId,
         donoNome: a.usuario?.nome ?? "",
         euSouDono,
-        // 🆕 extras
+        // extras
         professorId: a.professor ? a.professor.id : null,
         professorNome: a.professor ? a.professor.nome : null,
         tipoSessao: a.tipoSessao ?? null,
@@ -842,7 +837,7 @@ router.get("/transferidos/me", verificarToken, async (req, res) => {
           include: { usuario: { select: { id: true, nome: true, email: true } } },
         });
 
-        const quadraLogoUrl = resolveQuadraImg(t.quadra?.imagem);
+        const quadraLogoUrl = resolveQuadraImg(t.quadra?.imagem) || "/quadra.png";
 
         return {
           id: t.id,
@@ -946,7 +941,7 @@ router.get("/:id", verificarToken, async (req, res) => {
         email: sanitizeEmail(j.email),
         celular: sanitizePhone(j.celular),
       })),
-      // 🆕 extras
+      // extras
       professor: agendamento.professor
         ? {
             id: agendamento.professor.id,
@@ -1160,6 +1155,23 @@ router.patch("/:id/transferir", verificarToken, async (req, res) => {
     });
     if (!agendamento) {
       return res.status(404).json({ erro: "Agendamento não encontrado" });
+    }
+
+    // Não permitir transferir se não for CONFIRMADO
+    if (["CANCELADO", "TRANSFERIDO", "FINALIZADO"].includes(agendamento.status)) {
+      return res.status(409).json({ erro: "Este agendamento não pode ser transferido." });
+    }
+
+    // Não permitir transferir se já passou
+    const now = new Date();
+    const nowYMD = localYMD(now);
+    const nowHM = localHM(now);
+    const nowMs = msFromLocalYMDHM(nowYMD, nowHM);
+    const schedYMD = agendamento.data.toISOString().slice(0, 10);
+    const schedHM = agendamento.horario;
+    const schedMs = msFromLocalYMDHM(schedYMD, schedHM);
+    if (schedMs <= nowMs) {
+      return res.status(422).json({ erro: "Não é possível transferir um agendamento já iniciado/finalizado." });
     }
 
     const isOwner = agendamento.usuarioId === userId;
@@ -1386,3 +1398,6 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
 });
 
 export default router;
+
+
+
