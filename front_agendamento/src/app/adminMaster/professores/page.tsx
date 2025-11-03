@@ -201,8 +201,6 @@ export default function ProfessoresAdmin() {
       const faixas = buildFaixasLabels(res.data.intervalo.to)
       setFaixaSel(faixas[0]?.id || '')
       setDiaSel('')
-      setMostrarMultas((res.data.multasDetalhes?.length || 0) > 0)
-      setMostrarApoios((res.data.apoiosDetalhes?.length || 0) > 0)
     } catch (e: any) {
       console.error(e)
       setErroQuadro(e?.response?.data?.erro || 'Falha ao carregar o quadro deste professor')
