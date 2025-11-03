@@ -690,11 +690,13 @@ router.get("/me", verificarToken, async (req, res) => {
         professorNome: a.professor ? a.professor.nome : null,
         tipoSessao: a.tipoSessao ?? null,
         multa: a.multa ?? null,
+        multaAnulada: a.multaAnulada ?? false, // 👈 AQUI
         // 🆕 APOIO
         isencaoApoiado: a.isencaoApoiado ?? false,
         apoiadoUsuario: a.apoiadoUsuario ? { id: a.apoiadoUsuario.id, nome: a.apoiadoUsuario.nome } : null,
       };
     });
+
 
     const permanentes = await prisma.agendamentoPermanente.findMany({
       where: {
@@ -948,11 +950,11 @@ router.get("/:id", verificarToken, async (req, res) => {
       horario: agendamento.horario,
       usuario: agendamento.usuario
         ? {
-            id: agendamento.usuario.id,
-            nome: agendamento.usuario.nome,
-            email: sanitizeEmail(agendamento.usuario.email),
-            celular: sanitizePhone(agendamento.usuario.celular),
-          }
+          id: agendamento.usuario.id,
+          nome: agendamento.usuario.nome,
+          email: sanitizeEmail(agendamento.usuario.email),
+          celular: sanitizePhone(agendamento.usuario.celular),
+        }
         : null,
       usuarioId: agendamento.usuario?.id,
       esporte: agendamento.esporte?.nome,
@@ -966,23 +968,24 @@ router.get("/:id", verificarToken, async (req, res) => {
       // 🆕 extras
       professor: agendamento.professor
         ? {
-            id: agendamento.professor.id,
-            nome: agendamento.professor.nome,
-            email: sanitizeEmail(agendamento.professor.email),
-          }
+          id: agendamento.professor.id,
+          nome: agendamento.professor.nome,
+          email: sanitizeEmail(agendamento.professor.email),
+        }
         : null,
       professorId: agendamento.professorId ?? null,
       tipoSessao: agendamento.tipoSessao ?? null,
       multa: agendamento.multa ?? null,
+      multaAnulada: agendamento.multaAnulada ?? false, // 👈 AQUI
       // 🆕 APOIO
       isencaoApoiado: agendamento.isencaoApoiado ?? false,
       apoiadoUsuario: agendamento.apoiadoUsuario
         ? {
-            id: agendamento.apoiadoUsuario.id,
-            nome: agendamento.apoiadoUsuario.nome,
-            email: sanitizeEmail(agendamento.apoiadoUsuario.email),
-            celular: sanitizePhone(agendamento.apoiadoUsuario.celular),
-          }
+          id: agendamento.apoiadoUsuario.id,
+          nome: agendamento.apoiadoUsuario.nome,
+          email: sanitizeEmail(agendamento.apoiadoUsuario.email),
+          celular: sanitizePhone(agendamento.apoiadoUsuario.celular),
+        }
         : null,
     });
   } catch (err) {
@@ -990,6 +993,113 @@ router.get("/:id", verificarToken, async (req, res) => {
     return res.status(500).json({ erro: "Erro ao buscar agendamento" });
   }
 });
+
+// 💸 Remover/anular multa de um agendamento (apenas admin)
+router.post("/:id/remover-multa", verificarToken, async (req, res) => {
+  const { id } = req.params;
+
+  const reqCustom = req as typeof req & {
+    usuario?: { usuarioLogadoId: string; usuarioLogadoTipo?: string };
+  };
+  if (!reqCustom.usuario) {
+    return res.status(401).json({ erro: "Não autenticado" });
+  }
+
+  // Apenas admin pode anular multa
+  if (!isAdminRole(reqCustom.usuario.usuarioLogadoTipo)) {
+    return res.status(403).json({ erro: "Apenas administradores podem remover multa" });
+  }
+
+  try {
+    const ag = await prisma.agendamento.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        data: true,
+        horario: true,
+        usuarioId: true,
+        professorId: true,
+        status: true,
+        multa: true,
+        multaAnulada: true,
+      },
+    });
+
+    if (!ag) {
+      return res.status(404).json({ erro: "Agendamento não encontrado" });
+    }
+
+    // se nunca teve multa
+    if (ag.multa == null) {
+      return res.status(409).json({ erro: "Este agendamento não possui multa para ser removida." });
+    }
+
+    // se já foi anulada antes
+    if (ag.multaAnulada) {
+      return res.status(409).json({ erro: "A multa deste agendamento já foi anulada." });
+    }
+
+    const agora = new Date();
+
+    const atualizado = await prisma.agendamento.update({
+      where: { id },
+      data: {
+        multa: null, // 👈 some das contas
+        multaAnulada: true,
+        multaAnuladaEm: agora,
+        multaAnuladaPorId: reqCustom.usuario.usuarioLogadoId,
+      },
+    });
+
+    // AUDITORIA
+    try {
+      await logAudit({
+        event: "AGENDAMENTO_MULTA_ANULAR",
+        req,
+        target: { type: TargetType.AGENDAMENTO, id },
+        metadata: {
+          agendamentoId: id,
+          multaAntes: ag.multa,
+          multaDepois: null,
+          multaAnulada: true,
+          multaAnuladaEm: agora.toISOString(),
+          multaAnuladaPorId: reqCustom.usuario.usuarioLogadoId,
+          status: ag.status,
+          data: ag.data.toISOString().slice(0, 10),
+          horario: ag.horario,
+          professorId: ag.professorId ?? null,
+          donoId: ag.usuarioId,
+        },
+      });
+    } catch (e) {
+      console.error("[audit] falha ao registrar anulação de multa:", e);
+    }
+
+    return res.status(200).json({
+      message: "Multa removida com sucesso.",
+      agendamento: atualizado,
+    });
+  } catch (error) {
+    console.error("Erro ao remover multa do agendamento:", error);
+
+    try {
+      await logAudit({
+        event: "OTHER",
+        req,
+        target: { type: TargetType.AGENDAMENTO, id },
+        metadata: {
+          action: "REMOVER_MULTA_FAIL",
+          error: (error as any)?.message ?? String(error),
+        },
+      });
+    } catch (e) {
+      console.error("[audit] falha ao registrar erro de remover multa:", e);
+    }
+
+    return res.status(500).json({ erro: "Erro ao remover multa do agendamento." });
+  }
+});
+
 
 // ✅ Cancelar agendamento comum (cliente 12h / professor 2h / super-admin sem limite)
 // Mantém a sua janela de 15min pós-criação quando faltar menos que o limite.
@@ -1267,10 +1377,10 @@ router.patch("/:id/transferir", verificarToken, async (req, res) => {
         horario: novoAgendamento.horario,
         usuario: novoAgendamento.usuario
           ? {
-              id: novoAgendamento.usuario.id,
-              nome: novoAgendamento.usuario.nome,
-              email: isAdmin ? novoAgendamento.usuario.email : undefined,
-            }
+            id: novoAgendamento.usuario.id,
+            nome: novoAgendamento.usuario.nome,
+            email: isAdmin ? novoAgendamento.usuario.email : undefined,
+          }
           : null,
         jogadores: novoAgendamento.jogadores.map((j) => ({
           id: j.id,
@@ -1279,10 +1389,10 @@ router.patch("/:id/transferir", verificarToken, async (req, res) => {
         })),
         quadra: novoAgendamento.quadra
           ? {
-              id: novoAgendamento.quadra.id,
-              nome: novoAgendamento.quadra.nome,
-              numero: novoAgendamento.quadra.numero,
-            }
+            id: novoAgendamento.quadra.id,
+            nome: novoAgendamento.quadra.nome,
+            numero: novoAgendamento.quadra.numero,
+          }
           : null,
       },
     });
@@ -1329,9 +1439,9 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
 
     const usuariosValidos = jogadoresIds.length
       ? await prisma.usuario.findMany({
-          where: { id: { in: jogadoresIds } },
-          select: { id: true },
-        })
+        where: { id: { in: jogadoresIds } },
+        select: { id: true },
+      })
       : [];
 
     if (usuariosValidos.length !== jogadoresIds.length) {
@@ -1395,10 +1505,10 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
       status: atualizado.status,
       usuario: atualizado.usuario
         ? {
-            id: atualizado.usuario.id,
-            nome: atualizado.usuario.nome,
-            email: isAdmin ? atualizado.usuario.email : undefined,
-          }
+          id: atualizado.usuario.id,
+          nome: atualizado.usuario.nome,
+          email: isAdmin ? atualizado.usuario.email : undefined,
+        }
         : null,
       jogadores: atualizado.jogadores.map((j) => ({
         id: j.id,
