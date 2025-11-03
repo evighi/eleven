@@ -103,6 +103,9 @@ model Usuario {
 
   bloqueiosFeitos BloqueioQuadra[] @relation("UsuarioBloqueios")
 
+  // 👇 NOVO: relação com multas anuladas
+  multasAnuladas Agendamento[] @relation("MultaAnuladaPor")
+
   auditLogs AuditLog[] @relation("UsuarioAuditLogs")
 
   // 🔒 controle de acesso e marcações de exclusão
@@ -220,6 +223,12 @@ model Agendamento {
 
   /// Valor de multa (existente; mantido opcional)
   multa Decimal? @db.Decimal(10, 2)
+
+  /// 👇 NOVOS CAMPOS: controle de anulação de multa
+  multaAnulada      Boolean  @default(false) // true = multa foi anulada
+  multaAnuladaEm    DateTime?
+  multaAnuladaPorId String?
+  multaAnuladaPor   Usuario? @relation("MultaAnuladaPor", fields: [multaAnuladaPorId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
