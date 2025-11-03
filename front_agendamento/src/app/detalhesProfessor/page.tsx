@@ -13,7 +13,7 @@ type MultaDetalhe = {
   id: string;
   data: string;            // ISO datetime
   horario: string;         // "HH:MM"
-  multa: number;
+  multa: number | string;  // 👈 pode vir string
   quadra?: { id: string; numero: number | null; nome: string | null } | null;
   esporte?: { id: string; nome: string | null } | null;
 };
@@ -36,19 +36,29 @@ type ResumoResponse = {
     porDia: PorDia[];
     porFaixa: PorFaixa[];
     mes: MesTotais;
-    multaMes?: number;
-    valorMesComMulta?: number;
+    multaMes?: number | string;
+    valorMesComMulta?: number | string;
     /** 👇 novos do back */
     apoiadasMes?: number;
-    valorApoioDescontadoMes?: number;
+    valorApoioDescontadoMes?: number | string;
   };
   multasDetalhes?: MultaDetalhe[];
   /** 👇 novo bloco do back */
   apoiosDetalhes?: ApoioDetalhe[];
 };
 
-const currencyBRL = (n: number) =>
-  n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2 });
+/** ==== helpers numéricos/formatadores ==== */
+const toNumber = (v: unknown) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const currencyBRL = (n: number | string) =>
+  toNumber(n).toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    minimumFractionDigits: 2,
+  });
 
 const fmtBR = (isoYMD: string) => {
   const [y, m, d] = isoYMD.split('-');
@@ -120,7 +130,7 @@ export default function DetalhesProfessorPage() {
       setFaixaSel(primeiraFaixa);
       setDiaSel('');
 
-      // 👇 sempre começa FECHADO, mesmo se houver itens
+      // sempre começa FECHADO, mesmo se houver itens
       setMostrarMultas(false);
       setMostrarApoios(false);
     } catch (e) {
@@ -203,11 +213,11 @@ export default function DetalhesProfessorPage() {
   }
 
   // agregados com fallback
-  const multaMes = Number(data?.totais.multaMes || 0);
-  const totalMesSomenteAulas = Number(data?.totais.mes.valor || 0);
+  const multaMes = toNumber(data?.totais.multaMes || 0);
+  const totalMesSomenteAulas = toNumber(data?.totais.mes.valor || 0);
   const totalMesComMulta =
-    Number.isFinite(Number(data?.totais.valorMesComMulta))
-      ? Number(data?.totais.valorMesComMulta)
+    Number.isFinite(toNumber(data?.totais.valorMesComMulta))
+      ? toNumber(data?.totais.valorMesComMulta)
       : totalMesSomenteAulas + multaMes;
 
   const multasDetalhes = (data?.multasDetalhes || []).map((m) => ({
@@ -215,7 +225,7 @@ export default function DetalhesProfessorPage() {
     ymd: ymdFromISODateTime(m.data),
   }));
 
-  // 👇 derivado seguro
+  // derivado seguro
   const apoiosDetalhes = (data?.apoiosDetalhes || []).map((a) => ({
     ...a,
     ymd: ymdFromISODateTime(a.data),
