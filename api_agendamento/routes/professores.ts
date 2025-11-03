@@ -111,7 +111,7 @@ type ComumRow = {
   quadraId: string;
   tipoSessao: TipoSessaoProfessor | null;
   professorId: string | null; // informativo
-  isencaoApoiado?: boolean | null; // 👈 NOVO: não entra no VALOR
+  isencaoApoiado?: boolean | null; // 👈 não entra no VALOR
 };
 type PermRow = {
   diaSemana: DiaSemana;
@@ -150,7 +150,7 @@ function computeResumoProfessorFromDatasets(
     vistos.add(k);
     const cur = porDia.get(ymd) || { aulas: 0, apoiadas: 0 };
     cur.aulas += 1;
-    if (apoiada) cur.apoiadas += 1; // 👈 conta aula, mas NÃO entra no valor
+    if (apoiada) cur.apoiadas += 1; // conta aula, mas NÃO entra no valor
     porDia.set(ymd, cur);
   };
 
@@ -264,6 +264,8 @@ async function multasDetalhadasPeriodoProfessor(
       data: { gte: inicioUTC, lt: fimUTCExcl },
       OR: [{ professorId: profId }, { AND: [{ professorId: null }, { usuarioId: profId }] }],
       multa: { not: null },
+      // 👇 IGNORA multas anuladas
+      multaAnulada: { not: true },
     },
     select: {
       id: true,
@@ -299,7 +301,6 @@ async function aulasApoiadasDetalhadasPeriodoProfessor(
       horario: true,
       quadra: { select: { id: true, numero: true, nome: true } },
       esporte: { select: { id: true, nome: true } },
-      // estes campos assumem que existe a relação; se não houver no schema, remova:
       apoiadoUsuario: { select: { id: true, nome: true, email: true } },
     },
     orderBy: [{ data: "asc" }, { horario: "asc" }],
@@ -365,7 +366,7 @@ router.get("/me/resumo", async (req, res) => {
         quadraId: true,
         tipoSessao: true,
         professorId: true,
-        isencaoApoiado: true, // 👈 pega do schema novo
+        isencaoApoiado: true,
       },
     });
 
@@ -438,12 +439,12 @@ router.get("/me/resumo", async (req, res) => {
       bloqueiosMap
     );
 
-    // multas detalhadas do período (indep. do tipoSessao)
+    // multas detalhadas do período (indep. do tipoSessao) — já ignora anuladas
     const multasDetalhes = await multasDetalhadasPeriodoProfessor(userId, inicioUTC, fimUTCExcl);
     const multaMes = multasDetalhes.reduce((acc, m) => acc + Number(m.multa ?? 0), 0);
     const totalMesComMulta = resumo.totais.mes.valor + multaMes;
 
-    // 🆕 apoios detalhados do período
+    // apoios detalhados do período
     const apoiosDetalhes = await aulasApoiadasDetalhadasPeriodoProfessor(userId, inicioUTC, fimUTCExcl);
     const apoiadasMes = apoiosDetalhes.length;
     const valorApoioDescontadoMes = apoiadasMes * Number(resumo.professor.valorQuadra || 0);
@@ -455,12 +456,10 @@ router.get("/me/resumo", async (req, res) => {
         ...resumo.totais,
         multaMes,
         valorMesComMulta: totalMesComMulta,
-        // 👇 NOVOS CAMPOS
         apoiadasMes,
         valorApoioDescontadoMes,
       },
       multasDetalhes,
-      // 👇 NOVO BLOCO DETALHADO
       apoiosDetalhes: apoiosDetalhes.map((a) => ({
         id: a.id,
         data: a.data,
@@ -532,7 +531,7 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
         quadraId: true,
         tipoSessao: true,
         professorId: true,
-        isencaoApoiado: true, // 👈
+        isencaoApoiado: true,
       },
     });
 
@@ -604,12 +603,12 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
       bloqueiosMap
     );
 
-    // multas do período
+    // multas do período — já ignorando anuladas pela função helper
     const multasDetalhes = await multasDetalhadasPeriodoProfessor(profId, inicioUTC, fimUTCExcl);
     const multaMes = multasDetalhes.reduce((acc, m) => acc + Number(m.multa ?? 0), 0);
     const totalMesComMulta = resumo.totais.mes.valor + multaMes;
 
-    // 🆕 apoios detalhados do período
+    // apoios detalhados do período
     const apoiosDetalhes = await aulasApoiadasDetalhadasPeriodoProfessor(profId, inicioUTC, fimUTCExcl);
     const apoiadasMes = apoiosDetalhes.length;
     const valorApoioDescontadoMes = apoiadasMes * Number(resumo.professor.valorQuadra || 0);
@@ -621,11 +620,10 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
         ...resumo.totais,
         multaMes,
         valorMesComMulta: totalMesComMulta,
-        // 👇 NOVOS CAMPOS
         apoiadasMes,
         valorApoioDescontadoMes,
       },
-      multasDetalhes, // lista detalhada p/ admins também
+      multasDetalhes,
       apoiosDetalhes: apoiosDetalhes.map((a) => ({
         id: a.id,
         data: a.data,
@@ -689,7 +687,6 @@ router.get("/admin", requireAdmin, async (req, res) => {
         intervalo: { from: fromYMD, to: toYMD, duracaoMin },
         professores: [],
         totalGeral: { aulas: 0, valor: 0 },
-        // 👇 novos totais gerais
         totalApoiadasGeral: 0,
         totalApoioDescontadoGeral: 0,
       });
@@ -718,7 +715,7 @@ router.get("/admin", requireAdmin, async (req, res) => {
           usuarioId: true,
           professorId: true,
           tipoSessao: true,
-          isencaoApoiado: true, // 👈
+          isencaoApoiado: true,
         },
       }),
       prisma.agendamentoPermanente.findMany({
@@ -754,7 +751,7 @@ router.get("/admin", requireAdmin, async (req, res) => {
           quadras: { select: { id: true } },
         },
       }),
-      // 🔢 multas do período (sem filtrar tipoSessao)
+      // 🔢 multas do período (sem filtrar tipoSessao) — IGNORA anuladas
       prisma.agendamento.findMany({
         where: {
           status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
@@ -764,6 +761,7 @@ router.get("/admin", requireAdmin, async (req, res) => {
             { AND: [{ professorId: null }, { usuarioId: { in: profIds } }] },
           ],
           multa: { not: null },
+          multaAnulada: { not: true }, // 👈 aqui também
         },
         select: { multa: true, professorId: true, usuarioId: true },
       }),
@@ -771,7 +769,7 @@ router.get("/admin", requireAdmin, async (req, res) => {
 
     // 3) Index por professor (chave = professorId ?? usuarioId)
     const comunsByProf = new Map<string, ComumRow[]>();
-    const apoiadasByProf = new Map<string, number>(); // 👈 contar isencões
+    const apoiadasByProf = new Map<string, number>();
     for (const ag of comunsAll) {
       const key = ag.professorId ?? ag.usuarioId!;
       if (!profIdSet.has(key)) continue;
@@ -822,7 +820,7 @@ router.get("/admin", requireAdmin, async (req, res) => {
       }
     }
 
-    // 🔢 somatório de multa por professor
+    // 🔢 somatório de multa por professor (já sem anuladas)
     const multaByProf = new Map<string, number>();
     for (const m of multasAll) {
       const key = m.professorId ?? m.usuarioId!;
@@ -839,8 +837,8 @@ router.get("/admin", requireAdmin, async (req, res) => {
       valorMes: number;
       multaMes: number;
       valorMesComMulta: number;
-      apoiadasMes: number;               // 👈 novo
-      valorApoioDescontadoMes: number;   // 👈 novo
+      apoiadasMes: number;
+      valorApoioDescontadoMes: number;
       porFaixa: Array<{ faixa: string; aulas: number; valor: number }>;
     }> = [];
 
@@ -889,7 +887,6 @@ router.get("/admin", requireAdmin, async (req, res) => {
       intervalo: { from: fromYMD, to: toYMD, duracaoMin },
       professores: resposta,
       totalGeral: { aulas: totalAulasGeral, valor: totalValorGeral }, // valor inclui multa
-      // 👇 novos totais gerais
       totalApoiadasGeral,
       totalApoioDescontadoGeral,
     });

@@ -27,6 +27,7 @@ export type AuditEvent =
   | "AGENDAMENTO_CANCEL"
   | "AGENDAMENTO_TRANSFER"
   | "AGENDAMENTO_DELETE"
+  | "AGENDAMENTO_MULTA_ANULAR"  
   // Agendamento permanente (quadra)
   | "AGENDAMENTO_PERM_CREATE"
   | "AGENDAMENTO_PERM_CANCEL"

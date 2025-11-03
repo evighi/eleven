@@ -142,6 +142,9 @@ export default function ProfessoresAdmin() {
   const [mostrarMultas, setMostrarMultas] = useState(false)
   const [mostrarApoios, setMostrarApoios] = useState(false)
 
+  // 👇 novo: controla loading por multa específica
+  const [removendoMultaId, setRemovendoMultaId] = useState<string | null>(null)
+
   const carregarProfessores = useCallback(async () => {
     setLoading(true)
     setErro(null)
@@ -276,6 +279,55 @@ export default function ProfessoresAdmin() {
     ...a,
     ymd: ymdFromISODateTime(a.data),
   }))
+
+  // 👇 função para remover multa de um agendamento específico
+  const removerMulta = async (multa: MultaDetalhe) => {
+    if (!selecionado) return
+
+    const ok = window.confirm('Confirmar remoção desta multa?')
+    if (!ok) return
+
+    try {
+      setRemovendoMultaId(multa.id)
+      setErroQuadro(null)
+
+      // Chama o backend para remover a multa
+      await axios.post(
+        `${API_URL}/agendamentos/${multa.id}/remover-multa`,
+        {},
+        { withCredentials: true },
+      )
+
+      // Recarrega a lista geral (para atualizar totais / multas do mês)
+      await carregarProfessores()
+
+      // Recarrega o quadro do professor selecionado para refletir a remoção
+      const res = await axios.get<ResumoProfessorResponse>(
+        `${API_URL}/professores/${selecionado.id}/resumo`,
+        {
+          params: { mes },
+          withCredentials: true,
+        },
+      )
+      setQuadro(res.data)
+
+      // Mantém faixa/dia selecionados, só garante que continuam válidos
+      const faixas = buildFaixasLabels(res.data.intervalo.to)
+      if (!faixas.find((f) => f.id === faixaSel)) {
+        setFaixaSel(faixas[0]?.id || '')
+        setDiaSel('')
+      }
+
+      alert('Multa removida com sucesso.')
+    } catch (e: any) {
+      console.error(e)
+      const msg = e?.response?.data?.erro || 'Erro ao remover multa.'
+      setErroQuadro(msg)
+      alert(msg)
+    } finally {
+      setRemovendoMultaId(null)
+    }
+  }
 
   return (
     <div className="max-w-6xl mx-auto mt-6 sm:mt-10 p-4 sm:p-6 bg-white rounded-xl shadow-sm border border-gray-200">
@@ -489,13 +541,26 @@ export default function ProfessoresAdmin() {
                                     key={m.id}
                                     className="px-3 py-2 text-[13px] flex flex-col gap-0.5 bg-white"
                                   >
-                                    <div className="flex items-center justify-between">
+                                    <div className="flex items-center justify-between gap-2">
                                       <span className="text-gray-700">
                                         {fmtBR(m.ymd)} · {m.horario}
                                       </span>
-                                      <span className="font-semibold">
-                                        {currencyBRL(Number(m.multa))}
-                                      </span>
+
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-semibold">
+                                          {currencyBRL(Number(m.multa))}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => void removerMulta(m)}
+                                          disabled={removendoMultaId === m.id}
+                                          className="text-[11px] px-2 py-1 rounded border border-red-300 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-60 disabled:cursor-not-allowed"
+                                        >
+                                          {removendoMultaId === m.id
+                                            ? 'Removendo...'
+                                            : 'Remover multa'}
+                                        </button>
+                                      </div>
                                     </div>
                                     <div className="text-[12px] text-gray-600">
                                       {quadraLabel(m.quadra)}
