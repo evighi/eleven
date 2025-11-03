@@ -120,8 +120,9 @@ export default function DetalhesProfessorPage() {
       setFaixaSel(primeiraFaixa);
       setDiaSel('');
 
-      setMostrarMultas((data.multasDetalhes?.length || 0) > 0);
-      setMostrarApoios((data.apoiosDetalhes?.length || 0) > 0);
+      // 👇 sempre começa FECHADO, mesmo se houver itens
+      setMostrarMultas(false);
+      setMostrarApoios(false);
     } catch (e) {
       console.error(e);
       setData(null);
@@ -214,7 +215,7 @@ export default function DetalhesProfessorPage() {
     ymd: ymdFromISODateTime(m.data),
   }));
 
-  // 👇 novo derivado seguro
+  // 👇 derivado seguro
   const apoiosDetalhes = (data?.apoiosDetalhes || []).map((a) => ({
     ...a,
     ymd: ymdFromISODateTime(a.data),
@@ -318,7 +319,9 @@ export default function DetalhesProfessorPage() {
                   </div>
                   <div className="rounded-md bg-gray-100 px-3 py-2 text-[13px] text-gray-600">
                     <span className="opacity-70 mr-1">Aulas:</span>
-                    <span className="font-semibold text-orange-600">{String(diaInfoSel.aulas).padStart(2, '0')}</span>
+                    <span className="font-semibold text-orange-600">
+                      {String(diaInfoSel.aulas).padStart(2, '0')}
+                    </span>
                   </div>
                 </div>
               )}
@@ -340,52 +343,9 @@ export default function DetalhesProfessorPage() {
               {/* separador */}
               <div className="my-3 border-t border-gray-200" />
 
-              {/* Totais do mês */}
-              <div className="rounded-md bg-gray-100 px-3 py-2 text-[13px] text-gray-700">
-                <div className="flex items-center justify-between">
-                  <span>Total de aulas do mês:</span>
-                  <span className="font-semibold">{data.totais.mes.aulas}</span>
-                </div>
-
-                <div className="flex items-center justify-between mt-1">
-                  <span>Total (aulas):</span>
-                  <span className="font-semibold">{currencyBRL(totalMesSomenteAulas)}</span>
-                </div>
-
-                {multaMes !== 0 && (
-                  <div className="flex items-center justify-between mt-1">
-                    <span>Multas do mês:</span>
-                    <span className="font-semibold">{currencyBRL(multaMes)}</span>
-                  </div>
-                )}
-
-                <div className="flex items-center justify-between mt-1">
-                  <span>Total do mês (com multa):</span>
-                  <span className="font-semibold">{currencyBRL(totalMesComMulta)}</span>
-                </div>
-
-                {/* 👇 resumo dos apoios do mês (se existir) */}
-                {typeof data.totais.apoiadasMes === 'number' && data.totais.apoiadasMes > 0 && (
-                  <div className="mt-2 text-[12px] text-gray-700">
-                    <div className="flex items-center justify-between">
-                      <span>Aulas apoiadas no mês:</span>
-                      <span className="font-semibold">{data.totais.apoiadasMes}</span>
-                    </div>
-                    {typeof data.totais.valorApoioDescontadoMes === 'number' && (
-                      <div className="flex items-center justify-between">
-                        <span>Valor “descontado” (apoio):</span>
-                        <span className="font-semibold">
-                          {currencyBRL(data.totais.valorApoioDescontadoMes)}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* 👇 Aulas apoiadas (colapsável) */}
+              {/* Aulas apoiadas (colapsável) */}
               {apoiosDetalhes.length > 0 && (
-                <div className="mt-3">
+                <div className="mt-1">
                   <button
                     onClick={() => setMostrarApoios(v => !v)}
                     className="w-full flex items-center justify-between rounded-md bg-gray-100 hover:bg-gray-200 transition px-3 py-2 text-[13px] text-gray-700 cursor-pointer"
@@ -453,6 +413,49 @@ export default function DetalhesProfessorPage() {
                   )}
                 </div>
               )}
+
+              {/* Totais do mês (por último, igual admin) */}
+              <div className="mt-3 rounded-md bg-gray-100 px-3 py-2 text-[13px] text-gray-700">
+                <div className="flex items-center justify-between">
+                  <span>Total de aulas do mês:</span>
+                  <span className="font-semibold">{data.totais.mes.aulas}</span>
+                </div>
+
+                <div className="flex items-center justify-between mt-1">
+                  <span>Total (aulas):</span>
+                  <span className="font-semibold">{currencyBRL(totalMesSomenteAulas)}</span>
+                </div>
+
+                {multaMes !== 0 && (
+                  <div className="flex items-center justify-between mt-1">
+                    <span>Multas do mês:</span>
+                    <span className="font-semibold">{currencyBRL(multaMes)}</span>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between mt-1">
+                  <span>Total do mês (com multa):</span>
+                  <span className="font-semibold">{currencyBRL(totalMesComMulta)}</span>
+                </div>
+
+                {/* resumo dos apoios do mês (se existir) */}
+                {typeof data.totais.apoiadasMes === 'number' && data.totais.apoiadasMes > 0 && (
+                  <div className="mt-2 text-[12px] text-gray-700">
+                    <div className="flex items-center justify-between">
+                      <span>Aulas apoiadas no mês:</span>
+                      <span className="font-semibold">{data.totais.apoiadasMes}</span>
+                    </div>
+                    {typeof data.totais.valorApoioDescontadoMes === 'number' && (
+                      <div className="flex items-center justify-between">
+                        <span>Valor “descontado” (apoio):</span>
+                        <span className="font-semibold">
+                          {currencyBRL(data.totais.valorApoioDescontadoMes)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
 
               {/* nota rodapé */}
               <p className="mt-2 text-[11px] text-gray-500">
