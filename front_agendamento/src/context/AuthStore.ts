@@ -2,7 +2,7 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 
-export type TipoUsuario = "CLIENTE" | "ADMIN_MASTER" | "ADMIN_ATENDENTE" | "ADMIN_PROFESSORES";
+export type TipoUsuario = "CLIENTE" | "ADMIN_MASTER" | "ADMIN_ATENDENTE" | "ADMIN_PROFESSORES" | "CLIENTE_APOIADO";
 
 export interface UsuarioLogadoItf {
   id: string;

@@ -196,8 +196,8 @@ function StepTrail({
           const isDone = it.step < currentStep;
           const label = (it.value && String(it.value)) || it.hint;
 
-        const base =
-          "whitespace-nowrap rounded-full border px-3 py-1 text-[12px] font-semibold transition";
+          const base =
+            "whitespace-nowrap rounded-full border px-3 py-1 text-[12px] font-semibold transition";
 
           const cls = isCurrent
             ? "bg-orange-600 border-orange-600 text-white"
@@ -481,9 +481,10 @@ export default function AgendarQuadraCliente() {
   // depois — deixa professor entrar no fluxo de marcação
   const { isChecking } = useRequireAuth([
     "CLIENTE",
+    "CLIENTE_APOIADO",
     "ADMIN_MASTER",
-    "ADMIN_ATENDENTE",   // se quiser que atendente também possa agendar
-    "ADMIN_PROFESSORES", // <- este é o importante pro seu caso
+    "ADMIN_ATENDENTE",
+    "ADMIN_PROFESSORES",
   ]);
 
   const { usuario } = useAuthStore();
@@ -1167,11 +1168,10 @@ export default function AgendarQuadraCliente() {
                                 setIsApoiado((v) => !v);
                                 if (!isApoiado) setApoiadoSel(null);
                               }}
-                              className={`px-3 py-1 rounded-md text-sm font-semibold transition ${
-                                isApoiado
+                              className={`px-3 py-1 rounded-md text-sm font-semibold transition ${isApoiado
                                   ? "bg-orange-600 text-white"
                                   : "bg-gray-200 text-gray-800 hover:bg-gray-300"
-                              }`}
+                                }`}
                             >
                               {isApoiado ? "Sim" : "Não"}
                             </button>

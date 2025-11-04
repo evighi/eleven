@@ -1,6 +1,13 @@
 // utils/types/tipos.ts
+// utils/types/tipos.ts
 
-export type TipoUsuario = "CLIENTE" | "ADMIN_MASTER" | "ADMIN_ATENDENTE" | "ADMIN_PROFESSORES";
+export type TipoUsuario =
+  | "CLIENTE"
+  | "CLIENTE_APOIADO"
+  | "ADMIN_MASTER"
+  | "ADMIN_ATENDENTE"
+  | "ADMIN_PROFESSORES";
+
 
 // src/types.ts
 export type UUID = string;

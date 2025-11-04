@@ -17,6 +17,7 @@ type TipoReserva = "COMUM" | "PERMANENTE";
 // 👉 TIPOS DE USUÁRIO (para a regra)
 type TipoUsuario =
   | "CLIENTE"
+  | "CLIENTE_APOIADO"
   | "ADMIN_MASTER"
   | "ADMIN_ATENDENTE"
   | "ADMIN_PROFESSORES";
