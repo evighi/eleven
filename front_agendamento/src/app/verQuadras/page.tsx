@@ -143,6 +143,7 @@ function getCancelPolicy({
 export default function VerQuadrasPage() {
   const { isChecking } = useRequireAuth([
     "CLIENTE",
+    "CLIENTE_APOIADO",
     "ADMIN_MASTER",
     "ADMIN_ATENDENTE",
     "ADMIN_PROFESSORES",
