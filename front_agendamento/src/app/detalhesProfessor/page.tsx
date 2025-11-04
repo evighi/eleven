@@ -502,16 +502,9 @@ export default function DetalhesProfessorPage() {
                 </div>
 
                 <div className="flex items-center justify-between mt-1">
-                  <span>Total (aulas, sem desconto):</span>
+                  <span>Total do mês:</span>
                   <span className="font-semibold">
                     {currencyBRL(totalMesSomenteAulas)}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between mt-1">
-                  <span>Total (aulas, com 50% de desconto):</span>
-                  <span className="font-semibold">
-                    {currencyBRL(subtotalAulasComDesconto)}
                   </span>
                 </div>
 
@@ -532,35 +525,11 @@ export default function DetalhesProfessorPage() {
                 </div>
 
                 <div className="flex items-center justify-between mt-1">
-                  <span>Total do mês com desconto (aulas 50% + multa):</span>
-                  <span className="font-semibold">
+                  <span>Total do mês pagando em dia (aulas 50% + multa):</span>
+                  <span className="font-bold">
                     {currencyBRL(totalMesComDesconto)}
                   </span>
                 </div>
-
-                {/* resumo dos apoios do mês (se existir) */}
-                {typeof data.totais.apoiadasMes === 'number' &&
-                  data.totais.apoiadasMes > 0 && (
-                    <div className="mt-2 text-[12px] text-gray-700">
-                      <div className="flex items-center justify-between">
-                        <span>Aulas apoiadas no mês:</span>
-                        <span className="font-semibold">
-                          {data.totais.apoiadasMes}
-                        </span>
-                      </div>
-                      {typeof data.totais.valorApoioDescontadoMes !==
-                        'undefined' && (
-                        <div className="flex items-center justify-between">
-                          <span>Valor “descontado” (apoio):</span>
-                          <span className="font-semibold">
-                            {currencyBRL(
-                              data.totais.valorApoioDescontadoMes || 0
-                            )}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  )}
               </div>
 
               {/* nota rodapé */}
