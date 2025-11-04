@@ -525,7 +525,7 @@ export default function DetalhesProfessorPage() {
                 </div>
 
                 <div className="flex items-center justify-between mt-1 font-bold">
-                  <span>Total do mês pagando em dia (aulas 50% + multa):</span>
+                  <span>Total do mês pagando em dia:</span>
                   <span className="font-bold">
                     {currencyBRL(totalMesComDesconto)}
                   </span>
