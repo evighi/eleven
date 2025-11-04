@@ -188,7 +188,7 @@ export default function Login() {
 
       try {
         localStorage.setItem("lastEmail", data.email);
-      } catch {}
+      } catch { }
 
       try {
         // @ts-ignore
@@ -202,10 +202,11 @@ export default function Login() {
           // @ts-ignore
           await navigator.credentials.store(cred);
         }
-      } catch {}
+      } catch { }
 
       switch (dados.tipo) {
         case "CLIENTE":
+        case "CLIENTE_APOIADO":
           router.push("/");
           break;
         case "ADMIN_MASTER":
@@ -245,7 +246,7 @@ export default function Login() {
       let data: any = null;
       try {
         data = raw ? JSON.parse(raw) : null;
-      } catch {}
+      } catch { }
       if (!resp.ok) {
         toast.error(data?.erro || "Código inválido. Tente novamente.");
         return;
@@ -279,7 +280,7 @@ export default function Login() {
       let data: any = null;
       try {
         data = raw ? JSON.parse(raw) : null;
-      } catch {}
+      } catch { }
       if (!resp.ok) {
         toast.error(data?.erro || "Não foi possível reenviar o código.");
         return;

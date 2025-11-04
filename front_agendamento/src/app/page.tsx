@@ -69,6 +69,7 @@ type AgendamentoCard = {
 export default function Home() {
   const { isChecking } = useRequireAuth([
     "CLIENTE",
+    "CLIENTE_APOIADO",
     "ADMIN_MASTER",
     "ADMIN_ATENDENTE",
     "ADMIN_PROFESSORES",
