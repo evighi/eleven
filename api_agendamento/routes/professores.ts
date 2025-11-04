@@ -250,7 +250,7 @@ function computeResumoProfessorFromDatasets(
 }
 
 /* =========================
-   NOVO — multas detalhadas por período e professor
+   Multas detalhadas por período e professor
    (status CONFIRMADO/FINALIZADO; professorId || legado usuarioId)
 ========================= */
 async function multasDetalhadasPeriodoProfessor(
@@ -280,7 +280,7 @@ async function multasDetalhadasPeriodoProfessor(
 }
 
 /* =========================
-   NOVO — aulas com isenção (apoio) detalhadas no período
+   Aulas com isenção (apoio) detalhadas no período
    (status CONFIRMADO/FINALIZADO; professorId || legado usuarioId)
 ========================= */
 async function aulasApoiadasDetalhadasPeriodoProfessor(
@@ -439,10 +439,19 @@ router.get("/me/resumo", async (req, res) => {
       bloqueiosMap
     );
 
+    // subtotal das aulas do mês (SEM multa, já excluindo apoiadas)
+    const subtotalAulasMes = resumo.totais.mes.valor;
+
     // multas detalhadas do período (indep. do tipoSessao) — já ignora anuladas
     const multasDetalhes = await multasDetalhadasPeriodoProfessor(userId, inicioUTC, fimUTCExcl);
     const multaMes = multasDetalhes.reduce((acc, m) => acc + Number(m.multa ?? 0), 0);
-    const totalMesComMulta = resumo.totais.mes.valor + multaMes;
+
+    // valor cheio: aulas + multas (como já era)
+    const valorMesComMulta = subtotalAulasMes + multaMes;
+
+    // 💰 DESCONTO 50% APENAS NAS AULAS
+    const subtotalAulasComDesconto = subtotalAulasMes * 0.5;
+    const valorMesComDesconto = subtotalAulasComDesconto + multaMes;
 
     // apoios detalhados do período
     const apoiosDetalhes = await aulasApoiadasDetalhadasPeriodoProfessor(userId, inicioUTC, fimUTCExcl);
@@ -455,7 +464,10 @@ router.get("/me/resumo", async (req, res) => {
       totais: {
         ...resumo.totais,
         multaMes,
-        valorMesComMulta: totalMesComMulta,
+        valorMesComMulta,          // cheio (aulas + multa)
+        // 👇 novos campos de desconto
+        subtotalAulasComDesconto,  // aulas com 50% off
+        valorMesComDesconto,       // aulas 50% + multa cheia
         apoiadasMes,
         valorApoioDescontadoMes,
       },
@@ -603,10 +615,17 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
       bloqueiosMap
     );
 
+    const subtotalAulasMes = resumo.totais.mes.valor;
+
     // multas do período — já ignorando anuladas pela função helper
     const multasDetalhes = await multasDetalhadasPeriodoProfessor(profId, inicioUTC, fimUTCExcl);
     const multaMes = multasDetalhes.reduce((acc, m) => acc + Number(m.multa ?? 0), 0);
-    const totalMesComMulta = resumo.totais.mes.valor + multaMes;
+
+    const valorMesComMulta = subtotalAulasMes + multaMes;
+
+    // 💰 DESCONTO 50% APENAS NAS AULAS
+    const subtotalAulasComDesconto = subtotalAulasMes * 0.5;
+    const valorMesComDesconto = subtotalAulasComDesconto + multaMes;
 
     // apoios detalhados do período
     const apoiosDetalhes = await aulasApoiadasDetalhadasPeriodoProfessor(profId, inicioUTC, fimUTCExcl);
@@ -619,7 +638,9 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
       totais: {
         ...resumo.totais,
         multaMes,
-        valorMesComMulta: totalMesComMulta,
+        valorMesComMulta,          // cheio (aulas + multa)
+        subtotalAulasComDesconto,  // aulas com 50% off
+        valorMesComDesconto,       // aulas 50% + multa cheia
         apoiadasMes,
         valorApoioDescontadoMes,
       },
@@ -687,6 +708,7 @@ router.get("/admin", requireAdmin, async (req, res) => {
         intervalo: { from: fromYMD, to: toYMD, duracaoMin },
         professores: [],
         totalGeral: { aulas: 0, valor: 0 },
+        totalGeralComDesconto: 0,
         totalApoiadasGeral: 0,
         totalApoioDescontadoGeral: 0,
       });
@@ -761,7 +783,7 @@ router.get("/admin", requireAdmin, async (req, res) => {
             { AND: [{ professorId: null }, { usuarioId: { in: profIds } }] },
           ],
           multa: { not: null },
-          multaAnulada: { not: true }, // 👈 aqui também
+          multaAnulada: { not: true },
         },
         select: { multa: true, professorId: true, usuarioId: true },
       }),
@@ -837,13 +859,15 @@ router.get("/admin", requireAdmin, async (req, res) => {
       valorMes: number;
       multaMes: number;
       valorMesComMulta: number;
+      valorMesComDesconto: number;      // 👈 NOVO
       apoiadasMes: number;
       valorApoioDescontadoMes: number;
       porFaixa: Array<{ faixa: string; aulas: number; valor: number }>;
     }> = [];
 
     let totalAulasGeral = 0;
-    let totalValorGeral = 0; // inclui multa
+    let totalValorGeral = 0; // inclui multa cheio
+    let totalValorGeralComDesconto = 0; // inclui multa + 50% aulas
     let totalApoiadasGeral = 0;
     let totalApoioDescontadoGeral = 0;
 
@@ -857,15 +881,19 @@ router.get("/admin", requireAdmin, async (req, res) => {
       );
 
       const aulasMes = resumo.totais.mes.aulas;
-      const valorMes = resumo.totais.mes.valor; // já exclui as isenções
+      const valorMes = resumo.totais.mes.valor; // subtotal aulas (sem multa)
       const multaMes = Number(multaByProf.get(prof.id) ?? 0);
       const valorMesComMulta = valorMes + multaMes;
+
+      // 💰 desconto 50% nas aulas, multa cheia
+      const valorMesComDesconto = valorMes * 0.5 + multaMes;
 
       const apoiadasMes = Number(apoiadasByProf.get(prof.id) || 0);
       const valorApoioDescontadoMes = apoiadasMes * Number(prof.valorQuadra || 0);
 
       totalAulasGeral += aulasMes;
       totalValorGeral += valorMesComMulta;
+      totalValorGeralComDesconto += valorMesComDesconto;
       totalApoiadasGeral += apoiadasMes;
       totalApoioDescontadoGeral += valorApoioDescontadoMes;
 
@@ -877,6 +905,7 @@ router.get("/admin", requireAdmin, async (req, res) => {
         valorMes,
         multaMes,
         valorMesComMulta,
+        valorMesComDesconto,
         apoiadasMes,
         valorApoioDescontadoMes,
         porFaixa: resumo.totais.porFaixa,
@@ -886,7 +915,8 @@ router.get("/admin", requireAdmin, async (req, res) => {
     return res.json({
       intervalo: { from: fromYMD, to: toYMD, duracaoMin },
       professores: resposta,
-      totalGeral: { aulas: totalAulasGeral, valor: totalValorGeral }, // valor inclui multa
+      totalGeral: { aulas: totalAulasGeral, valor: totalValorGeral }, // cheio
+      totalValorGeralComDesconto,             // 👈 total do mês com desconto
       totalApoiadasGeral,
       totalApoioDescontadoGeral,
     });
