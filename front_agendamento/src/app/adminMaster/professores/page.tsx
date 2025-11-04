@@ -15,6 +15,10 @@ type AdminProfessorRow = {
   valorMes: number
   multaMes?: number
   valorMesComMulta?: number
+  /** 👇 novos campos vindo do back (/professores/admin) */
+  valorMesComDesconto?: number
+  apoiadasMes?: number
+  valorApoioDescontadoMes?: number
   porFaixa: PorFaixa[]
 }
 
@@ -22,6 +26,10 @@ type AdminListResponse = {
   intervalo: { from: string; to: string; duracaoMin: number }
   professores: AdminProfessorRow[]
   totalGeral: { aulas: number; valor: number }
+  /** 👇 novos agregados gerais do back */
+  totalValorGeralComDesconto?: number
+  totalApoiadasGeral?: number
+  totalApoioDescontadoGeral?: number
 }
 
 type MultaDetalhe = {
@@ -33,7 +41,7 @@ type MultaDetalhe = {
   esporte?: { id: string; nome: string | null } | null
 }
 
-/** 👇 detalhes de aulas apoiadas (igual página do professor) */
+/** detalhes de aulas apoiadas (igual página do professor) */
 type ApoioDetalhe = {
   id: string
   data: string
@@ -52,12 +60,16 @@ type ResumoProfessorResponse = {
     mes: { aulas: number; valor: number }
     multaMes?: number
     valorMesComMulta?: number
-    /** 👇 novos campos de apoio */
+
+    /** 👇 novos campos de desconto vindos do back */
+    subtotalAulasComDesconto?: number
+    valorMesComDesconto?: number
+
+    /** apoio */
     apoiadasMes?: number
     valorApoioDescontadoMes?: number
   }
   multasDetalhes?: MultaDetalhe[]
-  /** 👇 lista detalhada de aulas apoiadas */
   apoiosDetalhes?: ApoioDetalhe[]
 }
 
@@ -142,8 +154,17 @@ export default function ProfessoresAdmin() {
   const [mostrarMultas, setMostrarMultas] = useState(false)
   const [mostrarApoios, setMostrarApoios] = useState(false)
 
-  // 👇 novo: controla loading por multa específica
+  // controla loading por multa específica
   const [removendoMultaId, setRemovendoMultaId] = useState<string | null>(null)
+
+  // resumo geral do mês (todos os professores)
+  const [resumoGeral, setResumoGeral] = useState<{
+    totalAulas: number
+    totalCheio: number
+    totalComDesconto: number
+    totalApoiadas: number
+    totalApoioValor: number
+  } | null>(null)
 
   const carregarProfessores = useCallback(async () => {
     setLoading(true)
@@ -153,13 +174,24 @@ export default function ProfessoresAdmin() {
         params: { mes },
         withCredentials: true,
       })
-      const arr = Array.isArray(res.data?.professores) ? res.data.professores.slice() : []
+
+      const data = res.data
+      const arr = Array.isArray(data?.professores) ? data.professores.slice() : []
       arr.sort((a, b) => collator.compare(a?.nome ?? '', b?.nome ?? ''))
       setLista(arr)
+
+      setResumoGeral({
+        totalAulas: data.totalGeral?.aulas ?? 0,
+        totalCheio: data.totalGeral?.valor ?? 0,
+        totalComDesconto: data.totalValorGeralComDesconto ?? data.totalGeral?.valor ?? 0,
+        totalApoiadas: data.totalApoiadasGeral ?? 0,
+        totalApoioValor: data.totalApoioDescontadoGeral ?? 0,
+      })
     } catch (e: any) {
       console.error(e)
       setErro(e?.response?.data?.erro || 'Falha ao carregar professores')
       setLista([])
+      setResumoGeral(null)
     } finally {
       setLoading(false)
     }
@@ -280,7 +312,29 @@ export default function ProfessoresAdmin() {
     ymd: ymdFromISODateTime(a.data),
   }))
 
-  // 👇 função para remover multa de um agendamento específico
+  // derivados de resumo mensal do quadro selecionado (cheio x desconto)
+  const multaPeriodo = quadro ? Number(quadro.totais.multaMes ?? 0) : 0
+  const subtotalAulasMes = quadro ? toNumber(quadro.totais.mes.valor) : 0
+
+  const subtotalAulasComDesconto = quadro
+    ? (Number.isFinite(toNumber(quadro.totais.subtotalAulasComDesconto))
+        ? toNumber(quadro.totais.subtotalAulasComDesconto)
+        : subtotalAulasMes * 0.5)
+    : 0
+
+  const totalMesCheio = quadro
+    ? (Number.isFinite(toNumber(quadro.totais.valorMesComMulta))
+        ? toNumber(quadro.totais.valorMesComMulta)
+        : subtotalAulasMes + multaPeriodo)
+    : 0
+
+  const totalMesComDesconto = quadro
+    ? (Number.isFinite(toNumber(quadro.totais.valorMesComDesconto))
+        ? toNumber(quadro.totais.valorMesComDesconto)
+        : subtotalAulasComDesconto + multaPeriodo)
+    : 0
+
+  // função para remover multa de um agendamento específico
   const removerMulta = async (multa: MultaDetalhe) => {
     if (!selecionado) return
 
@@ -291,17 +345,14 @@ export default function ProfessoresAdmin() {
       setRemovendoMultaId(multa.id)
       setErroQuadro(null)
 
-      // Chama o backend para remover a multa
       await axios.post(
         `${API_URL}/agendamentos/${multa.id}/remover-multa`,
         {},
         { withCredentials: true },
       )
 
-      // Recarrega a lista geral (para atualizar totais / multas do mês)
       await carregarProfessores()
 
-      // Recarrega o quadro do professor selecionado para refletir a remoção
       const res = await axios.get<ResumoProfessorResponse>(
         `${API_URL}/professores/${selecionado.id}/resumo`,
         {
@@ -311,7 +362,6 @@ export default function ProfessoresAdmin() {
       )
       setQuadro(res.data)
 
-      // Mantém faixa/dia selecionados, só garante que continuam válidos
       const faixas = buildFaixasLabels(res.data.intervalo.to)
       if (!faixas.find((f) => f.id === faixaSel)) {
         setFaixaSel(faixas[0]?.id || '')
@@ -381,6 +431,40 @@ export default function ProfessoresAdmin() {
             </button>
           </div>
         </div>
+
+        {/* Resumo geral do mês (todos os professores) */}
+        {resumoGeral && !loading && (
+          <div className="rounded-md bg-gray-50 px-3 py-2 border border-gray-200 text-[13px] text-gray-700 space-y-1">
+            <div className="flex items-center justify-between">
+              <span>Total de aulas (todos os professores):</span>
+              <span className="font-semibold">{resumoGeral.totalAulas}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Total cheio do mês (aulas + multas):</span>
+              <span className="font-semibold">{currencyBRL(resumoGeral.totalCheio)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Total com desconto (aulas 50% + multas):</span>
+              <span className="font-semibold">
+                {currencyBRL(resumoGeral.totalComDesconto)}
+              </span>
+            </div>
+            {resumoGeral.totalApoiadas > 0 && (
+              <>
+                <div className="flex items-center justify-between">
+                  <span>Aulas apoiadas no mês:</span>
+                  <span className="font-semibold">{resumoGeral.totalApoiadas}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Valor “descontado” (apoio):</span>
+                  <span className="font-semibold">
+                    {currencyBRL(resumoGeral.totalApoioValor)}
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {loading && (
@@ -396,8 +480,16 @@ export default function ProfessoresAdmin() {
         )}
 
         {filtrados.map((p) => {
-          const valorMesComMulta = Number(p.valorMesComMulta ?? p.valorMes ?? 0)
+          const valorBase = Number(p.valorMes ?? 0)
           const multaMes = Number(p.multaMes ?? 0)
+
+          const valorCheio = Number(
+            p.valorMesComMulta ?? valorBase + multaMes,
+          )
+          const valorComDesconto = Number(
+            p.valorMesComDesconto ?? valorBase * 0.5 + multaMes,
+          )
+
           return (
             <li key={p.id} className="transition-colors">
               <div
@@ -410,10 +502,20 @@ export default function ProfessoresAdmin() {
                     <strong>Aulas no mês:</strong> {p.aulasMes}
                   </span>
                   <span>
-                    <strong>Valor a pagar:</strong> {formatBRL(valorMesComMulta)}
+                    <strong>Total cheio:</strong> {formatBRL(valorCheio)}
+                  </span>
+                  <span>
+                    <strong>Com desconto:</strong> {formatBRL(valorComDesconto)}
                   </span>
                   {multaMes > 0 && (
-                    <span className="text-red-600">(Multas: {formatBRL(multaMes)})</span>
+                    <span className="text-red-600">
+                      (Multas: {formatBRL(multaMes)})
+                    </span>
+                  )}
+                  {typeof p.apoiadasMes === 'number' && p.apoiadasMes > 0 && (
+                    <span className="text-gray-500">
+                      Aulas apoiadas: {p.apoiadasMes}
+                    </span>
                   )}
                   {p.valorQuadra != null && (
                     <span className="text-gray-500">
@@ -618,7 +720,7 @@ export default function ProfessoresAdmin() {
                           </div>
                         )}
 
-                        {/* Resumo do mês (por último) */}
+                        {/* Resumo do mês (cheio x desconto) */}
                         <div className="mt-3 rounded-md bg-gray-100 px-3 py-2 text-[13px] text-gray-700 space-y-1">
                           <div className="flex items-center justify-between">
                             <span>Total de aulas do mês:</span>
@@ -628,16 +730,23 @@ export default function ProfessoresAdmin() {
                           </div>
 
                           <div className="flex items-center justify-between">
-                            <span>Subtotal (aulas):</span>
+                            <span>Subtotal (aulas, sem desconto):</span>
                             <span className="font-semibold">
-                              {currencyBRL(quadro.totais.mes.valor)}
+                              {currencyBRL(subtotalAulasMes)}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between">
+                            <span>Subtotal (aulas, com 50% de desconto):</span>
+                            <span className="font-semibold">
+                              {currencyBRL(subtotalAulasComDesconto)}
                             </span>
                           </div>
 
                           <div className="flex items-center justify-between">
                             <span>Multas no período:</span>
                             <span className="font-semibold text-red-700">
-                              {currencyBRL(Number(quadro.totais.multaMes ?? 0))}
+                              {currencyBRL(multaPeriodo)}
                             </span>
                           </div>
 
@@ -650,14 +759,11 @@ export default function ProfessoresAdmin() {
                                     {quadro.totais.apoiadasMes}
                                   </span>
                                 </div>
-                                {typeof quadro.totais.valorApoioDescontadoMes ===
-                                  'number' && (
+                                {typeof quadro.totais.valorApoioDescontadoMes === 'number' && (
                                   <div className="flex items-center justify-between">
                                     <span>Valor “descontado” (apoio):</span>
                                     <span className="font-semibold">
-                                      {currencyBRL(
-                                        quadro.totais.valorApoioDescontadoMes,
-                                      )}
+                                      {currencyBRL(quadro.totais.valorApoioDescontadoMes)}
                                     </span>
                                   </div>
                                 )}
@@ -665,15 +771,16 @@ export default function ProfessoresAdmin() {
                             )}
 
                           <div className="flex items-center justify-between pt-1 border-t border-gray-200">
-                            <span>Total a pagar (com multa):</span>
+                            <span>Total do mês (cheio — aulas + multas):</span>
                             <span className="font-bold">
-                              {currencyBRL(
-                                Number(
-                                  quadro.totais.valorMesComMulta ??
-                                    quadro.totais.mes.valor +
-                                      Number(quadro.totais.multaMes ?? 0),
-                                ),
-                              )}
+                              {currencyBRL(totalMesCheio)}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between">
+                            <span>Total do mês com desconto (aulas 50% + multas):</span>
+                            <span className="font-bold">
+                              {currencyBRL(totalMesComDesconto)}
                             </span>
                           </div>
                         </div>
