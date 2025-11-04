@@ -13,19 +13,18 @@ type MultaDetalhe = {
   id: string;
   data: string;            // ISO datetime
   horario: string;         // "HH:MM"
-  multa: number | string;  // 👈 pode vir string
+  multa: number | string;  // pode vir string
   quadra?: { id: string; numero: number | null; nome: string | null } | null;
   esporte?: { id: string; nome: string | null } | null;
 };
 
-/** 👇 corresponde ao back: "apoiosDetalhes" */
+/** corresponde ao back: "apoiosDetalhes" */
 type ApoioDetalhe = {
   id: string;
   data: string;            // ISO datetime
   horario: string;         // "HH:MM"
   quadra?: { id: string; numero: number | null; nome: string | null } | null;
   esporte?: { id: string; nome: string | null } | null;
-  // pode vir no payload:
   apoiadoUsuario?: { id: string; nome: string | null; email: string | null } | null;
 };
 
@@ -38,12 +37,16 @@ type ResumoResponse = {
     mes: MesTotais;
     multaMes?: number | string;
     valorMesComMulta?: number | string;
+
     /** 👇 novos do back */
+    subtotalAulasComDesconto?: number | string;
+    valorMesComDesconto?: number | string;
+
+    /** apoio */
     apoiadasMes?: number;
     valorApoioDescontadoMes?: number | string;
   };
   multasDetalhes?: MultaDetalhe[];
-  /** 👇 novo bloco do back */
   apoiosDetalhes?: ApoioDetalhe[];
 };
 
@@ -71,7 +74,8 @@ const fmtDDMM = (isoYMD: string) => {
 };
 
 // ISO datetime -> "YYYY-MM-DD"
-const ymdFromISODateTime = (isoDT: string) => (isoDT.includes('T') ? isoDT.split('T')[0] : isoDT);
+const ymdFromISODateTime = (isoDT: string) =>
+  isoDT.includes('T') ? isoDT.split('T')[0] : isoDT;
 
 // "Quadra X" priorizando número
 const quadraLabel = (q?: { id: string; numero: number | null; nome: string | null } | null) => {
@@ -82,8 +86,14 @@ const quadraLabel = (q?: { id: string; numero: number | null; nome: string | nul
 };
 
 function getMonthYYYYMM(d = new Date()) {
-  const y = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric' }).format(d);
-  const m = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', month: '2-digit' }).format(d);
+  const y = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+  }).format(d);
+  const m = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    month: '2-digit',
+  }).format(d);
   return `${y}-${m}`;
 }
 
@@ -109,7 +119,7 @@ export default function DetalhesProfessorPage() {
 
   // seleção UI
   const [faixaSel, setFaixaSel] = useState<string>(''); // '1-7', ...
-  const [diaSel, setDiaSel] = useState<string>('');     // 'YYYY-MM-DD'
+  const [diaSel, setDiaSel] = useState<string>(''); // 'YYYY-MM-DD'
 
   // toggles
   const [mostrarMultas, setMostrarMultas] = useState(false);
@@ -118,10 +128,13 @@ export default function DetalhesProfessorPage() {
   const carregar = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await axios.get<ResumoResponse>(`${API_URL}/professores/me/resumo`, {
-        params: { mes },
-        withCredentials: true,
-      });
+      const { data } = await axios.get<ResumoResponse>(
+        `${API_URL}/professores/me/resumo`,
+        {
+          params: { mes },
+          withCredentials: true,
+        }
+      );
       setData(data);
 
       // defaults
@@ -154,7 +167,9 @@ export default function DetalhesProfessorPage() {
       const fromISO = `${yearMonth}-${String(f.fromDay).padStart(2, '0')}`;
       const toISO = `${yearMonth}-${String(f.toDay).padStart(2, '0')}`;
       const semanaNum = String(idx + 1).padStart(2, '0');
-      const label = `SEMANA ${semanaNum} – ${fmtDDMM(fromISO)} À ${fmtDDMM(toISO)}`;
+      const label = `SEMANA ${semanaNum} – ${fmtDDMM(fromISO)} À ${fmtDDMM(
+        toISO
+      )}`;
       return { ...f, label, fromISO, toISO };
     });
   }, [data]);
@@ -215,10 +230,25 @@ export default function DetalhesProfessorPage() {
   // agregados com fallback
   const multaMes = toNumber(data?.totais.multaMes || 0);
   const totalMesSomenteAulas = toNumber(data?.totais.mes.valor || 0);
-  const totalMesComMulta =
-    Number.isFinite(toNumber(data?.totais.valorMesComMulta))
-      ? toNumber(data?.totais.valorMesComMulta)
-      : totalMesSomenteAulas + multaMes;
+
+  const totalMesCheioComMulta = Number.isFinite(
+    toNumber(data?.totais.valorMesComMulta)
+  )
+    ? toNumber(data?.totais.valorMesComMulta)
+    : totalMesSomenteAulas + multaMes;
+
+  // 👇 novos agregados de desconto
+  const subtotalAulasComDesconto = Number.isFinite(
+    toNumber(data?.totais.subtotalAulasComDesconto)
+  )
+    ? toNumber(data?.totais.subtotalAulasComDesconto)
+    : totalMesSomenteAulas * 0.5;
+
+  const totalMesComDesconto = Number.isFinite(
+    toNumber(data?.totais.valorMesComDesconto)
+  )
+    ? toNumber(data?.totais.valorMesComDesconto)
+    : subtotalAulasComDesconto + multaMes;
 
   const multasDetalhes = (data?.multasDetalhes || []).map((m) => ({
     ...m,
@@ -236,7 +266,9 @@ export default function DetalhesProfessorPage() {
       {/* Header */}
       <header className="bg-orange-600 text-white px-4 py-5">
         <div className="max-w-sm mx-auto">
-          <h1 className="text-2xl font-extrabold tracking-wide drop-shadow-sm">Reservas Anteriores</h1>
+          <h1 className="text-2xl font-extrabold tracking-wide drop-shadow-sm">
+            Reservas Anteriores
+          </h1>
 
           {/* seletor de mês */}
           <div className="mt-3 flex items-center gap-2">
@@ -247,7 +279,9 @@ export default function DetalhesProfessorPage() {
             >
               ‹
             </button>
-            <div className="text-sm font-semibold">{mes.split('-').reverse().join('/')}</div>
+            <div className="text-sm font-semibold">
+              {mes.split('-').reverse().join('/')}
+            </div>
             <button
               onClick={() => incMes(1)}
               className="rounded-md bg-white/15 hover:bg-white/25 transition px-2 py-1 cursor-pointer"
@@ -274,7 +308,9 @@ export default function DetalhesProfessorPage() {
 
           {/* erro */}
           {!loading && !data && (
-            <div className="text-sm text-gray-600">Não foi possível carregar os dados.</div>
+            <div className="text-sm text-gray-600">
+              Não foi possível carregar os dados.
+            </div>
           )}
 
           {/* conteúdo */}
@@ -282,7 +318,9 @@ export default function DetalhesProfessorPage() {
             <>
               {/* Semana */}
               <div className="mb-2">
-                <div className="text-[11px] text-gray-500 mb-1">Semanas do mês</div>
+                <div className="text-[11px] text-gray-500 mb-1">
+                  Semanas do mês
+                </div>
                 <div className="relative">
                   <select
                     value={faixaSel}
@@ -294,7 +332,9 @@ export default function DetalhesProfessorPage() {
                   >
                     {faixasInfo.map((f, i) => (
                       <option key={f.id} value={f.id}>
-                        {`SEMANA ${String(i + 1).padStart(2, '0')} — ${fmtDDMM(f.fromISO)} À ${fmtDDMM(f.toISO)}`}
+                        {`SEMANA ${String(i + 1).padStart(2, '0')} — ${fmtDDMM(
+                          f.fromISO
+                        )} À ${fmtDDMM(f.toISO)}`}
                       </option>
                     ))}
                   </select>
@@ -303,7 +343,9 @@ export default function DetalhesProfessorPage() {
 
               {/* Dia */}
               <div className="mb-2">
-                <div className="text-[11px] text-gray-500 mb-1">Dias da semana</div>
+                <div className="text-[11px] text-gray-500 mb-1">
+                  Dias da semana
+                </div>
                 <div className="relative">
                   <select
                     value={diaSel}
@@ -312,10 +354,14 @@ export default function DetalhesProfessorPage() {
                   >
                     {diasDaFaixa.map((d) => (
                       <option key={d.data} value={d.data}>
-                        {`Dia: ${fmtBR(d.data)}  |  Aulas: ${String(d.aulas).padStart(2, '0')}`}
+                        {`Dia: ${fmtBR(d.data)}  |  Aulas: ${String(
+                          d.aulas
+                        ).padStart(2, '0')}`}
                       </option>
                     ))}
-                    {diasDaFaixa.length === 0 && <option value="">Sem aulas nesta semana</option>}
+                    {diasDaFaixa.length === 0 && (
+                      <option value="">Sem aulas nesta semana</option>
+                    )}
                   </select>
                 </div>
               </div>
@@ -325,7 +371,9 @@ export default function DetalhesProfessorPage() {
                 <div className="grid grid-cols-2 gap-2 mb-2">
                   <div className="rounded-md bg-gray-100 px-3 py-2 text-[13px] text-gray-600">
                     <span className="opacity-70 mr-1">Dia:</span>
-                    <span className="font-semibold">{fmtBR(diaInfoSel.data)}</span>
+                    <span className="font-semibold">
+                      {fmtBR(diaInfoSel.data)}
+                    </span>
                   </div>
                   <div className="rounded-md bg-gray-100 px-3 py-2 text-[13px] text-gray-600">
                     <span className="opacity-70 mr-1">Aulas:</span>
@@ -340,13 +388,17 @@ export default function DetalhesProfessorPage() {
               <div className="rounded-md bg-gray-200 px-3 py-2 text-[13px] text-gray-700 mb-2">
                 <div className="flex items-center justify-between">
                   <span>Total de Aulas da semana:</span>
-                  <span className="font-semibold">{totaisSemanaSel.aulas}</span>
+                  <span className="font-semibold">
+                    {totaisSemanaSel.aulas}
+                  </span>
                 </div>
               </div>
               <div className="rounded-md bg-gray-200 px-3 py-2 text-[13px] text-gray-700">
                 <div className="flex items-center justify-between">
                   <span>Total a pagar da semana:</span>
-                  <span className="font-semibold">{currencyBRL(totaisSemanaSel.valor)}</span>
+                  <span className="font-semibold">
+                    {currencyBRL(totaisSemanaSel.valor)}
+                  </span>
                 </div>
               </div>
 
@@ -357,20 +409,25 @@ export default function DetalhesProfessorPage() {
               {apoiosDetalhes.length > 0 && (
                 <div className="mt-1">
                   <button
-                    onClick={() => setMostrarApoios(v => !v)}
+                    onClick={() => setMostrarApoios((v) => !v)}
                     className="w-full flex items-center justify-between rounded-md bg-gray-100 hover:bg-gray-200 transition px-3 py-2 text-[13px] text-gray-700 cursor-pointer"
                     aria-expanded={mostrarApoios}
                   >
                     <span className="font-semibold">
                       Aulas apoiadas ({apoiosDetalhes.length})
                     </span>
-                    <span className="text-gray-500">{mostrarApoios ? '▲' : '▼'}</span>
+                    <span className="text-gray-500">
+                      {mostrarApoios ? '▲' : '▼'}
+                    </span>
                   </button>
 
                   {mostrarApoios && (
                     <ul className="mt-2 divide-y rounded-md border border-gray-200 overflow-hidden">
                       {apoiosDetalhes.map((a) => (
-                        <li key={a.id} className="px-3 py-2 text-[13px] flex flex-col gap-0.5 bg-white">
+                        <li
+                          key={a.id}
+                          className="px-3 py-2 text-[13px] flex flex-col gap-0.5 bg-white"
+                        >
                           <div className="flex items-center justify-between">
                             <span className="text-gray-700">
                               {fmtBR(a.ymd)} · {a.horario}
@@ -380,8 +437,11 @@ export default function DetalhesProfessorPage() {
                             </span>
                           </div>
                           <div className="text-[12px] text-gray-600">
-                            {quadraLabel(a.quadra)}{a.esporte?.nome ? ` · ${a.esporte?.nome}` : ''}
-                            {a.apoiadoUsuario?.nome ? ` · ${a.apoiadoUsuario.nome}` : ''}
+                            {quadraLabel(a.quadra)}
+                            {a.esporte?.nome ? ` · ${a.esporte?.nome}` : ''}
+                            {a.apoiadoUsuario?.nome
+                              ? ` · ${a.apoiadoUsuario.nome}`
+                              : ''}
                           </div>
                         </li>
                       ))}
@@ -394,20 +454,25 @@ export default function DetalhesProfessorPage() {
               {multasDetalhes.length > 0 && (
                 <div className="mt-3">
                   <button
-                    onClick={() => setMostrarMultas(v => !v)}
+                    onClick={() => setMostrarMultas((v) => !v)}
                     className="w-full flex items-center justify-between rounded-md bg-gray-100 hover:bg-gray-200 transition px-3 py-2 text-[13px] text-gray-700 cursor-pointer"
                     aria-expanded={mostrarMultas}
                   >
                     <span className="font-semibold">
                       Multas do mês ({multasDetalhes.length})
                     </span>
-                    <span className="text-gray-500">{mostrarMultas ? '▲' : '▼'}</span>
+                    <span className="text-gray-500">
+                      {mostrarMultas ? '▲' : '▼'}
+                    </span>
                   </button>
 
                   {mostrarMultas && (
                     <ul className="mt-2 rounded-md border border-gray-200 bg-white overflow-hidden">
                       {multasDetalhes.map((m) => (
-                        <li key={m.id} className="px-3 py-2 text-[13px] flex flex-col gap-0.5">
+                        <li
+                          key={m.id}
+                          className="px-3 py-2 text-[13px] flex flex-col gap-0.5"
+                        >
                           <div className="flex items-center justify-between">
                             <span className="text-gray-700">
                               {fmtBR(m.ymd)} · {m.horario}
@@ -417,7 +482,8 @@ export default function DetalhesProfessorPage() {
                             </span>
                           </div>
                           <div className="text-[12px] text-gray-600">
-                            {quadraLabel(m.quadra)}{m.esporte?.nome ? ` · ${m.esporte?.nome}` : ''}
+                            {quadraLabel(m.quadra)}
+                            {m.esporte?.nome ? ` · ${m.esporte?.nome}` : ''}
                           </div>
                         </li>
                       ))}
@@ -430,48 +496,77 @@ export default function DetalhesProfessorPage() {
               <div className="mt-3 rounded-md bg-gray-100 px-3 py-2 text-[13px] text-gray-700">
                 <div className="flex items-center justify-between">
                   <span>Total de aulas do mês:</span>
-                  <span className="font-semibold">{data.totais.mes.aulas}</span>
+                  <span className="font-semibold">
+                    {data.totais.mes.aulas}
+                  </span>
                 </div>
 
                 <div className="flex items-center justify-between mt-1">
-                  <span>Total (aulas):</span>
-                  <span className="font-semibold">{currencyBRL(totalMesSomenteAulas)}</span>
+                  <span>Total (aulas, sem desconto):</span>
+                  <span className="font-semibold">
+                    {currencyBRL(totalMesSomenteAulas)}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between mt-1">
+                  <span>Total (aulas, com 50% de desconto):</span>
+                  <span className="font-semibold">
+                    {currencyBRL(subtotalAulasComDesconto)}
+                  </span>
                 </div>
 
                 {multaMes !== 0 && (
                   <div className="flex items-center justify-between mt-1">
                     <span>Multas do mês:</span>
-                    <span className="font-semibold">{currencyBRL(multaMes)}</span>
+                    <span className="font-semibold">
+                      {currencyBRL(multaMes)}
+                    </span>
                   </div>
                 )}
 
                 <div className="flex items-center justify-between mt-1">
-                  <span>Total do mês (com multa):</span>
-                  <span className="font-semibold">{currencyBRL(totalMesComMulta)}</span>
+                  <span>Total do mês (cheio, aulas + multa):</span>
+                  <span className="font-semibold">
+                    {currencyBRL(totalMesCheioComMulta)}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between mt-1">
+                  <span>Total do mês com desconto (aulas 50% + multa):</span>
+                  <span className="font-semibold">
+                    {currencyBRL(totalMesComDesconto)}
+                  </span>
                 </div>
 
                 {/* resumo dos apoios do mês (se existir) */}
-                {typeof data.totais.apoiadasMes === 'number' && data.totais.apoiadasMes > 0 && (
-                  <div className="mt-2 text-[12px] text-gray-700">
-                    <div className="flex items-center justify-between">
-                      <span>Aulas apoiadas no mês:</span>
-                      <span className="font-semibold">{data.totais.apoiadasMes}</span>
-                    </div>
-                    {typeof data.totais.valorApoioDescontadoMes === 'number' && (
+                {typeof data.totais.apoiadasMes === 'number' &&
+                  data.totais.apoiadasMes > 0 && (
+                    <div className="mt-2 text-[12px] text-gray-700">
                       <div className="flex items-center justify-between">
-                        <span>Valor “descontado” (apoio):</span>
+                        <span>Aulas apoiadas no mês:</span>
                         <span className="font-semibold">
-                          {currencyBRL(data.totais.valorApoioDescontadoMes)}
+                          {data.totais.apoiadasMes}
                         </span>
                       </div>
-                    )}
-                  </div>
-                )}
+                      {typeof data.totais.valorApoioDescontadoMes !==
+                        'undefined' && (
+                        <div className="flex items-center justify-between">
+                          <span>Valor “descontado” (apoio):</span>
+                          <span className="font-semibold">
+                            {currencyBRL(
+                              data.totais.valorApoioDescontadoMes || 0
+                            )}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
               </div>
 
               {/* nota rodapé */}
               <p className="mt-2 text-[11px] text-gray-500">
-                Duração considerada por aula: {data.intervalo.duracaoMin} min · Valor por aula: {currencyBRL(data.professor.valorQuadra || 0)}
+                Duração considerada por aula: {data.intervalo.duracaoMin} min ·
+                Valor por aula: {currencyBRL(data.professor.valorQuadra || 0)}
               </p>
             </>
           )}
