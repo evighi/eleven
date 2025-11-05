@@ -448,11 +448,24 @@ router.post("/", verificarToken, async (req, res) => {
         if (!apoiadoUser) {
           return res.status(404).json({ erro: "Usuário apoiado não encontrado" });
         }
-        // 🔧 compatível com teu schema atual
-        const tipoOk = ["CLIENTE", "CLIENTE_APOIADO"].includes(String(apoiadoUser.tipo));
+
+        // ✅ NOVO: quem pode ser marcado como "apoiado"
+        // CLIENTE_APOIADO + perfis internos (admins/professores)
+        const tiposApoiadosPermitidos = [
+          "CLIENTE_APOIADO",
+          "ADMIN_MASTER",
+          "ADMIN_ATENDENTE",
+          "ADMIN_PROFESSORES",
+        ];
+        const tipoOk = tiposApoiadosPermitidos.includes(String(apoiadoUser.tipo));
+
         if (!tipoOk) {
-          return res.status(422).json({ erro: "Usuário selecionado como apoiado não é cliente" });
+          return res.status(422).json({
+            erro:
+              "Usuário selecionado como apoiado deve ser CLIENTE_APOIADO, ADMIN_MASTER, ADMIN_ATENDENTE ou ADMIN_PROFESSORES.",
+          });
         }
+
         isApoiadoFinal = true;
         apoiadoUsuarioIdFinal = apoiadoUser.id;
       }
@@ -567,7 +580,7 @@ router.get("/", verificarToken, async (req, res) => {
   const where: any = {};
   if (quadraId) where.quadraId = String(quadraId);
 
-  if (typeof data === "string" && /^\d{4}-\d{2}-\d{2}$/.test(data)) {
+  if (typeof data === "string" && /^\d{4}-\d{2}-\d2$/.test(data)) {
     const { inicio, fim } = getUtcDayRange(data);
     where.data = { gte: inicio, lt: fim };
   } else if (data) {
@@ -950,11 +963,11 @@ router.get("/:id", verificarToken, async (req, res) => {
       horario: agendamento.horario,
       usuario: agendamento.usuario
         ? {
-          id: agendamento.usuario.id,
-          nome: agendamento.usuario.nome,
-          email: sanitizeEmail(agendamento.usuario.email),
-          celular: sanitizePhone(agendamento.usuario.celular),
-        }
+            id: agendamento.usuario.id,
+            nome: agendamento.usuario.nome,
+            email: sanitizeEmail(agendamento.usuario.email),
+            celular: sanitizePhone(agendamento.usuario.celular),
+          }
         : null,
       usuarioId: agendamento.usuario?.id,
       esporte: agendamento.esporte?.nome,
@@ -968,10 +981,10 @@ router.get("/:id", verificarToken, async (req, res) => {
       // 🆕 extras
       professor: agendamento.professor
         ? {
-          id: agendamento.professor.id,
-          nome: agendamento.professor.nome,
-          email: sanitizeEmail(agendamento.professor.email),
-        }
+            id: agendamento.professor.id,
+            nome: agendamento.professor.nome,
+            email: sanitizeEmail(agendamento.professor.email),
+          }
         : null,
       professorId: agendamento.professorId ?? null,
       tipoSessao: agendamento.tipoSessao ?? null,
@@ -981,11 +994,11 @@ router.get("/:id", verificarToken, async (req, res) => {
       isencaoApoiado: agendamento.isencaoApoiado ?? false,
       apoiadoUsuario: agendamento.apoiadoUsuario
         ? {
-          id: agendamento.apoiadoUsuario.id,
-          nome: agendamento.apoiadoUsuario.nome,
-          email: sanitizeEmail(agendamento.apoiadoUsuario.email),
-          celular: sanitizePhone(agendamento.apoiadoUsuario.celular),
-        }
+            id: agendamento.apoiadoUsuario.id,
+            nome: agendamento.apoiadoUsuario.nome,
+            email: sanitizeEmail(agendamento.apoiadoUsuario.email),
+            celular: sanitizePhone(agendamento.apoiadoUsuario.celular),
+          }
         : null,
     });
   } catch (err) {
@@ -1490,10 +1503,10 @@ router.patch("/:id/transferir", verificarToken, async (req, res) => {
         horario: novoAgendamento.horario,
         usuario: novoAgendamento.usuario
           ? {
-            id: novoAgendamento.usuario.id,
-            nome: novoAgendamento.usuario.nome,
-            email: isAdmin ? novoAgendamento.usuario.email : undefined,
-          }
+              id: novoAgendamento.usuario.id,
+              nome: novoAgendamento.usuario.nome,
+              email: isAdmin ? novoAgendamento.usuario.email : undefined,
+            }
           : null,
         jogadores: novoAgendamento.jogadores.map((j) => ({
           id: j.id,
@@ -1502,10 +1515,10 @@ router.patch("/:id/transferir", verificarToken, async (req, res) => {
         })),
         quadra: novoAgendamento.quadra
           ? {
-            id: novoAgendamento.quadra.id,
-            nome: novoAgendamento.quadra.nome,
-            numero: novoAgendamento.quadra.numero,
-          }
+              id: novoAgendamento.quadra.id,
+              nome: novoAgendamento.quadra.nome,
+              numero: novoAgendamento.quadra.numero,
+            }
           : null,
       },
     });
@@ -1552,9 +1565,9 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
 
     const usuariosValidos = jogadoresIds.length
       ? await prisma.usuario.findMany({
-        where: { id: { in: jogadoresIds } },
-        select: { id: true },
-      })
+          where: { id: { in: jogadoresIds } },
+          select: { id: true },
+        })
       : [];
 
     if (usuariosValidos.length !== jogadoresIds.length) {
@@ -1618,10 +1631,10 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
       status: atualizado.status,
       usuario: atualizado.usuario
         ? {
-          id: atualizado.usuario.id,
-          nome: atualizado.usuario.nome,
-          email: isAdmin ? atualizado.usuario.email : undefined,
-        }
+            id: atualizado.usuario.id,
+            nome: atualizado.usuario.nome,
+            email: isAdmin ? atualizado.usuario.email : undefined,
+          }
         : null,
       jogadores: atualizado.jogadores.map((j) => ({
         id: j.id,
