@@ -9,7 +9,6 @@ import { toast } from 'sonner'
 type Esporte = { id: number | string; nome: string }
 
 // Agora traz também o celular (telefone)
-// ✅ acrescentado campo opcional "tipo" para sabermos se é ADMIN_PROFESSORES / CLIENTE_APOIADO etc.
 type Usuario = {
   id: number | string
   nome: string
@@ -24,7 +23,18 @@ type Feedback = { kind: 'success' | 'error' | 'info'; text: string }
 
 /* ===== Helpers mínimos ===== */
 const norm = (s?: string | null) => String(s || '').trim().toUpperCase()
-const isClienteApoiado = (u?: Usuario | null) => norm(u?.tipo) === 'CLIENTE_APOIADO'
+
+// ✅ tipos permitidos como "apoiado" (mesma regra do backend)
+const APOIADO_TIPOS_PERMITIDOS = [
+  'CLIENTE_APOIADO',
+  'ADMIN_MASTER',
+  'ADMIN_ATENDENTE',
+  'ADMIN_PROFESSORES',
+]
+
+// elegível para isenção de apoio
+const isUsuarioElegivelApoio = (u?: Usuario | null) =>
+  APOIADO_TIPOS_PERMITIDOS.includes(norm(u?.tipo))
 
 export default function AgendamentoComum() {
   const API_URL = process.env.NEXT_PUBLIC_URL_API || 'http://localhost:3001'
@@ -243,7 +253,9 @@ export default function AgendamentoComum() {
       const status = error.response?.status
       const data = error.response?.data as any
       const serverMsg =
-        (data && (data.erro || data.message || data.msg)) ? String(data.erro || data.message || data.msg) : ''
+        data && (data.erro || data.message || data.msg)
+          ? String(data.erro || data.message || data.msg)
+          : ''
 
       if (status === 409) return serverMsg || 'Conflito: horário já reservado.'
       if (status === 400 || status === 422) return serverMsg || 'Requisição inválida.'
@@ -279,11 +291,12 @@ export default function AgendamentoComum() {
         setFeedback({ kind: 'error', text: 'Selecione o usuário que receberá o apoio.' })
         return
       }
-      // 🚦 NOVO: só permite se o selecionado for CLIENTE_APOIADO
-      if (!isClienteApoiado(apoiadoSelecionado)) {
-        const msg = 'O apoiado selecionado não é do tipo CLIENTE_APOIADO.'
+      // 🚦 NOVO: só permite tipos elegíveis (CLIENTE_APOIADO + admins/professor)
+      if (!isUsuarioElegivelApoio(apoiadoSelecionado)) {
+        const msg =
+          'O usuário selecionado não é elegível para apoio (permitido: CLIENTE_APOIADO, ADMIN_MASTER, ADMIN_ATENDENTE ou ADMIN_PROFESSORES).'
         setFeedback({ kind: 'error', text: msg })
-        toast.error('O apoiado selecionado não é apoiado.')
+        toast.error(msg)
         return
       }
     }
@@ -399,7 +412,7 @@ export default function AgendamentoComum() {
     showApoiadoUI &&
     isApoiado &&
     apoiadoSelecionado &&
-    !isClienteApoiado(apoiadoSelecionado)
+    !isUsuarioElegivelApoio(apoiadoSelecionado)
   )
 
   return (
@@ -539,7 +552,7 @@ export default function AgendamentoComum() {
                   <ul className="border rounded mb-2 max-h-60 overflow-y-auto divide-y">
                     {apoiadoResultados.map((u) => {
                       const tag = norm(u.tipo)
-                      const ehApoiado = tag === 'CLIENTE_APOIADO'
+                      const ehElegivel = isUsuarioElegivelApoio(u)
                       return (
                         <li
                           key={String(u.id)}
@@ -553,7 +566,8 @@ export default function AgendamentoComum() {
                         >
                           <div className="font-medium">{u.nome}</div>
                           <div className="text-[11px] text-gray-600">
-                            {tag || 'SEM TIPO'}{ehApoiado ? ' • elegível' : ' • não elegível'}
+                            {tag || 'SEM TIPO'}
+                            {ehElegivel ? ' • elegível para apoio' : ' • não elegível'}
                           </div>
                           {u.celular && <div className="text-xs text-gray-600">{u.celular}</div>}
                         </li>
@@ -564,15 +578,18 @@ export default function AgendamentoComum() {
 
                 {/* selecionado */}
                 {apoiadoSelecionado && (
-                  <div className={`text-sm rounded px-3 py-2 border
-                    ${isClienteApoiado(apoiadoSelecionado)
+                  <div
+                    className={`text-sm rounded px-3 py-2 border
+                    ${isUsuarioElegivelApoio(apoiadoSelecionado)
                       ? 'text-green-700 bg-green-50 border-green-200'
                       : 'text-amber-800 bg-amber-50 border-amber-200'}
-                  `}>
+                  `}
+                  >
                     Usuário apoiado selecionado: <b>{apoiadoSelecionado.nome}</b>
-                    {!isClienteApoiado(apoiadoSelecionado) && (
+                    {!isUsuarioElegivelApoio(apoiadoSelecionado) && (
                       <span className="block text-[11px] mt-1">
-                        Atenção: este usuário não é do tipo <b>CLIENTE_APOIADO</b>.
+                        Atenção: este usuário não é elegível para apoio
+                        (permitido: <b>CLIENTE_APOIADO, ADMIN_MASTER, ADMIN_ATENDENTE, ADMIN_PROFESSORES</b>).
                       </span>
                     )}
                   </div>
@@ -697,7 +714,11 @@ export default function AgendamentoComum() {
             onClick={agendar}
             disabled={salvando || selecionadoInvalido}
             aria-busy={salvando}
-            title={selecionadoInvalido ? 'O usuário selecionado não é CLIENTE_APOIADO' : undefined}
+            title={
+              selecionadoInvalido
+                ? 'O usuário selecionado não é elegível para apoio.'
+                : undefined
+            }
           >
             {salvando ? (
               <span className="inline-flex items-center gap-2">
@@ -711,7 +732,8 @@ export default function AgendamentoComum() {
           {/* dica quando estiver inválido */}
           {selecionadoInvalido && (
             <p className="mt-2 text-[12px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
-              O apoiado selecionado não é do tipo <b>CLIENTE_APOIADO</b>. Selecione um usuário elegível.
+              O apoiado selecionado não é elegível para apoio.
+              Tipos permitidos: <b>CLIENTE_APOIADO, ADMIN_MASTER, ADMIN_ATENDENTE, ADMIN_PROFESSORES</b>.
             </p>
           )}
         </div>

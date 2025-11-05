@@ -247,7 +247,7 @@ type UserPickerProps = {
   onSelect(user: UsuarioBusca): void;
   onClear?(): void;
   excludeIds?: string[];
-  /** 🔸 extra params (ex.: { tipos: "CLIENTE_APOIADO,CLIENTE_APOIADO_MENSAL" }) */
+  /** 🔸 extra params (ex.: { tipos: "CLIENTE_APOIADO,ADMIN_MASTER" }) */
   extraParams?: Record<string, string | number | boolean>;
 };
 
@@ -859,7 +859,7 @@ export default function AgendarQuadraCliente() {
 
     /* 🔸 Aula apoiada: exige apoiado quando marcado em AULA */
     if (ehProfessor && extra.tipoSessao === "AULA" && isApoiado && !apoiadoSel?.id) {
-      setMsg("Selecione o cliente apoiado para continuar.");
+      setMsg("Selecione o usuário apoiado para continuar.");
       setIsConcurrencyErr(false);
       return;
     }
@@ -1180,7 +1180,8 @@ export default function AgendarQuadraCliente() {
                           {isApoiado && (
                             <div className="space-y-2">
                               <p className="text-[12px] text-gray-600">
-                                Selecione o cliente apoiado (apenas perfis apoiados são listados).
+                                Selecione o usuário apoiado. São aceitos perfis{" "}
+                                <b>CLIENTE_APOIADO</b> e também administradores/professor.
                               </p>
                               <UserPicker
                                 apiUrl={API_URL}
@@ -1188,16 +1189,16 @@ export default function AgendarQuadraCliente() {
                                 onSelect={(u) => setApoiadoSel(u)}
                                 onClear={() => setApoiadoSel(null)}
                                 excludeIds={[usuario?.id ?? ""]}
-                                /* 🔸 utilize qualquer uma que seu back aceite */
+                                /* 🔸 agora aceita CLIENTE_APOIADO + admins/prof */
                                 extraParams={{
-                                  tipos: "CLIENTE_APOIADO,CLIENTE_APOIADO_MENSAL",
+                                  tipos: "CLIENTE_APOIADO,ADMIN_MASTER,ADMIN_ATENDENTE,ADMIN_PROFESSORES",
                                   apenasApoiados: 1,
                                 }}
-                                placeholder="Buscar cliente apoiado…"
+                                placeholder="Buscar usuário apoiado…"
                               />
                               {!apoiadoSel && (
                                 <div className="text-[12px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-                                  É obrigatório escolher o cliente apoiado quando a opção “Aula apoiada” estiver marcada.
+                                  É obrigatório escolher o usuário apoiado quando a opção “Aula apoiada” estiver marcada.
                                 </div>
                               )}
                             </div>
