@@ -307,6 +307,53 @@ async function aulasApoiadasDetalhadasPeriodoProfessor(
   });
 }
 
+/* =========================
+   Aulas (agendamentos) detalhadas no período para o professor
+   (status CONFIRMADO/FINALIZADO; professorId || legado usuarioId)
+   Usado para listar todas as aulas do mês no quadro admin
+========================= */
+async function aulasDetalhadasPeriodoProfessor(
+  profId: string,
+  inicioUTC: Date,
+  fimUTCExcl: Date
+) {
+  const ags = await prisma.agendamento.findMany({
+    where: {
+      status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
+      data: { gte: inicioUTC, lt: fimUTCExcl },
+      AND: [
+        {
+          OR: [
+            { professorId: profId },
+            { AND: [{ professorId: null }, { usuarioId: profId }] }, // legado
+          ],
+        },
+        { OR: [{ tipoSessao: "AULA" }, { tipoSessao: null }] }, // só AULA/legado
+      ],
+    },
+    select: {
+      id: true,
+      data: true,
+      horario: true,
+      multa: true,
+      multaAnulada: true,
+      quadra: { select: { id: true, numero: true, nome: true } },
+      esporte: { select: { id: true, nome: true } },
+    },
+    orderBy: [{ data: "asc" }, { horario: "asc" }],
+  });
+
+  // normaliza para já ignorar multas anuladas
+  return ags.map((a) => ({
+    id: a.id,
+    data: a.data,
+    horario: a.horario,
+    multa: a.multa != null && !a.multaAnulada ? a.multa : null,
+    quadra: a.quadra,
+    esporte: a.esporte,
+  }));
+}
+
 /* =========================================================
    GET /professores/me/resumo?mes=YYYY-MM
    ou ?from=YYYY-MM-DD&to=YYYY-MM-DD
@@ -458,6 +505,9 @@ router.get("/me/resumo", async (req, res) => {
     const apoiadasMes = apoiosDetalhes.length;
     const valorApoioDescontadoMes = apoiadasMes * Number(resumo.professor.valorQuadra || 0);
 
+    // 🆕 todas as aulas do período (para aplicar multa manual no front)
+    const aulasDetalhes = await aulasDetalhadasPeriodoProfessor(userId, inicioUTC, fimUTCExcl);
+
     return res.json({
       professor: resumo.professor,
       intervalo: { from: fromYMD, to: toYMD, duracaoMin },
@@ -480,6 +530,8 @@ router.get("/me/resumo", async (req, res) => {
         esporte: a.esporte,
         apoiadoUsuario: a.apoiadoUsuario,
       })),
+      // 👇 NOVO
+      aulasDetalhes,
     });
   } catch (err) {
     console.error(err);
@@ -632,6 +684,9 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
     const apoiadasMes = apoiosDetalhes.length;
     const valorApoioDescontadoMes = apoiadasMes * Number(resumo.professor.valorQuadra || 0);
 
+    // 🆕 todas as aulas do período (para aplicar multa manual no front admin)
+    const aulasDetalhes = await aulasDetalhadasPeriodoProfessor(profId, inicioUTC, fimUTCExcl);
+
     return res.json({
       professor: resumo.professor,
       intervalo: { from: fromYMD, to: toYMD, duracaoMin },
@@ -653,6 +708,8 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
         esporte: a.esporte,
         apoiadoUsuario: a.apoiadoUsuario,
       })),
+      // 👇 NOVO
+      aulasDetalhes,
     });
   } catch (err) {
     console.error(err);

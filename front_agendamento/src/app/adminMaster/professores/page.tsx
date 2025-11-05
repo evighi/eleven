@@ -51,6 +51,16 @@ type ApoioDetalhe = {
   apoiadoUsuario?: { id: string; nome: string | null; email: string | null } | null
 }
 
+/** 🆕 detalhes de todas as aulas do período (para aplicar multa) */
+type AulaDetalhe = {
+  id: string
+  data: string
+  horario: string
+  multa: number | null
+  quadra?: { id: string; numero: number | null; nome: string | null } | null
+  esporte?: { id: string; nome: string | null } | null
+}
+
 type ResumoProfessorResponse = {
   professor: { id: string; nome: string; valorQuadra: number }
   intervalo: { from: string; to: string; duracaoMin: number }
@@ -71,6 +81,8 @@ type ResumoProfessorResponse = {
   }
   multasDetalhes?: MultaDetalhe[]
   apoiosDetalhes?: ApoioDetalhe[]
+  /** 🆕 vindo do back para listar todas as aulas do mês */
+  aulasDetalhes?: AulaDetalhe[]
 }
 
 /** ===== helpers comuns ===== */
@@ -106,7 +118,8 @@ const fmtDDMMYYYYdash = (iso: string) => {
   return `${d}-${m}-${y}`
 }
 
-const ymdFromISODateTime = (isoDT: string) => (isoDT.includes('T') ? isoDT.split('T')[0] : isoDT)
+const ymdFromISODateTime = (isoDT: string) =>
+  isoDT.includes('T') ? isoDT.split('T')[0] : isoDT
 
 const quadraLabel = (q?: MultaDetalhe['quadra']) => {
   if (!q) return '-'
@@ -156,6 +169,10 @@ export default function ProfessoresAdmin() {
 
   // controla loading por multa específica
   const [removendoMultaId, setRemovendoMultaId] = useState<string | null>(null)
+
+  // 🆕 controla UI de aplicar multa
+  const [mostrarAplicarMulta, setMostrarAplicarMulta] = useState(false)
+  const [aplicandoMultaId, setAplicandoMultaId] = useState<string | null>(null)
 
   // resumo geral do mês (todos os professores)
   const [resumoGeral, setResumoGeral] = useState<{
@@ -218,12 +235,14 @@ export default function ProfessoresAdmin() {
       setDiaSel('')
       setMostrarMultas(false)
       setMostrarApoios(false)
+      setMostrarAplicarMulta(false)
       return
     }
     setSelecionado(prof)
     setQuadro(null)
     setErroQuadro(null)
     setLoadingQuadro(true)
+    setMostrarAplicarMulta(false)
     try {
       const res = await axios.get<ResumoProfessorResponse>(
         `${API_URL}/professores/${prof.id}/resumo`,
@@ -300,6 +319,7 @@ export default function ProfessoresAdmin() {
     setDiaSel('')
     setMostrarMultas(false)
     setMostrarApoios(false)
+    setMostrarAplicarMulta(false)
   }
 
   const multasDetalhes = (quadro?.multasDetalhes || []).map((m) => ({
@@ -308,6 +328,12 @@ export default function ProfessoresAdmin() {
   }))
 
   const apoiosDetalhes = (quadro?.apoiosDetalhes || []).map((a) => ({
+    ...a,
+    ymd: ymdFromISODateTime(a.data),
+  }))
+
+  // 🆕 aulas detalhadas do período (para aplicar multa)
+  const aulasDetalhes = (quadro?.aulasDetalhes || []).map((a) => ({
     ...a,
     ymd: ymdFromISODateTime(a.data),
   }))
@@ -376,6 +402,51 @@ export default function ProfessoresAdmin() {
       alert(msg)
     } finally {
       setRemovendoMultaId(null)
+    }
+  }
+
+  // 🆕 função para aplicar multa em um agendamento específico
+  const aplicarMulta = async (aula: AulaDetalhe & { ymd?: string }) => {
+    if (!selecionado) return
+
+    const ok = window.confirm('Confirmar aplicação de multa para este agendamento?')
+    if (!ok) return
+
+    try {
+      setAplicandoMultaId(aula.id)
+      setErroQuadro(null)
+
+      await axios.post(
+        `${API_URL}/agendamentos/${aula.id}/aplicar-multa`,
+        {},
+        { withCredentials: true },
+      )
+
+      await carregarProfessores()
+
+      const res = await axios.get<ResumoProfessorResponse>(
+        `${API_URL}/professores/${selecionado.id}/resumo`,
+        {
+          params: { mes },
+          withCredentials: true,
+        },
+      )
+      setQuadro(res.data)
+
+      const faixas = buildFaixasLabels(res.data.intervalo.to)
+      if (!faixas.find((f) => f.id === faixaSel)) {
+        setFaixaSel(faixas[0]?.id || '')
+        setDiaSel('')
+      }
+
+      alert('Multa aplicada com sucesso.')
+    } catch (e: any) {
+      console.error(e)
+      const msg = e?.response?.data?.erro || 'Erro ao aplicar multa.'
+      setErroQuadro(msg)
+      alert(msg)
+    } finally {
+      setAplicandoMultaId(null)
     }
   }
 
@@ -483,12 +554,8 @@ export default function ProfessoresAdmin() {
           const valorBase = Number(p.valorMes ?? 0)
           const multaMes = Number(p.multaMes ?? 0)
 
-          const valorCheio = Number(
-            p.valorMesComMulta ?? valorBase + multaMes,
-          )
-          const valorComDesconto = Number(
-            p.valorMesComDesconto ?? valorBase * 0.5 + multaMes,
-          )
+          const valorCheio = Number(p.valorMesComMulta ?? valorBase + multaMes)
+          const valorComDesconto = Number(p.valorMesComDesconto ?? valorBase * 0.5 + multaMes)
 
           return (
             <li key={p.id} className="transition-colors">
@@ -789,6 +856,71 @@ export default function ProfessoresAdmin() {
                           Duração considerada por aula: {quadro.intervalo.duracaoMin} min ·
                           Valor por aula: {currencyBRL(quadro.professor.valorQuadra || 0)}
                         </p>
+
+                        {/* 🆕 Aplicar multa — botão laranja suave + listagem de aulas do mês */}
+                        <div className="mt-3">
+                          <button
+                            type="button"
+                            onClick={() => setMostrarAplicarMulta((v) => !v)}
+                            className="w-full rounded-md border border-orange-200 bg-orange-50 hover:bg-orange-100 text-[13px] font-semibold text-orange-800 px-3 py-2 cursor-pointer transition"
+                            aria-expanded={mostrarAplicarMulta}
+                          >
+                            {mostrarAplicarMulta ? 'Fechar aplicação de multa' : 'Aplicar multa'}
+                          </button>
+
+                          {mostrarAplicarMulta && (
+                            <div className="mt-2 rounded-md border border-gray-200 bg-white">
+                              {aulasDetalhes.length === 0 && (
+                                <div className="px-3 py-2 text-[12px] text-gray-600">
+                                  Nenhuma aula encontrada neste período.
+                                </div>
+                              )}
+
+                              {aulasDetalhes.length > 0 && (
+                                <ul className="divide-y">
+                                  {aulasDetalhes.map((a) => {
+                                    const jaMultada = a.multa != null
+                                    return (
+                                      <li
+                                        key={a.id}
+                                        className="px-3 py-2 text-[13px] flex flex-col gap-0.5"
+                                      >
+                                        <div className="flex items-center justify-between gap-2">
+                                          <span className="text-gray-700">
+                                            {fmtBR(a.ymd!)} · {a.horario}
+                                          </span>
+                                          <div className="flex items-center gap-2">
+                                            {jaMultada && (
+                                              <span className="text-[11px] rounded-full bg-red-50 text-red-700 border border-red-200 px-2 py-0.5">
+                                                já multada
+                                              </span>
+                                            )}
+                                            <button
+                                              type="button"
+                                              onClick={() => void aplicarMulta(a)}
+                                              disabled={jaMultada || aplicandoMultaId === a.id}
+                                              className="text-[11px] px-2 py-1 rounded border border-orange-300 bg-orange-50 text-orange-800 hover:bg-orange-100 disabled:opacity-60 disabled:cursor-not-allowed"
+                                            >
+                                              {aplicandoMultaId === a.id
+                                                ? 'Aplicando...'
+                                                : jaMultada
+                                                ? 'Aplicar multa'
+                                                : 'Aplicar multa'}
+                                            </button>
+                                          </div>
+                                        </div>
+                                        <div className="text-[12px] text-gray-600">
+                                          {quadraLabel(a.quadra as any)}
+                                          {a.esporte?.nome ? ` · ${a.esporte?.nome}` : ''}
+                                        </div>
+                                      </li>
+                                    )
+                                  })}
+                                </ul>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )}
