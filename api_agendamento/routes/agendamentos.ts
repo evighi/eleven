@@ -994,6 +994,119 @@ router.get("/:id", verificarToken, async (req, res) => {
   }
 });
 
+// 💸 Aplicar multa manual em um agendamento (apenas admin)
+router.post("/:id/aplicar-multa", verificarToken, async (req, res) => {
+  const { id } = req.params;
+
+  const reqCustom = req as typeof req & {
+    usuario?: { usuarioLogadoId: string; usuarioLogadoTipo?: string };
+  };
+
+  if (!reqCustom.usuario) {
+    return res.status(401).json({ erro: "Não autenticado" });
+  }
+
+  // Apenas admin pode aplicar multa
+  if (!isAdminRole(reqCustom.usuario.usuarioLogadoTipo)) {
+    return res.status(403).json({ erro: "Apenas administradores podem aplicar multa" });
+  }
+
+  try {
+    const ag = await prisma.agendamento.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        data: true,
+        horario: true,
+        usuarioId: true,
+        professorId: true,
+        status: true,
+        multa: true,
+        multaAnulada: true,
+      },
+    });
+
+    if (!ag) {
+      return res.status(404).json({ erro: "Agendamento não encontrado" });
+    }
+
+    // Só faz sentido multar agendamento que "existiu" de fato
+    if (!["CONFIRMADO", "FINALIZADO"].includes(ag.status)) {
+      return res.status(409).json({
+        erro: "Só é possível aplicar multa em agendamentos confirmados ou finalizados.",
+      });
+    }
+
+    // Se já tiver uma multa ativa, não deixa aplicar outra
+    if (ag.multa != null && !ag.multaAnulada) {
+      return res.status(409).json({
+        erro: "Este agendamento já possui uma multa ativa.",
+      });
+    }
+
+    // Valor fixo da multa (hoje R$ 50,00)
+    const valorMulta = Number(valorMultaPadrao().toFixed(2)); // ex: 50.00
+
+    const atualizado = await prisma.agendamento.update({
+      where: { id },
+      data: {
+        multa: valorMulta,
+        multaAnulada: false,
+        multaAnuladaEm: null,
+        multaAnuladaPorId: null,
+      },
+    });
+
+    // AUDITORIA
+    try {
+      await logAudit({
+        event: "AGENDAMENTO_MULTA_APLICAR",
+        req,
+        target: { type: TargetType.AGENDAMENTO, id },
+        metadata: {
+          agendamentoId: id,
+          multaAntes: ag.multa,
+          multaDepois: valorMulta,
+          multaAnuladaAntes: ag.multaAnulada ?? false,
+          multaAnuladaDepois: false,
+          status: ag.status,
+          data: ag.data.toISOString().slice(0, 10),
+          horario: ag.horario,
+          professorId: ag.professorId ?? null,
+          donoId: ag.usuarioId,
+          aplicadoPorId: reqCustom.usuario.usuarioLogadoId,
+        },
+      });
+    } catch (e) {
+      console.error("[audit] falha ao registrar aplicação de multa:", e);
+    }
+
+    return res.status(200).json({
+      message: "Multa aplicada com sucesso.",
+      agendamento: atualizado,
+    });
+  } catch (error) {
+    console.error("Erro ao aplicar multa no agendamento:", error);
+
+    try {
+      await logAudit({
+        event: "OTHER",
+        req,
+        target: { type: TargetType.AGENDAMENTO, id },
+        metadata: {
+          action: "APLICAR_MULTA_FAIL",
+          error: (error as any)?.message ?? String(error),
+        },
+      });
+    } catch (e) {
+      console.error("[audit] falha ao registrar erro de aplicar multa:", e);
+    }
+
+    return res.status(500).json({ erro: "Erro ao aplicar multa no agendamento." });
+  }
+});
+
+
 // 💸 Remover/anular multa de um agendamento (apenas admin)
 router.post("/:id/remover-multa", verificarToken, async (req, res) => {
   const { id } = req.params;
