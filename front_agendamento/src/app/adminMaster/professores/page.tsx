@@ -170,6 +170,9 @@ export default function ProfessoresAdmin() {
   // controla loading por multa específica
   const [removendoMultaId, setRemovendoMultaId] = useState<string | null>(null)
 
+  // 🆕 controla loading por apoio específico (remoção de isenção)
+  const [removendoIsencaoId, setRemovendoIsencaoId] = useState<string | null>(null)
+
   // 🆕 controla UI de aplicar multa
   const [mostrarAplicarMulta, setMostrarAplicarMulta] = useState(false)
   const [aplicandoMultaId, setAplicandoMultaId] = useState<string | null>(null)
@@ -402,6 +405,53 @@ export default function ProfessoresAdmin() {
       alert(msg)
     } finally {
       setRemovendoMultaId(null)
+    }
+  }
+
+  // 🆕 função para remover isenção de uma aula apoiada
+  const removerIsencao = async (apoio: ApoioDetalhe & { ymd?: string }) => {
+    if (!selecionado) return
+
+    const ok = window.confirm('Confirmar remoção de isenção desta aula apoiada?')
+    if (!ok) return
+
+    try {
+      setRemovendoIsencaoId(apoio.id)
+      setErroQuadro(null)
+
+      await axios.post(
+        `${API_URL}/agendamentos/${apoio.id}/remover-isencao`,
+        {},
+        { withCredentials: true },
+      )
+
+      // recarrega lista geral
+      await carregarProfessores()
+
+      // recarrega quadro do professor selecionado
+      const res = await axios.get<ResumoProfessorResponse>(
+        `${API_URL}/professores/${selecionado.id}/resumo`,
+        {
+          params: { mes },
+          withCredentials: true,
+        },
+      )
+      setQuadro(res.data)
+
+      const faixas = buildFaixasLabels(res.data.intervalo.to)
+      if (!faixas.find((f) => f.id === faixaSel)) {
+        setFaixaSel(faixas[0]?.id || '')
+        setDiaSel('')
+      }
+
+      alert('Isenção removida com sucesso.')
+    } catch (e: any) {
+      console.error(e)
+      const msg = e?.response?.data?.erro || 'Erro ao remover isenção.'
+      setErroQuadro(msg)
+      alert(msg)
+    } finally {
+      setRemovendoIsencaoId(null)
     }
   }
 
@@ -765,16 +815,28 @@ export default function ProfessoresAdmin() {
                                     key={a.id}
                                     className="px-3 py-2 text-[13px] flex flex-col gap-0.5 bg-white"
                                   >
-                                    <div className="flex items-center justify-between">
+                                    <div className="flex items-center justify-between gap-2">
                                       <span className="text-gray-700">
-                                        {fmtBR(a.ymd)} · {a.horario}
+                                        {fmtBR(a.ymd!)} · {a.horario}
                                       </span>
-                                      <span className="text-[11px] rounded-full bg-orange-50 text-orange-700 border border-orange-200 px-2 py-0.5">
-                                        isento
-                                      </span>
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-[11px] rounded-full bg-orange-50 text-orange-700 border border-orange-200 px-2 py-0.5">
+                                          isento
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => void removerIsencao(a)}
+                                          disabled={removendoIsencaoId === a.id}
+                                          className="text-[11px] px-2 py-1 rounded border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-60 disabled:cursor-not-allowed"
+                                        >
+                                          {removendoIsencaoId === a.id
+                                            ? 'Removendo...'
+                                            : 'Remover isenção'}
+                                        </button>
+                                      </div>
                                     </div>
                                     <div className="text-[12px] text-gray-600">
-                                      {quadraLabel(a.quadra)}
+                                      {quadraLabel(a.quadra as any)}
                                       {a.esporte?.nome ? ` · ${a.esporte?.nome}` : ''}
                                       {a.apoiadoUsuario?.nome
                                         ? ` · ${a.apoiadoUsuario.nome}`
@@ -903,8 +965,6 @@ export default function ProfessoresAdmin() {
                                             >
                                               {aplicandoMultaId === a.id
                                                 ? 'Aplicando...'
-                                                : jaMultada
-                                                ? 'Aplicar multa'
                                                 : 'Aplicar multa'}
                                             </button>
                                           </div>

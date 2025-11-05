@@ -1007,6 +1007,116 @@ router.get("/:id", verificarToken, async (req, res) => {
   }
 });
 
+// 💸 Remover isenção de apoiado em um agendamento (apenas admin)
+router.post("/:id/remover-isencao", verificarToken, async (req, res) => {
+  const { id } = req.params;
+
+  const reqCustom = req as typeof req & {
+    usuario?: { usuarioLogadoId: string; usuarioLogadoTipo?: string };
+  };
+  if (!reqCustom.usuario) {
+    return res.status(401).json({ erro: "Não autenticado" });
+  }
+
+  // ⛔ Apenas admin pode remover isenção (se quiser liberar para professor depois, ajustamos aqui)
+  if (!isAdminRole(reqCustom.usuario.usuarioLogadoTipo)) {
+    return res.status(403).json({ erro: "Apenas administradores podem remover isenção de apoio" });
+  }
+
+  try {
+    const ag = await prisma.agendamento.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        data: true,
+        horario: true,
+        usuarioId: true,
+        professorId: true,
+        status: true,
+        isencaoApoiado: true,
+        apoiadoUsuarioId: true,
+        obs: true,
+      },
+    });
+
+    if (!ag) {
+      return res.status(404).json({ erro: "Agendamento não encontrado" });
+    }
+
+    // Se não estiver marcado como apoiado, não faz sentido remover isenção
+    if (!ag.isencaoApoiado || !ag.apoiadoUsuarioId) {
+      return res.status(409).json({
+        erro: "Este agendamento não está marcado como isento para apoiado.",
+      });
+    }
+
+    // Opcional: remover a tag [APOIADO:...] da observação
+    let novaObs: string | null = ag.obs ?? null;
+    if (novaObs) {
+      novaObs = novaObs.replace(/\[APOIADO:[^\]]+\]\s*/g, "").trim();
+      if (!novaObs) novaObs = null;
+    }
+
+    const atualizado = await prisma.agendamento.update({
+      where: { id },
+      data: {
+        isencaoApoiado: false,
+        apoiadoUsuarioId: null,
+        obs: novaObs,
+      },
+    });
+
+    // AUDITORIA
+    try {
+      await logAudit({
+        event: "AGENDAMENTO_ISENCAO_REMOVER",
+        req,
+        target: { type: TargetType.AGENDAMENTO, id },
+        metadata: {
+          agendamentoId: id,
+          status: ag.status,
+          data: ag.data.toISOString().slice(0, 10),
+          horario: ag.horario,
+          donoId: ag.usuarioId,
+          professorId: ag.professorId ?? null,
+          // antes/depois
+          isencaoApoiadoAntes: ag.isencaoApoiado,
+          apoiadoUsuarioIdAntes: ag.apoiadoUsuarioId,
+          isencaoApoiadoDepois: false,
+          apoiadoUsuarioIdDepois: null,
+          removidoPorId: reqCustom.usuario.usuarioLogadoId,
+        },
+      });
+    } catch (e) {
+      console.error("[audit] falha ao registrar remoção de isenção:", e);
+    }
+
+    return res.status(200).json({
+      message: "Isenção de apoio removida com sucesso.",
+      agendamento: atualizado,
+    });
+  } catch (error) {
+    console.error("Erro ao remover isenção de apoio:", error);
+
+    try {
+      await logAudit({
+        event: "OTHER",
+        req,
+        target: { type: TargetType.AGENDAMENTO, id },
+        metadata: {
+          action: "REMOVER_ISENCAO_APOIO_FAIL",
+          error: (error as any)?.message ?? String(error),
+        },
+      });
+    } catch (e) {
+      console.error("[audit] falha ao registrar erro de remover isenção:", e);
+    }
+
+    return res.status(500).json({ erro: "Erro ao remover isenção de apoio do agendamento." });
+  }
+});
+
+
 // 💸 Aplicar multa manual em um agendamento (apenas admin)
 router.post("/:id/aplicar-multa", verificarToken, async (req, res) => {
   const { id } = req.params;
