@@ -311,6 +311,7 @@ async function aulasApoiadasDetalhadasPeriodoProfessor(
    Aulas (agendamentos) detalhadas no período para o professor
    (status CONFIRMADO/FINALIZADO; professorId || legado usuarioId)
    Usado para listar todas as aulas do mês no quadro admin
+   👉 Aqui filtramos para ficar SÓ AULA (inclusive legado).
 ========================= */
 async function aulasDetalhadasPeriodoProfessor(
   profId: string,
@@ -321,14 +322,9 @@ async function aulasDetalhadasPeriodoProfessor(
     where: {
       status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
       data: { gte: inicioUTC, lt: fimUTCExcl },
-      AND: [
-        {
-          OR: [
-            { professorId: profId },
-            { AND: [{ professorId: null }, { usuarioId: profId }] }, // legado
-          ],
-        },
-        { OR: [{ tipoSessao: "AULA" }, { tipoSessao: null }] }, // só AULA/legado
+      OR: [
+        { professorId: profId },
+        { AND: [{ professorId: null }, { usuarioId: profId }] }, // legado
       ],
     },
     select: {
@@ -339,12 +335,33 @@ async function aulasDetalhadasPeriodoProfessor(
       multaAnulada: true,
       quadra: { select: { id: true, numero: true, nome: true } },
       esporte: { select: { id: true, nome: true } },
+      tipoSessao: true,
     },
     orderBy: [{ data: "asc" }, { horario: "asc" }],
   });
 
+  // 🔎 Filtra para manter apenas AULAS:
+  // - tipoSessao === "AULA" entra
+  // - tipoSessao === "JOGO" sai
+  // - tipoSessao === null ⇒ aplica regra de noite em dia útil (trata como jogo e exclui)
+  const apenasAulas = ags.filter((a) => {
+    if (a.tipoSessao === "AULA") return true;
+    if (a.tipoSessao === "JOGO") return false;
+
+    // legado (null): usa a mesma regra do cálculo
+    const ymd = toISODateUTC(a.data);
+    const wd = localWeekdayIndexOfYMD(ymd); // 0..6
+    if (isWeekdayIdx(wd) && EXCLUDE_EVENING.has(a.horario)) {
+      // noite de seg–sex => considera jogo, não entra
+      return false;
+    }
+
+    // demais casos tratamos como AULA
+    return true;
+  });
+
   // normaliza para já ignorar multas anuladas
-  return ags.map((a) => ({
+  return apenasAulas.map((a) => ({
     id: a.id,
     data: a.data,
     horario: a.horario,
@@ -758,7 +775,7 @@ router.get("/admin", requireAdmin, async (req, res) => {
       orderBy: { nome: "asc" },
     });
     const profIds = professores.map((p) => p.id);
-    const profIdSet = new Set(profIds);
+       const profIdSet = new Set(profIds);
 
     if (profIds.length === 0) {
       return res.json({
