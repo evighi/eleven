@@ -34,6 +34,7 @@ export default function AdminHeader() {
     { nome: "Churrasqueiras", url: "/adminMaster/churrasqueiras", imagem: "/icons/editar.png" },
     { nome: "Registros", url: "/adminMaster/logs", imagem: "/icons/editar.png" },
     { nome: "Bloqueio de Quadras", url: "/adminMaster/bloqueioQuadras", imagem: "/icons/bloq.png" },
+    { nome: "Configurar Valor da Multa", url: "/adminMaster/configMulta", imagem: "/icons/editar.png" },
   ];
 
   const scroll = (dir: "left" | "right") => {
