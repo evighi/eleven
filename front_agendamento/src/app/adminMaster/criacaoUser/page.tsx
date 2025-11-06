@@ -55,6 +55,8 @@ export default function CriarUsuarioAdminPage() {
     setSenhaTemporaria(null)
     setUsuarioCriado(null)
 
+    const senhaInformada = !!senha.trim()
+
     const payload: any = {
       nome: nome.trim(),
       email: email.trim(),
@@ -62,7 +64,7 @@ export default function CriarUsuarioAdminPage() {
       verificado,
     }
 
-    if (senha.trim()) payload.senha = senha.trim()
+    if (senhaInformada) payload.senha = senha.trim()
     if (celular.trim()) payload.celular = celular.trim()
     if (cpf.trim()) payload.cpf = cpf.trim()
     if (nascimento) payload.nascimento = nascimento
@@ -79,11 +81,14 @@ export default function CriarUsuarioAdminPage() {
       setSenhaTemporaria(res.data.senhaTemporaria || null)
       setUsuarioCriado(res.data.usuario)
 
-      // ✅ Após criar, redireciona para a tela de usuários depois de um pequeno delay
-      setTimeout(() => {
-        // ajuste o caminho se sua rota de usuários for diferente
-        router.push('/adminMaster/usuarios')
-      }, 1500)
+      // ✅ Se a senha foi digitada manualmente, pode redirecionar automático
+      if (senhaInformada) {
+        setTimeout(() => {
+          router.push('/adminMaster/usuarios')
+        }, 1500)
+      }
+      // Se NÃO foi informada, a senha temporária será exibida e
+      // o admin decide quando ir para a lista clicando no botão.
     } catch (e: any) {
       console.error(e)
       setErro(e?.response?.data?.erro || 'Erro ao criar usuário')
@@ -175,6 +180,12 @@ export default function CriarUsuarioAdminPage() {
             <option value="ADMIN_PROFESSORES">ADMIN_PROFESSORES</option>
             <option value="ADMIN_MASTER">ADMIN_MASTER</option>
           </select>
+          <p className="text-xs text-gray-500">
+            Obrigatório. Normalmente você vai usar{' '}
+            <span className="font-semibold">CLIENTE</span> ou{' '}
+            <span className="font-semibold">CLIENTE_APOIADO</span>. Os demais são perfis de
+            administração.
+          </p>
         </div>
 
         {/* Celular */}
@@ -263,8 +274,17 @@ export default function CriarUsuarioAdminPage() {
               </code>
             </div>
             <p className="mt-1 text-xs text-blue-900">
-              Entregue essa senha ao usuário e oriente a trocar no primeiro acesso.
+              Copie esta senha e entregue ao usuário. Ele pode trocá-la no primeiro acesso.
             </p>
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={() => router.push('/adminMaster/usuarios')}
+                className="inline-flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-300"
+              >
+                Ir para lista de usuários
+              </button>
+            </div>
           </div>
         )}
 
