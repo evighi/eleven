@@ -709,6 +709,10 @@ export default function AdminHome() {
                     "p-3 rounded-lg text-center shadow-sm flex flex-col justify-center " +
                     (clickable ? "cursor-pointer" : "cursor-not-allowed");
 
+                  // ✅ Só mostra "Comum/Permanente" quando realmente há agendamento
+                  const hasAgendamento =
+                    !q.disponivel && !q.bloqueada && !!q.tipoReserva;
+
                   return (
                     <div
                       key={q.quadraId}
@@ -737,15 +741,22 @@ export default function AdminHome() {
                     >
                       <p className="font-medium">{q.nome}</p>
                       <p className="text-xs text-gray-700">Quadra {q.numero}</p>
-                      {q.bloqueada && <div className="text-red-600 font-bold">Bloqueada</div>}
-                      {!q.disponivel && (
+                      {q.bloqueada && (
+                        <div className="text-red-600 font-bold">Bloqueada</div>
+                      )}
+
+                      {hasAgendamento && (
                         <div className="mt-1">
                           <p className="font-bold">{q.usuario?.nome}</p>
                           {q.usuario?.celular && (
-                            <p className="text-[11px] text-gray-700">{q.usuario.celular}</p>
+                            <p className="text-[11px] text-gray-700">
+                              {q.usuario.celular}
+                            </p>
                           )}
                           <span className="inline-block text-[11px] mt-1 px-2 py-0.5 rounded bg-white/70">
-                            {q.tipoReserva === "permanente" ? "Permanente" : "Comum"}
+                            {q.tipoReserva === "permanente"
+                              ? "Permanente"
+                              : "Comum"}
                           </span>
                         </div>
                       )}
@@ -759,7 +770,9 @@ export default function AdminHome() {
           {/* CHURRASQUEIRAS */}
           <div>
             <div className="flex items-center mb-4">
-              <h2 className="text-lg font-semibold text-orange-700">Churrasqueiras</h2>
+              <h2 className="text-lg font-semibold text-orange-700">
+                Churrasqueiras
+              </h2>
               <div className="flex-1 border-t border-gray-300 ml-3" />
             </div>
 
@@ -796,16 +809,22 @@ export default function AdminHome() {
                     }`}
                   >
                     <p className="font-medium">{c.nome}</p>
-                    <p className="text-xs text-gray-700">Churrasqueira {c.numero}</p>
+                    <p className="text-xs text-gray-700">
+                      Churrasqueira {c.numero}
+                    </p>
 
                     {!disponivel && (
                       <div className="mt-1">
                         <p className="font-bold">{diaInfo?.usuario?.nome}</p>
                         {diaInfo?.usuario?.celular && (
-                          <p className="text-[11px] text-gray-700">{diaInfo.usuario.celular}</p>
+                          <p className="text-[11px] text-gray-700">
+                            {diaInfo.usuario.celular}
+                          </p>
                         )}
                         <span className="inline-block text-[11px] px-2 py-0.5 rounded bg-white/70">
-                          {diaInfo?.tipoReserva === "permanente" ? "Permanente" : "Comum"}
+                          {diaInfo?.tipoReserva === "permanente"
+                            ? "Permanente"
+                            : "Comum"}
                         </span>
                       </div>
                     )}
@@ -847,16 +866,22 @@ export default function AdminHome() {
                     }`}
                   >
                     <p className="font-medium">{c.nome}</p>
-                    <p className="text-xs text-gray-700">Churrasqueira {c.numero}</p>
+                    <p className="text-xs text-gray-700">
+                      Churrasqueira {c.numero}
+                    </p>
 
                     {!disponivel && (
                       <div className="mt-1">
                         <p className="font-bold">{noiteInfo?.usuario?.nome}</p>
                         {noiteInfo?.usuario?.celular && (
-                          <p className="text-[11px] text-gray-700">{noiteInfo.usuario.celular}</p>
+                          <p className="text-[11px] text-gray-700">
+                            {noiteInfo.usuario.celular}
+                          </p>
                         )}
                         <span className="inline-block text-[11px] px-2 py-0.5 rounded bg-white/70">
-                          {noiteInfo?.tipoReserva === "permanente" ? "Permanente" : "Comum"}
+                          {noiteInfo?.tipoReserva === "permanente"
+                            ? "Permanente"
+                            : "Comum"}
                         </span>
                       </div>
                     )}
@@ -885,12 +910,18 @@ export default function AdminHome() {
           <div className="bg-white p-6 rounded-lg shadow-lg w-80 relative max-h-[90vh] overflow-auto">
             <h2 className="text-lg font-semibold mb-4">Detalhes do Agendamento</h2>
 
-            <p><strong>Dia:</strong> {agendamentoSelecionado.dia}</p>
+            <p>
+              <strong>Dia:</strong> {agendamentoSelecionado.dia}
+            </p>
             {agendamentoSelecionado.horario && (
-              <p><strong>Horário:</strong> {agendamentoSelecionado.horario}</p>
+              <p>
+                <strong>Horário:</strong> {agendamentoSelecionado.horario}
+              </p>
             )}
             {agendamentoSelecionado.turno && (
-              <p><strong>Turno:</strong> {agendamentoSelecionado.turno}</p>
+              <p>
+                <strong>Turno:</strong> {agendamentoSelecionado.turno}
+              </p>
             )}
             <p>
               <strong>Usuário:</strong>{" "}
@@ -901,9 +932,13 @@ export default function AdminHome() {
                     .join(" — ")}
             </p>
             {agendamentoSelecionado.esporte && (
-              <p><strong>Esporte:</strong> {agendamentoSelecionado.esporte}</p>
+              <p>
+                <strong>Esporte:</strong> {agendamentoSelecionado.esporte}
+              </p>
             )}
-            <p><strong>Tipo:</strong> {agendamentoSelecionado.tipoReserva}</p>
+            <p>
+              <strong>Tipo:</strong> {agendamentoSelecionado.tipoReserva}
+            </p>
 
             {/* Jogadores (comum/quadra) — sem o botão "+" */}
             {agendamentoSelecionado.tipoReserva === "comum" &&
@@ -1198,7 +1233,9 @@ export default function AdminHome() {
 
             {/* ---- CONVIDADO (apenas nome) ---- */}
             <div className="mb-2">
-              <label className="block text-sm font-medium mb-1">Adicionar convidado (só nome)</label>
+              <label className="block text-sm font-medium mb-1">
+                Adicionar convidado (só nome)
+              </label>
               <div className="flex gap-2">
                 <input
                   type="text"
@@ -1259,7 +1296,8 @@ export default function AdminHome() {
                 onClick={confirmarAdicionarJogadores}
                 disabled={
                   addingPlayers ||
-                  (jogadoresSelecionadosIds.length === 0 && convidadosPendentes.length === 0)
+                  (jogadoresSelecionadosIds.length === 0 &&
+                    convidadosPendentes.length === 0)
                 }
                 className="px-4 py-2 rounded bg-orange-600 text-white hover:bg-orange-700 disabled:bg-orange-300"
               >
@@ -1309,10 +1347,12 @@ export default function AdminHome() {
             <p className="text-sm text-gray-700 mb-4">
               Deseja agendar a{" "}
               <b>
-                {preReservaChurras.churrasqueiraNome} (nº {preReservaChurras.churrasqueiraNumero})
+                {preReservaChurras.churrasqueiraNome} (nº{" "}
+                {preReservaChurras.churrasqueiraNumero})
               </b>
               <br />
-              em <b>{toDdMm(preReservaChurras.data)}</b> no turno <b>{preReservaChurras.turno}</b>?
+              em <b>{toDdMm(preReservaChurras.data)}</b> no turno{" "}
+              <b>{preReservaChurras.turno}</b>?
             </p>
             <div className="flex gap-2 justify-end">
               <button
