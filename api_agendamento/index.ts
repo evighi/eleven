@@ -30,9 +30,11 @@ import routesAudit from "./routes/audit";
 import routesProfessores from "./routes/professores";
 // 👇 NOVO: rota de deleções (pendências + desfazer)
 import routesDelecoes from "./routes/delecoes";
-
 // 👇 NOVO: próximas datas para permanente de churrasqueira
 import proximaDataPermanenteDisponivelChurrasqueira from "./routes/proximaDataPermanenteDisponivelChurrasqueira";
+
+// 👇 NOVO: rota de configurações (inclui valor padrão da multa)
+import routesConfiguracoes from "./routes/configuracoes";
 
 import verificarToken from "./middleware/authMiddleware";
 
@@ -76,6 +78,10 @@ app.use("/agendamentosPermanentesChurrasqueiras", routesAgendamentosPermanentesC
 app.use("/disponibilidadeChurrasqueiras", routesDisponibilidadeChurrasqueiras);
 app.use("/disponibilidadeGeral", routesDisponibilidadeGeral);
 app.use("/usuariosAdmin", routesUsuariosAdmin);
+
+// 👇 NOVO: rotas de configurações (ex.: /configuracoes/multa)
+app.use("/configuracoes", routesConfiguracoes);
+
 app.use("/bloqueios", routesBloqueios);
 app.use("/usuarios", routesUsuarios);
 app.use("/audit", routesAudit);
