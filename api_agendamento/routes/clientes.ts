@@ -45,6 +45,24 @@ function validaSenha(senha: string) {
   return erros;
 }
 
+// 👇 util: gera senha temporária forte quando admin não informar
+function gerarSenhaTemporaria() {
+  const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+  const lower = "abcdefghijkmnopqrstuvwxyz";
+  const nums = "23456789";
+  const all = upper + lower + nums;
+  const pick = (src: string) => src[Math.floor(Math.random() * src.length)];
+  // garante pelo menos 1 de cada
+  const seed = [pick(upper), pick(lower), pick(nums)];
+  while (seed.length < 10) seed.push(pick(all));
+  // embaralha
+  for (let i = seed.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [seed[i], seed[j]] = [seed[j], seed[i]];
+  }
+  return seed.join("");
+}
+
 /** =============== Públicos =============== */
 
 // POST /clientes/registrar
@@ -160,7 +178,6 @@ router.post("/registrar", async (req, res) => {
   } catch (error: any) {
     // fallback (ex.: corrida até o unique do banco)
     if (error?.code === "P2002") {
-      // Podemos tentar ler qual campo conflitou (email/cpf) em error.meta?.target
       const target: string[] | undefined = (error as any)?.meta?.target;
       if (target?.some((t) => t.toLowerCase().includes("email"))) {
         return res.status(409).json({ erro: "E-mail já cadastrado" });
@@ -172,6 +189,110 @@ router.post("/registrar", async (req, res) => {
     }
     console.error(error);
     return res.status(500).json({ erro: "Erro ao registrar" });
+  }
+});
+
+// ================== ADMIN: criar usuário manual (pulando verificação) ==================
+const adminCreateSchema = z.object({
+  nome: z.string().min(3),
+  email: z.string().email(),
+  senha: z.string().optional(), // se não vier, gera temporária
+  tipo: z.nativeEnum(TipoUsuario).default(TipoUsuario.CLIENTE),
+  celular: z.string().optional(),
+  cpf: z.string().optional(),
+  nascimento: z.string().optional(), // ISO date
+  verificado: z.boolean().optional(), // default true
+});
+
+router.post("/admin/criar", verificarToken, requireAdmin, async (req, res) => {
+  try {
+    const data = adminCreateSchema.parse(req.body);
+
+    const nome = data.nome.trim();
+    const email = data.email.trim().toLowerCase();
+    const celular = data.celular?.trim() || null;
+    const cpf = data.cpf?.trim() || null;
+
+    let nascimento: Date | null = null;
+    if (data.nascimento) {
+      const n = new Date(data.nascimento);
+      if (!isValid(n)) return res.status(400).json({ erro: "Data de nascimento inválida" });
+      nascimento = n;
+    }
+
+    // conflitos
+    const emailExist = await prisma.usuario.findUnique({ where: { email }, select: { id: true } });
+    if (emailExist) return res.status(409).json({ erro: "E-mail já cadastrado" });
+
+    if (cpf) {
+      const cpfExist = await prisma.usuario.findFirst({ where: { cpf }, select: { id: true } });
+      if (cpfExist) return res.status(409).json({ erro: "CPF já cadastrado" });
+    }
+
+    // senha: usa a informada ou gera
+    const senhaFinal = data.senha?.trim() || gerarSenhaTemporaria();
+    const errosSenha = validaSenha(senhaFinal);
+    if (errosSenha.length > 0) {
+      return res.status(400).json({ erro: `Senha inválida: ${errosSenha.join("; ")}` });
+    }
+    const hash = bcrypt.hashSync(senhaFinal, 12);
+
+    const novo = await prisma.usuario.create({
+      data: {
+        nome,
+        email,
+        celular: celular || undefined,
+        cpf: cpf || undefined,
+        nascimento: nascimento || undefined,
+        senha: hash,
+        tipo: data.tipo,
+        verificado: data.verificado ?? true, // 👈 já vem verificado
+        // 👇 não cria código de verificação
+        codigoEmail: null,
+        expiraEm: null,
+      },
+      select: baseUserSelect,
+    });
+
+    // 📝 AUDIT: criação manual por admin
+    await logAudit({
+      event: "USUARIO_CREATE_ADMIN",
+      req,
+      actor: {
+        id: req.usuario?.usuarioLogadoId,
+        name: req.usuario?.usuarioLogadoNome,
+        type: req.usuario?.usuarioLogadoTipo,
+      },
+      target: { type: TargetType.USUARIO, id: novo.id },
+      metadata: {
+        tipo: novo.tipo,
+        verificado: novo.verificado,
+        via: "ADMIN_MANUAL",
+      },
+    });
+
+    return res.status(201).json({
+      mensagem: "Usuário criado com sucesso",
+      usuario: novo,
+      // retorna senha temporária apenas na resposta de criação
+      senhaTemporaria: data.senha ? undefined : senhaFinal,
+    });
+  } catch (error: any) {
+    if (error?.code === "P2002") {
+      const target: string[] | undefined = (error as any)?.meta?.target;
+      if (target?.some((t) => t.toLowerCase().includes("email"))) {
+        return res.status(409).json({ erro: "E-mail já cadastrado" });
+      }
+      if (target?.some((t) => t.toLowerCase().includes("cpf"))) {
+        return res.status(409).json({ erro: "CPF já cadastrado" });
+      }
+      return res.status(409).json({ erro: "E-mail ou CPF já cadastrado" });
+    }
+    if (error?.issues) {
+      return res.status(400).json({ erro: error.issues.map((i: any) => i.message).join("; ") });
+    }
+    console.error(error);
+    return res.status(500).json({ erro: "Erro ao criar usuário" });
   }
 });
 
@@ -371,7 +492,6 @@ router.patch("/:id/email", verificarToken, requireAdmin, async (req, res) => {
     return res.status(500).json({ erro: "Erro ao atualizar e-mail" });
   }
 });
-
 
 router.patch("/:id", verificarToken, requireSelfOrAdminParam("id"), async (req, res) => {
   try {

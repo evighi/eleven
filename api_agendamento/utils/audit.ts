@@ -21,6 +21,7 @@ export type AuditEvent =
   | "PASSWORD_RESET"
   // Usuário
   | "USUARIO_CREATE"
+  | "USUARIO_CREATE_ADMIN"
   | "USUARIO_UPDATE"
   // Agendamento comum (quadra)
   | "AGENDAMENTO_CREATE"
