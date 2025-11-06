@@ -331,12 +331,16 @@ router.post("/", verificarToken, async (req, res) => {
     const dataYMD = toISODateUTC(data); // "YYYY-MM-DD"
     const diaSemanaEnum = diasEnum[localWeekdayIndexOfYMD(dataYMD)] as DiaSemana;
 
-    // 💸 Multa automática por “marcar horário que já passou” (base SP)
     const hojeLocalYMD = localYMD(new Date(), SP_TZ);
     const agoraLocalHM = localHM(new Date(), SP_TZ);
     let multaPorHorarioPassado: number | null = null;
+
     if (dataYMD === hojeLocalYMD && horario < agoraLocalHM) {
-      multaPorHorarioPassado = Number(valorMultaPadrao().toFixed(2)); // 50.00
+      // agora valorMultaPadrao é assíncrona
+      const valorPadraoMulta = await valorMultaPadrao();
+      multaPorHorarioPassado = valorPadraoMulta; // já vem como number
+      // se quiser arredondar pra 2 casas:
+      // multaPorHorarioPassado = Number(valorPadraoMulta.toFixed(2));
     }
 
     // Janela [00:00Z do dia local, 00:00Z do próximo dia local]
@@ -963,11 +967,11 @@ router.get("/:id", verificarToken, async (req, res) => {
       horario: agendamento.horario,
       usuario: agendamento.usuario
         ? {
-            id: agendamento.usuario.id,
-            nome: agendamento.usuario.nome,
-            email: sanitizeEmail(agendamento.usuario.email),
-            celular: sanitizePhone(agendamento.usuario.celular),
-          }
+          id: agendamento.usuario.id,
+          nome: agendamento.usuario.nome,
+          email: sanitizeEmail(agendamento.usuario.email),
+          celular: sanitizePhone(agendamento.usuario.celular),
+        }
         : null,
       usuarioId: agendamento.usuario?.id,
       esporte: agendamento.esporte?.nome,
@@ -981,10 +985,10 @@ router.get("/:id", verificarToken, async (req, res) => {
       // 🆕 extras
       professor: agendamento.professor
         ? {
-            id: agendamento.professor.id,
-            nome: agendamento.professor.nome,
-            email: sanitizeEmail(agendamento.professor.email),
-          }
+          id: agendamento.professor.id,
+          nome: agendamento.professor.nome,
+          email: sanitizeEmail(agendamento.professor.email),
+        }
         : null,
       professorId: agendamento.professorId ?? null,
       tipoSessao: agendamento.tipoSessao ?? null,
@@ -994,11 +998,11 @@ router.get("/:id", verificarToken, async (req, res) => {
       isencaoApoiado: agendamento.isencaoApoiado ?? false,
       apoiadoUsuario: agendamento.apoiadoUsuario
         ? {
-            id: agendamento.apoiadoUsuario.id,
-            nome: agendamento.apoiadoUsuario.nome,
-            email: sanitizeEmail(agendamento.apoiadoUsuario.email),
-            celular: sanitizePhone(agendamento.apoiadoUsuario.celular),
-          }
+          id: agendamento.apoiadoUsuario.id,
+          nome: agendamento.apoiadoUsuario.nome,
+          email: sanitizeEmail(agendamento.apoiadoUsuario.email),
+          celular: sanitizePhone(agendamento.apoiadoUsuario.celular),
+        }
         : null,
     });
   } catch (err) {
@@ -1167,8 +1171,11 @@ router.post("/:id/aplicar-multa", verificarToken, async (req, res) => {
       });
     }
 
-    // Valor fixo da multa (hoje R$ 50,00)
-    const valorMulta = Number(valorMultaPadrao().toFixed(2)); // ex: 50.00
+    // Valor padrão da multa (agora vindo da configuração)
+    const valorPadraoMulta = await valorMultaPadrao();
+    const valorMulta = valorPadraoMulta; // já é number
+    // se quiser arredondar:
+    // const valorMulta = Number(valorPadraoMulta.toFixed(2));
 
     const atualizado = await prisma.agendamento.update({
       where: { id },
@@ -1179,6 +1186,7 @@ router.post("/:id/aplicar-multa", verificarToken, async (req, res) => {
         multaAnuladaPorId: null,
       },
     });
+
 
     // AUDITORIA
     try {
@@ -1613,10 +1621,10 @@ router.patch("/:id/transferir", verificarToken, async (req, res) => {
         horario: novoAgendamento.horario,
         usuario: novoAgendamento.usuario
           ? {
-              id: novoAgendamento.usuario.id,
-              nome: novoAgendamento.usuario.nome,
-              email: isAdmin ? novoAgendamento.usuario.email : undefined,
-            }
+            id: novoAgendamento.usuario.id,
+            nome: novoAgendamento.usuario.nome,
+            email: isAdmin ? novoAgendamento.usuario.email : undefined,
+          }
           : null,
         jogadores: novoAgendamento.jogadores.map((j) => ({
           id: j.id,
@@ -1625,10 +1633,10 @@ router.patch("/:id/transferir", verificarToken, async (req, res) => {
         })),
         quadra: novoAgendamento.quadra
           ? {
-              id: novoAgendamento.quadra.id,
-              nome: novoAgendamento.quadra.nome,
-              numero: novoAgendamento.quadra.numero,
-            }
+            id: novoAgendamento.quadra.id,
+            nome: novoAgendamento.quadra.nome,
+            numero: novoAgendamento.quadra.numero,
+          }
           : null,
       },
     });
@@ -1675,9 +1683,9 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
 
     const usuariosValidos = jogadoresIds.length
       ? await prisma.usuario.findMany({
-          where: { id: { in: jogadoresIds } },
-          select: { id: true },
-        })
+        where: { id: { in: jogadoresIds } },
+        select: { id: true },
+      })
       : [];
 
     if (usuariosValidos.length !== jogadoresIds.length) {
@@ -1741,10 +1749,10 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
       status: atualizado.status,
       usuario: atualizado.usuario
         ? {
-            id: atualizado.usuario.id,
-            nome: atualizado.usuario.nome,
-            email: isAdmin ? atualizado.usuario.email : undefined,
-          }
+          id: atualizado.usuario.id,
+          nome: atualizado.usuario.nome,
+          email: isAdmin ? atualizado.usuario.email : undefined,
+        }
         : null,
       jogadores: atualizado.jogadores.map((j) => ({
         id: j.id,
