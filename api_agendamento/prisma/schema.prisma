@@ -388,6 +388,12 @@ model AgendamentoPermanenteChurrasqueiraCancelamento {
   @@index([agendamentoPermanenteChurrasqueiraId, data])
 }
 
+model ConfiguracaoSistema {
+  id               Int     @id
+  valorMultaPadrao Decimal @db.Decimal(10, 2)
+}
+
+
 // =====================
 // AUDITORIA
 // =====================
