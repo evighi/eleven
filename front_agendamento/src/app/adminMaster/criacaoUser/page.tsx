@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import axios from 'axios'
 import Spinner from '@/components/Spinner'
 
@@ -30,6 +31,7 @@ type CriarUsuarioResponse = {
 
 export default function CriarUsuarioAdminPage() {
   const API_URL = process.env.NEXT_PUBLIC_URL_API || 'http://localhost:3001'
+  const router = useRouter()
 
   const [nome, setNome] = useState('')
   const [email, setEmail] = useState('')
@@ -76,6 +78,12 @@ export default function CriarUsuarioAdminPage() {
       setSucesso(res.data.mensagem || 'Usuário criado com sucesso.')
       setSenhaTemporaria(res.data.senhaTemporaria || null)
       setUsuarioCriado(res.data.usuario)
+
+      // ✅ Após criar, redireciona para a tela de usuários depois de um pequeno delay
+      setTimeout(() => {
+        // ajuste o caminho se sua rota de usuários for diferente
+        router.push('/adminMaster/usuarios')
+      }, 1500)
     } catch (e: any) {
       console.error(e)
       setErro(e?.response?.data?.erro || 'Erro ao criar usuário')
@@ -167,12 +175,6 @@ export default function CriarUsuarioAdminPage() {
             <option value="ADMIN_PROFESSORES">ADMIN_PROFESSORES</option>
             <option value="ADMIN_MASTER">ADMIN_MASTER</option>
           </select>
-          <p className="text-xs text-gray-500">
-            Obrigatório. Normalmente você vai usar{' '}
-            <span className="font-semibold">CLIENTE</span> ou{' '}
-            <span className="font-semibold">CLIENTE_APOIADO</span>. Os demais são perfis de
-            administração.
-          </p>
         </div>
 
         {/* Celular */}
