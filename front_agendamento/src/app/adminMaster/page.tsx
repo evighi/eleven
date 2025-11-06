@@ -710,8 +710,12 @@ export default function AdminHome() {
                     (clickable ? "cursor-pointer" : "cursor-not-allowed");
 
                   // ✅ Só mostra "Comum/Permanente" quando realmente há agendamento
+                  // - Se for PERMANENTE: mostra mesmo se estiver bloqueada
+                  // - Se for COMUM: só mostra se NÃO estiver bloqueada
                   const hasAgendamento =
-                    !q.disponivel && !q.bloqueada && !!q.tipoReserva;
+                    !q.disponivel &&
+                    !!q.tipoReserva &&
+                    (q.tipoReserva === "permanente" || !q.bloqueada);
 
                   return (
                     <div
@@ -741,6 +745,7 @@ export default function AdminHome() {
                     >
                       <p className="font-medium">{q.nome}</p>
                       <p className="text-xs text-gray-700">Quadra {q.numero}</p>
+
                       {q.bloqueada && (
                         <div className="text-red-600 font-bold">Bloqueada</div>
                       )}
