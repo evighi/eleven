@@ -260,9 +260,14 @@ async function multasDetalhadasPeriodoProfessor(
 ) {
   return prisma.agendamento.findMany({
     where: {
-      status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
+      status: {
+        in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO],
+      },
       data: { gte: inicioUTC, lt: fimUTCExcl },
-      OR: [{ professorId: profId }, { AND: [{ professorId: null }, { usuarioId: profId }] }],
+      OR: [
+        { professorId: profId },
+        { AND: [{ professorId: null }, { usuarioId: profId }] },
+      ],
       multa: { not: null },
       // 👇 IGNORA multas anuladas
       multaAnulada: { not: true },
@@ -290,9 +295,14 @@ async function aulasApoiadasDetalhadasPeriodoProfessor(
 ) {
   return prisma.agendamento.findMany({
     where: {
-      status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
+      status: {
+        in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO],
+      },
       data: { gte: inicioUTC, lt: fimUTCExcl },
-      OR: [{ professorId: profId }, { AND: [{ professorId: null }, { usuarioId: profId }] }],
+      OR: [
+        { professorId: profId },
+        { AND: [{ professorId: null }, { usuarioId: profId }] },
+      ],
       isencaoApoiado: true,
     },
     select: {
@@ -311,7 +321,6 @@ async function aulasApoiadasDetalhadasPeriodoProfessor(
    Aulas (agendamentos) detalhadas no período para o professor
    (status CONFIRMADO/FINALIZADO; professorId || legado usuarioId)
    Usado para listar todas as aulas do mês no quadro admin
-   👉 Aqui filtramos para ficar SÓ AULA (inclusive legado).
 ========================= */
 async function aulasDetalhadasPeriodoProfessor(
   profId: string,
@@ -320,11 +329,18 @@ async function aulasDetalhadasPeriodoProfessor(
 ) {
   const ags = await prisma.agendamento.findMany({
     where: {
-      status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
+      status: {
+        in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO],
+      },
       data: { gte: inicioUTC, lt: fimUTCExcl },
-      OR: [
-        { professorId: profId },
-        { AND: [{ professorId: null }, { usuarioId: profId }] }, // legado
+      AND: [
+        {
+          OR: [
+            { professorId: profId },
+            { AND: [{ professorId: null }, { usuarioId: profId }] }, // legado
+          ],
+        },
+        { OR: [{ tipoSessao: "AULA" }, { tipoSessao: null }] }, // só AULA/legado
       ],
     },
     select: {
@@ -335,33 +351,23 @@ async function aulasDetalhadasPeriodoProfessor(
       multaAnulada: true,
       quadra: { select: { id: true, numero: true, nome: true } },
       esporte: { select: { id: true, nome: true } },
-      tipoSessao: true,
     },
     orderBy: [{ data: "asc" }, { horario: "asc" }],
   });
 
-  // 🔎 Filtra para manter apenas AULAS:
-  // - tipoSessao === "AULA" entra
-  // - tipoSessao === "JOGO" sai
-  // - tipoSessao === null ⇒ aplica regra de noite em dia útil (trata como jogo e exclui)
-  const apenasAulas = ags.filter((a) => {
-    if (a.tipoSessao === "AULA") return true;
-    if (a.tipoSessao === "JOGO") return false;
-
-    // legado (null): usa a mesma regra do cálculo
+  // aplica a MESMA regra do resumo:
+  //  - ignora noites (18h–23h) em dias úteis (SEG–SEX)
+  const filtradas = ags.filter((a) => {
     const ymd = toISODateUTC(a.data);
     const wd = localWeekdayIndexOfYMD(ymd); // 0..6
     if (isWeekdayIdx(wd) && EXCLUDE_EVENING.has(a.horario)) {
-      // noite de seg–sex => considera jogo, não entra
       return false;
     }
-
-    // demais casos tratamos como AULA
     return true;
   });
 
   // normaliza para já ignorar multas anuladas
-  return apenasAulas.map((a) => ({
+  return filtradas.map((a) => ({
     id: a.id,
     data: a.data,
     horario: a.horario,
@@ -392,9 +398,9 @@ router.get("/me/resumo", async (req, res) => {
 
     const parsed = qSchema.safeParse(req.query);
     if (!parsed.success) {
-      return res
-        .status(400)
-        .json({ erro: parsed.error.issues?.[0]?.message || "Parâmetros inválidos" });
+      return res.status(400).json({
+        erro: parsed.error.issues?.[0]?.message || "Parâmetros inválidos",
+      });
     }
     const { mes, from, to, duracaoMin = 60 } = parsed.data;
 
@@ -405,7 +411,8 @@ router.get("/me/resumo", async (req, res) => {
       where: { id: userId },
       select: { id: true, nome: true, valorQuadra: true },
     });
-    if (!professor) return res.status(404).json({ erro: "Usuário não encontrado" });
+    if (!professor)
+      return res.status(404).json({ erro: "Usuário não encontrado" });
 
     const { fromYMD, toYMD } = mes
       ? parseMesToLocalRange(mes)
@@ -417,10 +424,17 @@ router.get("/me/resumo", async (req, res) => {
     // SOMENTE AULAS (para contagem) + flag de isenção por agendamento comum
     const comuns = await prisma.agendamento.findMany({
       where: {
-        status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
+        status: {
+          in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO],
+        },
         data: { gte: inicioUTC, lt: fimUTCExcl },
         AND: [
-          { OR: [{ professorId: userId }, { AND: [{ professorId: null }, { usuarioId: userId }] }] },
+          {
+            OR: [
+              { professorId: userId },
+              { AND: [{ professorId: null }, { usuarioId: userId }] },
+            ],
+          },
           { OR: [{ tipoSessao: "AULA" }, { tipoSessao: null }] }, // legado
         ],
       },
@@ -436,9 +450,16 @@ router.get("/me/resumo", async (req, res) => {
 
     const permanentes = await prisma.agendamentoPermanente.findMany({
       where: {
-        status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
+        status: {
+          in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO],
+        },
         AND: [
-          { OR: [{ professorId: userId }, { AND: [{ professorId: null }, { usuarioId: userId }] }] },
+          {
+            OR: [
+              { professorId: userId },
+              { AND: [{ professorId: null }, { usuarioId: userId }] },
+            ],
+          },
           { OR: [{ tipoSessao: "AULA" }, { tipoSessao: null }] }, // legado
         ],
       },
@@ -507,8 +528,15 @@ router.get("/me/resumo", async (req, res) => {
     const subtotalAulasMes = resumo.totais.mes.valor;
 
     // multas detalhadas do período (indep. do tipoSessao) — já ignora anuladas
-    const multasDetalhes = await multasDetalhadasPeriodoProfessor(userId, inicioUTC, fimUTCExcl);
-    const multaMes = multasDetalhes.reduce((acc, m) => acc + Number(m.multa ?? 0), 0);
+    const multasDetalhes = await multasDetalhadasPeriodoProfessor(
+      userId,
+      inicioUTC,
+      fimUTCExcl
+    );
+    const multaMes = multasDetalhes.reduce(
+      (acc, m) => acc + Number(m.multa ?? 0),
+      0
+    );
 
     // valor cheio: aulas + multas (como já era)
     const valorMesComMulta = subtotalAulasMes + multaMes;
@@ -518,12 +546,21 @@ router.get("/me/resumo", async (req, res) => {
     const valorMesComDesconto = subtotalAulasComDesconto + multaMes;
 
     // apoios detalhados do período
-    const apoiosDetalhes = await aulasApoiadasDetalhadasPeriodoProfessor(userId, inicioUTC, fimUTCExcl);
+    const apoiosDetalhes = await aulasApoiadasDetalhadasPeriodoProfessor(
+      userId,
+      inicioUTC,
+      fimUTCExcl
+    );
     const apoiadasMes = apoiosDetalhes.length;
-    const valorApoioDescontadoMes = apoiadasMes * Number(resumo.professor.valorQuadra || 0);
+    const valorApoioDescontadoMes =
+      apoiadasMes * Number(resumo.professor.valorQuadra || 0);
 
     // 🆕 todas as aulas do período (para aplicar multa manual no front)
-    const aulasDetalhes = await aulasDetalhadasPeriodoProfessor(userId, inicioUTC, fimUTCExcl);
+    const aulasDetalhes = await aulasDetalhadasPeriodoProfessor(
+      userId,
+      inicioUTC,
+      fimUTCExcl
+    );
 
     return res.json({
       professor: resumo.professor,
@@ -531,10 +568,10 @@ router.get("/me/resumo", async (req, res) => {
       totais: {
         ...resumo.totais,
         multaMes,
-        valorMesComMulta,          // cheio (aulas + multa)
+        valorMesComMulta, // cheio (aulas + multa)
         // 👇 novos campos de desconto
-        subtotalAulasComDesconto,  // aulas com 50% off
-        valorMesComDesconto,       // aulas 50% + multa cheia
+        subtotalAulasComDesconto, // aulas com 50% off
+        valorMesComDesconto, // aulas 50% + multa cheia
         apoiadasMes,
         valorApoioDescontadoMes,
       },
@@ -552,7 +589,9 @@ router.get("/me/resumo", async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ erro: "Erro ao calcular resumo do professor" });
+    return res
+      .status(500)
+      .json({ erro: "Erro ao calcular resumo do professor" });
   }
 });
 
@@ -576,9 +615,9 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
 
     const parsed = qSchema.safeParse(req.query);
     if (!parsed.success) {
-      return res
-        .status(400)
-        .json({ erro: parsed.error.issues?.[0]?.message || "Parâmetros inválidos" });
+      return res.status(400).json({
+        erro: parsed.error.issues?.[0]?.message || "Parâmetros inválidos",
+      });
     }
     const { mes, from, to, duracaoMin = 60 } = parsed.data;
 
@@ -588,7 +627,8 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
       where: { id: profId },
       select: { id: true, nome: true, valorQuadra: true },
     });
-    if (!professor) return res.status(404).json({ erro: "Professor não encontrado" });
+    if (!professor)
+      return res.status(404).json({ erro: "Professor não encontrado" });
 
     const { fromYMD, toYMD } = mes
       ? parseMesToLocalRange(mes)
@@ -599,10 +639,17 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
 
     const comuns = await prisma.agendamento.findMany({
       where: {
-        status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
+        status: {
+          in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO],
+        },
         data: { gte: inicioUTC, lt: fimUTCExcl },
         AND: [
-          { OR: [{ professorId: profId }, { AND: [{ professorId: null }, { usuarioId: profId }] }] },
+          {
+            OR: [
+              { professorId: profId },
+              { AND: [{ professorId: null }, { usuarioId: profId }] },
+            ],
+          },
           { OR: [{ tipoSessao: "AULA" }, { tipoSessao: null }] },
         ],
       },
@@ -618,9 +665,16 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
 
     const permanentes = await prisma.agendamentoPermanente.findMany({
       where: {
-        status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
+        status: {
+          in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO],
+        },
         AND: [
-          { OR: [{ professorId: profId }, { AND: [{ professorId: null }, { usuarioId: profId }] }] },
+          {
+            OR: [
+              { professorId: profId },
+              { AND: [{ professorId: null }, { usuarioId: profId }] },
+            ],
+          },
           { OR: [{ tipoSessao: "AULA" }, { tipoSessao: null }] },
         ],
       },
@@ -687,8 +741,15 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
     const subtotalAulasMes = resumo.totais.mes.valor;
 
     // multas do período — já ignorando anuladas pela função helper
-    const multasDetalhes = await multasDetalhadasPeriodoProfessor(profId, inicioUTC, fimUTCExcl);
-    const multaMes = multasDetalhes.reduce((acc, m) => acc + Number(m.multa ?? 0), 0);
+    const multasDetalhes = await multasDetalhadasPeriodoProfessor(
+      profId,
+      inicioUTC,
+      fimUTCExcl
+    );
+    const multaMes = multasDetalhes.reduce(
+      (acc, m) => acc + Number(m.multa ?? 0),
+      0
+    );
 
     const valorMesComMulta = subtotalAulasMes + multaMes;
 
@@ -697,12 +758,21 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
     const valorMesComDesconto = subtotalAulasComDesconto + multaMes;
 
     // apoios detalhados do período
-    const apoiosDetalhes = await aulasApoiadasDetalhadasPeriodoProfessor(profId, inicioUTC, fimUTCExcl);
+    const apoiosDetalhes = await aulasApoiadasDetalhadasPeriodoProfessor(
+      profId,
+      inicioUTC,
+      fimUTCExcl
+    );
     const apoiadasMes = apoiosDetalhes.length;
-    const valorApoioDescontadoMes = apoiadasMes * Number(resumo.professor.valorQuadra || 0);
+    const valorApoioDescontadoMes =
+      apoiadasMes * Number(resumo.professor.valorQuadra || 0);
 
     // 🆕 todas as aulas do período (para aplicar multa manual no front admin)
-    const aulasDetalhes = await aulasDetalhadasPeriodoProfessor(profId, inicioUTC, fimUTCExcl);
+    const aulasDetalhes = await aulasDetalhadasPeriodoProfessor(
+      profId,
+      inicioUTC,
+      fimUTCExcl
+    );
 
     return res.json({
       professor: resumo.professor,
@@ -710,9 +780,9 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
       totais: {
         ...resumo.totais,
         multaMes,
-        valorMesComMulta,          // cheio (aulas + multa)
-        subtotalAulasComDesconto,  // aulas com 50% off
-        valorMesComDesconto,       // aulas 50% + multa cheia
+        valorMesComMulta, // cheio (aulas + multa)
+        subtotalAulasComDesconto, // aulas com 50% off
+        valorMesComDesconto, // aulas 50% + multa cheia
         apoiadasMes,
         valorApoioDescontadoMes,
       },
@@ -730,7 +800,9 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ erro: "Erro ao calcular resumo do professor" });
+    return res
+      .status(500)
+      .json({ erro: "Erro ao calcular resumo do professor" });
   }
 });
 
@@ -755,9 +827,9 @@ router.get("/admin", requireAdmin, async (req, res) => {
 
     const parsed = qSchema.safeParse(req.query);
     if (!parsed.success) {
-      return res
-        .status(400)
-        .json({ erro: parsed.error.issues?.[0]?.message || "Parâmetros inválidos" });
+      return res.status(400).json({
+        erro: parsed.error.issues?.[0]?.message || "Parâmetros inválidos",
+      });
     }
     const { mes, from, to, duracaoMin = 60 } = parsed.data;
 
@@ -775,7 +847,7 @@ router.get("/admin", requireAdmin, async (req, res) => {
       orderBy: { nome: "asc" },
     });
     const profIds = professores.map((p) => p.id);
-       const profIdSet = new Set(profIds);
+    const profIdSet = new Set(profIds);
 
     if (profIds.length === 0) {
       return res.json({
@@ -792,13 +864,20 @@ router.get("/admin", requireAdmin, async (req, res) => {
     const [comunsAll, permanentesAll, bloqueios, multasAll] = await Promise.all([
       prisma.agendamento.findMany({
         where: {
-          status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
+          status: {
+            in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO],
+          },
           data: { gte: inicioUTC, lt: fimUTCExcl },
           AND: [
             {
               OR: [
                 { professorId: { in: profIds } },
-                { AND: [{ professorId: null }, { usuarioId: { in: profIds } }] },
+                {
+                  AND: [
+                    { professorId: null },
+                    { usuarioId: { in: profIds } },
+                  ],
+                },
               ],
             },
             { OR: [{ tipoSessao: "AULA" }, { tipoSessao: null }] }, // legado
@@ -816,12 +895,19 @@ router.get("/admin", requireAdmin, async (req, res) => {
       }),
       prisma.agendamentoPermanente.findMany({
         where: {
-          status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
+          status: {
+            in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO],
+          },
           AND: [
             {
               OR: [
                 { professorId: { in: profIds } },
-                { AND: [{ professorId: null }, { usuarioId: { in: profIds } }] },
+                {
+                  AND: [
+                    { professorId: null },
+                    { usuarioId: { in: profIds } },
+                  ],
+                },
               ],
             },
             { OR: [{ tipoSessao: "AULA" }, { tipoSessao: null }] },
@@ -850,11 +936,18 @@ router.get("/admin", requireAdmin, async (req, res) => {
       // 🔢 multas do período (sem filtrar tipoSessao) — IGNORA anuladas
       prisma.agendamento.findMany({
         where: {
-          status: { in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO] },
+          status: {
+            in: [StatusAgendamento.CONFIRMADO, StatusAgendamento.FINALIZADO],
+          },
           data: { gte: inicioUTC, lt: fimUTCExcl },
           OR: [
             { professorId: { in: profIds } },
-            { AND: [{ professorId: null }, { usuarioId: { in: profIds } }] },
+            {
+              AND: [
+                { professorId: null },
+                { usuarioId: { in: profIds } },
+              ],
+            },
           ],
           multa: { not: null },
           multaAnulada: { not: true },
@@ -903,16 +996,16 @@ router.get("/admin", requireAdmin, async (req, res) => {
       permsByProf.set(key, arr);
     }
 
-    const bloqueiosMap: BloqueiosMap = new Map();
+    const bloqueiosMapAdmin: BloqueiosMap = new Map();
     for (const b of bloqueios) {
       const ymd = toISODateUTC(b.dataBloqueio);
       const ini = hhmmToMinutes(b.inicioBloqueio);
       const fim = hhmmToMinutes(b.fimBloqueio);
       for (const q of b.quadras) {
         const k = `${q.id}|${ymd}`;
-        const arr = bloqueiosMap.get(k) || [];
+        const arr = bloqueiosMapAdmin.get(k) || [];
         arr.push({ ini, fim });
-        bloqueiosMap.set(k, arr);
+        bloqueiosMapAdmin.set(k, arr);
       }
     }
 
@@ -921,7 +1014,10 @@ router.get("/admin", requireAdmin, async (req, res) => {
     for (const m of multasAll) {
       const key = m.professorId ?? m.usuarioId!;
       if (!profIdSet.has(key)) continue;
-      multaByProf.set(key, (multaByProf.get(key) || 0) + Number(m.multa ?? 0));
+      multaByProf.set(
+        key,
+        (multaByProf.get(key) || 0) + Number(m.multa ?? 0)
+      );
     }
 
     // 4) Agrega por professor
@@ -933,7 +1029,7 @@ router.get("/admin", requireAdmin, async (req, res) => {
       valorMes: number;
       multaMes: number;
       valorMesComMulta: number;
-      valorMesComDesconto: number;      // 👈 NOVO
+      valorMesComDesconto: number; // 👈 NOVO
       apoiadasMes: number;
       valorApoioDescontadoMes: number;
       porFaixa: Array<{ faixa: string; aulas: number; valor: number }>;
@@ -951,7 +1047,7 @@ router.get("/admin", requireAdmin, async (req, res) => {
         { fromYMD, toYMD, duracaoMin },
         comunsByProf.get(prof.id) || [],
         permsByProf.get(prof.id) || [],
-        bloqueiosMap
+        bloqueiosMapAdmin
       );
 
       const aulasMes = resumo.totais.mes.aulas;
@@ -963,7 +1059,8 @@ router.get("/admin", requireAdmin, async (req, res) => {
       const valorMesComDesconto = valorMes * 0.5 + multaMes;
 
       const apoiadasMes = Number(apoiadasByProf.get(prof.id) || 0);
-      const valorApoioDescontadoMes = apoiadasMes * Number(prof.valorQuadra || 0);
+      const valorApoioDescontadoMes =
+        apoiadasMes * Number(prof.valorQuadra || 0);
 
       totalAulasGeral += aulasMes;
       totalValorGeral += valorMesComMulta;
@@ -990,7 +1087,7 @@ router.get("/admin", requireAdmin, async (req, res) => {
       intervalo: { from: fromYMD, to: toYMD, duracaoMin },
       professores: resposta,
       totalGeral: { aulas: totalAulasGeral, valor: totalValorGeral }, // cheio
-      totalValorGeralComDesconto,             // 👈 total do mês com desconto
+      totalValorGeralComDesconto, // 👈 total do mês com desconto
       totalApoiadasGeral,
       totalApoioDescontadoGeral,
     });
