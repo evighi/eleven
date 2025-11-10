@@ -44,12 +44,16 @@ router.get("/", async (req, res) => {
 
     const usuarios = await prisma.usuario.findMany({
       where: {
+        // não listar excluídos nem pendentes de exclusão
+        deletedAt: null,
+        disabledAt: null,
         ...(nome ? { nome: { contains: nome, mode: "insensitive" } } : {}),
         ...(tipo ? { tipo } : {}),
       },
       orderBy: { nome: "asc" },
       select: baseUserSelect,
     });
+
 
     return res.json(usuarios);
   } catch (err) {

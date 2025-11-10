@@ -247,10 +247,10 @@ router.put("/:id", async (req: Request, res: Response) => {
         valorQuadra === undefined
           ? undefined
           : valorQuadra === null
-          ? null
-          : typeof valorQuadra === "number"
-          ? valorQuadra.toFixed(2) // prisma aceita string para Decimal
-          : valorQuadra.replace(",", "."),
+            ? null
+            : typeof valorQuadra === "number"
+              ? valorQuadra.toFixed(2) // prisma aceita string para Decimal
+              : valorQuadra.replace(",", "."),
       codigoEmail: limparCodigos ? null : undefined,
       codigoRecuperacao: limparCodigos ? null : undefined,
       expiraEm: limparCodigos ? null : undefined,
@@ -344,10 +344,13 @@ router.get("/buscar", async (req: Request, res: Response) => {
   try {
     const usuarios = await prisma.usuario.findMany({
       where: {
+        // não trazer usuários excluídos nem pendentes de exclusão
+        deletedAt: null,
+        disabledAt: null,
         nome: { contains: q, mode: "insensitive" },
         ...(tiposValidos.length ? { tipo: { in: tiposValidos } } : {}),
       },
-      select: { id: true, nome: true }, // ⬅️ apenas id e nome
+      select: { id: true, nome: true }, // apenas id e nome
       orderBy: { nome: "asc" },
       take: limit,
     });
@@ -365,8 +368,12 @@ router.get("/buscar", async (req: Request, res: Response) => {
  */
 router.get("/:id/public", async (req: Request, res: Response) => {
   try {
-    const u = await prisma.usuario.findUnique({
-      where: { id: req.params.id },
+    const u = await prisma.usuario.findFirst({
+      where: {
+        id: req.params.id,
+        deletedAt: null,
+        disabledAt: null,
+      },
       select: { id: true, nome: true },
     });
     if (!u) return res.status(404).json({ erro: "Usuário não encontrado" });
@@ -376,5 +383,6 @@ router.get("/:id/public", async (req: Request, res: Response) => {
     res.status(500).json({ erro: "Erro ao buscar usuário" });
   }
 });
+
 
 export default router;
