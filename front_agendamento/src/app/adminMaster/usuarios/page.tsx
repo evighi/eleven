@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
-import Spinner from '@/components/Spinner' // ✅ usa seu Spinner
+import Spinner from '@/components/Spinner'
+import { useRouter } from 'next/navigation' // 👈 novo import
 
 interface Usuario {
   id: string
@@ -12,22 +13,18 @@ interface Usuario {
   nascimento: string | null
   cpf: string | null
   tipo: string
-  valorQuadra?: number | string | null // ⬅️ novo (vem do back)
+  valorQuadra?: number | string | null
 }
 
 const tipos = ["CLIENTE", "CLIENTE_APOIADO", "ADMIN_MASTER", "ADMIN_ATENDENTE", "ADMIN_PROFESSORES"]
 
-// Collator para ordenar sem diferenciar acentos/maiúsculas
 const collator = new Intl.Collator('pt-BR', { sensitivity: 'base', ignorePunctuation: true })
 
-// fallback para celular
 const mostrarCelular = (cel?: string | null) =>
   (cel && cel.trim().length > 0) ? cel : '00000000000'
 
-// Helpers de moeda (BRL)
 const onlyDigits = (s: string) => s.replace(/\D+/g, '')
 const brToNumber = (s: string) => {
-  // aceita "123,45" ou "123.45" ou "12345"
   const clean = s.trim().replace(/\./g, '').replace(',', '.')
   const n = Number(clean)
   return Number.isFinite(n) ? n : NaN
@@ -35,7 +32,6 @@ const brToNumber = (s: string) => {
 const numberToBR = (n: number) =>
   n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-// YYYY-MM-DD <- data ISO curta para <input type="date">
 const toDateInputValue = (isoOrNull: string | null) => {
   if (!isoOrNull) return ''
   const [y, m, d] = isoOrNull.split('T')[0].split('-')
@@ -43,7 +39,7 @@ const toDateInputValue = (isoOrNull: string | null) => {
 }
 
 /* ============================
-   🧱 Tipagens do fluxo de exclusão
+   Tipagens do fluxo de exclusão
    ============================ */
 type QueueLastInteraction =
   | {
@@ -98,9 +94,6 @@ type Delete409HasConfirmed = {
   };
 };
 
-/* ============================
-   ⏳ Helpers de data (UI)
-   ============================ */
 const fmtDateTimeBR = (iso?: string | null) => {
   if (!iso) return '-'
   try {
@@ -121,31 +114,30 @@ const tipoInteracaoLabel = (t?: string) => {
 }
 
 export default function UsuariosAdmin() {
+  const router = useRouter() // 👈 novo
+
   const [usuarios, setUsuarios] = useState<Usuario[]>([])
   const [busca, setBusca] = useState('')
   const [filtroTipo, setFiltroTipo] = useState('')
   const [usuarioSelecionado, setUsuarioSelecionado] = useState<Usuario | null>(null)
 
-  // 🔧 modo de edição e estado dos campos editáveis
   const [editMode, setEditMode] = useState(false)
   const [form, setForm] = useState({
     nome: '',
     email: '',
     celular: '',
-    nascimento: '', // yyyy-mm-dd
+    nascimento: '',
     cpf: '',
     tipo: '' as Usuario['tipo'],
   })
 
-  // 🔸 campo visual para valor (string formatada) + erro
   const [valorQuadraStr, setValorQuadraStr] = useState('')
   const [valorErro, setValorErro] = useState<string>('')
 
-  // ✅ estados de carregamento
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
 
-  // 🆕 —— estados do fluxo de exclusão
+  // fluxo exclusão
   const [abrirConfirmarExclusao, setAbrirConfirmarExclusao] = useState(false)
   const [excluindo, setExcluindo] = useState(false)
   const [resultadoExclusao204, setResultadoExclusao204] = useState<boolean>(false)
@@ -157,7 +149,6 @@ export default function UsuariosAdmin() {
   const carregarUsuarios = useCallback(async () => {
     setLoading(true)
     try {
-      // Nota: o back de /usuariosAdmin aceita "tipos" (lista) ou "nome"
       const res = await axios.get(`${API_URL}/usuariosAdmin`, {
         params: { nome: busca || undefined, tipos: filtroTipo || undefined },
         withCredentials: true,
@@ -178,7 +169,6 @@ export default function UsuariosAdmin() {
     return () => clearTimeout(delay)
   }, [carregarUsuarios])
 
-  // quando abre a aba de edição, preenche o valor/tipo e os campos do form
   useEffect(() => {
     if (!usuarioSelecionado) {
       setEditMode(false)
@@ -188,7 +178,6 @@ export default function UsuariosAdmin() {
       return
     }
 
-    // preencher form com dados atuais
     setForm({
       nome: usuarioSelecionado.nome ?? '',
       email: usuarioSelecionado.email ?? '',
@@ -198,7 +187,6 @@ export default function UsuariosAdmin() {
       tipo: usuarioSelecionado.tipo,
     })
 
-    // valor de professor
     const ehProf = usuarioSelecionado.tipo === 'ADMIN_PROFESSORES'
     const v = usuarioSelecionado.valorQuadra
     if (ehProf && v != null && v !== '') {
@@ -209,10 +197,9 @@ export default function UsuariosAdmin() {
       setValorQuadraStr('')
     }
     setValorErro('')
-    setEditMode(false) // entra visualizando; clica em "Editar" para liberar
+    setEditMode(false)
   }, [usuarioSelecionado])
 
-  // máscara leve: digita só números, montamos centavos
   const handleValorChange = (raw: string) => {
     setValorErro('')
     const digits = onlyDigits(raw)
@@ -220,7 +207,7 @@ export default function UsuariosAdmin() {
       setValorQuadraStr('')
       return
     }
-    const cents = digits.padStart(3, '0') // garante pelo menos 0,0X
+    const cents = digits.padStart(3, '0')
     const intPart = cents.slice(0, -2)
     const fracPart = cents.slice(-2)
     const intFmt = Number(intPart).toLocaleString('pt-BR')
@@ -229,7 +216,6 @@ export default function UsuariosAdmin() {
 
   const mostrarCampoProfessor = form.tipo === 'ADMIN_PROFESSORES'
 
-  // calcula o payload com apenas campos alterados
   const diffPayload = useMemo(() => {
     if (!usuarioSelecionado) return {}
 
@@ -238,7 +224,7 @@ export default function UsuariosAdmin() {
     if (form.nome !== (usuarioSelecionado.nome ?? '')) base.nome = form.nome
     if (form.email !== (usuarioSelecionado.email ?? '')) base.email = form.email
     if ((form.celular || '') !== (usuarioSelecionado.celular || '')) base.celular = form.celular || null
-    // nascimento vindo do input date
+
     const nascOriginal = toDateInputValue(usuarioSelecionado.nascimento)
     if ((form.nascimento || '') !== (nascOriginal || '')) {
       base.nascimento = form.nascimento ? new Date(form.nascimento) : null
@@ -246,7 +232,6 @@ export default function UsuariosAdmin() {
     if ((form.cpf || '') !== (usuarioSelecionado.cpf || '')) base.cpf = form.cpf || null
     if (form.tipo !== usuarioSelecionado.tipo) base.tipo = form.tipo
 
-    // valor do professor
     if (form.tipo === 'ADMIN_PROFESSORES') {
       const originalNum = (() => {
         const v = usuarioSelecionado.valorQuadra
@@ -275,7 +260,6 @@ export default function UsuariosAdmin() {
   const salvarEdicao = async () => {
     if (!usuarioSelecionado) return
 
-    // valida valor quando tipo = professor
     if (form.tipo === 'ADMIN_PROFESSORES') {
       const n = brToNumber(valorQuadraStr || '0')
       if (!Number.isFinite(n) || n < 0.01) {
@@ -284,7 +268,6 @@ export default function UsuariosAdmin() {
       }
     }
 
-    // nada mudou?
     if (Object.keys(diffPayload).length === 0) {
       alert('Nenhuma alteração para salvar.')
       return
@@ -308,14 +291,8 @@ export default function UsuariosAdmin() {
     }
   }
 
-  const formatarData = (data: string | null) => {
-    if (!data) return '-'
-    const [ano, mes, dia] = data.split('T')[0].split('-')
-    return `${dia}/${mes}/${ano}`
-  }
-
   /* ============================
-     🗑️ Fluxo de exclusão
+     Fluxo de exclusão
      ============================ */
   const abrirConfirmacaoExcluir = () => {
     if (!usuarioSelecionado) return
@@ -327,6 +304,7 @@ export default function UsuariosAdmin() {
 
   const confirmarExcluirUsuario = async () => {
     if (!usuarioSelecionado) return
+    setAbrirConfirmarExclusao(false) // 👈 fecha modal de confirmação
     setExcluindo(true)
     try {
       const resp = await axios.delete(`${API_URL}/clientes/${usuarioSelecionado.id}`, {
@@ -362,7 +340,6 @@ export default function UsuariosAdmin() {
       <h1 className="text-2xl font-medium mb-4">Gerenciar Usuários Cadastrados no Sistema</h1>
 
       <div className="flex gap-4 mb-4 items-end">
-        {/* Filtro por nome */}
         <div className="flex-1 flex flex-col">
           <label className="font-medium mb-1">Buscar por nome</label>
           <input
@@ -374,7 +351,6 @@ export default function UsuariosAdmin() {
           />
         </div>
 
-        {/* Filtro por tipo */}
         <div className="flex flex-col w-60">
           <label className="font-medium mb-1">Filtrar por tipo de cadastro</label>
           <select
@@ -390,7 +366,6 @@ export default function UsuariosAdmin() {
         </div>
       </div>
 
-      {/* Linha de status de carregamento */}
       {loading && (
         <div className="flex items-center gap-2 text-gray-600 mb-3">
           <Spinner /> <span>Carregando usuários…</span>
@@ -404,7 +379,6 @@ export default function UsuariosAdmin() {
 
         {usuarios.map((u) => (
           <li key={u.id}>
-            {/* Linha do usuário */}
             <div
               className="p-3 hover:bg-gray-100 cursor-pointer"
               onClick={() => {
@@ -425,12 +399,10 @@ export default function UsuariosAdmin() {
               </span>
             </div>
 
-            {/* Aba de edição */}
             {usuarioSelecionado?.id === u.id && (
               <div className="p-4 border-t bg-gray-50">
                 <h2 className="font-bold mb-3">Editar Usuário</h2>
 
-                {/* Campos */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium mb-1">Nome</label>
@@ -509,7 +481,6 @@ export default function UsuariosAdmin() {
                     </select>
                   </div>
 
-                  {/* Valor por aula quando professor */}
                   {mostrarCampoProfessor && (
                     <div className="md:col-span-2">
                       <label className="block text-sm font-medium mb-1">Valor cobrado (por aula)</label>
@@ -532,7 +503,6 @@ export default function UsuariosAdmin() {
                   )}
                 </div>
 
-                {/* Ações */}
                 <div className="flex gap-2 mt-4">
                   <button
                     onClick={salvarEdicao}
@@ -543,11 +513,10 @@ export default function UsuariosAdmin() {
                     {saving ? 'Salvando…' : 'Salvar'}
                   </button>
 
-                  {/* ⬅️ Botão Editar ao lado do Salvar */}
                   <button
                     onClick={() => setEditMode((v) => !v)}
                     disabled={saving}
-                    className={`px-4 py-2 rounded cursor-pointer disabled:opacity-60 ${editMode ? 'bg-orange-600 text-white' : 'bg-orange-600 text-white'}`}
+                    className="px-4 py-2 rounded cursor-pointer disabled:opacity-60 bg-orange-600 text-white"
                   >
                     {editMode ? 'Bloquear Edição' : 'Editar'}
                   </button>
@@ -560,7 +529,6 @@ export default function UsuariosAdmin() {
                     Cancelar
                   </button>
 
-                  {/* 🗑️ Excluir usuário */}
                   <button
                     onClick={abrirConfirmacaoExcluir}
                     disabled={saving}
@@ -575,10 +543,6 @@ export default function UsuariosAdmin() {
           </li>
         ))}
       </ul>
-
-      {/* ================================
-          Modais do fluxo de exclusão
-         ================================ */}
 
       {/* Confirmar exclusão */}
       {abrirConfirmarExclusao && usuarioSelecionado && (
@@ -648,37 +612,37 @@ export default function UsuariosAdmin() {
 
                   {resultadoExclusao202.lastInteraction.type === "AG_COMUM" && (
                     <ul className="text-xs space-y-1">
-                      <li>ID: {(resultadoExclusao202.lastInteraction as any).id}</li>
+                      <li>ID: {resultadoExclusao202.lastInteraction.id}</li>
                       <li>
-                        Data/Hora: {fmtDateTimeBR((resultadoExclusao202.lastInteraction as any).resumo?.data)}{" "}
-                        {((resultadoExclusao202.lastInteraction as any).resumo?.horario || "")}
+                        Data/Hora: {fmtDateTimeBR(resultadoExclusao202.lastInteraction.resumo.data)}{" "}
+                        {resultadoExclusao202.lastInteraction.resumo.horario || ""}
                       </li>
-                      <li>Status: {(resultadoExclusao202.lastInteraction as any).resumo?.status}</li>
+                      <li>Status: {resultadoExclusao202.lastInteraction.resumo.status}</li>
                     </ul>
                   )}
 
                   {resultadoExclusao202.lastInteraction.type === "AG_PERM" && (
                     <ul className="text-xs space-y-1">
-                      <li>ID: {(resultadoExclusao202.lastInteraction as any).id}</li>
+                      <li>ID: {resultadoExclusao202.lastInteraction.id}</li>
                       <li>
-                        Dia/Horário: {(resultadoExclusao202.lastInteraction as any).resumo?.diaSemana}{" "}
-                        {(resultadoExclusao202.lastInteraction as any).resumo?.horario}
+                        Dia/Horário: {resultadoExclusao202.lastInteraction.resumo.diaSemana}{" "}
+                        {resultadoExclusao202.lastInteraction.resumo.horario}
                       </li>
-                      <li>Status: {(resultadoExclusao202.lastInteraction as any).resumo?.status}</li>
+                      <li>Status: {resultadoExclusao202.lastInteraction.resumo.status}</li>
                       <li>
-                        Atualizado em: {fmtDateTimeBR((resultadoExclusao202.lastInteraction as any).resumo?.updatedAt)}
+                        Atualizado em: {fmtDateTimeBR(resultadoExclusao202.lastInteraction.resumo.updatedAt)}
                       </li>
                     </ul>
                   )}
 
                   {resultadoExclusao202.lastInteraction.type === "CHURRAS" && (
                     <ul className="text-xs space-y-1">
-                      <li>ID: {(resultadoExclusao202.lastInteraction as any).id}</li>
+                      <li>ID: {resultadoExclusao202.lastInteraction.id}</li>
                       <li>
-                        Data/Turno: {fmtDateTimeBR((resultadoExclusao202.lastInteraction as any).resumo?.data)}{" "}
-                        ({(resultadoExclusao202.lastInteraction as any).resumo?.turno})
+                        Data/Turno: {fmtDateTimeBR(resultadoExclusao202.lastInteraction.resumo.data)}{" "}
+                        ({resultadoExclusao202.lastInteraction.resumo.turno})
                       </li>
-                      <li>Status: {(resultadoExclusao202.lastInteraction as any).resumo?.status}</li>
+                      <li>Status: {resultadoExclusao202.lastInteraction.resumo.status}</li>
                     </ul>
                   )}
                 </div>
@@ -687,7 +651,10 @@ export default function UsuariosAdmin() {
 
             <div className="flex justify-end mt-4">
               <button
-                onClick={() => setResultadoExclusao202(null)}
+                onClick={() => {
+                  setResultadoExclusao202(null)
+                  router.push('/adminMaster/pendencias') // 👈 redireciona para pendências
+                }}
                 className="px-3 py-2 rounded bg-orange-600 text-white hover:bg-orange-700"
               >
                 OK
@@ -697,7 +664,7 @@ export default function UsuariosAdmin() {
         </div>
       )}
 
-      {/* Impedido (409) — possui confirmados */}
+      {/* Impedido (409) */}
       {resultadoExclusao409 && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[80]">
           <div className="bg-white p-5 rounded-lg shadow-lg w-[420px] max-w-[95vw]">

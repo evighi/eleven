@@ -1,4 +1,4 @@
-import { PrismaClient, TipoUsuario } from "@prisma/client";
+import { PrismaClient, TipoUsuario, InteractionType } from "@prisma/client";
 import { Router } from "express";
 import bcrypt from "bcrypt";
 import { z } from "zod";
@@ -601,11 +601,103 @@ router.delete("/:id", verificarToken, requireAdmin, async (req, res) => {
     // enfileirou (pendente)
     if ((result as any).queued) {
       const { eligibleAt, lastInteraction } = result as any;
+
+      // 🔍 Enriquecer última interação para o front (data/horário/status/etc)
+      let lastInteractionEnriched: any = null;
+
+      if (lastInteraction?.type && lastInteraction?.id) {
+        switch (lastInteraction.type as InteractionType) {
+          case InteractionType.AG_COMUM: {
+            const a = await prisma.agendamento.findUnique({
+              where: { id: lastInteraction.id },
+              select: {
+                id: true,
+                data: true,
+                horario: true,
+                status: true,
+                quadra: { select: { id: true, nome: true, numero: true } },
+                esporte: { select: { id: true, nome: true } },
+              },
+            });
+            if (a) {
+              lastInteractionEnriched = {
+                type: "AG_COMUM",
+                id: a.id,
+                resumo: {
+                  data: a.data,
+                  horario: a.horario,
+                  status: a.status,
+                  quadra: a.quadra,
+                  esporte: a.esporte,
+                },
+              };
+            }
+            break;
+          }
+
+          case InteractionType.AG_PERM: {
+            const a = await prisma.agendamentoPermanente.findUnique({
+              where: { id: lastInteraction.id },
+              select: {
+                id: true,
+                diaSemana: true,
+                horario: true,
+                status: true,
+                updatedAt: true,
+                quadra: { select: { id: true, nome: true, numero: true } },
+                esporte: { select: { id: true, nome: true } },
+              },
+            });
+            if (a) {
+              lastInteractionEnriched = {
+                type: "AG_PERM",
+                id: a.id,
+                resumo: {
+                  diaSemana: a.diaSemana,
+                  horario: a.horario,
+                  status: a.status,
+                  updatedAt: a.updatedAt,
+                  quadra: a.quadra,
+                  esporte: a.esporte,
+                },
+              };
+            }
+            break;
+          }
+
+          case InteractionType.CHURRAS: {
+            const a = await prisma.agendamentoChurrasqueira.findUnique({
+              where: { id: lastInteraction.id },
+              select: {
+                id: true,
+                data: true,
+                turno: true,
+                status: true,
+                churrasqueira: { select: { id: true, nome: true, numero: true } },
+              },
+            });
+            if (a) {
+              lastInteractionEnriched = {
+                type: "CHURRAS",
+                id: a.id,
+                resumo: {
+                  data: a.data,
+                  turno: a.turno,
+                  status: a.status,
+                  churrasqueira: a.churrasqueira,
+                },
+              };
+            }
+            break;
+          }
+        }
+      }
+
       return res.status(202).json({
         mensagem:
           "Usuário possui interação recente. Exclusão ficará pendente até completar 90 dias da última interação.",
         eligibleAt,
-        lastInteraction,
+        lastInteraction: lastInteractionEnriched,
       });
     }
 
