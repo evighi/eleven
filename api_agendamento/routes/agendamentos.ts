@@ -335,8 +335,13 @@ router.post("/", verificarToken, async (req, res) => {
     const agoraLocalHM = localHM(new Date(), SP_TZ);
     let multaPorHorarioPassado: number | null = null;
 
-    if (dataYMD === hojeLocalYMD && horario < agoraLocalHM) {
-      // agora valorMultaPadrao é assíncrona
+    // ✅ Regra de multa automática:
+    // - se o dia do agendamento JÁ PASSOU (dataYMD < hojeLocalYMD) => multa
+    // - se é HOJE e o horário já passou (horario < agoraLocalHM) => multa
+    if (
+      dataYMD < hojeLocalYMD ||
+      (dataYMD === hojeLocalYMD && horario < agoraLocalHM)
+    ) {
       const valorPadraoMulta = await valorMultaPadrao();
       multaPorHorarioPassado = valorPadraoMulta; // já vem como number
       // se quiser arredondar pra 2 casas:
