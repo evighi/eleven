@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 import Spinner from '@/components/Spinner'
-import { useRouter } from 'next/navigation' // 👈 novo import
+import { useRouter } from 'next/navigation'
 
 interface Usuario {
   id: string
@@ -114,9 +114,11 @@ const tipoInteracaoLabel = (t?: string) => {
 }
 
 export default function UsuariosAdmin() {
-  const router = useRouter() // 👈 novo
+  const router = useRouter()
 
   const [usuarios, setUsuarios] = useState<Usuario[]>([])
+  const [totalUsuarios, setTotalUsuarios] = useState<number | null>(null) // 👈 total vindo do back
+
   const [busca, setBusca] = useState('')
   const [filtroTipo, setFiltroTipo] = useState('')
   const [usuarioSelecionado, setUsuarioSelecionado] = useState<Usuario | null>(null)
@@ -153,12 +155,25 @@ export default function UsuariosAdmin() {
         params: { nome: busca || undefined, tipos: filtroTipo || undefined },
         withCredentials: true,
       })
-      const lista: Usuario[] = Array.isArray(res.data) ? res.data : []
-      lista.sort((a, b) => collator.compare(a?.nome ?? '', b?.nome ?? ''))
-      setUsuarios(lista)
+
+      // back agora retorna { total, usuarios }
+      if (Array.isArray(res.data)) {
+        // fallback se por acaso o back ainda estiver antigo
+        const lista: Usuario[] = res.data
+        lista.sort((a, b) => collator.compare(a?.nome ?? '', b?.nome ?? ''))
+        setUsuarios(lista)
+        setTotalUsuarios(lista.length)
+      } else {
+        const { usuarios, total } = res.data as { usuarios: Usuario[]; total: number }
+        const lista = Array.isArray(usuarios) ? usuarios.slice() : []
+        lista.sort((a, b) => collator.compare(a?.nome ?? '', b?.nome ?? ''))
+        setUsuarios(lista)
+        setTotalUsuarios(total ?? lista.length)
+      }
     } catch (err) {
       console.error(err)
       setUsuarios([])
+      setTotalUsuarios(0)
     } finally {
       setLoading(false)
     }
@@ -304,7 +319,7 @@ export default function UsuariosAdmin() {
 
   const confirmarExcluirUsuario = async () => {
     if (!usuarioSelecionado) return
-    setAbrirConfirmarExclusao(false) // 👈 fecha modal de confirmação
+    setAbrirConfirmarExclusao(false)
     setExcluindo(true)
     try {
       const resp = await axios.delete(`${API_URL}/clientes/${usuarioSelecionado.id}`, {
@@ -337,7 +352,15 @@ export default function UsuariosAdmin() {
 
   return (
     <div className="max-w-4xl mx-auto mt-10 p-6 bg-white rounded shadow">
-      <h1 className="text-2xl font-medium mb-4">Gerenciar Usuários Cadastrados no Sistema</h1>
+      <h1 className="text-2xl font-medium mb-2">Gerenciar Usuários Cadastrados no Sistema</h1>
+
+      {/* 👇 linha com o total */}
+      {totalUsuarios !== null && (
+        <p className="text-sm text-gray-700 mb-3">
+          Total de usuários cadastrados (sem convidados):{' '}
+          <span className="font-semibold">{totalUsuarios}</span>
+        </p>
+      )}
 
       <div className="flex gap-4 mb-4 items-end">
         <div className="flex-1 flex flex-col">
@@ -653,7 +676,7 @@ export default function UsuariosAdmin() {
               <button
                 onClick={() => {
                   setResultadoExclusao202(null)
-                  router.push('/adminMaster/pendencias') // 👈 redireciona para pendências
+                  router.push('/adminMaster/pendencias')
                 }}
                 className="px-3 py-2 rounded bg-orange-600 text-white hover:bg-orange-700"
               >
