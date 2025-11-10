@@ -38,6 +38,13 @@ const toDateInputValue = (isoOrNull: string | null) => {
   return `${y}-${m}-${d}`
 }
 
+/* ==== helpers de busca sem acento ==== */
+const normalizeText = (s: string) =>
+  s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+
 /* ============================
    Tipagens do fluxo de exclusão
    ============================ */
@@ -117,7 +124,7 @@ export default function UsuariosAdmin() {
   const router = useRouter()
 
   const [usuarios, setUsuarios] = useState<Usuario[]>([])
-  const [totalUsuarios, setTotalUsuarios] = useState<number | null>(null) // 👈 total vindo do back
+  const [totalUsuarios, setTotalUsuarios] = useState<number | null>(null)
 
   const [busca, setBusca] = useState('')
   const [filtroTipo, setFiltroTipo] = useState('')
@@ -152,24 +159,34 @@ export default function UsuariosAdmin() {
     setLoading(true)
     try {
       const res = await axios.get(`${API_URL}/usuariosAdmin`, {
-        params: { nome: busca || undefined, tipos: filtroTipo || undefined },
+        // 👇 back espera "tipo", não "tipos"
+        params: { tipo: filtroTipo || undefined },
         withCredentials: true,
       })
 
-      // back agora retorna { total, usuarios }
+      let lista: Usuario[] = []
+      let totalFromApi: number | undefined
+
       if (Array.isArray(res.data)) {
-        // fallback se por acaso o back ainda estiver antigo
-        const lista: Usuario[] = res.data
-        lista.sort((a, b) => collator.compare(a?.nome ?? '', b?.nome ?? ''))
-        setUsuarios(lista)
-        setTotalUsuarios(lista.length)
+        lista = res.data
+        totalFromApi = lista.length
       } else {
-        const { usuarios, total } = res.data as { usuarios: Usuario[]; total: number }
-        const lista = Array.isArray(usuarios) ? usuarios.slice() : []
-        lista.sort((a, b) => collator.compare(a?.nome ?? '', b?.nome ?? ''))
-        setUsuarios(lista)
-        setTotalUsuarios(total ?? lista.length)
+        const data = res.data as { usuarios: Usuario[]; total: number }
+        lista = Array.isArray(data.usuarios) ? data.usuarios : []
+        totalFromApi = data.total
       }
+
+      // 👇 filtro de nome sem acento (João <- joao)
+      if (busca.trim()) {
+        const q = normalizeText(busca)
+        lista = lista.filter(u =>
+          normalizeText(u.nome ?? '').includes(q)
+        )
+      }
+
+      lista.sort((a, b) => collator.compare(a?.nome ?? '', b?.nome ?? ''))
+      setUsuarios(lista)
+      setTotalUsuarios(totalFromApi ?? lista.length)
     } catch (err) {
       console.error(err)
       setUsuarios([])
@@ -177,7 +194,7 @@ export default function UsuariosAdmin() {
     } finally {
       setLoading(false)
     }
-  }, [API_URL, busca, filtroTipo])
+  }, [API_URL, filtroTipo, busca])
 
   useEffect(() => {
     const delay = setTimeout(() => { void carregarUsuarios() }, 300)
@@ -354,7 +371,6 @@ export default function UsuariosAdmin() {
     <div className="max-w-4xl mx-auto mt-10 p-6 bg-white rounded shadow">
       <h1 className="text-2xl font-medium mb-2">Gerenciar Usuários Cadastrados no Sistema</h1>
 
-      {/* 👇 linha com o total */}
       {totalUsuarios !== null && (
         <p className="text-sm text-gray-700 mb-3">
           Total de usuários cadastrados (sem convidados):{' '}
@@ -567,7 +583,8 @@ export default function UsuariosAdmin() {
         ))}
       </ul>
 
-      {/* Confirmar exclusão */}
+      {/* Modais de exclusão mantidos iguais ... (não mexi) */}
+
       {abrirConfirmarExclusao && usuarioSelecionado && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[80]">
           <div className="bg-white p-5 rounded-lg shadow-lg w-[360px]">
@@ -596,7 +613,6 @@ export default function UsuariosAdmin() {
         </div>
       )}
 
-      {/* Excluído agora (204) */}
       {resultadoExclusao204 && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[80]">
           <div className="bg-white p-5 rounded-lg shadow-lg w-[340px]">
@@ -616,7 +632,6 @@ export default function UsuariosAdmin() {
         </div>
       )}
 
-      {/* Exclusão pendente (202) */}
       {resultadoExclusao202 && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[80]">
           <div className="bg-white p-5 rounded-lg shadow-lg w-[420px] max-w-[95vw]">
@@ -687,7 +702,6 @@ export default function UsuariosAdmin() {
         </div>
       )}
 
-      {/* Impedido (409) */}
       {resultadoExclusao409 && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[80]">
           <div className="bg-white p-5 rounded-lg shadow-lg w-[420px] max-w-[95vw]">
