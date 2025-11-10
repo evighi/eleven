@@ -576,8 +576,8 @@ export default function TodosHorariosPage() {
     const label = isBloq
       ? `Bloqueada - ${hourLabel}`
       : isLivre
-      ? `Livre - ${hourLabel}`
-      : `${firstName(slot.usuario?.nome)} - ${hourLabel}`;
+        ? `Livre - ${hourLabel}`
+        : `${firstName(slot.usuario?.nome)} - ${hourLabel}`;
 
     const isAgendado = !!(slot.agendamentoId && slot.tipoReserva);
     const clickable = !isBloq && (isAgendado || isLivre);
@@ -687,15 +687,6 @@ export default function TodosHorariosPage() {
     );
   }, [loading, erro, esportes, horas, abrirDetalhes, abrirConfirmAgendar]);
 
-  /** NOVO: ação direta “Cancelar PARA SEMPRE” — só avisa e redireciona */
-  const redirecionarParaPermanentes = () => {
-    alert(
-      "Para cancelar um agendamento PERMANENTE para sempre, use a página de controle de permanentes."
-    );
-    setMostrarOpcoesCancelamento(false);
-    setAgendamentoSelecionado(null);
-    router.push("/adminMaster/todosHorariosPermanentes");
-  };
 
   return (
     <div className="px-2 sm:px-3 md:px-4 py-4">
@@ -853,14 +844,10 @@ export default function TodosHorariosPage() {
             {mostrarOpcoesCancelamento && (
               <div className="absolute inset-0 bg-black bg-opacity-80 flex flex-col items-center justify-center p-4 rounded-xl border shadow-lg z-50">
                 <div className="bg-white rounded-lg p-4 w-full">
-                  <p className="font-semibold mb-3 text-center">Como deseja cancelar este agendamento permanente?</p>
+                  <p className="font-semibold mb-3 text-center">
+                    Cancelar apenas 1 dia deste agendamento permanente
+                  </p>
                   <div className="grid gap-3">
-                    <button
-                      onClick={redirecionarParaPermanentes}
-                      className="w-full bg-red-600 hover:bg-red-700 text-white py-2 rounded cursor-pointer"
-                    >
-                      Cancelar PARA SEMPRE
-                    </button>
                     <button
                       onClick={abrirExcecao}
                       className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded cursor-pointer"
