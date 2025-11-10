@@ -363,6 +363,44 @@ router.post("/reenviar-codigo", async (req, res) => {
   }
 });
 
+const adminUserSelectWithDeleted = {
+  ...baseUserSelect,
+  disabledAt: true,
+  deletedAt: true,
+  deletedById: true,
+} as const;
+
+
+router.get("/admin/todosClientes", verificarToken, requireAdmin, async (req, res) => {
+  try {
+    const { nome, tipos } = req.query as { nome?: string; tipos?: string };
+
+    const whereNome = nome
+      ? { nome: { contains: String(nome), mode: "insensitive" as const } }
+      : {};
+
+    let whereTipos = {};
+    if (tipos) {
+      const lista = tipos
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean) as (keyof typeof TipoUsuario)[];
+      if (lista.length) whereTipos = { tipo: { in: lista as unknown as TipoUsuario[] } };
+    }
+
+    const usuarios = await prisma.usuario.findMany({
+      where: { ...whereNome, ...whereTipos }, // 👈 sem deletedAt: null
+      orderBy: { nome: "asc" },
+      select: adminUserSelectWithDeleted,
+    });
+
+    return res.json(usuarios);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ erro: "Erro ao buscar usuários (admin/todos)" });
+  }
+});
+
 /** =============== Protegidos =============== */
 
 router.get("/", verificarToken, requireAdmin, async (req, res) => {
@@ -383,7 +421,11 @@ router.get("/", verificarToken, requireAdmin, async (req, res) => {
     }
 
     const usuarios = await prisma.usuario.findMany({
-      where: { ...whereNome, ...whereTipos },
+      where: {
+        ...whereNome,
+        ...whereTipos,
+        deletedAt: null, // 👈 só usuários não excluídos
+      },
       orderBy: { nome: "asc" },
       ...(nome ? { take: 10 } : {}),
       select: baseUserSelect,
@@ -408,8 +450,8 @@ const updateAdminSchema = updateSelfSchema.extend({
 
 router.get("/:id", verificarToken, requireSelfOrAdminParam("id"), async (req, res) => {
   try {
-    const usuario = await prisma.usuario.findUnique({
-      where: { id: req.params.id },
+    const usuario = await prisma.usuario.findFirst({
+      where: { id: req.params.id, deletedAt: null }, // 👈 ignora excluídos
       select: baseUserSelect,
     });
     if (!usuario) return res.status(404).json({ erro: "Usuário não encontrado" });
@@ -430,12 +472,21 @@ router.patch("/:id/email", verificarToken, requireAdmin, async (req, res) => {
     const { email } = updateEmailSchema.parse(req.body);
     const newEmail = email.trim().toLowerCase();
 
-    // 1) Usuário alvo existe?
     const alvo = await prisma.usuario.findUnique({
       where: { id: req.params.id },
-      select: { id: true, email: true, nome: true, tipo: true, verificado: true },
+      select: {
+        id: true,
+        email: true,
+        nome: true,
+        tipo: true,
+        verificado: true,
+        deletedAt: true, // 👈
+      },
     });
-    if (!alvo) return res.status(404).json({ erro: "Usuário não encontrado" });
+
+    if (!alvo || alvo.deletedAt) {
+      return res.status(404).json({ erro: "Usuário não encontrado" });
+    }
 
     // 2) Se é o mesmo e-mail, apenas retorna
     if (alvo.email.toLowerCase() === newEmail) {
@@ -506,6 +557,16 @@ router.patch("/:id", verificarToken, requireSelfOrAdminParam("id"), async (req, 
       const d = new Date(data.nascimento);
       if (!isValid(d)) return res.status(400).json({ erro: "Data de nascimento inválida" });
       data.nascimento = d;
+    }
+
+    // 👇 impede edição de usuário já excluído
+    const existente = await prisma.usuario.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, deletedAt: true },
+    });
+
+    if (!existente || existente.deletedAt) {
+      return res.status(404).json({ erro: "Usuário não encontrado" });
     }
 
     const atualizado = await prisma.usuario.update({
