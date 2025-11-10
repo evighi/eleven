@@ -370,7 +370,6 @@ const adminUserSelectWithDeleted = {
   deletedById: true,
 } as const;
 
-
 router.get("/admin/todosClientes", verificarToken, requireAdmin, async (req, res) => {
   try {
     const { nome, tipos } = req.query as { nome?: string; tipos?: string };
@@ -389,7 +388,7 @@ router.get("/admin/todosClientes", verificarToken, requireAdmin, async (req, res
     }
 
     const usuarios = await prisma.usuario.findMany({
-      where: { ...whereNome, ...whereTipos }, // 👈 sem deletedAt: null
+      where: { ...whereNome, ...whereTipos }, // 👈 aqui lista TODO mundo (inclui convidados/deletados)
       orderBy: { nome: "asc" },
       select: adminUserSelectWithDeleted,
     });
@@ -425,6 +424,11 @@ router.get("/", verificarToken, requireAdmin, async (req, res) => {
         ...whereNome,
         ...whereTipos,
         deletedAt: null, // 👈 só usuários não excluídos
+        // 👇 não listar convidados (noemail/example)
+        NOT: [
+          { email: { endsWith: "@noemail.local" } },
+          { email: { endsWith: "@example.com" } },
+        ],
       },
       orderBy: { nome: "asc" },
       ...(nome ? { take: 10 } : {}),

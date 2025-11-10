@@ -1,5 +1,5 @@
 import { Router, Request } from "express";
-import { PrismaClient, TipoUsuario, Prisma } from "@prisma/client"; // ⬅️ adicione Prisma
+import { PrismaClient, TipoUsuario, Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import verificarToken from "../middleware/authMiddleware";
@@ -16,7 +16,7 @@ const baseUserSelect = {
   nascimento: true,
   cpf: true,
   tipo: true,
-  valorQuadra: true, // ⬅️ agora retornamos também
+  valorQuadra: true,
 } as const;
 
 const isMaster = (req: Request) => req.usuario?.usuarioLogadoTipo === "ADMIN_MASTER";
@@ -37,25 +37,45 @@ router.get("/", async (req, res) => {
       tipo: req.query.tipo,
     });
     if (!parsed.success) {
-      return res.status(400).json({ erro: "Parâmetros inválidos", detalhes: parsed.error.errors });
+      return res
+        .status(400)
+        .json({ erro: "Parâmetros inválidos", detalhes: parsed.error.errors });
     }
 
     const { nome, tipo } = parsed.data;
 
-    const usuarios = await prisma.usuario.findMany({
-      where: {
-        // não listar excluídos nem pendentes de exclusão
-        deletedAt: null,
-        disabledAt: null,
-        ...(nome ? { nome: { contains: nome, mode: "insensitive" } } : {}),
-        ...(tipo ? { tipo } : {}),
-      },
-      orderBy: { nome: "asc" },
-      select: baseUserSelect,
-    });
+    // 🔹 filtro base: não listar convidados e não listar excluídos
+    const baseWhereNoGuests: Prisma.UsuarioWhereInput = {
+      deletedAt: null,
+      NOT: [
+        { email: { endsWith: "@noemail.local" } },
+        { email: { endsWith: "@example.com" } },
+      ],
+    };
 
+    // 🔹 where da listagem (aplica nome/tipo + filtro base)
+    const whereList: Prisma.UsuarioWhereInput = {
+      ...(nome ? { nome: { contains: nome, mode: "insensitive" } } : {}),
+      ...(tipo ? { tipo } : {}),
+      ...baseWhereNoGuests,
+    };
 
-    return res.json(usuarios);
+    // 🔹 where do total (apenas filtro base, sem nome/tipo)
+    const whereTotal: Prisma.UsuarioWhereInput = {
+      ...baseWhereNoGuests,
+    };
+
+    const [usuarios, total] = await Promise.all([
+      prisma.usuario.findMany({
+        where: whereList,
+        orderBy: { nome: "asc" },
+        select: baseUserSelect,
+      }),
+      prisma.usuario.count({ where: whereTotal }),
+    ]);
+
+    // resposta agora tem total + lista
+    return res.json({ total, usuarios });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ erro: "Erro ao buscar usuários" });
@@ -68,34 +88,36 @@ router.put("/:id/tipo", async (req, res) => {
     return res.status(403).json({ erro: "Somente ADMIN_MASTER pode alterar o tipo de usuário" });
   }
 
-  // ⬇️ Schema: aceita valorQuadra e OBRIGA quando tipo=ADMIN_PROFESSORES
-  const bodySchema = z.object({
-    tipo: z.nativeEnum(TipoUsuario),
-    valorQuadra: z
-      .union([z.string(), z.number()])
-      .optional()
-      .transform((v) => {
-        if (v === undefined || v === null || v === "") return null;
-        const n = typeof v === "string" ? Number(v.replace(",", ".")) : Number(v);
-        return Number.isFinite(n) ? n : NaN;
-      }),
-  }).superRefine((data, ctx) => {
-    if (data.tipo === "ADMIN_PROFESSORES") {
-      if (data.valorQuadra === null || Number.isNaN(data.valorQuadra)) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["valorQuadra"],
-          message: "valorQuadra é obrigatório e deve ser numérico ao promover para ADMIN_PROFESSORES.",
-        });
-      } else if (data.valorQuadra! < 0) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["valorQuadra"],
-          message: "valorQuadra não pode ser negativo.",
-        });
+  const bodySchema = z
+    .object({
+      tipo: z.nativeEnum(TipoUsuario),
+      valorQuadra: z
+        .union([z.string(), z.number()])
+        .optional()
+        .transform((v) => {
+          if (v === undefined || v === null || v === "") return null;
+          const n = typeof v === "string" ? Number(v.replace(",", ".")) : Number(v);
+          return Number.isFinite(n) ? n : NaN;
+        }),
+    })
+    .superRefine((data, ctx) => {
+      if (data.tipo === "ADMIN_PROFESSORES") {
+        if (data.valorQuadra === null || Number.isNaN(data.valorQuadra)) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["valorQuadra"],
+            message:
+              "valorQuadra é obrigatório e deve ser numérico ao promover para ADMIN_PROFESSORES.",
+          });
+        } else if (data.valorQuadra! < 0) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["valorQuadra"],
+            message: "valorQuadra não pode ser negativo.",
+          });
+        }
       }
-    }
-  });
+    });
 
   const parsed = bodySchema.safeParse(req.body);
   if (!parsed.success) {
@@ -104,7 +126,7 @@ router.put("/:id/tipo", async (req, res) => {
 
   const { id } = req.params;
   const novoTipo = parsed.data.tipo;
-  const valorQuadraNum = parsed.data.valorQuadra; // já veio number | null | NaN (validado acima)
+  const valorQuadraNum = parsed.data.valorQuadra;
 
   try {
     const alvo = await prisma.usuario.findUnique({
@@ -124,12 +146,8 @@ router.put("/:id/tipo", async (req, res) => {
       }
     }
 
-    // Monta o update:
-    // - Se promover para professor, seta valorQuadra (Decimal)
-    // - Se for qualquer outro tipo, limpa valorQuadra (evita lixo antigo)
     const dataUpdate: any = { tipo: novoTipo };
     if (novoTipo === "ADMIN_PROFESSORES") {
-      // parsed já garantiu que é número válido >= 0
       dataUpdate.valorQuadra = new Prisma.Decimal(String(valorQuadraNum!.toFixed(2)));
     } else {
       dataUpdate.valorQuadra = null;

@@ -344,17 +344,18 @@ router.get("/buscar", async (req: Request, res: Response) => {
   try {
     const usuarios = await prisma.usuario.findMany({
       where: {
-        // não trazer usuários excluídos nem pendentes de exclusão
-        deletedAt: null,
-        disabledAt: null,
         nome: { contains: q, mode: "insensitive" },
         ...(tiposValidos.length ? { tipo: { in: tiposValidos } } : {}),
+        // ⬇️ NÃO listar convidados
+        NOT: [
+          { email: { endsWith: "@noemail.local" } },
+          { email: { endsWith: "@example.com" } },
+        ],
       },
-      select: { id: true, nome: true }, // apenas id e nome
+      select: { id: true, nome: true }, // ⬅️ apenas id e nome
       orderBy: { nome: "asc" },
       take: limit,
     });
-
     res.json(usuarios);
   } catch (e) {
     console.error(e);
