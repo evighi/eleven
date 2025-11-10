@@ -22,6 +22,14 @@ export default function AgendamentoChurrasqueiraComum() {
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
   const searchParams = useSearchParams();
 
+  // 🔤 helper para ignorar acentos na comparação de nomes
+  const normalizeText = (s?: string | null) =>
+    String(s || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
+
   const [data, setData] = useState<string>("")
   const [turno, setTurno] = useState<string>("")
   const [churrasqueirasDisponiveis, setChurrasqueirasDisponiveis] = useState<Churrasqueira[]>([])
@@ -102,7 +110,14 @@ export default function AgendamentoChurrasqueiraComum() {
           `${API_URL}/clientes`,
           { params: { nome: q }, withCredentials: true, signal: ctrl.signal as any }
         )
-        setUsuariosEncontrados(Array.isArray(lista) ? lista : [])
+
+        // 🔤 aplica filtro ignorando acentos (João == joao)
+        const qNorm = normalizeText(q)
+        const filtrados = (Array.isArray(lista) ? lista : []).filter((u) =>
+          normalizeText(u.nome).includes(qNorm)
+        )
+
+        setUsuariosEncontrados(filtrados)
       } catch (err: any) {
         if (err?.name !== "CanceledError" && err?.code !== "ERR_CANCELED") {
           console.error("Falha ao buscar usuários:", err)
