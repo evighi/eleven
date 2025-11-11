@@ -141,7 +141,13 @@ async function nextStartDateCandidatesChurras(params: {
 router.post("/", requireAdmin, async (req, res) => {
   const validacao = schemaAgendamentoPermanenteChurrasqueira.safeParse(req.body);
   if (!validacao.success) {
-    return res.status(400).json({ erro: validacao.error.errors });
+    const erros = validacao.error.errors.map((e) => {
+      const path = e.path.join(".");
+      return path ? `${path}: ${e.message}` : e.message;
+    });
+    return res.status(400).json({
+      erro: erros.join("; ") || "Dados inválidos para agendamento permanente.",
+    });
   }
 
   const {
@@ -274,7 +280,9 @@ router.get("/proxima-data-disponivel", async (req, res) => {
   const maxSugestoes = Math.max(1, Math.min(20, Number(req.query.maxSugestoes ?? 6)));
 
   if (!isUUID(churrasqueiraId) || !diaSemana || !turno) {
-    return res.status(400).json({ erro: "Parâmetros obrigatórios: churrasqueiraId, diaSemana, turno." });
+    return res
+      .status(400)
+      .json({ erro: "Parâmetros obrigatórios: churrasqueiraId, diaSemana, turno." });
   }
   if (from && !/^\d{4}-\d{2}-\d{2}$/.test(from)) {
     return res.status(400).json({ erro: "Parâmetro 'from' deve ser YYYY-MM-DD." });
@@ -449,14 +457,30 @@ router.post(
       motivo: z.string().trim().max(200).optional(),
     });
     const parsed = schema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ erro: parsed.error.format() });
+    if (!parsed.success) {
+      const erros = parsed.error.errors.map((e) => {
+        const path = e.path.join(".");
+        return path ? `${path}: ${e.message}` : e.message;
+      });
+      return res
+        .status(400)
+        .json({ erro: erros.join("; ") || "Dados inválidos para cancelar dia." });
+    }
 
     const { data: iso, motivo } = parsed.data;
 
     try {
       const perm = await prisma.agendamentoPermanenteChurrasqueira.findUnique({
         where: { id },
-        select: { id: true, usuarioId: true, diaSemana: true, dataInicio: true, status: true, churrasqueiraId: true, turno: true },
+        select: {
+          id: true,
+          usuarioId: true,
+          diaSemana: true,
+          dataInicio: true,
+          status: true,
+          churrasqueiraId: true,
+          turno: true,
+        },
       });
       if (!perm) return res.status(404).json({ erro: "Agendamento permanente não encontrado" });
       if (["CANCELADO", "TRANSFERIDO"].includes(perm.status)) {
@@ -467,13 +491,17 @@ router.post(
 
       // data >= dataInicio (se existir)
       if (perm.dataInicio && startOfDay(dataUTC) < startOfDay(new Date(perm.dataInicio))) {
-        return res.status(400).json({ erro: "Data anterior ao início do agendamento permanente." });
+        return res
+          .status(400)
+          .json({ erro: "Data anterior ao início do agendamento permanente." });
       }
 
       // dia da semana confere
       const idx = dataUTC.getUTCDay();
       if (idx !== DIA_IDX[perm.diaSemana as DiaSemana]) {
-        return res.status(400).json({ erro: "Data não corresponde ao dia da semana do permanente." });
+        return res
+          .status(400)
+          .json({ erro: "Data não corresponde ao dia da semana do permanente." });
       }
 
       // evitar duplicidade
@@ -482,7 +510,9 @@ router.post(
         select: { id: true },
       });
       if (jaExiste) {
-        return res.status(409).json({ erro: "Esta data já está marcada como exceção para este permanente." });
+        return res.status(409).json({
+          erro: "Esta data já está marcada como exceção para este permanente.",
+        });
       }
 
       const novo = await prisma.agendamentoPermanenteChurrasqueiraCancelamento.create({
@@ -546,7 +576,13 @@ router.post(
     try {
       const antes = await prisma.agendamentoPermanenteChurrasqueira.findUnique({
         where: { id },
-        select: { status: true, churrasqueiraId: true, diaSemana: true, turno: true, usuarioId: true },
+        select: {
+          status: true,
+          churrasqueiraId: true,
+          diaSemana: true,
+          turno: true,
+          usuarioId: true,
+        },
       });
 
       const agendamento = await prisma.agendamentoPermanenteChurrasqueira.update({
@@ -596,7 +632,13 @@ router.delete("/:id", requireAdmin, async (req, res) => {
   try {
     const antes = await prisma.agendamentoPermanenteChurrasqueira.findUnique({
       where: { id },
-      select: { churrasqueiraId: true, diaSemana: true, turno: true, usuarioId: true, status: true },
+      select: {
+        churrasqueiraId: true,
+        diaSemana: true,
+        turno: true,
+        usuarioId: true,
+        status: true,
+      },
     });
 
     await prisma.agendamentoPermanenteChurrasqueira.delete({
