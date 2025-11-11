@@ -55,7 +55,8 @@ export default function AgendarChurrasqueiraPermanente() {
   const [churrasqueiras, setChurrasqueiras] = useState<ChurrasqueiraDisponivel[]>([]);
   const [churrasqueiraId, setChurrasqueiraId] = useState<string>("");
 
-  const [existeAgendamentoComum, setExisteAgendamentoComum] = useState<boolean>(false);
+  // ⚠ agora o controle de conflito é *por churrasqueira selecionada*,
+  // não mais um boolean global
   const [dataUltimoConflito, setDataUltimoConflito] = useState<string | null>(null);
   const [proximasDatasDisponiveis, setProximasDatasDisponiveis] = useState<string[]>([]);
   const [dataInicio, setDataInicio] = useState<string>("");
@@ -82,7 +83,6 @@ export default function AgendarChurrasqueiraPermanente() {
   useEffect(() => {
     if (!diaSemana || !turno) {
       setChurrasqueiras([]);
-      setExisteAgendamentoComum(false);
       setDataInicio("");
       setDataUltimoConflito(null);
       setProximasDatasDisponiveis([]);
@@ -104,10 +104,7 @@ export default function AgendarChurrasqueiraPermanente() {
         const lista = res.data || [];
         setChurrasqueiras(lista);
 
-        const existeConflitoComum = lista.some(
-          (c) => !c.disponivel && c.conflitoComum && !c.conflitoPermanente
-        );
-        setExisteAgendamentoComum(existeConflitoComum);
+        // sempre que recarregar disponibilidade, resetamos infos de conflito
         setDataInicio("");
         setDataUltimoConflito(null);
         setProximasDatasDisponiveis([]);
@@ -134,7 +131,6 @@ export default function AgendarChurrasqueiraPermanente() {
       .catch((err) => {
         console.error(err);
         setChurrasqueiras([]);
-        setExisteAgendamentoComum(false);
         setDataInicio("");
         setDataUltimoConflito(null);
         setProximasDatasDisponiveis([]);
@@ -143,7 +139,7 @@ export default function AgendarChurrasqueiraPermanente() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [diaSemana, turno]);
 
-  /* ===== Próximas datas quando há conflito comum ===== */
+  /* ===== Próximas datas quando há conflito comum NA SELECIONADA ===== */
   useEffect(() => {
     if (!diaSemana || !turno || !churrasqueiraId) {
       setProximasDatasDisponiveis([]);
@@ -257,8 +253,16 @@ export default function AgendarChurrasqueiraPermanente() {
       setFeedback({ kind: "error", text: "Selecione dia, turno e a churrasqueira." });
       return;
     }
-    // se já sabemos que há conflito comum, obrigar escolher uma data de início
-    if (existeAgendamentoComum && !dataInicio) {
+
+    // 🔍 verifica conflito *na churrasqueira selecionada*
+    const selecionada = churrasqueiras.find((c) => c.churrasqueiraId === churrasqueiraId);
+    const temConflitoComumSelecionada =
+      !!selecionada && !!selecionada.conflitoComum && !selecionada.conflitoPermanente;
+
+    const precisaDataInicio =
+      temConflitoComumSelecionada && proximasDatasDisponiveis.length > 0;
+
+    if (precisaDataInicio && !dataInicio) {
       setFeedback({ kind: "error", text: "Selecione uma data de início válida." });
       return;
     }
@@ -275,12 +279,8 @@ export default function AgendarChurrasqueiraPermanente() {
               `${convidadoDonoNome.trim()} ${convidadoDonoTelefone.trim()}`.trim(),
             ],
           }),
+      ...(precisaDataInicio && dataInicio ? { dataInicio } : {}),
     };
-
-    // ✅ só envia dataInicio se tiver valor (evita mandar string vazia)
-    if (dataInicio) {
-      body.dataInicio = dataInicio;
-    }
 
     try {
       setSubmitting(true);
