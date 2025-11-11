@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react"; // 👈 add useRef
 import { useAuthStore } from "@/context/AuthStore";
 import { useLoadUser } from "@/hooks/useLoadUser";
 import { useLogout } from "@/hooks/useLogout";
@@ -31,6 +31,8 @@ export default function SideMenu({ open, onClose }: Props) {
   useLoadUser();
 
   const [nomeUsuario, setNomeUsuario] = useState("Usuário");
+  const [showTerms, setShowTerms] = useState(false); // 👈 novo estado
+
   useEffect(() => {
     const first = readFirstName(usuario);
     if (first) setNomeUsuario(first);
@@ -158,11 +160,23 @@ export default function SideMenu({ open, onClose }: Props) {
               <Contato numero="(53) 99990-8424" setor="Jogos" />
               <Contato numero="(53) 99103-2959" setor="Administrativo" />
             </div>
+
+            {/* Termos e condições do sistema */}
+            <button
+              type="button"
+              onClick={() => setShowTerms(true)}
+              className="mt-4 text-sm font-semibold text-orange-600 hover:text-orange-700 underline"
+            >
+              Termos e condições do sistema
+            </button>
           </div>
         </div>
 
         {/* safe-area iOS */}
         <div className="pb-[env(safe-area-inset-bottom)]" />
+
+        {/* Modal de termos vindo do menu */}
+        {showTerms && <TermsModalMenu onClose={() => setShowTerms(false)} />}
       </aside>
     </>
   );
@@ -231,6 +245,69 @@ function Contato({ numero, setor }: { numero: string; setor: string }) {
     <div>
       <p className="font-bold text-gray-800">{numero}</p>
       <p className="text-gray-500 text-[13px]">{setor}</p>
+    </div>
+  );
+}
+
+/* -------- Modal de Termos usado só no menu -------- */
+
+function TermsModalMenu({ onClose }: { onClose: () => void }) {
+  const [text, setText] = useState<string>("Carregando termos…");
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/termos.txt", { cache: "no-store" });
+        const t = await res.text();
+        if (alive) setText(t || "Termos indisponíveis.");
+      } catch {
+        if (alive) setText("Não foi possível carregar os termos.");
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      {/* fundo escurecido/transparente */}
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+
+      {/* card */}
+      <div className="relative z-10 w-full max-w-lg rounded-2xl bg-white shadow-xl">
+        <div className="flex items-center justify-between px-4 py-3">
+          <h3 className="text-sm font-semibold text-gray-800">Termos e Condições</h3>
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-700"
+            aria-label="Fechar termos"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div
+          ref={scrollRef}
+          className="max-h-[60vh] overflow-y-auto px-4 py-3 text-[13px] leading-6 text-gray-700 whitespace-pre-wrap"
+        >
+          {text}
+        </div>
+
+        <div className="flex items-center justify-between gap-2 px-4 py-3 border-t bg-gray-50">
+          <p className="text-[12px] text-gray-600">
+            Role para ler todos os termos.
+          </p>
+          <button
+            onClick={onClose}
+            className="ml-auto rounded-md px-3 py-2 text-sm font-semibold text-white bg-orange-600 hover:bg-orange-700"
+          >
+            Fechar
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
