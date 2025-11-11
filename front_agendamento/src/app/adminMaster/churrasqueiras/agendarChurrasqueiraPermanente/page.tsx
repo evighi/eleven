@@ -257,7 +257,8 @@ export default function AgendarChurrasqueiraPermanente() {
       setFeedback({ kind: "error", text: "Selecione dia, turno e a churrasqueira." });
       return;
     }
-    if (existeAgendamentoComum && proximasDatasDisponiveis.length > 0 && !dataInicio) {
+    // se já sabemos que há conflito comum, obrigar escolher uma data de início
+    if (existeAgendamentoComum && !dataInicio) {
       setFeedback({ kind: "error", text: "Selecione uma data de início válida." });
       return;
     }
@@ -274,8 +275,12 @@ export default function AgendarChurrasqueiraPermanente() {
               `${convidadoDonoNome.trim()} ${convidadoDonoTelefone.trim()}`.trim(),
             ],
           }),
-      ...(existeAgendamentoComum ? { dataInicio } : {}),
     };
+
+    // ✅ só envia dataInicio se tiver valor (evita mandar string vazia)
+    if (dataInicio) {
+      body.dataInicio = dataInicio;
+    }
 
     try {
       setSubmitting(true);
