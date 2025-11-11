@@ -3,6 +3,7 @@ import { PrismaClient, Turno, DiaSemana } from "@prisma/client";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
+import cron from "node-cron"; // 👈 cron para finalizar vencidos
 
 import verificarToken from "../middleware/authMiddleware";
 import { requireOwnerByRecord, isAdmin as isAdminTipo } from "../middleware/acl";
@@ -12,8 +13,39 @@ const prisma = new PrismaClient();
 const router = Router();
 
 const DIAS: readonly DiaSemana[] = [
-  "DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO",
+  "DOMINGO",
+  "SEGUNDA",
+  "TERCA",
+  "QUARTA",
+  "QUINTA",
+  "SEXTA",
+  "SABADO",
 ] as const;
+
+// ================= Helpers de horário local (America/Sao_Paulo) =================
+const SP_TZ = process.env.TZ || "America/Sao_Paulo";
+
+/**
+ * Converte um Date (agora) para os boundaries de DIA LOCAL em UTC:
+ * - hojeUTC00  = 00:00Z do dia local de hoje
+ * - amanhaUTC00 = 00:00Z do dia local de amanhã
+ *
+ * Isso bate com a forma como você salva `data` no banco ("YYYY-MM-DD" → 00:00Z).
+ */
+function getStoredUtcBoundaryForLocalDay(dLocal = new Date()) {
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: SP_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const [y, m, d] = fmt.format(dLocal).split("-").map(Number);
+
+  const hojeUTC00 = new Date(Date.UTC(y, (m ?? 1) - 1, d ?? 1, 0, 0, 0));
+  const amanhaUTC00 = new Date(Date.UTC(y, (m ?? 1) - 1, (d ?? 1) + 1, 0, 0, 0));
+
+  return { hojeUTC00, amanhaUTC00 };
+}
 
 // "YYYY-MM-DD" -> Date em 00:00:00Z
 function toUtc00(isoYYYYMMDD: string) {
@@ -68,6 +100,56 @@ const schemaAgendamentoChurrasqueira = z.object({
 
 // 🔒 todas as rotas exigem estar logado
 router.use(verificarToken);
+
+/* =======================================================================
+   ⛳ FINALIZAR AGENDAMENTOS DE CHURRASQUEIRA VENCIDOS (CRON hh:01)
+   ======================================================================= */
+
+/**
+ * Finaliza agendamentos de churrasqueira CONFIRMADOS
+ * cujo DIA local já passou.
+ *
+ * Regra:
+ *   - status = "CONFIRMADO"
+ *   - data < hojeUTC00  (considerando o dia local America/Sao_Paulo)
+ */
+async function finalizarAgendamentosChurrasqueiraVencidos() {
+  const agora = new Date();
+  const { hojeUTC00 } = getStoredUtcBoundaryForLocalDay(agora);
+
+  const r = await prisma.agendamentoChurrasqueira.updateMany({
+    where: {
+      status: "CONFIRMADO",
+      data: { lt: hojeUTC00 },
+    },
+    data: { status: "FINALIZADO" },
+  });
+
+  if (process.env.NODE_ENV !== "production") {
+    console.log(
+      `[finalizarAgendamentosChurrasqueiraVencidos] finalizados=${r.count} (hojeUTC00=${hojeUTC00.toISOString()})`
+    );
+  }
+}
+
+// evita duplicar job em modo dev (hot reload)
+const globalAny = global as any;
+if (!globalAny.__cronFinalizaChurrasVencidos__) {
+  cron.schedule(
+    "1 * * * *", // todo hh:01
+    () => {
+      finalizarAgendamentosChurrasqueiraVencidos().catch((e) =>
+        console.error("Cron finalizarAgendamentosChurrasqueiraVencidos erro:", e)
+      );
+    },
+    { timezone: SP_TZ }
+  );
+  globalAny.__cronFinalizaChurrasVencidos__ = true;
+}
+
+/* =======================================================================
+   ROTAS
+   ======================================================================= */
 
 // POST /agendamentosChurrasqueiras  (criar COMUM por data+turno)
 router.post("/", async (req, res) => {
@@ -181,7 +263,8 @@ router.get("/", async (req, res) => {
   if (!req.usuario) return res.status(401).json({ erro: "Não autenticado" });
 
   const qData = typeof req.query.data === "string" ? req.query.data : undefined;
-  const churrasqueiraId = typeof req.query.churrasqueiraId === "string" ? req.query.churrasqueiraId : undefined;
+  const churrasqueiraId =
+    typeof req.query.churrasqueiraId === "string" ? req.query.churrasqueiraId : undefined;
 
   const where: any = { ...(churrasqueiraId ? { churrasqueiraId } : {}) };
 
