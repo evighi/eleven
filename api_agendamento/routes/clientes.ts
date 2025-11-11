@@ -27,6 +27,15 @@ const baseUserSelect = {
   tipo: true,
 } as const;
 
+// 🔤 helper para ignorar acentos na comparação de nomes
+function normalizeTextNoAccent(s?: string | null) {
+  return String(s || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
 const clienteSchema = z.object({
   nome: z.string().min(3),
   email: z.string().email(),
@@ -374,11 +383,7 @@ router.get("/admin/todosClientes", verificarToken, requireAdmin, async (req, res
   try {
     const { nome, tipos } = req.query as { nome?: string; tipos?: string };
 
-    const whereNome = nome
-      ? { nome: { contains: String(nome), mode: "insensitive" as const } }
-      : {};
-
-    let whereTipos = {};
+    let whereTipos: any = {};
     if (tipos) {
       const lista = tipos
         .split(",")
@@ -387,11 +392,19 @@ router.get("/admin/todosClientes", verificarToken, requireAdmin, async (req, res
       if (lista.length) whereTipos = { tipo: { in: lista as unknown as TipoUsuario[] } };
     }
 
-    const usuarios = await prisma.usuario.findMany({
-      where: { ...whereNome, ...whereTipos }, // 👈 aqui lista TODO mundo (inclui convidados/deletados)
+    // lista TODO mundo (inclui convidados/deletados), filtro de nome sem acento em memória
+    let usuarios = await prisma.usuario.findMany({
+      where: { ...whereTipos },
       orderBy: { nome: "asc" },
       select: adminUserSelectWithDeleted,
     });
+
+    if (nome && String(nome).trim().length > 0) {
+      const qNorm = normalizeTextNoAccent(String(nome));
+      usuarios = usuarios.filter((u) =>
+        normalizeTextNoAccent(u.nome).includes(qNorm)
+      );
+    }
 
     return res.json(usuarios);
   } catch (error) {
@@ -406,11 +419,7 @@ router.get("/", verificarToken, requireAdmin, async (req, res) => {
   try {
     const { nome, tipos } = req.query as { nome?: string; tipos?: string };
 
-    const whereNome = nome
-      ? { nome: { contains: String(nome), mode: "insensitive" as const } }
-      : {};
-
-    let whereTipos = {};
+    let whereTipos: any = {};
     if (tipos) {
       const lista = tipos
         .split(",")
@@ -419,9 +428,9 @@ router.get("/", verificarToken, requireAdmin, async (req, res) => {
       if (lista.length) whereTipos = { tipo: { in: lista as unknown as TipoUsuario[] } };
     }
 
-    const usuarios = await prisma.usuario.findMany({
+    // busca base (sem filtro de nome ainda)
+    let usuarios = await prisma.usuario.findMany({
       where: {
-        ...whereNome,
         ...whereTipos,
         deletedAt: null, // 👈 só usuários não excluídos
         // 👇 não listar convidados (noemail/example)
@@ -431,9 +440,18 @@ router.get("/", verificarToken, requireAdmin, async (req, res) => {
         ],
       },
       orderBy: { nome: "asc" },
-      ...(nome ? { take: 10 } : {}),
       select: baseUserSelect,
     });
+
+    // filtro de nome sem acento em memória
+    if (nome && String(nome).trim().length > 0) {
+      const qNorm = normalizeTextNoAccent(String(nome));
+      usuarios = usuarios.filter((u) =>
+        normalizeTextNoAccent(u.nome).includes(qNorm)
+      );
+      // mantém o comportamento antigo de limitar quando tinha "nome"
+      usuarios = usuarios.slice(0, 10);
+    }
 
     return res.json(usuarios);
   } catch (error) {
