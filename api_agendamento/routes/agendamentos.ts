@@ -333,7 +333,24 @@ router.post("/", verificarToken, async (req, res) => {
 
     const hojeLocalYMD = localYMD(new Date(), SP_TZ);
     const agoraLocalHM = localHM(new Date(), SP_TZ);
+
+    // 🔍 Já é um agendamento "no passado"?
+    const isAgendamentoNoPassado =
+      dataYMD < hojeLocalYMD ||
+      (dataYMD === hojeLocalYMD && horario < agoraLocalHM);
+
     let multaPorHorarioPassado: number | null = null;
+    // 👇 status inicial vai depender se já passou ou não
+    let statusInicial: "CONFIRMADO" | "FINALIZADO" = "CONFIRMADO";
+
+    // ✅ Regra de multa automática + status inicial:
+    // - se o dia do agendamento JÁ PASSOU (dataYMD < hojeLocalYMD) => multa + FINALIZADO
+    // - se é HOJE e o horário já passou (horario < agoraLocalHM) => multa + FINALIZADO
+    if (isAgendamentoNoPassado) {
+      const valorPadraoMulta = await valorMultaPadrao();
+      multaPorHorarioPassado = valorPadraoMulta; // já vem como number
+      statusInicial = "FINALIZADO";
+    }
 
     // ✅ Regra de multa automática:
     // - se o dia do agendamento JÁ PASSOU (dataYMD < hojeLocalYMD) => multa
@@ -506,7 +523,7 @@ router.post("/", verificarToken, async (req, res) => {
         quadraId,
         esporteId,
         usuarioId: usuarioIdDono,
-        status: "CONFIRMADO",
+        status: statusInicial,
         jogadores: { connect: connectIds },
 
         // 🆕 persistência dos campos
