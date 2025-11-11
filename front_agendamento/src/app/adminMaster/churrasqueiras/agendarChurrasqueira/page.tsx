@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import axios from 'axios'
 import AppImage from "@/components/AppImage";
 import { useSearchParams } from 'next/navigation'
+import Spinner from "@/components/Spinner"; // 👈 NOVO
 
 interface Churrasqueira {
   churrasqueiraId: string
@@ -28,6 +29,9 @@ export default function AgendamentoChurrasqueiraComum() {
   const [churrasqueiraSelecionada, setChurrasqueiraSelecionada] = useState<string>("")
   const [mensagem, setMensagem] = useState<string>("")
   const [carregandoDisp, setCarregandoDisp] = useState<boolean>(false)
+
+  // 🔄 carregando ao confirmar agendamento
+  const [carregandoAgendar, setCarregandoAgendar] = useState<boolean>(false) // 👈 NOVO
 
   // Dono cadastrado (busca)
   const [buscaUsuario, setBuscaUsuario] = useState<string>("")
@@ -135,6 +139,9 @@ export default function AgendamentoChurrasqueiraComum() {
       ),
     }
 
+    setCarregandoAgendar(true)   // 👈 liga spinner
+    setMensagem('')              // limpa mensagem anterior
+
     try {
       await axios.post(`${API_URL}/agendamentosChurrasqueiras`, body, { withCredentials: true })
       setMensagem('✅ Agendamento realizado com sucesso!')
@@ -150,6 +157,8 @@ export default function AgendamentoChurrasqueiraComum() {
         err?.response?.data?.message ||
         'Erro ao realizar agendamento.'
       setMensagem(msg)
+    } finally {
+      setCarregandoAgendar(false) // 👈 desliga spinner
     }
   }
 
@@ -295,11 +304,17 @@ export default function AgendamentoChurrasqueiraComum() {
           </div>
 
           <button
-            className="mt-4 bg-orange-600 text-white px-4 py-2 rounded disabled:opacity-60"
+            className="mt-4 bg-orange-600 text-white px-4 py-2 rounded disabled:opacity-60 disabled:cursor-not-allowed"
             onClick={agendar}
-            disabled={botaoDesabilitado}
+            disabled={botaoDesabilitado || carregandoAgendar} // 👈 trava enquanto envia
           >
-            Confirmar Agendamento
+            {carregandoAgendar ? (
+              <span className="inline-flex items-center gap-2">
+                <Spinner size="w-4 h-4" /> Agendando…
+              </span>
+            ) : (
+              "Confirmar Agendamento"
+            )}
           </button>
         </div>
       )}
