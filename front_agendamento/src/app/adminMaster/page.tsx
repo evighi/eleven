@@ -193,14 +193,6 @@ function gerarProximasDatasDiaSemana(
   return out;
 }
 
-// 🔤 helper p/ busca sem acento, igual usamos nas outras telas
-const normalizeText = (s?: string | null) =>
-  String(s || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim();
-
 export default function AdminHome() {
   const router = useRouter();
 
@@ -443,26 +435,20 @@ export default function AdminHome() {
     }
   };
 
-  // Buscar usuários (transferência) — agora filtrando sem acento
+  // Buscar usuários (transferência)
   const buscarUsuarios = useCallback(
     async (termo: string) => {
-      const term = termo.trim();
-      if (term.length === 0) {
+      if (termo.trim().length === 0) {
         setUsuariosFiltrados([]);
         return;
       }
       setCarregandoUsuarios(true);
       try {
         const res = await axios.get<UsuarioLista[]>(`${API_URL}/clientes`, {
-          params: { nome: term },
+          params: { nome: termo },
           withCredentials: true,
         });
-
-        const tNorm = normalizeText(term);
-        const filtrados = (res.data || []).filter((u) =>
-          normalizeText(u.nome).includes(tNorm)
-        );
-        setUsuariosFiltrados(filtrados);
+        setUsuariosFiltrados(res.data || []);
       } catch (error) {
         console.error("Erro ao buscar usuários:", error);
         setUsuariosFiltrados([]);
@@ -537,26 +523,19 @@ export default function AdminHome() {
     setAbrirModalJogadores(true);
   };
 
-  // busca para inserir jogadores — também ignorando acento
   const buscarUsuariosParaJogadores = useCallback(
     async (termo: string) => {
-      const term = termo.trim();
-      if (term.length < 2) {
+      if (termo.trim().length < 2) {
         setUsuariosParaJogadores([]);
         return;
       }
       setCarregandoJogadores(true);
       try {
         const res = await axios.get<UsuarioLista[]>(`${API_URL}/clientes`, {
-          params: { nome: term },
+          params: { nome: termo },
           withCredentials: true,
         });
-
-        const tNorm = normalizeText(term);
-        const filtrados = (res.data || []).filter((u) =>
-          normalizeText(u.nome).includes(tNorm)
-        );
-        setUsuariosParaJogadores(filtrados);
+        setUsuariosParaJogadores(res.data || []);
       } catch (e) {
         console.error(e);
         setUsuariosParaJogadores([]);
@@ -652,6 +631,7 @@ export default function AdminHome() {
     router.push(`/adminMaster/churrasqueiras/agendarChurrasqueira?${qs}`);
   };
 
+
   return (
     <div className="space-y-8">
       {/* FILTROS */}
@@ -746,13 +726,12 @@ export default function AdminHome() {
                           abrirDetalhes(q, { horario, esporte });
                         }
                       }}
-                      className={`${clsBase} ${
-                        q.bloqueada
+                      className={`${clsBase} ${q.bloqueada
                           ? "border-2 border-red-500 bg-red-50"
                           : q.disponivel
-                          ? "border-2 border-green-500 bg-green-50"
-                          : "border-2 border-gray-500 bg-gray-50"
-                      }`}
+                            ? "border-2 border-green-500 bg-green-50"
+                            : "border-2 border-gray-500 bg-gray-50"
+                        }`}
                     >
                       <p className="font-medium">{q.nome}</p>
                       <p className="text-xs text-gray-700">Quadra {q.numero}</p>
@@ -818,11 +797,10 @@ export default function AdminHome() {
                         );
                       }
                     }}
-                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${
-                      disponivel
+                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${disponivel
                         ? "border-2 border-green-500 bg-green-50"
                         : "border-2 border-gray-500 bg-gray-50"
-                    }`}
+                      }`}
                   >
                     <p className="font-medium">{c.nome}</p>
                     <p className="text-xs text-gray-700">
@@ -875,11 +853,10 @@ export default function AdminHome() {
                         );
                       }
                     }}
-                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${
-                      disponivel
+                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${disponivel
                         ? "border-2 border-green-500 bg-green-50"
                         : "border-2 border-gray-500 bg-gray-50"
-                    }`}
+                      }`}
                   >
                     <p className="font-medium">{c.nome}</p>
                     <p className="text-xs text-gray-700">
@@ -944,8 +921,8 @@ export default function AdminHome() {
               {typeof agendamentoSelecionado.usuario === "string"
                 ? agendamentoSelecionado.usuario
                 : [agendamentoSelecionado.usuario?.nome, agendamentoSelecionado.usuario?.celular]
-                    .filter(Boolean)
-                    .join(" — ")}
+                  .filter(Boolean)
+                  .join(" — ")}
             </p>
             {agendamentoSelecionado.esporte && (
               <p>
@@ -1079,11 +1056,10 @@ export default function AdminHome() {
                             key={d}
                             type="button"
                             onClick={() => setDataExcecaoSelecionada(d)}
-                            className={`px-3 py-2 rounded border text-sm ${
-                              ativo
+                            className={`px-3 py-2 rounded border text-sm ${ativo
                                 ? "border-indigo-600 bg-indigo-50 text-indigo-700"
                                 : "border-gray-300 hover:bg-gray-50"
-                            }`}
+                              }`}
                           >
                             {toDdMm(d)}
                           </button>
@@ -1124,7 +1100,7 @@ export default function AdminHome() {
             <h3 className="text-lg font-semibold mb-4">
               Transferir Agendamento{" "}
               {agendamentoSelecionado?.tipoLocal === "quadra" &&
-              agendamentoSelecionado?.tipoReserva === "permanente"
+                agendamentoSelecionado?.tipoReserva === "permanente"
                 ? "(Permanente)"
                 : "(Comum)"}
             </h3>
@@ -1150,9 +1126,8 @@ export default function AdminHome() {
               {usuariosFiltrados.map((user) => (
                 <li
                   key={user.id}
-                  className={`p-2 cursor-pointer hover:bg-blue-100 ${
-                    usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
-                  }`}
+                  className={`p-2 cursor-pointer hover:bg-blue-100 ${usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
+                    }`}
                   onClick={() => setUsuarioSelecionado(user)}
                   title={user.celular || ""}
                 >
@@ -1219,9 +1194,8 @@ export default function AdminHome() {
                 return (
                   <li
                     key={u.id}
-                    className={`p-2 cursor-pointer flex items-center justify-between hover:bg-orange-50 ${
-                      ativo ? "bg-orange-100" : ""
-                    }`}
+                    className={`p-2 cursor-pointer flex items-center justify-between hover:bg-orange-50 ${ativo ? "bg-orange-100" : ""
+                      }`}
                     onClick={() => alternarSelecionado(u.id)}
                     title={u.celular || ""}
                   >
