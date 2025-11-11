@@ -59,14 +59,6 @@ const horarioAntesDe18 = (h: string) => {
   return hh < 18;
 };
 
-// 🔤 helper para ignorar acentos na comparação de nomes
-const normalizeText = (s?: string | null) =>
-  String(s || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim();
-
 export default function CadastrarPermanente() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -265,14 +257,7 @@ export default function CadastrarPermanente() {
           params: { nome: termo },
           withCredentials: true,
         });
-
-        // 🔤 filtro no front ignorando acentos
-        const qNorm = normalizeText(termo);
-        const filtrados = (res.data || []).filter((u) =>
-          normalizeText(u.nome).includes(qNorm)
-        );
-
-        if (!cancel) setUsuariosEncontrados(filtrados);
+        if (!cancel) setUsuariosEncontrados(res.data || []);
       } catch {
         if (!cancel) setUsuariosEncontrados([]);
       } finally {
@@ -481,10 +466,7 @@ export default function CadastrarPermanente() {
           {showTipoSessao && (
             <div className="mt-2">
               <label className="block font-semibold mb-1">
-                Tipo da sessão{" "}
-                <span className="text-xs text-gray-500">
-                  (apenas para professores, antes das 18h)
-                </span>
+                Tipo da sessão <span className="text-xs text-gray-500">(apenas para professores, antes das 18h)</span>
               </label>
               <select
                 value={tipoSessao}
@@ -579,9 +561,7 @@ export default function CadastrarPermanente() {
                   >
                     <div className="font-medium text-gray-800">{u.nome}</div>
                     {u.tipo && (
-                      <div className="text-[11px] text-gray-500">
-                        {String(u.tipo).toUpperCase()}
-                      </div>
+                      <div className="text-[11px] text-gray-500">{String(u.tipo).toUpperCase()}</div>
                     )}
                     {u.celular && <div className="text-xs text-gray-500">{u.celular}</div>}
                   </li>
@@ -646,8 +626,7 @@ export default function CadastrarPermanente() {
           <div className="mt-4 p-4 border border-yellow-400 bg-yellow-100 rounded">
             <p className="mb-2 font-semibold text-yellow-700">
               A quadra selecionada possui conflito com agendamento comum no dia{" "}
-              {format(parseISO(dataUltimoConflito), "dd/MM/yyyy")}. Selecione uma data de início
-              disponível:
+              {format(parseISO(dataUltimoConflito), "dd/MM/yyyy")}. Selecione uma data de início disponível:
             </p>
 
             <div className="grid grid-cols-3 gap-2">

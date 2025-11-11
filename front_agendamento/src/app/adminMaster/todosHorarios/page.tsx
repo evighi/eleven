@@ -40,8 +40,8 @@ type JogadorRef = { nome: string };
 type TipoReserva = "comum" | "permanente";
 
 type AgendamentoSelecionado = {
-  dia: string; // YYYY-MM-DD (data do filtro da página)
-  horario: string; // HH:MM
+  dia: string;             // YYYY-MM-DD (data do filtro da página)
+  horario: string;         // HH:MM
   usuario: string | Usuario | "—";
   jogadores: JogadorRef[];
   esporte?: string | null;
@@ -53,12 +53,7 @@ type AgendamentoSelecionado = {
   dataInicio?: string | null; // YYYY-MM-DD
 };
 
-type UsuarioLista = {
-  id: string;
-  nome: string;
-  email?: string;
-  celular?: string | null;
-};
+type UsuarioLista = { id: string; nome: string; email?: string; celular?: string | null };
 
 /* ===== Helpers comuns (iguais à Home) ===== */
 const SP_TZ = "America/Sao_Paulo";
@@ -127,14 +122,6 @@ function gerarProximasDatasDiaSemana(
   }
   return out;
 }
-
-/** Helper para busca "sem acento" */
-const normalizeText = (s?: string | null) =>
-  String(s || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim();
 
 /* helpers visuais já existentes */
 function firstName(full?: string) {
@@ -279,7 +266,7 @@ export default function TodosHorariosPage() {
           horario,
           usuario: usuarioValor,
           jogadores,
-          esporte: esporteNome,
+          esporte: esporteNome,           // <- agora vem do backend
           tipoReserva,
           agendamentoId,
           tipoLocal: "quadra",
@@ -401,27 +388,20 @@ export default function TodosHorariosPage() {
     }
   };
 
-  /* ====== Transferência (busca sem acento) ====== */
+  /* ====== Transferência ====== */
   const buscarUsuarios = useCallback(
     async (termo: string) => {
-      const term = termo.trim();
-      if (term.length === 0) {
+      if (termo.trim().length === 0) {
         setUsuariosFiltrados([]);
         return;
       }
       setCarregandoUsuarios(true);
       try {
         const res = await axios.get<UsuarioLista[]>(`${API_URL}/clientes`, {
-          params: { nome: term },
+          params: { nome: termo },
           withCredentials: true,
         });
-
-        const tNorm = normalizeText(term);
-        const filtrados = (res.data || []).filter((u) =>
-          normalizeText(u.nome).includes(tNorm)
-        );
-
-        setUsuariosFiltrados(filtrados);
+        setUsuariosFiltrados(res.data || []);
       } catch (error) {
         console.error("Erro ao buscar usuários:", error);
         setUsuariosFiltrados([]);
@@ -480,7 +460,7 @@ export default function TodosHorariosPage() {
     }
   };
 
-  /* ====== Jogadores (busca sem acento) ====== */
+  /* ====== Jogadores ====== */
   const abrirModalAdicionarJogadores = () => {
     setBuscaJogador("");
     setUsuariosParaJogadores([]);
@@ -492,24 +472,17 @@ export default function TodosHorariosPage() {
 
   const buscarUsuariosParaJogadores = useCallback(
     async (termo: string) => {
-      const term = termo.trim();
-      if (term.length < 2) {
+      if (termo.trim().length < 2) {
         setUsuariosParaJogadores([]);
         return;
       }
       setCarregandoJogadores(true);
       try {
         const res = await axios.get<UsuarioLista[]>(`${API_URL}/clientes`, {
-          params: { nome: term },
+          params: { nome: termo },
           withCredentials: true,
         });
-
-        const tNorm = normalizeText(term);
-        const filtrados = (res.data || []).filter((u) =>
-          normalizeText(u.nome).includes(tNorm)
-        );
-
-        setUsuariosParaJogadores(filtrados);
+        setUsuariosParaJogadores(res.data || []);
       } catch (e) {
         console.error(e);
         setUsuariosParaJogadores([]);
@@ -603,8 +576,8 @@ export default function TodosHorariosPage() {
     const label = isBloq
       ? `Bloqueada - ${hourLabel}`
       : isLivre
-      ? `Livre - ${hourLabel}`
-      : `${firstName(slot.usuario?.nome)} - ${hourLabel}`;
+        ? `Livre - ${hourLabel}`
+        : `${firstName(slot.usuario?.nome)} - ${hourLabel}`;
 
     const isAgendado = !!(slot.agendamentoId && slot.tipoReserva);
     const clickable = !isBloq && (isAgendado || isLivre);
@@ -624,9 +597,7 @@ export default function TodosHorariosPage() {
         disabled={!clickable}
         onClick={onClick}
         title={slot.usuario?.nome || (isBloq ? "Bloqueada" : isLivre ? "Livre" : label)}
-        className={`${base} ${cls} ${
-          clickable ? "cursor-pointer hover:brightness-95" : "cursor-default"
-        }`}
+        className={`${base} ${cls} ${clickable ? "cursor-pointer hover:brightness-95" : "cursor-default"}`}
       >
         <span>{label}</span>
       </button>
@@ -696,11 +667,7 @@ export default function TodosHorariosPage() {
                                 slot={slot}
                                 hora={hora}
                                 esporte={esporte}
-                                quadra={{
-                                  quadraId: q.quadraId,
-                                  nome: q.nome,
-                                  numero: q.numero,
-                                }}
+                                quadra={{ quadraId: q.quadraId, nome: q.nome, numero: q.numero }}
                               />
                             );
                           })}
@@ -719,6 +686,7 @@ export default function TodosHorariosPage() {
       </div>
     );
   }, [loading, erro, esportes, horas, abrirDetalhes, abrirConfirmAgendar]);
+
 
   return (
     <div className="px-2 sm:px-3 md:px-4 py-4">
@@ -758,15 +726,11 @@ export default function TodosHorariosPage() {
             <h3 className="text-lg font-semibold mb-2">Confirmar agendamento</h3>
             <p className="text-sm text-gray-700 mb-4">
               Deseja agendar a <b>Quadra {agendarCtx.quadraNumero}</b> ({agendarCtx.quadraNome})
-              em <b>{toDdMm(data)}</b> às <b>{agendarCtx.hora}</b> para{" "}
-              <b>{agendarCtx.esporte}</b>?
+              em <b>{toDdMm(data)}</b> às <b>{agendarCtx.hora}</b> para <b>{agendarCtx.esporte}</b>?
             </p>
             <div className="flex justify-end gap-2">
               <button
-                onClick={() => {
-                  setConfirmAgendar(false);
-                  setAgendarCtx(null);
-                }}
+                onClick={() => { setConfirmAgendar(false); setAgendarCtx(null); }}
                 className="px-3 py-2 rounded bg-gray-300 hover:bg-gray-400"
               >
                 Cancelar
@@ -787,28 +751,20 @@ export default function TodosHorariosPage() {
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg shadow-lg w-80 relative max-h-[90vh] overflow-auto">
             <h2 className="text-lg font-semibold mb-4">Detalhes do Agendamento</h2>
-            <p>
-              <strong>Dia:</strong> {agendamentoSelecionado.dia}
-            </p>
-            <p>
-              <strong>Horário:</strong> {agendamentoSelecionado.horario}
-            </p>
+            <p><strong>Dia:</strong> {agendamentoSelecionado.dia}</p>
+            <p><strong>Horário:</strong> {agendamentoSelecionado.horario}</p>
             {agendamentoSelecionado.esporte && (
-              <p>
-                <strong>Esporte:</strong> {agendamentoSelecionado.esporte}
-              </p>
+              <p><strong>Esporte:</strong> {agendamentoSelecionado.esporte}</p>
             )}
             <p>
               <strong>Usuário:</strong>{" "}
               {typeof agendamentoSelecionado.usuario === "string"
                 ? agendamentoSelecionado.usuario
                 : [agendamentoSelecionado.usuario?.nome, agendamentoSelecionado.usuario?.celular]
-                    .filter(Boolean)
-                    .join(" — ")}
+                  .filter(Boolean)
+                  .join(" — ")}
             </p>
-            <p>
-              <strong>Tipo:</strong> {agendamentoSelecionado.tipoReserva}
-            </p>
+            <p><strong>Tipo:</strong> {agendamentoSelecionado.tipoReserva}</p>
 
             {/* Jogadores (COMUM) */}
             {agendamentoSelecionado.tipoReserva === "comum" && (
@@ -816,9 +772,7 @@ export default function TodosHorariosPage() {
                 <strong>Jogadores:</strong>
                 <ul className="list-disc list-inside text-sm text-gray-700 mt-2">
                   {agendamentoSelecionado.jogadores?.length > 0 ? (
-                    agendamentoSelecionado.jogadores.map((j, idx) => (
-                      <li key={idx}>{j.nome}</li>
-                    ))
+                    agendamentoSelecionado.jogadores.map((j, idx) => <li key={idx}>{j.nome}</li>)
                   ) : (
                     <li>Nenhum jogador cadastrado</li>
                   )}
@@ -867,9 +821,7 @@ export default function TodosHorariosPage() {
             {/* Confirmar cancelamento (comum) */}
             {confirmarCancelamento && (
               <div className="absolute inset-0 bg-black bg-opacity-80 flex flex-col items-center justify-center p-4 rounded-xl border shadow-lg z-50">
-                <p className="text-center text-white mb-4">
-                  Tem certeza que deseja cancelar este agendamento?
-                </p>
+                <p className="text-center text-white mb-4">Tem certeza que deseja cancelar este agendamento?</p>
                 <div className="flex gap-4">
                   <button
                     onClick={cancelarAgendamento}
@@ -919,8 +871,7 @@ export default function TodosHorariosPage() {
                 <div className="bg-white rounded-lg p-4 w-full max-w-sm">
                   <h3 className="text-lg font-semibold mb-2">Cancelar apenas 1 dia</h3>
                   <p className="text-sm text-gray-600 mb-3">
-                    Selecione uma data (próximas {datasExcecao.length} datas em{" "}
-                    {agendamentoSelecionado?.diaSemana ?? "-"}).
+                    Selecione uma data (próximas {datasExcecao.length} datas em {agendamentoSelecionado?.diaSemana ?? "-"}).
                   </p>
 
                   {datasExcecao.length === 0 ? (
@@ -934,11 +885,8 @@ export default function TodosHorariosPage() {
                             key={d}
                             type="button"
                             onClick={() => setDataExcecaoSelecionada(d)}
-                            className={`px-3 py-2 rounded border text-sm ${
-                              ativo
-                                ? "border-indigo-600 bg-indigo-50 text-indigo-700"
-                                : "border-gray-300 hover:bg-gray-50"
-                            }`}
+                            className={`px-3 py-2 rounded border text-sm ${ativo ? "border-indigo-600 bg-indigo-50 text-indigo-700" : "border-gray-300 hover:bg-gray-50"
+                              }`}
                           >
                             {toDdMm(d)}
                           </button>
@@ -977,10 +925,7 @@ export default function TodosHorariosPage() {
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-60">
           <div className="bg-white p-6 rounded-lg shadow-lg w-96 max-h-[80vh] overflow-auto relative">
             <h3 className="text-lg font-semibold mb-4">
-              Transferir Agendamento{" "}
-              {agendamentoSelecionado?.tipoReserva === "permanente"
-                ? "(Permanente)"
-                : "(Comum)"}
+              Transferir Agendamento {agendamentoSelecionado?.tipoReserva === "permanente" ? "(Permanente)" : "(Comum)"}
             </h3>
 
             <input
@@ -994,28 +939,20 @@ export default function TodosHorariosPage() {
 
             {carregandoUsuarios && <p>Carregando usuários...</p>}
 
-            {!carregandoUsuarios &&
-              usuariosFiltrados.length === 0 &&
-              buscaUsuario.trim().length > 0 && (
-                <p className="text-sm text-gray-500">Nenhum usuário encontrado</p>
-              )}
+            {!carregandoUsuarios && usuariosFiltrados.length === 0 && buscaUsuario.trim().length > 0 && (
+              <p className="text-sm text-gray-500">Nenhum usuário encontrado</p>
+            )}
 
             <ul className="max-h-64 overflow-y-auto border rounded mb-4">
               {usuariosFiltrados.map((user) => (
                 <li
                   key={user.id}
-                  className={`p-2 cursor-pointer hover:bg-blue-100 ${
-                    usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
-                  }`}
+                  className={`p-2 cursor-pointer hover:bg-blue-100 ${usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
+                    }`}
                   onClick={() => setUsuarioSelecionado(user)}
-                  title={user.celular || ""}
+                  title={user.celular || ""}   // tooltip com celular
                 >
-                  {user.nome}
-                  {user.celular
-                    ? ` (${user.celular})`
-                    : user.email
-                    ? ` (${user.email})`
-                    : ""}
+                  {user.nome} {user.celular ? ` (${user.celular})` : ""}
                 </li>
               ))}
             </ul>
@@ -1075,36 +1012,25 @@ export default function TodosHorariosPage() {
                 return (
                   <li
                     key={u.id}
-                    className={`p-2 cursor-pointer flex items-center justify-between hover:bg-orange-50 ${
-                      ativo ? "bg-orange-100" : ""
-                    }`}
+                    className={`p-2 cursor-pointer flex items-center justify-between hover:bg-orange-50 ${ativo ? "bg-orange-100" : ""
+                      }`}
                     onClick={() => alternarSelecionado(u.id)}
-                    title={u.celular || ""}
                   >
                     <span>
-                      {u.nome}
-                      {u.celular
-                        ? ` (${u.celular})`
-                        : u.email
-                        ? ` (${u.email})`
-                        : ""}
+                      {u.nome} ({u.email})
                     </span>
                     <input type="checkbox" readOnly checked={ativo} />
                   </li>
                 );
               })}
-              {!carregandoJogadores &&
-                usuariosParaJogadores.length === 0 &&
-                buscaJogador.trim().length >= 2 && (
-                  <li className="p-2 text-sm text-gray-500">Nenhum usuário encontrado</li>
-                )}
+              {!carregandoJogadores && usuariosParaJogadores.length === 0 && buscaJogador.trim().length >= 2 && (
+                <li className="p-2 text-sm text-gray-500">Nenhum usuário encontrado</li>
+              )}
             </ul>
 
             {/* convidado (apenas nome) */}
             <div className="mb-2">
-              <label className="block text-sm font-medium mb-1">
-                Adicionar convidado (só nome)
-              </label>
+              <label className="block text-sm font-medium mb-1">Adicionar convidado (só nome)</label>
               <div className="flex gap-2">
                 <input
                   type="text"
@@ -1126,10 +1052,7 @@ export default function TodosHorariosPage() {
               {convidadosPendentes.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-2">
                   {convidadosPendentes.map((nome) => (
-                    <span
-                      key={nome}
-                      className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs"
-                    >
+                    <span key={nome} className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs">
                       {nome}
                       <button
                         type="button"
@@ -1147,8 +1070,7 @@ export default function TodosHorariosPage() {
 
             {(jogadoresSelecionadosIds.length > 0 || convidadosPendentes.length > 0) && (
               <div className="text-xs text-gray-600 mb-2">
-                Selecionados: {jogadoresSelecionadosIds.length} · Convidados:{" "}
-                {convidadosPendentes.length}
+                Selecionados: {jogadoresSelecionadosIds.length} · Convidados: {convidadosPendentes.length}
               </div>
             )}
 
@@ -1162,11 +1084,7 @@ export default function TodosHorariosPage() {
               </button>
               <button
                 onClick={confirmarAdicionarJogadores}
-                disabled={
-                  addingPlayers ||
-                  (jogadoresSelecionadosIds.length === 0 &&
-                    convidadosPendentes.length === 0)
-                }
+                disabled={addingPlayers || (jogadoresSelecionadosIds.length === 0 && convidadosPendentes.length === 0)}
                 className="px-4 py-2 rounded bg-orange-600 text-white hover:bg-orange-700 disabled:bg-orange-300"
               >
                 {addingPlayers ? "Adicionando..." : "Adicionar"}

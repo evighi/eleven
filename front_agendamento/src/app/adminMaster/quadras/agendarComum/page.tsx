@@ -24,14 +24,6 @@ type Feedback = { kind: 'success' | 'error' | 'info'; text: string }
 /* ===== Helpers mínimos ===== */
 const norm = (s?: string | null) => String(s || '').trim().toUpperCase()
 
-// 🔤 helper para ignorar acentos na comparação de nomes
-const normalizeText = (s?: string | null) =>
-  String(s || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .trim()
-
 // ✅ tipos permitidos como "apoiado" (mesma regra do backend)
 const APOIADO_TIPOS_PERMITIDOS = [
   'CLIENTE_APOIADO',
@@ -211,14 +203,8 @@ export default function AgendamentoComum() {
           params: { nome: buscaUsuario },
           withCredentials: true,
         })
-
-        // 🔤 filtro no front ignorando acentos
-        const qNorm = normalizeText(buscaUsuario)
-        const filtrados = (data || []).filter((u) =>
-          normalizeText(u.nome).includes(qNorm)
-        )
-
-        setUsuariosEncontrados(filtrados)
+        // Ideal: backend devolver também "tipo" (quando usuário for professor/apoiado)
+        setUsuariosEncontrados(data || [])
       } catch (err) {
         console.error(err)
       }
@@ -240,14 +226,7 @@ export default function AgendamentoComum() {
           params: { nome: apoiadoBusca },
           withCredentials: true,
         })
-
-        // 🔤 filtro no front ignorando acentos
-        const qNorm = normalizeText(apoiadoBusca)
-        const filtrados = (data || []).filter((u) =>
-          normalizeText(u.nome).includes(qNorm)
-        )
-
-        setApoiadoResultados(filtrados)
+        setApoiadoResultados(data || [])
       } catch (err) {
         console.error(err)
       }

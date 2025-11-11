@@ -48,14 +48,6 @@ function proximaDataParaDiaSemana(diaSemana: string): string {
   return `${y}-${m}-${dd}`;
 }
 
-// 🔤 helper p/ ignorar acentos na busca
-const normalizeText = (s?: string | null) =>
-  String(s || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim();
-
 export default function AgendarChurrasqueiraPermanente() {
   const [diaSemana, setDiaSemana] = useState<string>("");
   const [turno, setTurno] = useState<string>("");
@@ -195,7 +187,7 @@ export default function AgendarChurrasqueiraPermanente() {
       });
   }, [diaSemana, turno, churrasqueiraId, churrasqueiras]);
 
-  /* ===== Busca usuários (apenas com a lista aberta) — ignorando acentos ===== */
+  /* ===== Busca usuários (apenas com a lista aberta) ===== */
   useEffect(() => {
     let cancel = false;
     const run = async () => {
@@ -214,14 +206,7 @@ export default function AgendarChurrasqueiraPermanente() {
           params: { nome: termo },
           withCredentials: true,
         });
-
-        if (!cancel) {
-          const tNorm = normalizeText(termo);
-          const filtrados = (res.data || []).filter((u) =>
-            normalizeText(u.nome).includes(tNorm)
-          );
-          setUsuariosEncontrados(filtrados);
-        }
+        if (!cancel) setUsuariosEncontrados(res.data || []);
       } catch {
         if (!cancel) setUsuariosEncontrados([]);
       } finally {
