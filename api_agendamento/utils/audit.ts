@@ -50,6 +50,10 @@ export type AuditEvent =
   // Bloqueios de quadra
   | "BLOQUEIO_CREATE"
   | "BLOQUEIO_DELETE"
+  // Editar horario de aula
+  | "CONFIG_ESPORTE_HORARIOS_CREATE"
+  | "CONFIG_ESPORTE_HORARIOS_UPDATE"
+  | "CONFIG_ESPORTE_HORARIOS_DELETE"
   // fallback
   | "OTHER";
 

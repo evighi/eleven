@@ -239,6 +239,86 @@ async function criarConvidadoComoUsuario(nomeConvidado: string) {
 
 const diasEnum = ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"];
 
+/* ============================================================================
+   NOVO: Janelas por Esporte (AULA/JOGO) + Endpoint para o front
+   ==========================================================================*/
+
+// Busca janelas do dia específico e as padrão (diaSemana = null). Dia específico sobrescreve padrão.
+async function getJanelasForEsporte(
+  esporteId: string,
+  diaSemana: DiaSemana | null
+) {
+  const [doDia, padrao] = await Promise.all([
+    prisma.esporteJanelaAula.findMany({
+      where: { esporteId, diaSemana },
+      select: { tipoSessao: true, inicioHHMM: true, fimHHMM: true, ativo: true },
+    }),
+    prisma.esporteJanelaAula.findMany({
+      where: { esporteId, diaSemana: null },
+      select: { tipoSessao: true, inicioHHMM: true, fimHHMM: true, ativo: true },
+    }),
+  ]);
+
+  const byTipo = new Map<TipoSessaoProfessor, { inicioHHMM: string; fimHHMM: string }>();
+  for (const r of padrao.filter(r => r.ativo)) {
+    byTipo.set(r.tipoSessao as TipoSessaoProfessor, { inicioHHMM: r.inicioHHMM, fimHHMM: r.fimHHMM });
+  }
+  for (const r of doDia.filter(r => r.ativo)) {
+    byTipo.set(r.tipoSessao as TipoSessaoProfessor, { inicioHHMM: r.inicioHHMM, fimHHMM: r.fimHHMM });
+  }
+  return byTipo;
+}
+
+// Retorna lista de tipos permitidos naquele hh:mm
+async function resolveSessoesPermitidas(
+  esporteId: string,
+  diaSemana: DiaSemana,
+  horario: string
+): Promise<TipoSessaoProfessor[]> {
+  const j = await getJanelasForEsporte(esporteId, diaSemana);
+  const out: TipoSessaoProfessor[] = [];
+  for (const [tipo, win] of j.entries()) {
+    if (horarioDentroIntervalo(horario, win.inicioHHMM, win.fimHHMM)) out.push(tipo);
+  }
+  return out;
+}
+
+// Flags separadas para ajudar na regra de auto-definição (só JOGO pós-limite de AULA)
+async function resolveSessoesFlags(
+  esporteId: string,
+  diaSemana: DiaSemana,
+  horario: string
+): Promise<{ aula: boolean; jogo: boolean }> {
+  const j = await getJanelasForEsporte(esporteId, diaSemana);
+  const aulaJ = j.get("AULA" as TipoSessaoProfessor);
+  const jogoJ = j.get("JOGO" as TipoSessaoProfessor);
+  const aula = aulaJ ? horarioDentroIntervalo(horario, aulaJ.inicioHHMM, aulaJ.fimHHMM) : false;
+  const jogo = jogoJ ? horarioDentroIntervalo(horario, jogoJ.inicioHHMM, jogoJ.fimHHMM) : false;
+  return { aula, jogo };
+}
+
+/**
+ * GET /agendamentos/_sessoes-permitidas?esporteId=...&data=YYYY-MM-DD&horario=HH:MM
+ * -> { allow: ["AULA","JOGO"] | ["AULA"] | ["JOGO"] | [] }
+ */
+router.get("/_sessoes-permitidas", verificarToken, async (req, res) => {
+  const { esporteId, data, horario } = req.query as { esporteId?: string; data?: string; horario?: string };
+  if (!esporteId || !data || !horario) {
+    return res.status(400).json({ erro: "Parâmetros obrigatórios: esporteId, data (YYYY-MM-DD), horario (HH:MM)" });
+  }
+  try {
+    const diaIdx = localWeekdayIndexOfYMD(data);
+    const diaSemana = diasEnum[diaIdx] as DiaSemana;
+    const allow = await resolveSessoesPermitidas(esporteId, diaSemana, horario);
+    return res.json({ allow });
+  } catch (e) {
+    console.error("resolve sessões:", e);
+    return res.status(500).json({ erro: "Falha ao resolver sessões permitidas" });
+  }
+});
+
+/* ======================================================================== */
+
 /**
  * ⛳ Finaliza agendamentos CONFIRMADOS cujo dia/horário já passaram.
  */
@@ -353,16 +433,12 @@ router.post("/", verificarToken, async (req, res) => {
     }
 
     // ✅ Regra de multa automática:
-    // - se o dia do agendamento JÁ PASSOU (dataYMD < hojeLocalYMD) => multa
-    // - se é HOJE e o horário já passou (horario < agoraLocalHM) => multa
     if (
       dataYMD < hojeLocalYMD ||
       (dataYMD === hojeLocalYMD && horario < agoraLocalHM)
     ) {
       const valorPadraoMulta = await valorMultaPadrao();
       multaPorHorarioPassado = valorPadraoMulta; // já vem como number
-      // se quiser arredondar pra 2 casas:
-      // multaPorHorarioPassado = Number(valorPadraoMulta.toFixed(2));
     }
 
     // Janela [00:00Z do dia local, 00:00Z do próximo dia local]
@@ -435,17 +511,45 @@ router.post("/", verificarToken, async (req, res) => {
       }
     }
 
-    // 2) Definir tipoSessao (regras 18:00+ = JOGO; antes = AULA se não vier do front)
-    const isNight = horario >= "18:00";
+    // 2) Definir/validar tipoSessao pelas janelas do esporte (nova regra)
+    //    - Se não houver professor, não forçamos tipoSessao (segue como hoje).
+    //    - Se houver professor: validar contra as janelas e
+    //      * auto-definir JOGO apenas quando NÃO estiver em AULA mas estiver em JOGO
+    //      * se ambos (AULA e JOGO) forem válidos, não auto-definir (deixa null se o front não mandar)
     let tipoSessaoFinal: TipoSessaoProfessor | null = null;
 
     if (professorIdFinal) {
-      if (isNight) {
-        tipoSessaoFinal = "JOGO";
-      } else {
-        // antes de 18h: se não vier nada, default AULA (compat compat com legado)
-        const t = (tipoSessaoBody as TipoSessaoProfessor | undefined) ?? "AULA";
+      const permitidos = await resolveSessoesPermitidas(esporteId, diaSemanaEnum, horario);
+      if (permitidos.length === 0) {
+        return res.status(422).json({
+          erro: "Neste horário não há sessão de AULA/JOGO permitida para este esporte.",
+        });
+      }
+
+      const { aula, jogo } = await resolveSessoesFlags(esporteId, diaSemanaEnum, horario);
+
+      if (tipoSessaoBody) {
+        const t = tipoSessaoBody as TipoSessaoProfessor;
+        if (!permitidos.includes(t)) {
+          return res.status(422).json({
+            erro: `Tipo de sessão inválido para o horário. Permitidos: ${permitidos.join(", ")}.`,
+          });
+        }
         tipoSessaoFinal = t;
+      } else {
+        if (!aula && jogo) {
+          // pós-limite de AULA -> auto JOGO
+          tipoSessaoFinal = "JOGO";
+        } else if (aula && !jogo) {
+          // só AULA válido -> pode auto-definir AULA
+          tipoSessaoFinal = "AULA";
+        } else if (aula && jogo) {
+          // ambos válidos -> deixa o front decidir (não auto-define)
+          tipoSessaoFinal = null;
+        } else {
+          // segurança: não deveria cair aqui (coberto por permitidos.length === 0)
+          return res.status(422).json({ erro: "Horário indisponível para sessões." });
+        }
       }
     }
 
@@ -475,8 +579,7 @@ router.post("/", verificarToken, async (req, res) => {
           return res.status(404).json({ erro: "Usuário apoiado não encontrado" });
         }
 
-        // ✅ NOVO: quem pode ser marcado como "apoiado"
-        // CLIENTE_APOIADO + perfis internos (admins/professores)
+        // ✅ Quem pode ser marcado como "apoiado"
         const tiposApoiadosPermitidos = [
           "CLIENTE_APOIADO",
           "ADMIN_MASTER",
@@ -606,7 +709,7 @@ router.get("/", verificarToken, async (req, res) => {
   const where: any = {};
   if (quadraId) where.quadraId = String(quadraId);
 
-  if (typeof data === "string" && /^\d{4}-\d{2}-\d2$/.test(data)) {
+  if (typeof data === "string" && /^\d{4}-\d{2}-\d{2}$/.test(data)) {
     const { inicio, fim } = getUtcDayRange(data);
     where.data = { gte: inicio, lt: fim };
   } else if (data) {
@@ -729,13 +832,12 @@ router.get("/me", verificarToken, async (req, res) => {
         professorNome: a.professor ? a.professor.nome : null,
         tipoSessao: a.tipoSessao ?? null,
         multa: a.multa ?? null,
-        multaAnulada: a.multaAnulada ?? false, // 👈 AQUI
+        multaAnulada: a.multaAnulada ?? false,
         // 🆕 APOIO
         isencaoApoiado: a.isencaoApoiado ?? false,
         apoiadoUsuario: a.apoiadoUsuario ? { id: a.apoiadoUsuario.id, nome: a.apoiadoUsuario.nome } : null,
       };
     });
-
 
     const permanentes = await prisma.agendamentoPermanente.findMany({
       where: {
@@ -1015,7 +1117,7 @@ router.get("/:id", verificarToken, async (req, res) => {
       professorId: agendamento.professorId ?? null,
       tipoSessao: agendamento.tipoSessao ?? null,
       multa: agendamento.multa ?? null,
-      multaAnulada: agendamento.multaAnulada ?? false, // 👈 AQUI
+      multaAnulada: agendamento.multaAnulada ?? false,
       // 🆕 APOIO
       isencaoApoiado: agendamento.isencaoApoiado ?? false,
       apoiadoUsuario: agendamento.apoiadoUsuario
@@ -1196,8 +1298,6 @@ router.post("/:id/aplicar-multa", verificarToken, async (req, res) => {
     // Valor padrão da multa (agora vindo da configuração)
     const valorPadraoMulta = await valorMultaPadrao();
     const valorMulta = valorPadraoMulta; // já é number
-    // se quiser arredondar:
-    // const valorMulta = Number(valorPadraoMulta.toFixed(2));
 
     const atualizado = await prisma.agendamento.update({
       where: { id },

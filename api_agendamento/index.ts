@@ -28,6 +28,7 @@ import routesBloqueios from "./routes/bloqueios";
 import routesUsuarios from "./routes/usuarios";
 import routesAudit from "./routes/audit";
 import routesProfessores from "./routes/professores";
+import routesConfigEsportesHorarios from "./routes/configEsportesHorarios";
 // 👇 NOVO: rota de deleções (pendências + desfazer)
 import routesDelecoes from "./routes/delecoes";
 // 👇 NOVO: próximas datas para permanente de churrasqueira
@@ -81,6 +82,8 @@ app.use("/usuariosAdmin", routesUsuariosAdmin);
 
 // 👇 NOVO: rotas de configurações (ex.: /configuracoes/multa)
 app.use("/configuracoes", routesConfiguracoes);
+
+app.use("/configEsportesHorarios", routesConfigEsportesHorarios);
 
 app.use("/bloqueios", routesBloqueios);
 app.use("/usuarios", routesUsuarios);
