@@ -6,17 +6,20 @@ import { useAuthStore } from "@/context/AuthStore";
 
 /** ====== CONSTS / TYPES ====== */
 const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
+const BASE_CFG = `${API_URL}/configEsportesHorarios/config/esporte-horarios`;
+
+// janelas válidas de hora cheia (07..23)
+const HHS = Array.from({ length: 17 }, (_, i) => String(7 + i).padStart(2, "0")); // ["07","08",...,"23"]
+const HH_TO_HHMM = (hh: string) => `${hh}:00`;
 
 type Regra = {
   id?: string;
   esporteId: string;
   esporteNome?: string | null;
-  // diaSemana existe no back, mas aqui SEMPRE será null (padrão para todos os dias)
-  diaSemana: null;
-  // no back existe AULA/JOGO, aqui SEMPRE "AULA"
-  tipoSessao: "AULA";
-  inicioHHMM: string; // "HH:mm"
-  fimHHMM: string;    // "HH:mm"
+  diaSemana: null;        // sempre padrão (todos os dias)
+  tipoSessao: "AULA";     // sempre AULA
+  inicioHHMM: string;     // "HH:mm"
+  fimHHMM: string;        // "HH:mm"
   ativo: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -37,6 +40,10 @@ function normalizeHHMM(v: string) {
 function cmpHHMM(a: string, b: string) {
   return a.localeCompare(b);
 }
+function hhOf(hhmm: string) {
+  // "07:00" -> "07"
+  return String(hhmm ?? "00:00").slice(0, 2);
+}
 
 /** ====== PAGE ====== */
 export default function ConfigHorariosAulaEsportePage() {
@@ -53,7 +60,7 @@ export default function ConfigHorariosAulaEsportePage() {
   const [regras, setRegras] = useState<Regra[]>([]);
   const [salvando, setSalvando] = useState(false);
 
-  // formulário: cria SEMPRE regra PADRÃO (todos os dias) e SEMPRE do tipo AULA
+  // formulário: sempre PADRÃO + AULA
   const [novo, setNovo] = useState<Regra>({
     esporteId: "",
     diaSemana: null,
@@ -87,12 +94,10 @@ export default function ConfigHorariosAulaEsportePage() {
   async function carregarRegras(id: string) {
     try {
       setLoading(true);
-      // Busca TODAS as configs e filtra aqui só AULA
-      const r = await axios.get(`${API_URL}/configEsportesHorarios/esporte-horarios/${id}`, {
-        withCredentials: true,
-      });
+      const r = await axios.get(`${BASE_CFG}/${id}`, { withCredentials: true });
       const items = (r.data || [])
         .filter((x: any) => String(x.tipoSessao).toUpperCase() === "AULA")
+        .filter((x: any) => x.diaSemana === null) // somente padrão
         .map((x: any) => ({
           id: x.id,
           esporteId: x.esporteId,
@@ -138,15 +143,13 @@ export default function ConfigHorariosAulaEsportePage() {
       setSalvando(true);
       const payload = {
         esporteId: novo.esporteId,
-        diaSemana: null,               // sempre PADRÃO
-        tipoSessao: "AULA",            // sempre AULA
+        diaSemana: null,        // padrão
+        tipoSessao: "AULA",     // AULA
         inicioHHMM: ini,
         fimHHMM: fim,
         ativo: novo.ativo,
       };
-      await axios.post(`${API_URL}/configEsportesHorarios/esporte-horarios`, payload, {
-        withCredentials: true,
-      });
+      await axios.post(`${BASE_CFG}`, payload, { withCredentials: true });
       await carregarRegras(novo.esporteId);
       setNovo((p) => ({ ...p, inicioHHMM: "07:00", fimHHMM: "19:00", ativo: true }));
     } catch (e: any) {
@@ -176,15 +179,13 @@ export default function ConfigHorariosAulaEsportePage() {
       setSalvando(true);
       const body = {
         esporteId: r.esporteId,
-        diaSemana: null,          // mantém PADRÃO
-        tipoSessao: "AULA",       // mantém AULA
+        diaSemana: null,     // mantém padrão
+        tipoSessao: "AULA",  // mantém AULA
         inicioHHMM: ini,
         fimHHMM: fim,
         ativo: r.ativo,
       };
-      await axios.put(`${API_URL}/configEsportesHorarios/esporte-horarios/${r.id}`, body, {
-        withCredentials: true,
-      });
+      await axios.put(`${BASE_CFG}/${r.id}`, body, { withCredentials: true });
       await carregarRegras(r.esporteId);
     } catch (e: any) {
       console.error(e);
@@ -201,9 +202,7 @@ export default function ConfigHorariosAulaEsportePage() {
     if (!confirm("Remover esta configuração?")) return;
     try {
       setSalvando(true);
-      await axios.delete(`${API_URL}/configEsportesHorarios/esporte-horarios/${r.id}`, {
-        withCredentials: true,
-      });
+      await axios.delete(`${BASE_CFG}/${r.id}`, { withCredentials: true });
       await carregarRegras(r.esporteId);
     } catch (e: any) {
       console.error(e);
@@ -215,10 +214,9 @@ export default function ConfigHorariosAulaEsportePage() {
     }
   }
 
-  // Apenas ordena por início
+  // Ordena por início
   const regrasOrdenadas: Regra[] = useMemo(
-    () =>
-      [...regras].sort((a, b) => a.inicioHHMM.localeCompare(b.inicioHHMM)),
+    () => [...regras].sort((a, b) => a.inicioHHMM.localeCompare(b.inicioHHMM)),
     [regras]
   );
 
@@ -239,8 +237,8 @@ export default function ConfigHorariosAulaEsportePage() {
 
       {/* Aviso sobre JOGO */}
       <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 p-3 rounded-lg text-sm">
-        <b>JOGO</b> fica liberado para todos os horários <b>07:00–23:00</b>.
-        Aqui você define apenas as janelas permitidas para <b>AULA</b>.
+        <b>JOGO</b> fica liberado para todos os horários <b>07:00–23:00</b>. Aqui você define apenas as janelas
+        permitidas para <b>AULA</b>.
       </div>
 
       {/* Selecionar esporte */}
@@ -256,7 +254,9 @@ export default function ConfigHorariosAulaEsportePage() {
             }}
           >
             {esportes.map((e) => (
-              <option value={e.id} key={e.id}>{e.nome}</option>
+              <option value={e.id} key={e.id}>
+                {e.nome}
+              </option>
             ))}
           </select>
         </div>
@@ -269,24 +269,32 @@ export default function ConfigHorariosAulaEsportePage() {
         <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
           <div className="sm:col-span-3">
             <label className="block text-xs mb-1">Início</label>
-            <input
-              type="time"
-              step={60}
+            <select
               className="w-full border rounded px-2 py-2"
-              value={novo.inicioHHMM}
-              onChange={(e) => onChangeNovo("inicioHHMM", e.target.value)}
-            />
+              value={hhOf(novo.inicioHHMM)}
+              onChange={(e) => onChangeNovo("inicioHHMM", HH_TO_HHMM(e.target.value))}
+            >
+              {HHS.map((h) => (
+                <option key={h} value={h}>
+                  {h}:00
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="sm:col-span-3">
             <label className="block text-xs mb-1">Fim</label>
-            <input
-              type="time"
-              step={60}
+            <select
               className="w-full border rounded px-2 py-2"
-              value={novo.fimHHMM}
-              onChange={(e) => onChangeNovo("fimHHMM", e.target.value)}
-            />
+              value={hhOf(novo.fimHHMM)}
+              onChange={(e) => onChangeNovo("fimHHMM", HH_TO_HHMM(e.target.value))}
+            >
+              {HHS.map((h) => (
+                <option key={h} value={h}>
+                  {h}:00
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="sm:col-span-3 flex items-end">
@@ -350,7 +358,7 @@ export default function ConfigHorariosAulaEsportePage() {
   );
 }
 
-/** ====== Row editável (sem coluna de Tipo e Dia) ====== */
+/** ====== Row editável (hora cheia) ====== */
 function EditableRow({
   regra,
   onChange,
@@ -390,22 +398,30 @@ function EditableRow({
   return (
     <tr className="border-t">
       <td className="py-2 pr-3">
-        <input
-          type="time"
-          step={60}
+        <select
           className="border rounded px-2 py-1"
-          value={local.inicioHHMM}
-          onChange={(e) => upd("inicioHHMM", e.target.value)}
-        />
+          value={hhOf(local.inicioHHMM)}
+          onChange={(e) => upd("inicioHHMM", HH_TO_HHMM(e.target.value))}
+        >
+          {HHS.map((h) => (
+            <option key={h} value={h}>
+              {h}:00
+            </option>
+          ))}
+        </select>
       </td>
       <td className="py-2 pr-3">
-        <input
-          type="time"
-          step={60}
+        <select
           className="border rounded px-2 py-1"
-          value={local.fimHHMM}
-          onChange={(e) => upd("fimHHMM", e.target.value)}
-        />
+          value={hhOf(local.fimHHMM)}
+          onChange={(e) => upd("fimHHMM", HH_TO_HHMM(e.target.value))}
+        >
+          {HHS.map((h) => (
+            <option key={h} value={h}>
+              {h}:00
+            </option>
+          ))}
+        </select>
       </td>
       <td className="py-2 pr-3">
         <input
