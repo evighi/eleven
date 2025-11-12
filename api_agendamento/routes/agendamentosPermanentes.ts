@@ -65,6 +65,10 @@ const DIA_IDX: Record<DiaSemana, number> = {
   DOMINGO: 0, SEGUNDA: 1, TERCA: 2, QUARTA: 3, QUINTA: 4, SEXTA: 5, SABADO: 6,
 };
 
+// Fallback simples se não houver tabela/regra por esporte:
+// AULA até 19:00, JOGO de 19:00 em diante
+const FALLBACK_AULA_FIM = "19:00";
+
 function cancellationWindowHours(tipo?: string): number | null {
   if (tipo === "ADMIN_MASTER" || tipo === "ADMIN_ATENDENTE") return null; // sem limite
   if (tipo === "ADMIN_PROFESSORES") return 2; // 2h antes
@@ -115,6 +119,61 @@ async function criarConvidadoComoUsuario(nomeConvidado: string) {
   return convidado;
 }
 
+/** ===================== Sessões permitidas (AULA/JOGO) ======================
+ * Prioriza regras por esporte/dia na tabela EsporteJanelaAula (se existir).
+ * Sem regras → fallback: AULA até 19:00, JOGO a partir de 19:00.
+ */
+async function sessoesPermitidas(
+  esporteId: string,
+  diaSemana: DiaSemana | null,
+  horario: string
+): Promise<Set<TipoSessaoProfessor>> {
+  // tenta ler regras (padrão + por dia)
+  // se sua tabela/relacionamento tiver outro nome, ajuste aqui:
+  let janelas: Array<{
+    tipoSessao: TipoSessaoProfessor;
+    inicioHHMM: string;
+    fimHHMM: string;
+    ativo: boolean;
+    diaSemana: DiaSemana | null;
+  }> = [];
+
+  try {
+    janelas = await prisma.esporteJanelaAula.findMany({
+      where: {
+        esporteId,
+        ativo: true,
+        OR: [{ diaSemana: null }, ...(diaSemana ? [{ diaSemana }] : [])],
+      },
+      select: { tipoSessao: true, inicioHHMM: true, fimHHMM: true, ativo: true, diaSemana: true },
+    });
+  } catch {
+    // se o modelo não existir ainda, cai no fallback elegante
+    janelas = [];
+  }
+
+  const allow = new Set<TipoSessaoProfessor>();
+
+  if (janelas.length > 0) {
+    // preferência: regras do dia específico sobre as "default"
+    const preferidas = janelas
+      .filter(j => j.diaSemana === diaSemana)
+      .concat(janelas.filter(j => j.diaSemana == null));
+
+    for (const j of preferidas) {
+      if (horario >= j.inicioHHMM && horario < j.fimHHMM) {
+        allow.add(j.tipoSessao);
+      }
+    }
+  } else {
+    // Fallback: AULA até 19:00; JOGO de 19:00 em diante
+    if (horario < FALLBACK_AULA_FIM) allow.add("AULA");
+    else allow.add("JOGO");
+  }
+
+  return allow;
+}
+
 /** ===================== Próxima data (local SP) ======================
  * Calcula a PRÓXIMA data "YYYY-MM-DD" do permanente em linha do tempo local,
  * pulando datas já cadastradas como exceção e respeitando dataInicio (se houver).
@@ -155,6 +214,31 @@ async function proximaDataPermanenteSemExcecao(p: {
 /** ===================== Middleware ====================== */
 // 🔒 todas as rotas daqui exigem login
 router.use(verificarToken);
+
+/** ===================== Utilitário para o front (opcional) ===================== 
+ * GET /agendamentos-permanentes/_sessoes-permitidas?esporteId=...&diaSemana=SEGUNDA&horario=18:30
+ */
+router.get("/_sessoes-permitidas", async (req, res) => {
+  const esporteId = String(req.query.esporteId || "");
+  const diaSemanaStr = String(req.query.diaSemana || "");
+  const horario = String(req.query.horario || "");
+
+  if (!esporteId || !horario || !diaSemanaStr) {
+    return res.status(400).json({ erro: "Informe esporteId, diaSemana e horario (HH:mm)." });
+  }
+  if (!(diaSemanaStr in DiaSemana)) {
+    return res.status(400).json({ erro: "diaSemana inválido." });
+  }
+  const diaSemana = diaSemanaStr as keyof typeof DiaSemana as DiaSemana;
+
+  try {
+    const allow = await sessoesPermitidas(esporteId, diaSemana, horario);
+    return res.json({ allow: Array.from(allow) });
+  } catch (e) {
+    console.error("erro _sessoes-permitidas:", e);
+    return res.status(500).json({ erro: "Falha ao verificar sessões permitidas." });
+  }
+});
 
 /** ===================== Rotas ====================== */
 // 🔄 Criar agendamento permanente
@@ -216,7 +300,7 @@ router.post("/", async (req, res) => {
       }
     }
 
-    // ================= NOVO: professor/tipoSessao/multa =================
+    // ================= NOVO: professor/tipoSessao com regra de horário =================
     // (1) professorId: explícito ou inferido se o dono for ADMIN_PROFESSORES
     let professorIdFinal: string | null = professorIdBody ?? null;
     if (!professorIdFinal) {
@@ -238,17 +322,28 @@ router.post("/", async (req, res) => {
       }
     }
 
-    // (2) tipoSessao: >= 18:00 força JOGO; antes default AULA se não vier
-    const isNight = horario >= "18:00";
+    // (2) tipoSessao permitido para esse esporte/dia/horário
+    const allow = await sessoesPermitidas(esporteId, diaSemana, horario);
+    if (allow.size === 0) {
+      return res.status(422).json({ erro: "Horário indisponível para este esporte." });
+    }
+
+    // (3) se enviou tipoSessao no body, ele precisa ser permitido
+    if (tipoSessaoBody && !allow.has(tipoSessaoBody as TipoSessaoProfessor)) {
+      return res.status(422).json({ erro: `Tipo de sessão '${tipoSessaoBody}' não permitido neste horário.` });
+    }
+
+    // (4) Derivação final: só definimos tipoSessao se houver professor
     let tipoSessaoFinal: TipoSessaoProfessor | null = null;
     if (professorIdFinal) {
-      if (isNight) {
-        tipoSessaoFinal = "JOGO";
+      if (allow.size === 1) {
+        // só uma possível (ex.: só JOGO após o limite)
+        tipoSessaoFinal = Array.from(allow)[0];
       } else {
+        // as duas são possíveis: usa o que veio; se não veio, default AULA
         tipoSessaoFinal = (tipoSessaoBody as TipoSessaoProfessor | undefined) ?? "AULA";
       }
     }
-
     // ====================================================================
 
     const novo = await prisma.agendamentoPermanente.create({
@@ -285,6 +380,7 @@ router.post("/", async (req, res) => {
           dataInicio: novo.dataInicio ?? null,
           professorId: professorIdFinal,
           tipoSessao: tipoSessaoFinal,
+          sessoesPermitidas: Array.from(allow),
         },
       });
     } catch (e) {
@@ -814,15 +910,6 @@ router.patch(
       }
       if (novoUsuarioId === perm.usuarioId) {
         return res.status(400).json({ erro: "Novo usuário é o mesmo do agendamento atual" });
-      }
-
-      // Valida novo usuário
-      const novoUsuario = await prisma.usuario.findUnique({
-        where: { id: novoUsuarioId },
-        select: { id: true, nome: true, email: true },
-      });
-      if (!novoUsuario) {
-        return res.status(404).json({ erro: "Novo usuário não encontrado" });
       }
 
       // Garante que não exista outro permanente ativo no mesmo slot
