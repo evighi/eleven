@@ -21,6 +21,13 @@ function localYMD(d: Date, tz = SP_TZ) {
   }).format(d);
 }
 
+// "HH:mm" no fuso de SP
+function localHM(d: Date, tz = SP_TZ) {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false,
+  }).format(d);
+}
+
 // Converte "YYYY-MM-DD" (dia local) para Date em 00:00Z (padrão de persistência)
 function toUtc00(isoYYYYMMDD: string) {
   return new Date(`${isoYYYYMMDD}T00:00:00Z`);
@@ -33,7 +40,7 @@ function toISODateUTC(d: Date) {
 
 // Retorna índice da semana (0..6) do DIA LOCAL informado (YMD) — estável
 function localWeekdayIndexOfYMD(ymd: string): number {
-  // Meio-dia em SP (-03:00) evita bordas
+  // Meio-dia em SP (-03:00) evita bordas/rollover
   return new Date(`${ymd}T12:00:00-03:00`).getUTCDay();
 }
 
@@ -54,10 +61,13 @@ function addMonthsLocalYMD(ymd: string, months: number): string {
 // Limites (início/fim) de um DIA LOCAL codificados em UTC
 function storedUtcBoundaryForLocalYMD(ymd: string) {
   const inicio = toUtc00(ymd);
-  // fim = próximo dia local em UTC00
-  const amanhaYMD = addDaysLocalYMD(ymd, 1);
-  const fim = toUtc00(amanhaYMD);
+  const fim = toUtc00(addDaysLocalYMD(ymd, 1)); // próximo dia local em UTC00
   return { inicio, fim };
+}
+
+// 👉 helper p/ checar se um horário "HH:MM" está em [inicio, fim)
+function horarioDentroIntervalo(h: string, ini: string, fim: string) {
+  return h >= ini && h < fim;
 }
 
 /** ===================== RBAC/REGRAS ====================== */
@@ -119,58 +129,64 @@ async function criarConvidadoComoUsuario(nomeConvidado: string) {
   return convidado;
 }
 
-/** ===================== Sessões permitidas (AULA/JOGO) ======================
- * Prioriza regras por esporte/dia na tabela EsporteJanelaAula (se existir).
- * Sem regras → fallback: AULA até 19:00, JOGO a partir de 19:00.
- */
-async function sessoesPermitidas(
+/* ============================================================================
+   Janelas por Esporte (AULA/JOGO) — MESMA LÓGICA DO AGENDAMENTO COMUM
+   - Regras padrão (diaSemana = null) podem ser sobrescritas por regras do dia específico
+   ==========================================================================*/
+
+// Busca janelas do dia específico e as padrão (diaSemana = null). Dia específico sobrescreve padrão.
+async function getJanelasForEsporte(
   esporteId: string,
-  diaSemana: DiaSemana | null,
-  horario: string
-): Promise<Set<TipoSessaoProfessor>> {
-  // tenta ler regras (padrão + por dia)
-  // se sua tabela/relacionamento tiver outro nome, ajuste aqui:
-  let janelas: Array<{
-    tipoSessao: TipoSessaoProfessor;
-    inicioHHMM: string;
-    fimHHMM: string;
-    ativo: boolean;
-    diaSemana: DiaSemana | null;
-  }> = [];
+  diaSemana: DiaSemana | null
+) {
+  let doDia: Array<{ tipoSessao: TipoSessaoProfessor; inicioHHMM: string; fimHHMM: string; ativo: boolean }> = [];
+  let padrao: Array<{ tipoSessao: TipoSessaoProfessor; inicioHHMM: string; fimHHMM: string; ativo: boolean }> = [];
 
   try {
-    janelas = await prisma.esporteJanelaAula.findMany({
-      where: {
-        esporteId,
-        ativo: true,
-        OR: [{ diaSemana: null }, ...(diaSemana ? [{ diaSemana }] : [])],
-      },
-      select: { tipoSessao: true, inicioHHMM: true, fimHHMM: true, ativo: true, diaSemana: true },
-    });
+    [doDia, padrao] = await Promise.all([
+      prisma.esporteJanelaAula.findMany({
+        where: { esporteId, diaSemana },
+        select: { tipoSessao: true, inicioHHMM: true, fimHHMM: true, ativo: true },
+      }),
+      prisma.esporteJanelaAula.findMany({
+        where: { esporteId, diaSemana: null },
+        select: { tipoSessao: true, inicioHHMM: true, fimHHMM: true, ativo: true },
+      }),
+    ]);
   } catch {
-    // se o modelo não existir ainda, cai no fallback elegante
-    janelas = [];
+    // se o modelo ainda não existir, devolvemos arrays vazios → cai no fallback
+    doDia = [];
+    padrao = [];
   }
 
+  const byTipo = new Map<TipoSessaoProfessor, { inicioHHMM: string; fimHHMM: string }>();
+  for (const r of padrao.filter(r => r.ativo)) {
+    byTipo.set(r.tipoSessao as TipoSessaoProfessor, { inicioHHMM: r.inicioHHMM, fimHHMM: r.fimHHMM });
+  }
+  for (const r of doDia.filter(r => r.ativo)) {
+    byTipo.set(r.tipoSessao as TipoSessaoProfessor, { inicioHHMM: r.inicioHHMM, fimHHMM: r.fimHHMM });
+  }
+  return byTipo;
+}
+
+// Retorna lista/set de tipos permitidos naquele hh:mm
+async function resolveSessoesPermitidas(
+  esporteId: string,
+  diaSemana: DiaSemana,
+  horario: string
+): Promise<Set<TipoSessaoProfessor>> {
+  const j = await getJanelasForEsporte(esporteId, diaSemana);
   const allow = new Set<TipoSessaoProfessor>();
 
-  if (janelas.length > 0) {
-    // preferência: regras do dia específico sobre as "default"
-    const preferidas = janelas
-      .filter(j => j.diaSemana === diaSemana)
-      .concat(janelas.filter(j => j.diaSemana == null));
-
-    for (const j of preferidas) {
-      if (horario >= j.inicioHHMM && horario < j.fimHHMM) {
-        allow.add(j.tipoSessao);
-      }
+  if (j.size > 0) {
+    for (const [tipo, win] of j.entries()) {
+      if (horarioDentroIntervalo(horario, win.inicioHHMM, win.fimHHMM)) allow.add(tipo);
     }
   } else {
     // Fallback: AULA até 19:00; JOGO de 19:00 em diante
     if (horario < FALLBACK_AULA_FIM) allow.add("AULA");
     else allow.add("JOGO");
   }
-
   return allow;
 }
 
@@ -215,7 +231,7 @@ async function proximaDataPermanenteSemExcecao(p: {
 // 🔒 todas as rotas daqui exigem login
 router.use(verificarToken);
 
-/** ===================== Utilitário para o front (opcional) ===================== 
+/** ===================== Utilitário para o front (igual ao comum) ===================== 
  * GET /agendamentos-permanentes/_sessoes-permitidas?esporteId=...&diaSemana=SEGUNDA&horario=18:30
  */
 router.get("/_sessoes-permitidas", async (req, res) => {
@@ -232,7 +248,7 @@ router.get("/_sessoes-permitidas", async (req, res) => {
   const diaSemana = diaSemanaStr as keyof typeof DiaSemana as DiaSemana;
 
   try {
-    const allow = await sessoesPermitidas(esporteId, diaSemana, horario);
+    const allow = await resolveSessoesPermitidas(esporteId, diaSemana, horario);
     return res.json({ allow: Array.from(allow) });
   } catch (e) {
     console.error("erro _sessoes-permitidas:", e);
@@ -300,7 +316,7 @@ router.post("/", async (req, res) => {
       }
     }
 
-    // ================= NOVO: professor/tipoSessao com regra de horário =================
+    // ================= professor/tipoSessao com regra de horário (mesma do comum) ================
     // (1) professorId: explícito ou inferido se o dono for ADMIN_PROFESSORES
     let professorIdFinal: string | null = professorIdBody ?? null;
     if (!professorIdFinal) {
@@ -323,7 +339,7 @@ router.post("/", async (req, res) => {
     }
 
     // (2) tipoSessao permitido para esse esporte/dia/horário
-    const allow = await sessoesPermitidas(esporteId, diaSemana, horario);
+    const allow = await resolveSessoesPermitidas(esporteId, diaSemana, horario);
     if (allow.size === 0) {
       return res.status(422).json({ erro: "Horário indisponível para este esporte." });
     }
@@ -337,14 +353,14 @@ router.post("/", async (req, res) => {
     let tipoSessaoFinal: TipoSessaoProfessor | null = null;
     if (professorIdFinal) {
       if (allow.size === 1) {
-        // só uma possível (ex.: só JOGO após o limite)
+        // só uma possível (ex.: apenas JOGO pós-limite de AULA)
         tipoSessaoFinal = Array.from(allow)[0];
       } else {
         // as duas são possíveis: usa o que veio; se não veio, default AULA
         tipoSessaoFinal = (tipoSessaoBody as TipoSessaoProfessor | undefined) ?? "AULA";
       }
     }
-    // ====================================================================
+    // =============================================================================================
 
     const novo = await prisma.agendamentoPermanente.create({
       data: {

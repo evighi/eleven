@@ -124,6 +124,13 @@ function addDaysLocalYMD(ymd: string, days: number): string {
   return localYMD(d);
 }
 
+// ===== Janela padrão de JOGO (sempre permitido) =====
+const JOGO_DEFAULT_INICIO = "07:00";
+const JOGO_DEFAULT_FIM_EXCLUSIVE = "23:59"; // [ini, fim)
+function jogoDefaultPermitido(hhmm: string) {
+  return horarioDentroIntervalo(hhmm, JOGO_DEFAULT_INICIO, JOGO_DEFAULT_FIM_EXCLUSIVE);
+}
+
 const prisma = new PrismaClient();
 const router = Router();
 
@@ -259,6 +266,7 @@ async function getJanelasForEsporte(
     }),
   ]);
 
+  // regra: registros do dia específico sobrescrevem os padrão por tipo
   const byTipo = new Map<TipoSessaoProfessor, { inicioHHMM: string; fimHHMM: string }>();
   for (const r of padrao.filter(r => r.ativo)) {
     byTipo.set(r.tipoSessao as TipoSessaoProfessor, { inicioHHMM: r.inicioHHMM, fimHHMM: r.fimHHMM });
@@ -269,7 +277,12 @@ async function getJanelasForEsporte(
   return byTipo;
 }
 
-// Retorna lista de tipos permitidos naquele hh:mm
+/**
+ * Retorna a lista de tipos permitidos naquele HH:mm.
+ * Nova regra:
+ *  - JOGO é SEMPRE permitido entre 07:00–23:59 (padrão), independentemente de configuração.
+ *  - AULA só é permitido se o horário cair na janela configurada (dia-específico ou padrão).
+ */
 async function resolveSessoesPermitidas(
   esporteId: string,
   diaSemana: DiaSemana,
@@ -277,23 +290,48 @@ async function resolveSessoesPermitidas(
 ): Promise<TipoSessaoProfessor[]> {
   const j = await getJanelasForEsporte(esporteId, diaSemana);
   const out: TipoSessaoProfessor[] = [];
-  for (const [tipo, win] of j.entries()) {
-    if (horarioDentroIntervalo(horario, win.inicioHHMM, win.fimHHMM)) out.push(tipo);
+
+  // AULA conforme configuração
+  const aulaJ = j.get("AULA" as TipoSessaoProfessor);
+  if (aulaJ && horarioDentroIntervalo(horario, aulaJ.inicioHHMM, aulaJ.fimHHMM)) {
+    out.push("AULA");
   }
+
+  // JOGO padrão 07:00–23:59 SEMPRE
+  if (jogoDefaultPermitido(horario)) {
+    out.push("JOGO");
+  } else {
+    // (opcional) se houver configuração de JOGO fora do padrão, também aceitar
+    const jogoJ = j.get("JOGO" as TipoSessaoProfessor);
+    if (jogoJ && horarioDentroIntervalo(horario, jogoJ.inicioHHMM, jogoJ.fimHHMM)) {
+      out.push("JOGO");
+    }
+  }
+
   return out;
 }
 
-// Flags separadas para ajudar na regra de auto-definição (só JOGO pós-limite de AULA)
+/**
+ * Flags separadas para lógica de auto-definição.
+ * - aula: true se cair em janela de AULA.
+ * - jogo: true se for 07–23:59 (ou, opcionalmente, se houver janela específica).
+ */
 async function resolveSessoesFlags(
   esporteId: string,
   diaSemana: DiaSemana,
   horario: string
 ): Promise<{ aula: boolean; jogo: boolean }> {
   const j = await getJanelasForEsporte(esporteId, diaSemana);
+
   const aulaJ = j.get("AULA" as TipoSessaoProfessor);
-  const jogoJ = j.get("JOGO" as TipoSessaoProfessor);
   const aula = aulaJ ? horarioDentroIntervalo(horario, aulaJ.inicioHHMM, aulaJ.fimHHMM) : false;
-  const jogo = jogoJ ? horarioDentroIntervalo(horario, jogoJ.inicioHHMM, jogoJ.fimHHMM) : false;
+
+  let jogo = jogoDefaultPermitido(horario);
+  if (!jogo) {
+    const jogoJ = j.get("JOGO" as TipoSessaoProfessor);
+    jogo = jogoJ ? horarioDentroIntervalo(horario, jogoJ.inicioHHMM, jogoJ.fimHHMM) : false;
+  }
+
   return { aula, jogo };
 }
 
@@ -522,7 +560,7 @@ router.post("/", verificarToken, async (req, res) => {
       const permitidos = await resolveSessoesPermitidas(esporteId, diaSemanaEnum, horario);
       if (permitidos.length === 0) {
         return res.status(422).json({
-          erro: "Neste horário não há sessão de AULA/JOGO permitida para este esporte.",
+          erro: "Horário não permitido: AULA apenas nas janelas configuradas; JOGO permitido entre 07:00 e 23:00.",
         });
       }
 
@@ -1091,11 +1129,11 @@ router.get("/:id", verificarToken, async (req, res) => {
       horario: agendamento.horario,
       usuario: agendamento.usuario
         ? {
-          id: agendamento.usuario.id,
-          nome: agendamento.usuario.nome,
-          email: sanitizeEmail(agendamento.usuario.email),
-          celular: sanitizePhone(agendamento.usuario.celular),
-        }
+            id: agendamento.usuario.id,
+            nome: agendamento.usuario.nome,
+            email: sanitizeEmail(agendamento.usuario.email),
+            celular: sanitizePhone(agendamento.usuario.celular),
+          }
         : null,
       usuarioId: agendamento.usuario?.id,
       esporte: agendamento.esporte?.nome,
@@ -1109,10 +1147,10 @@ router.get("/:id", verificarToken, async (req, res) => {
       // 🆕 extras
       professor: agendamento.professor
         ? {
-          id: agendamento.professor.id,
-          nome: agendamento.professor.nome,
-          email: sanitizeEmail(agendamento.professor.email),
-        }
+            id: agendamento.professor.id,
+            nome: agendamento.professor.nome,
+            email: sanitizeEmail(agendamento.professor.email),
+          }
         : null,
       professorId: agendamento.professorId ?? null,
       tipoSessao: agendamento.tipoSessao ?? null,
@@ -1122,11 +1160,11 @@ router.get("/:id", verificarToken, async (req, res) => {
       isencaoApoiado: agendamento.isencaoApoiado ?? false,
       apoiadoUsuario: agendamento.apoiadoUsuario
         ? {
-          id: agendamento.apoiadoUsuario.id,
-          nome: agendamento.apoiadoUsuario.nome,
-          email: sanitizeEmail(agendamento.apoiadoUsuario.email),
-          celular: sanitizePhone(agendamento.apoiadoUsuario.celular),
-        }
+            id: agendamento.apoiadoUsuario.id,
+            nome: agendamento.apoiadoUsuario.nome,
+            email: sanitizeEmail(agendamento.apoiadoUsuario.email),
+            celular: sanitizePhone(agendamento.apoiadoUsuario.celular),
+          }
         : null,
     });
   } catch (err) {
@@ -1743,10 +1781,10 @@ router.patch("/:id/transferir", verificarToken, async (req, res) => {
         horario: novoAgendamento.horario,
         usuario: novoAgendamento.usuario
           ? {
-            id: novoAgendamento.usuario.id,
-            nome: novoAgendamento.usuario.nome,
-            email: isAdmin ? novoAgendamento.usuario.email : undefined,
-          }
+              id: novoAgendamento.usuario.id,
+              nome: novoAgendamento.usuario.nome,
+              email: isAdmin ? novoAgendamento.usuario.email : undefined,
+            }
           : null,
         jogadores: novoAgendamento.jogadores.map((j) => ({
           id: j.id,
@@ -1755,10 +1793,10 @@ router.patch("/:id/transferir", verificarToken, async (req, res) => {
         })),
         quadra: novoAgendamento.quadra
           ? {
-            id: novoAgendamento.quadra.id,
-            nome: novoAgendamento.quadra.nome,
-            numero: novoAgendamento.quadra.numero,
-          }
+              id: novoAgendamento.quadra.id,
+              nome: novoAgendamento.quadra.nome,
+              numero: novoAgendamento.quadra.numero,
+            }
           : null,
       },
     });
@@ -1805,9 +1843,9 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
 
     const usuariosValidos = jogadoresIds.length
       ? await prisma.usuario.findMany({
-        where: { id: { in: jogadoresIds } },
-        select: { id: true },
-      })
+          where: { id: { in: jogadoresIds } },
+          select: { id: true },
+        })
       : [];
 
     if (usuariosValidos.length !== jogadoresIds.length) {
@@ -1871,10 +1909,10 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
       status: atualizado.status,
       usuario: atualizado.usuario
         ? {
-          id: atualizado.usuario.id,
-          nome: atualizado.usuario.nome,
-          email: isAdmin ? atualizado.usuario.email : undefined,
-        }
+            id: atualizado.usuario.id,
+            nome: atualizado.usuario.nome,
+            email: isAdmin ? atualizado.usuario.email : undefined,
+          }
         : null,
       jogadores: atualizado.jogadores.map((j) => ({
         id: j.id,
