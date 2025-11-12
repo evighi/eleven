@@ -7,18 +7,16 @@ import { useAuthStore } from "@/context/AuthStore";
 /** ====== CONSTS / TYPES ====== */
 const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
 
-type Dia =
-  | "DOMINGO" | "SEGUNDA" | "TERCA" | "QUARTA" | "QUINTA" | "SEXTA" | "SABADO";
-type TipoSessao = "AULA" | "JOGO";
-
 type Regra = {
   id?: string;
   esporteId: string;
   esporteNome?: string | null;
-  diaSemana: Dia | null;           // null = PADRÃO
-  tipoSessao: TipoSessao;
-  inicioHHMM: string;              // "HH:mm"
-  fimHHMM: string;                 // "HH:mm"
+  // diaSemana existe no back, mas aqui SEMPRE será null (padrão para todos os dias)
+  diaSemana: null;
+  // no back existe AULA/JOGO, aqui SEMPRE "AULA"
+  tipoSessao: "AULA";
+  inicioHHMM: string; // "HH:mm"
+  fimHHMM: string;    // "HH:mm"
   ativo: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -27,10 +25,6 @@ type Regra = {
 type Esporte = { id: string; nome: string };
 
 /** ====== HELPERS ====== */
-const DIAS_UI: (Dia | "PADRAO")[] = [
-  "PADRAO", "DOMINGO","SEGUNDA","TERCA","QUARTA","QUINTA","SEXTA","SABADO"
-];
-
 function isHHMM(v: string) {
   return /^\d{2}:\d{2}$/.test(v);
 }
@@ -45,7 +39,7 @@ function cmpHHMM(a: string, b: string) {
 }
 
 /** ====== PAGE ====== */
-export default function ConfigHorariosEsportesPage() {
+export default function ConfigHorariosAulaEsportePage() {
   const { usuario } = useAuthStore();
   const isAdmin =
     !!usuario &&
@@ -59,12 +53,12 @@ export default function ConfigHorariosEsportesPage() {
   const [regras, setRegras] = useState<Regra[]>([]);
   const [salvando, setSalvando] = useState(false);
 
-  // estado do formulário de criação rápida
+  // formulário: cria SEMPRE regra PADRÃO (todos os dias) e SEMPRE do tipo AULA
   const [novo, setNovo] = useState<Regra>({
     esporteId: "",
-    diaSemana: null,         // PADRÃO por default
+    diaSemana: null,
     tipoSessao: "AULA",
-    inicioHHMM: "06:00",
+    inicioHHMM: "07:00",
     fimHHMM: "19:00",
     ativo: true,
   });
@@ -72,7 +66,6 @@ export default function ConfigHorariosEsportesPage() {
   useEffect(() => {
     (async () => {
       try {
-        // lista esportes
         const r = await axios.get(`${API_URL}/esportes`, { withCredentials: true });
         setEsportes(r.data || []);
         if (r.data?.[0]?.id) {
@@ -88,28 +81,30 @@ export default function ConfigHorariosEsportesPage() {
   }, []);
 
   useEffect(() => {
-    if (!esporteId) return;
-    carregarRegras(esporteId);
+    if (esporteId) carregarRegras(esporteId);
   }, [esporteId]);
 
   async function carregarRegras(id: string) {
     try {
       setLoading(true);
-      const r = await axios.get(`${API_URL}/config/esporte-horarios/${id}`, {
+      // Busca TODAS as configs e filtra aqui só AULA
+      const r = await axios.get(`${API_URL}/configEsportesHorarios/esporte-horarios/${id}`, {
         withCredentials: true,
       });
-      const items: Regra[] = (r.data || []).map((x: any) => ({
-        id: x.id,
-        esporteId: x.esporteId,
-        esporteNome: x.esporteNome ?? null,
-        diaSemana: x.diaSemana,
-        tipoSessao: x.tipoSessao,
-        inicioHHMM: x.inicioHHMM,
-        fimHHMM: x.fimHHMM,
-        ativo: !!x.ativo,
-        createdAt: x.createdAt,
-        updatedAt: x.updatedAt,
-      }));
+      const items = (r.data || [])
+        .filter((x: any) => String(x.tipoSessao).toUpperCase() === "AULA")
+        .map((x: any) => ({
+          id: x.id,
+          esporteId: x.esporteId,
+          esporteNome: x.esporteNome ?? null,
+          diaSemana: null as null,
+          tipoSessao: "AULA" as const,
+          inicioHHMM: x.inicioHHMM,
+          fimHHMM: x.fimHHMM,
+          ativo: !!x.ativo,
+          createdAt: x.createdAt,
+          updatedAt: x.updatedAt,
+        })) as Regra[];
       setRegras(items);
     } catch (e) {
       console.error(e);
@@ -143,18 +138,17 @@ export default function ConfigHorariosEsportesPage() {
       setSalvando(true);
       const payload = {
         esporteId: novo.esporteId,
-        diaSemana: novo.diaSemana,          // null = padrão (o back entende)
-        tipoSessao: novo.tipoSessao,
+        diaSemana: null,               // sempre PADRÃO
+        tipoSessao: "AULA",            // sempre AULA
         inicioHHMM: ini,
         fimHHMM: fim,
         ativo: novo.ativo,
       };
-      await axios.post(`${API_URL}/config/esporte-horarios`, payload, {
+      await axios.post(`${API_URL}/configEsportesHorarios/esporte-horarios`, payload, {
         withCredentials: true,
       });
       await carregarRegras(novo.esporteId);
-      // reseta o formulário mantendo esporte e dia
-      setNovo((p) => ({ ...p, inicioHHMM: "06:00", fimHHMM: "19:00", tipoSessao: "AULA", ativo: true }));
+      setNovo((p) => ({ ...p, inicioHHMM: "07:00", fimHHMM: "19:00", ativo: true }));
     } catch (e: any) {
       console.error(e);
       const msg =
@@ -180,15 +174,15 @@ export default function ConfigHorariosEsportesPage() {
 
     try {
       setSalvando(true);
-      const body: any = {
+      const body = {
         esporteId: r.esporteId,
-        diaSemana: r.diaSemana,     // pode ser null (padrão)
-        tipoSessao: r.tipoSessao,
+        diaSemana: null,          // mantém PADRÃO
+        tipoSessao: "AULA",       // mantém AULA
         inicioHHMM: ini,
         fimHHMM: fim,
         ativo: r.ativo,
       };
-      await axios.put(`${API_URL}/config/esporte-horarios/${r.id}`, body, {
+      await axios.put(`${API_URL}/configEsportesHorarios/esporte-horarios/${r.id}`, body, {
         withCredentials: true,
       });
       await carregarRegras(r.esporteId);
@@ -207,7 +201,7 @@ export default function ConfigHorariosEsportesPage() {
     if (!confirm("Remover esta configuração?")) return;
     try {
       setSalvando(true);
-      await axios.delete(`${API_URL}/config/esporte-horarios/${r.id}`, {
+      await axios.delete(`${API_URL}/configEsportesHorarios/esporte-horarios/${r.id}`, {
         withCredentials: true,
       });
       await carregarRegras(r.esporteId);
@@ -221,37 +215,32 @@ export default function ConfigHorariosEsportesPage() {
     }
   }
 
-  const regrasAgrupadas = useMemo(() => {
-    const map = new Map<(Dia | "PADRAO"), Regra[]>();
-    for (const key of DIAS_UI) map.set(key, []);
-    for (const r of regras) {
-      const k = (r.diaSemana ?? "PADRAO") as Dia | "PADRAO";
-      map.get(k)!.push(r);
-    }
-    // ordena por tipo (AULA/JOGO) e início
-    for (const [k, arr] of map) {
-      arr.sort((a, b) => {
-        if (a.tipoSessao !== b.tipoSessao) return a.tipoSessao.localeCompare(b.tipoSessao);
-        return a.inicioHHMM.localeCompare(b.inicioHHMM);
-      });
-      map.set(k, arr);
-    }
-    return map;
-  }, [regras]);
+  // Apenas ordena por início
+  const regrasOrdenadas: Regra[] = useMemo(
+    () =>
+      [...regras].sort((a, b) => a.inicioHHMM.localeCompare(b.inicioHHMM)),
+    [regras]
+  );
 
   if (!isAdmin) {
     return (
       <div className="p-6">
-        <h1 className="text-xl font-semibold">Configurar horários por esporte</h1>
+        <h1 className="text-xl font-semibold">Configurar horários de AULA</h1>
         <p className="text-red-600 mt-2">Acesso permitido apenas para administradores.</p>
       </div>
     );
   }
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6">
+    <div className="p-6 max-w-4xl mx-auto space-y-6">
       <div className="flex items-center gap-3">
-        <h1 className="text-2xl font-semibold">Configurar horários de AULA/JOGO</h1>
+        <h1 className="text-2xl font-semibold">Configurar horários de AULA</h1>
+      </div>
+
+      {/* Aviso sobre JOGO */}
+      <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 p-3 rounded-lg text-sm">
+        <b>JOGO</b> fica liberado para todos os horários <b>07:00–23:00</b>.
+        Aqui você define apenas as janelas permitidas para <b>AULA</b>.
       </div>
 
       {/* Selecionar esporte */}
@@ -274,38 +263,11 @@ export default function ConfigHorariosEsportesPage() {
         {loading && <span className="text-sm text-gray-500">Carregando…</span>}
       </div>
 
-      {/* Criar nova regra */}
+      {/* Criar nova regra (PADRÃO + AULA) */}
       <div className="bg-white rounded-xl p-4 shadow">
-        <h2 className="font-medium mb-3">Nova regra</h2>
+        <h2 className="font-medium mb-3">Nova janela de AULA (todos os dias)</h2>
         <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
           <div className="sm:col-span-3">
-            <label className="block text-xs mb-1">Dia</label>
-            <select
-              className="w-full border rounded px-2 py-2"
-              value={novo.diaSemana ?? "PADRAO"}
-              onChange={(e) =>
-                onChangeNovo("diaSemana", e.target.value === "PADRAO" ? null : (e.target.value as Dia))
-              }
-            >
-              {DIAS_UI.map((d) => (
-                <option key={d} value={d}>{d === "PADRAO" ? "PADRÃO (todos os dias)" : d}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="sm:col-span-2">
-            <label className="block text-xs mb-1">Tipo</label>
-            <select
-              className="w-full border rounded px-2 py-2"
-              value={novo.tipoSessao}
-              onChange={(e) => onChangeNovo("tipoSessao", e.target.value as TipoSessao)}
-            >
-              <option value="AULA">AULA</option>
-              <option value="JOGO">JOGO</option>
-            </select>
-          </div>
-
-          <div className="sm:col-span-2">
             <label className="block text-xs mb-1">Início</label>
             <input
               type="time"
@@ -316,7 +278,7 @@ export default function ConfigHorariosEsportesPage() {
             />
           </div>
 
-          <div className="sm:col-span-2">
+          <div className="sm:col-span-3">
             <label className="block text-xs mb-1">Fim</label>
             <input
               type="time"
@@ -327,7 +289,7 @@ export default function ConfigHorariosEsportesPage() {
             />
           </div>
 
-          <div className="sm:col-span-2 flex items-end gap-2">
+          <div className="sm:col-span-3 flex items-end">
             <label className="inline-flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -338,7 +300,7 @@ export default function ConfigHorariosEsportesPage() {
             </label>
           </div>
 
-          <div className="sm:col-span-1 flex items-end">
+          <div className="sm:col-span-3 flex items-end">
             <button
               onClick={criar}
               disabled={salvando || !esporteId}
@@ -350,64 +312,45 @@ export default function ConfigHorariosEsportesPage() {
         </div>
       </div>
 
-      {/* Lista/edição das regras */}
+      {/* Lista / edição */}
       <div className="bg-white rounded-xl p-4 shadow">
-        <h2 className="font-medium mb-3">Regras do esporte</h2>
+        <h2 className="font-medium mb-3">Janelas de AULA (todos os dias)</h2>
 
-        {DIAS_UI.map((dKey) => {
-          const group = regrasAgrupadas.get(dKey) || [];
-          if (!group.length) return null;
-
-          return (
-            <div key={dKey} className="mb-6">
-              <div className="flex items-center gap-3 mb-2">
-                <h3 className="text-sm font-semibold text-gray-800">
-                  {dKey === "PADRAO" ? "PADRÃO (aplica a todos os dias)" : dKey}
-                </h3>
-                <div className="flex-1 border-t border-gray-200" />
-              </div>
-
-              <div className="overflow-auto">
-                <table className="min-w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-gray-600">
-                      <th className="py-2 pr-3">Tipo</th>
-                      <th className="py-2 pr-3">Início</th>
-                      <th className="py-2 pr-3">Fim</th>
-                      <th className="py-2 pr-3">Ativo</th>
-                      <th className="py-2 pr-3">Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {group.map((r) => (
-                      <EditableRow
-                        key={r.id}
-                        regra={r}
-                        onChange={(reg) =>
-                          setRegras((prev) =>
-                            prev.map((x) => (x.id === reg.id ? reg : x))
-                          )
-                        }
-                        onSave={salvarEdicao}
-                        onDelete={remover}
-                      />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          );
-        })}
-
-        {!regras.length && (
-          <p className="text-sm text-gray-500">Nenhuma regra configurada para este esporte.</p>
+        {regrasOrdenadas.length > 0 ? (
+          <div className="overflow-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-left text-gray-600">
+                  <th className="py-2 pr-3">Início</th>
+                  <th className="py-2 pr-3">Fim</th>
+                  <th className="py-2 pr-3">Ativo</th>
+                  <th className="py-2 pr-3">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {regrasOrdenadas.map((r) => (
+                  <EditableRow
+                    key={r.id}
+                    regra={r}
+                    onChange={(reg) =>
+                      setRegras((prev) => prev.map((x) => (x.id === reg.id ? reg : x)))
+                    }
+                    onSave={salvarEdicao}
+                    onDelete={remover}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500">Nenhuma janela de AULA configurada para este esporte.</p>
         )}
       </div>
     </div>
   );
 }
 
-/** ====== Row editável ====== */
+/** ====== Row editável (sem coluna de Tipo e Dia) ====== */
 function EditableRow({
   regra,
   onChange,
@@ -426,7 +369,7 @@ function EditableRow({
   useEffect(() => {
     setLocal(regra);
     setDirty(false);
-  }, [regra.id]); // troca de item reseta estado
+  }, [regra.id]);
 
   function upd<K extends keyof Regra>(k: K, v: Regra[K]) {
     setLocal((p) => ({ ...p, [k]: v }));
@@ -446,16 +389,6 @@ function EditableRow({
 
   return (
     <tr className="border-t">
-      <td className="py-2 pr-3">
-        <select
-          className="border rounded px-2 py-1"
-          value={local.tipoSessao}
-          onChange={(e) => upd("tipoSessao", e.target.value as TipoSessao)}
-        >
-          <option value="AULA">AULA</option>
-          <option value="JOGO">JOGO</option>
-        </select>
-      </td>
       <td className="py-2 pr-3">
         <input
           type="time"
