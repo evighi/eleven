@@ -21,6 +21,8 @@ type DisponibilidadeQuadra = Quadra & { disponivel: boolean }
 
 type Feedback = { kind: 'success' | 'error' | 'info'; text: string }
 
+type TipoSessao = 'AULA' | 'JOGO'
+
 /* ===== Helpers mínimos ===== */
 const norm = (s?: string | null) => String(s || '').trim().toUpperCase()
 
@@ -66,18 +68,10 @@ export default function AgendamentoComum() {
   // --- guardar o parâmetro de esporte (pode vir id OU nome) para mapear quando esportes carregarem
   const [esporteParam, setEsporteParam] = useState<string>('')
 
-  // ✅ NOVO: Aula x Jogo
-  const [tipoSessao, setTipoSessao] = useState<'AULA' | 'JOGO'>('AULA')
-  const isNoite = useMemo(() => {
-    if (!horario) return false
-    const hh = parseInt(horario.slice(0, 2), 10)
-    return hh >= 18
-  }, [horario])
-
-  // ✅ Se for 18h+ força JOGO automaticamente
-  useEffect(() => {
-    if (isNoite) setTipoSessao('JOGO')
-  }, [isNoite])
+  // ✅ Aula x Jogo (agora guiado pelo backend)
+  const [tipoSessao, setTipoSessao] = useState<TipoSessao>('AULA')
+  const [permitidos, setPermitidos] = useState<TipoSessao[]>([])
+  const [loadingPermitidos, setLoadingPermitidos] = useState<boolean>(false)
 
   // ✅ Quem é o DONO atual? (regra existente: primeiro jogador cadastrado vira dono inicial
   // quando não há "convidado dono")
@@ -90,8 +84,9 @@ export default function AgendamentoComum() {
   // ✅ Só exibir UI de TipoSessao se já houver horário E se o dono selecionado for professor
   const showTipoSessaoUI = Boolean(horario) && selectedOwnerIsProfessor
 
-  // ===== ✅ APOIADO (apenas se DONO é professor e tipoSessao = AULA) =====
-  const showApoiadoUI = showTipoSessaoUI && tipoSessao === 'AULA' && !isNoite
+  // ===== ✅ APOIADO (só quando dono é professor, tipo=AULA e AULA está permitido) =====
+  const showApoiadoUI =
+    showTipoSessaoUI && permitidos.includes('AULA') && tipoSessao === 'AULA'
   const [isApoiado, setIsApoiado] = useState<boolean>(false)
 
   // busca/seleção de usuário apoiado
@@ -190,6 +185,45 @@ export default function AgendamentoComum() {
     buscarDisponibilidade()
   }, [API_URL, data, esporteSelecionado, horario])
 
+  // ✅ NOVO: buscar tipos de sessão permitidos (AULA/JOGO) para esporte+data+horário
+  useEffect(() => {
+    const fetchPermitidos = async () => {
+      setPermitidos([])
+      if (!data || !esporteSelecionado || !horario) return
+      try {
+        setLoadingPermitidos(true)
+        const { data: resp } = await axios.get<{ allow: TipoSessao[] }>(
+          `${API_URL}/agendamentos/_sessoes-permitidas`,
+          {
+            params: { esporteId: esporteSelecionado, data, horario },
+            withCredentials: true,
+          }
+        )
+        const allow = Array.isArray(resp?.allow) ? (resp.allow as TipoSessao[]) : []
+        setPermitidos(allow)
+
+        // Ajuste automático do tipo quando dono for professor:
+        // - se só 1 permitido, trava nesse
+        // - se 2 e o atual não for permitido (ex.: mudou o horário), cai para o primeiro
+        if (selectedOwnerIsProfessor) {
+          if (allow.length === 1) {
+            setTipoSessao(allow[0])
+          } else if (allow.length >= 2 && !allow.includes(tipoSessao)) {
+            setTipoSessao(allow[0])
+          }
+        }
+      } catch (err) {
+        console.error(err)
+        setPermitidos([])
+      } finally {
+        setLoadingPermitidos(false)
+      }
+    }
+
+    fetchPermitidos()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [API_URL, data, esporteSelecionado, horario, selectedOwnerIsProfessor])
+
   // Busca de usuários cadastrados — agora esperamos { id, nome, celular, tipo? }
   useEffect(() => {
     const buscar = async () => {
@@ -285,6 +319,21 @@ export default function AgendamentoComum() {
       return
     }
 
+    // Se o dono for professor e existir restrição de sessão, valida no front também
+    if (selectedOwnerIsProfessor) {
+      if (permitidos.length === 0) {
+        setFeedback({ kind: 'error', text: 'Neste horário não há sessão permitida para este esporte.' })
+        return
+      }
+      if (!permitidos.includes(tipoSessao)) {
+        setFeedback({
+          kind: 'error',
+          text: `Tipo de sessão inválido para o horário. Permitidos: ${permitidos.join(', ')}.`
+        })
+        return
+      }
+    }
+
     // Validação extra do fluxo Apoiado
     if (showApoiadoUI && isApoiado) {
       if (!apoiadoSelecionado?.id) {
@@ -308,8 +357,6 @@ export default function AgendamentoComum() {
       horario,
       esporteId: String(esporteSelecionado),
       quadraId: String(quadraSelecionada),
-      // ✅ Envia o tipo da sessão (AULA/JOGO)
-      tipoSessao,
       jogadoresIds: jogadores.map((j) => String(j.id)),
       // concatena "Nome Telefone" para manter compatibilidade com o backend atual
       convidadosNomes:
@@ -317,6 +364,12 @@ export default function AgendamentoComum() {
           ? [`${ownerGuestNome.trim()} ${ownerGuestTelefone.trim()}`.trim()]
           : undefined,
     }
+
+    // ✅ Envie tipoSessao somente quando o dono for professor (o backend valida/auto-define)
+    if (selectedOwnerIsProfessor) {
+      payload.tipoSessao = tipoSessao
+    }
+
     if (usuarioIdTemp) payload.usuarioId = String(usuarioIdTemp)
 
     // Campos Apoiado (apenas se aplicável)
@@ -415,6 +468,10 @@ export default function AgendamentoComum() {
     !isUsuarioElegivelApoio(apoiadoSelecionado)
   )
 
+  // Estados auxiliares para UI do tipo de sessão
+  const onlyOne = permitidos.length === 1 ? permitidos[0] : null
+  const noneAllowed = permitidos.length === 0
+
   return (
     <div className="max-w-xl mx-auto mt-10 p-6 bg-white shadow rounded-xl">
       <h1 className="text-2xl font-bold mb-4">Agendar Quadra Comum</h1>
@@ -473,37 +530,49 @@ export default function AgendamentoComum() {
         ))}
       </select>
 
-      {/* ✅ Tipo de Sessão (Aula/Jogo) — só aparece se HÁ usuário e ele é ADMIN_PROFESSORES */}
+      {/* ✅ Tipo de Sessão (Aula/Jogo) — só aparece se HÁ horário e o dono é professor */}
       {showTipoSessaoUI && (
         <div className="mb-4">
           <label className="block mb-1 font-medium">Tipo de Agendamento</label>
 
-          {isNoite ? (
+          {loadingPermitidos ? (
             <div className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm bg-gray-100 border border-gray-200 text-gray-700">
-              <span className="font-semibold">Jogo</span>
-              <span className="text-[11px] text-gray-500">(automático a partir das 18h)</span>
+              <Spinner size="w-4 h-4" /> <span>Verificando opções…</span>
+            </div>
+          ) : noneAllowed ? (
+            <div className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm bg-red-50 border border-red-200 text-red-700">
+              <span>Nenhuma sessão permitida neste horário para o esporte selecionado.</span>
+            </div>
+          ) : onlyOne ? (
+            <div className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm bg-gray-100 border border-gray-200 text-gray-700">
+              <span className="font-semibold">{onlyOne === 'AULA' ? 'Aula' : 'Jogo'}</span>
+              <span className="text-[11px] text-gray-500">(definido pelas regras do esporte)</span>
             </div>
           ) : (
             <div className="inline-flex gap-2">
               <button
                 type="button"
                 onClick={() => setTipoSessao('AULA')}
+                disabled={!permitidos.includes('AULA')}
                 className={`px-3 py-1 rounded-md border text-sm ${
                   tipoSessao === 'AULA'
                     ? 'bg-orange-100 border-orange-500 text-orange-700'
                     : 'bg-gray-100 border-gray-300 text-gray-700'
-                }`}
+                } ${!permitidos.includes('AULA') ? 'opacity-50 cursor-not-allowed' : ''}`}
+                title={!permitidos.includes('AULA') ? 'AULA não disponível neste horário' : undefined}
               >
                 Aula
               </button>
               <button
                 type="button"
                 onClick={() => setTipoSessao('JOGO')}
+                disabled={!permitidos.includes('JOGO')}
                 className={`px-3 py-1 rounded-md border text-sm ${
                   tipoSessao === 'JOGO'
                     ? 'bg-orange-100 border-orange-500 text-orange-700'
                     : 'bg-gray-100 border-gray-300 text-gray-700'
-                }`}
+                } ${!permitidos.includes('JOGO') ? 'opacity-50 cursor-not-allowed' : ''}`}
+                title={!permitidos.includes('JOGO') ? 'JOGO não disponível neste horário' : undefined}
               >
                 Jogo
               </button>
@@ -511,12 +580,12 @@ export default function AgendamentoComum() {
           )}
 
           <p className="text-[11px] text-gray-500 mt-1">
-            A partir das 18:00 o sistema define automaticamente como <b>Jogo</b>.
+            As opções acima seguem as janelas configuradas para o esporte no dia/horário escolhido.
           </p>
         </div>
       )}
 
-      {/* ===== ✅ Fluxo APOIADO (só quando dono é professor e tipo=AULA) ===== */}
+      {/* ===== ✅ Fluxo APOIADO (só quando dono é professor e tipo=AULA permitido) ===== */}
       {showApoiadoUI && (
         <div className="mb-4 rounded-lg border border-gray-200 p-3 bg-gray-50">
           <div className="flex items-center justify-between">
@@ -582,8 +651,7 @@ export default function AgendamentoComum() {
                     className={`text-sm rounded px-3 py-2 border
                     ${isUsuarioElegivelApoio(apoiadoSelecionado)
                       ? 'text-green-700 bg-green-50 border-green-200'
-                      : 'text-amber-800 bg-amber-50 border-amber-200'}
-                  `}
+                      : 'text-amber-800 bg-amber-50 border-amber-200'}`}
                   >
                     Usuário apoiado selecionado: <b>{apoiadoSelecionado.nome}</b>
                     {!isUsuarioElegivelApoio(apoiadoSelecionado) && (

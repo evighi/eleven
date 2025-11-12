@@ -52,12 +52,8 @@ function proximaDataParaDiaSemana(diaSemana: string, horario?: string): string {
   return format(d, "yyyy-MM-dd");
 }
 
-// < 18:00 ?
-const horarioAntesDe18 = (h: string) => {
-  if (!/^\d{2}:\d{2}$/.test(h)) return false;
-  const [hh] = h.split(":").map(Number);
-  return hh < 18;
-};
+// helperzinho
+const upper = (s?: string | null) => String(s || "").toUpperCase().trim();
 
 export default function CadastrarPermanente() {
   const router = useRouter();
@@ -68,9 +64,14 @@ export default function CadastrarPermanente() {
   const [quadraId, setQuadraId] = useState<string>("");
   const [horario, setHorario] = useState<string>("");
 
-  // ✅ tipo da sessão (mostra/exige quando DONO selecionado for professor e horário < 18:00)
+  // ✅ tipo da sessão (AULA/JOGO) — agora baseado no endpoint de “sessões permitidas”
   const [tipoSessao, setTipoSessao] = useState<"" | "AULA" | "JOGO">("");
   const [selectedOwnerIsProfessor, setSelectedOwnerIsProfessor] = useState<boolean>(false);
+
+  // Tipos permitidos pelo back (para o esporte/dia/horário)
+  const [allowedTipos, setAllowedTipos] = useState<Array<"AULA" | "JOGO">>([]);
+  const [loadingAllowed, setLoadingAllowed] = useState<boolean>(false);
+  const [errorAllowed, setErrorAllowed] = useState<string | null>(null);
 
   // Dono cadastrado
   const [usuarioId, setUsuarioId] = useState<string>("");
@@ -164,12 +165,10 @@ export default function CadastrarPermanente() {
         setProximasDatasDisponiveis([]);
 
         // --------- estabiliza a seleção da quadra ----------
-        // 1) se é a 1ª carga e veio quadraId pela URL, tenta aplicar
         if (prefillRef.current && quadraIdQuery && !quadraId) {
           const existeNaLista = res.data.some((q) => q.quadraId === quadraIdQuery);
           if (existeNaLista) setQuadraId(quadraIdQuery);
         } else {
-          // 2) em cargas subsequentes, só limpe se a quadra atual deixar de existir/ser válida
           const selecionadaAindaExiste = res.data.some(
             (q) =>
               q.quadraId === quadraId &&
@@ -178,7 +177,6 @@ export default function CadastrarPermanente() {
           if (!selecionadaAindaExiste) setQuadraId("");
         }
         prefillRef.current = false;
-        // ---------------------------------------------------
       })
       .catch((err) => {
         console.error(err);
@@ -189,9 +187,56 @@ export default function CadastrarPermanente() {
         setProximasDatasDisponiveis([]);
         setFeedback({ kind: "error", text: "Erro ao buscar disponibilidade." });
       });
-    // IMPORTANTE: não colocar `quadraId` nas deps para não criar loop de limpeza/seleção
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [esporteId, horario, diaSemana, quadraIdQuery]);
+
+  /* ===== Buscar tipos de sessão permitidos (AULA/JOGO) para o esporte/dia/horário =====
+     O endpoint espera data (YYYY-MM-DD), então usamos a PRÓXIMA data daquele dia da semana,
+     considerando o horário selecionado. */
+  useEffect(() => {
+    setErrorAllowed(null);
+    setAllowedTipos([]);
+
+    // só faz sentido quando dono é professor
+    if (!selectedOwnerIsProfessor) {
+      setTipoSessao("");
+      return;
+    }
+
+    if (!esporteId || !horario || !diaSemana) {
+      setTipoSessao("");
+      return;
+    }
+
+    const ymd = proximaDataParaDiaSemana(diaSemana, horario);
+    setLoadingAllowed(true);
+
+    axios
+      .get<{ allow: Array<"AULA" | "JOGO"> }>(`${API_URL}/agendamentos/_sessoes-permitidas`, {
+        params: { esporteId, data: ymd, horario },
+        withCredentials: true,
+      })
+      .then((res) => {
+        const allow = Array.isArray(res.data?.allow) ? res.data.allow : [];
+        setAllowedTipos(allow as Array<"AULA" | "JOGO">);
+
+        // auto-ajuste do tipo:
+        if (allow.length === 1) {
+          // único permitido -> já fixa
+          setTipoSessao(allow[0]);
+        } else {
+          // mais de um permitido -> força escolha do usuário
+          setTipoSessao("");
+        }
+      })
+      .catch((err) => {
+        console.error("Falha ao obter tipos permitidos:", err);
+        setErrorAllowed("Falha ao verificar sessões permitidas para este horário.");
+        setAllowedTipos([]);
+        setTipoSessao("");
+      })
+      .finally(() => setLoadingAllowed(false));
+  }, [API_URL, esporteId, diaSemana, horario, selectedOwnerIsProfessor]);
 
   /* ===== Próximas datas quando há conflito comum ===== */
   useEffect(() => {
@@ -288,8 +333,8 @@ export default function CadastrarPermanente() {
     return "Falha ao cadastrar permanente.";
   }
 
-  // ✅ regra de exibição igual ao Comum: dono selecionado é professor e horário < 18
-  const showTipoSessao = selectedOwnerIsProfessor && horarioAntesDe18(horario);
+  // ✅ agora: mostra TipoSessao se DONO é professor e o back permitir AULA/JOGO naquele horário
+  const showTipoSessao = selectedOwnerIsProfessor && allowedTipos.length > 0;
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -313,15 +358,18 @@ export default function CadastrarPermanente() {
       return;
     }
 
-    // se o seletor de tipo estiver visível, exigir escolha
-    if (showTipoSessao && !tipoSessao) {
-      setFeedback({ kind: "error", text: "Informe se é AULA ou JOGO." });
-      return;
-    }
-
-    if (existeAgendamentoComum && proximasDatasDisponiveis.length > 0 && !dataInicio) {
-      setFeedback({ kind: "error", text: "Selecione uma data de início válida." });
-      return;
+    // se o seletor de tipo estiver visível:
+    // - se houver >1 tipo permitido, exigir escolha
+    // - se houver 1 tipo apenas, já está travado no estado
+    if (showTipoSessao) {
+      if (allowedTipos.length > 1 && !tipoSessao) {
+        setFeedback({ kind: "error", text: "Informe se é AULA ou JOGO." });
+        return;
+      }
+      if (allowedTipos.length === 1 && tipoSessao !== allowedTipos[0]) {
+        // sanidade: manter sincronizado
+        setTipoSessao(allowedTipos[0]);
+      }
     }
 
     const body: Record<string, any> = {
@@ -329,7 +377,7 @@ export default function CadastrarPermanente() {
       esporteId,
       quadraId,
       horario,
-      ...(showTipoSessao && tipoSessao ? { tipoSessao } : {}), // envia apenas quando aplicável
+      ...(showTipoSessao && tipoSessao ? { tipoSessao } : {}),
       ...(usuarioId
         ? { usuarioId }
         : {
@@ -358,6 +406,7 @@ export default function CadastrarPermanente() {
       setConvidadoDonoTelefone("");
       setQuadraId("");
       setTipoSessao("");
+      setAllowedTipos([]);
 
       setTimeout(() => {
         const params = new URLSearchParams({ data: redirectYmd });
@@ -438,7 +487,7 @@ export default function CadastrarPermanente() {
           </select>
         </div>
 
-        {/* Horário + Tipo de Sessão (condicional) */}
+        {/* Horário + Tipo de Sessão (condicional por “permitidos”) */}
         <div>
           <label className="block font-semibold mb-1">Horário</label>
           <select
@@ -462,22 +511,46 @@ export default function CadastrarPermanente() {
             })}
           </select>
 
-          {/* ✅ Campo tipo da sessão — aparece quando dono é professor e horário < 18h */}
+          {/* Estado do carregamento/erro dos tipos permitidos */}
+          {selectedOwnerIsProfessor && esporteId && diaSemana && horario && (
+            <div className="mt-1 text-xs">
+              {loadingAllowed && <span className="text-gray-500">Verificando sessões permitidas…</span>}
+              {!loadingAllowed && errorAllowed && (
+                <span className="text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                  {errorAllowed}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* ✅ Campo tipo da sessão — aparece quando dono é professor E há tipos permitidos */}
           {showTipoSessao && (
             <div className="mt-2">
               <label className="block font-semibold mb-1">
-                Tipo da sessão <span className="text-xs text-gray-500">(apenas para professores, antes das 18h)</span>
+                Tipo da sessão{" "}
+                <span className="text-xs text-gray-500">
+                  (conforme janelas do esporte para este dia/horário)
+                </span>
               </label>
-              <select
-                value={tipoSessao}
-                onChange={(e) => setTipoSessao(e.target.value as "AULA" | "JOGO" | "")}
-                className="w-full border rounded p-2"
-                required={showTipoSessao}
-              >
-                <option value="">Selecione</option>
-                <option value="AULA">Aula</option>
-                <option value="JOGO">Jogo</option>
-              </select>
+
+              {/* Caso só exista 1 tipo permitido, mostra “chip” travado */}
+              {allowedTipos.length === 1 ? (
+                <div className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm bg-gray-100 border border-gray-200 text-gray-700">
+                  <span className="font-semibold">{allowedTipos[0] === "AULA" ? "Aula" : "Jogo"}</span>
+                  <span className="text-[11px] text-gray-500">(definido pelas janelas do esporte)</span>
+                </div>
+              ) : (
+                <select
+                  value={tipoSessao}
+                  onChange={(e) => setTipoSessao(e.target.value as "AULA" | "JOGO" | "")}
+                  className="w-full border rounded p-2"
+                  required={allowedTipos.length > 1}
+                >
+                  <option value="">Selecione</option>
+                  {allowedTipos.includes("AULA") && <option value="AULA">Aula</option>}
+                  {allowedTipos.includes("JOGO") && <option value="JOGO">Jogo</option>}
+                </select>
+              )}
             </div>
           )}
         </div>
@@ -552,17 +625,17 @@ export default function CadastrarPermanente() {
                       setConvidadoDonoTelefone("");
 
                       // ✅ DONO selecionado é professor?
-                      const t = (u.tipo || "").toString().toUpperCase();
-                      setSelectedOwnerIsProfessor(t === "ADMIN_PROFESSORES");
-                      // ao trocar dono, zera tipoSessao para forçar escolha novamente se campo estiver visível
+                      const t = upper(u.tipo);
+                      const isProf = t === "ADMIN_PROFESSORES";
+                      setSelectedOwnerIsProfessor(isProf);
+
+                      // ao trocar dono, reset do tipo (será reavaliado pelo efeito de allowedTipos)
                       setTipoSessao("");
                     }}
                     title={u.celular || ""}
                   >
                     <div className="font-medium text-gray-800">{u.nome}</div>
-                    {u.tipo && (
-                      <div className="text-[11px] text-gray-500">{String(u.tipo).toUpperCase()}</div>
-                    )}
+                    {u.tipo && <div className="text-[11px] text-gray-500">{upper(u.tipo)}</div>}
                     {u.celular && <div className="text-xs text-gray-500">{u.celular}</div>}
                   </li>
                 ))}
@@ -592,8 +665,9 @@ export default function CadastrarPermanente() {
                     setBusca("");
                     setUsuariosEncontrados([]);
                     setListaAberta(false);
-                    setSelectedOwnerIsProfessor(false); // convidado não tem papel de professor no sistema
+                    setSelectedOwnerIsProfessor(false); // convidado não é professor
                     setTipoSessao("");
+                    setAllowedTipos([]); // limpa permitidos pois não mostramos tipo p/ convidado
                   }
                   setFeedback(null);
                 }}
