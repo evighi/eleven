@@ -191,8 +191,7 @@ export default function CadastrarPermanente() {
   }, [esporteId, horario, diaSemana, quadraIdQuery]);
 
   /* ===== Buscar tipos de sessão permitidos (AULA/JOGO) para o esporte/dia/horário =====
-     O endpoint espera data (YYYY-MM-DD), então usamos a PRÓXIMA data daquele dia da semana,
-     considerando o horário selecionado. */
+     NOVO: endpoint de PERMANENTES não espera "data", e sim "diaSemana" + "horario". */
   useEffect(() => {
     setErrorAllowed(null);
     setAllowedTipos([]);
@@ -208,14 +207,16 @@ export default function CadastrarPermanente() {
       return;
     }
 
-    const ymd = proximaDataParaDiaSemana(diaSemana, horario);
     setLoadingAllowed(true);
 
     axios
-      .get<{ allow: Array<"AULA" | "JOGO"> }>(`${API_URL}/agendamentos/_sessoes-permitidas`, {
-        params: { esporteId, data: ymd, horario },
-        withCredentials: true,
-      })
+      .get<{ allow: Array<"AULA" | "JOGO"> }>(
+        `${API_URL}/agendamentosPermanentes/_sessoes-permitidas`,
+        {
+          params: { esporteId, diaSemana, horario },
+          withCredentials: true,
+        }
+      )
       .then((res) => {
         const allow = Array.isArray(res.data?.allow) ? res.data.allow : [];
         setAllowedTipos(allow as Array<"AULA" | "JOGO">);
@@ -700,7 +701,8 @@ export default function CadastrarPermanente() {
           <div className="mt-4 p-4 border border-yellow-400 bg-yellow-100 rounded">
             <p className="mb-2 font-semibold text-yellow-700">
               A quadra selecionada possui conflito com agendamento comum no dia{" "}
-              {format(parseISO(dataUltimoConflito), "dd/MM/yyyy")}. Selecione uma data de início disponível:
+              {format(parseISO(dataUltimoConflito), "dd/MM/yyyy")}.
+              Selecione uma data de início disponível:
             </p>
 
             <div className="grid grid-cols-3 gap-2">
