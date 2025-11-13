@@ -93,6 +93,8 @@ export default function CadastrarPermanente() {
   const [proximasDatasDisponiveis, setProximasDatasDisponiveis] = useState<string[]>([]);
 
   // Pré-preenchimento vindo da URL
+  the: {
+  }
   const [esporteQuery, setEsporteQuery] = useState<string | null>(null);
   const [quadraIdQuery, setQuadraIdQuery] = useState<string | null>(null);
   const prefillRef = useRef(true); // true só na primeira carga
@@ -501,8 +503,9 @@ export default function CadastrarPermanente() {
             required
           >
             <option value="">Selecione um horário</option>
-            {Array.from({ length: 16 }, (_, i) => {
-              const hour = 8 + i;
+            {/* ⏰ Agora de 07:00 a 23:00 (JOGO liberado por padrão nesse range) */}
+            {Array.from({ length: 17 }, (_, i) => {
+              const hour = 7 + i; // 07..23
               const label = hour.toString().padStart(2, "0") + ":00";
               return (
                 <option key={label} value={label}>

@@ -75,10 +75,6 @@ const DIA_IDX: Record<DiaSemana, number> = {
   DOMINGO: 0, SEGUNDA: 1, TERCA: 2, QUARTA: 3, QUINTA: 4, SEXTA: 5, SABADO: 6,
 };
 
-// Fallback simples se não houver tabela/regra por esporte:
-// AULA até 19:00, JOGO de 19:00 em diante
-const FALLBACK_AULA_FIM = "19:00";
-
 function cancellationWindowHours(tipo?: string): number | null {
   if (tipo === "ADMIN_MASTER" || tipo === "ADMIN_ATENDENTE") return null; // sem limite
   if (tipo === "ADMIN_PROFESSORES") return 2; // 2h antes
@@ -100,7 +96,7 @@ const schemaAgendamentoPermanente = z.object({
   dataInicio: z.string().optional(), // "YYYY-MM-DD" (dia local) — opcional
   convidadosNomes: z.array(z.string().trim().min(1)).optional().default([]),
 
-  // 🆕 novos (opcionais)
+  // novos (opcionais)
   professorId: z.string().uuid().optional(),
   tipoSessao: z.enum(["AULA", "JOGO"]).optional(),
 });
@@ -130,8 +126,11 @@ async function criarConvidadoComoUsuario(nomeConvidado: string) {
 }
 
 /* ============================================================================
-   Janelas por Esporte (AULA/JOGO) — MESMA LÓGICA DO AGENDAMENTO COMUM
-   - Regras padrão (diaSemana = null) podem ser sobrescritas por regras do dia específico
+   Janelas por Esporte (AULA/JOGO)
+   - AULA: segue janelas configuradas (padrão e/ou por dia)
+   - JOGO: permitido por padrão 07:00–23:59, independentemente de configuração
+           (se houver janela de JOGO configurada, ela também é aceita)
+   - O POST só valida janelas se houver professor.
    ==========================================================================*/
 
 // Busca janelas do dia específico e as padrão (diaSemana = null). Dia específico sobrescreve padrão.
@@ -154,7 +153,7 @@ async function getJanelasForEsporte(
       }),
     ]);
   } catch {
-    // se o modelo ainda não existir, devolvemos arrays vazios → cai no fallback
+    // se o modelo ainda não existir, devolvemos arrays vazios
     doDia = [];
     padrao = [];
   }
@@ -169,7 +168,14 @@ async function getJanelasForEsporte(
   return byTipo;
 }
 
-// Retorna lista/set de tipos permitidos naquele hh:mm
+// ===== Janela padrão de JOGO (sempre permitido) =====
+const JOGO_DEFAULT_INICIO = "07:00";
+const JOGO_DEFAULT_FIM_EXCLUSIVE = "23:59";
+function jogoDefaultPermitido(hhmm: string) {
+  return horarioDentroIntervalo(hhmm, JOGO_DEFAULT_INICIO, JOGO_DEFAULT_FIM_EXCLUSIVE);
+}
+
+// Retorna lista/set de tipos permitidos naquele hh:mm (para casos COM professor)
 async function resolveSessoesPermitidas(
   esporteId: string,
   diaSemana: DiaSemana,
@@ -178,15 +184,23 @@ async function resolveSessoesPermitidas(
   const j = await getJanelasForEsporte(esporteId, diaSemana);
   const allow = new Set<TipoSessaoProfessor>();
 
-  if (j.size > 0) {
-    for (const [tipo, win] of j.entries()) {
-      if (horarioDentroIntervalo(horario, win.inicioHHMM, win.fimHHMM)) allow.add(tipo);
-    }
-  } else {
-    // Fallback: AULA até 19:00; JOGO de 19:00 em diante
-    if (horario < FALLBACK_AULA_FIM) allow.add("AULA");
-    else allow.add("JOGO");
+  // AULA conforme configuração
+  const aulaJ = j.get("AULA" as TipoSessaoProfessor);
+  if (aulaJ && horarioDentroIntervalo(horario, aulaJ.inicioHHMM, aulaJ.fimHHMM)) {
+    allow.add("AULA");
   }
+
+  // JOGO padrão 07:00–23:59 SEMPRE
+  if (jogoDefaultPermitido(horario)) {
+    allow.add("JOGO");
+  } else {
+    // (opcional) se houver configuração de JOGO fora do padrão, também aceitar
+    const jogoJ = j.get("JOGO" as TipoSessaoProfessor);
+    if (jogoJ && horarioDentroIntervalo(horario, jogoJ.inicioHHMM, jogoJ.fimHHMM)) {
+      allow.add("JOGO");
+    }
+  }
+
   return allow;
 }
 
@@ -266,7 +280,7 @@ router.post("/", async (req, res) => {
     diaSemana, horario, quadraId, esporteId,
     usuarioId: usuarioIdBody, dataInicio, convidadosNomes = [],
 
-    // 🆕 recebidos (opcionais)
+    // recebidos (opcionais)
     professorId: professorIdBody,
     tipoSessao: tipoSessaoBody,
   } = validacao.data;
@@ -316,7 +330,7 @@ router.post("/", async (req, res) => {
       }
     }
 
-    // ================= professor/tipoSessao com regra de horário (mesma do comum) ================
+    // ================= professor/tipoSessao com regra de horário (igual ao comum) ================
     // (1) professorId: explícito ou inferido se o dono for ADMIN_PROFESSORES
     let professorIdFinal: string | null = professorIdBody ?? null;
     if (!professorIdFinal) {
@@ -338,25 +352,28 @@ router.post("/", async (req, res) => {
       }
     }
 
-    // (2) tipoSessao permitido para esse esporte/dia/horário
-    const allow = await resolveSessoesPermitidas(esporteId, diaSemana, horario);
-    if (allow.size === 0) {
-      return res.status(422).json({ erro: "Horário indisponível para este esporte." });
-    }
-
-    // (3) se enviou tipoSessao no body, ele precisa ser permitido
-    if (tipoSessaoBody && !allow.has(tipoSessaoBody as TipoSessaoProfessor)) {
-      return res.status(422).json({ erro: `Tipo de sessão '${tipoSessaoBody}' não permitido neste horário.` });
-    }
-
-    // (4) Derivação final: só definimos tipoSessao se houver professor
+    // (2) Se NÃO houver professor → não restringe por janelas (segue regra “jogo livre” sem precisar definir tipo)
     let tipoSessaoFinal: TipoSessaoProfessor | null = null;
+    let sessoesPermitidasAudit: string[] = [];
+
     if (professorIdFinal) {
+      const allow = await resolveSessoesPermitidas(esporteId, diaSemana, horario);
+      if (allow.size === 0) {
+        return res.status(422).json({ erro: "Horário indisponível para este esporte." });
+      }
+      sessoesPermitidasAudit = Array.from(allow);
+
+      // (3) se enviou tipoSessao no body, ele precisa ser permitido
+      if (tipoSessaoBody && !allow.has(tipoSessaoBody as TipoSessaoProfessor)) {
+        return res.status(422).json({ erro: `Tipo de sessão '${tipoSessaoBody}' não permitido neste horário.` });
+      }
+
+      // (4) Derivação final quando HÁ professor
       if (allow.size === 1) {
-        // só uma possível (ex.: apenas JOGO pós-limite de AULA)
+        // só uma possível (ex.: apenas JOGO)
         tipoSessaoFinal = Array.from(allow)[0];
       } else {
-        // as duas são possíveis: usa o que veio; se não veio, default AULA
+        // duas opções: usa o que veio; se não veio, default AULA
         tipoSessaoFinal = (tipoSessaoBody as TipoSessaoProfessor | undefined) ?? "AULA";
       }
     }
@@ -396,7 +413,7 @@ router.post("/", async (req, res) => {
           dataInicio: novo.dataInicio ?? null,
           professorId: professorIdFinal,
           tipoSessao: tipoSessaoFinal,
-          sessoesPermitidas: Array.from(allow),
+          sessoesPermitidas: sessoesPermitidasAudit,
         },
       });
     } catch (e) {
@@ -494,7 +511,7 @@ router.get(
 
         dataInicio: agendamento.dataInicio ? toISODateUTC(new Date(agendamento.dataInicio)) : null,
 
-        // 🆕 extras
+        // extras
         professor: agendamento.professor
           ? { id: agendamento.professor.id, nome: agendamento.professor.nome, email: agendamento.professor.email }
           : null,
@@ -633,7 +650,7 @@ router.post(
         where: { id },
         select: {
           id: true, usuarioId: true, diaSemana: true, horario: true,
-          quadraId: true, esporteId: true, dataInicio: true, status: true,
+          quadraId: true, esporteId: true, dataInicio: true, status: true, createdAt: true,
         },
       });
       if (!perm) return res.status(404).json({ erro: "Agendamento permanente não encontrado" });
@@ -963,7 +980,7 @@ router.patch(
             usuarioId: novoUsuarioId,
             dataInicio: perm.dataInicio ?? null,
 
-            // 🆕 manter extras
+            // manter extras
             professorId: perm.professorId ?? null,
             tipoSessao: perm.tipoSessao ?? null,
           },
