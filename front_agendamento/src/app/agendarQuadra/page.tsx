@@ -825,8 +825,37 @@ export default function AgendarQuadraCliente() {
   }, [API_URL, ehProfessor, esporteId, diaISO, horario]);
 
   /* ========= Navegação ========= */
+
+  // 🔒 Lógica central de habilitação do "Confirmar" no Step 3
+  const canConfirmStep3 = useMemo(() => {
+    if (!horario || navLock) return false;
+
+    // Para professor: só habilita após terminar a verificação de sessões permitidas
+    if (ehProfessor) {
+      // Enquanto carrega, não pode
+      if (loadingAllowed) return false;
+
+      // Se terminou de carregar e existem AULA e JOGO, exigir escolha explícita
+      if (allowedTipos.length > 1 && !tipoSessao) return false;
+
+      // Se terminou de carregar e só há JOGO ou houve fallback, ok
+      return true;
+    }
+
+    // Para cliente comum: basta ter horário habilitado
+    return true;
+  }, [horario, navLock, ehProfessor, loadingAllowed, allowedTipos.length, tipoSessao]);
+
   const confirmarHorario = () => {
     if (!horario) return setMsg("Selecione um horário.");
+
+    // Bloqueio extra por segurança: professor não avança enquanto carrega sessões
+    if (ehProfessor && loadingAllowed) {
+      setMsg("Aguarde a verificação das sessões permitidas…");
+      setIsConcurrencyErr(false);
+      return;
+    }
+
     // se professor e existir escolha (AULA/JOGO), exigir quando houver ambos
     if (ehProfessor && allowedTipos.length > 1 && !tipoSessao) {
       setMsg("Selecione se é Aula ou Jogo.");
@@ -1264,14 +1293,17 @@ export default function AgendarQuadraCliente() {
               </div>
               )}
 
+              {/* Nota de aguarde para professores enquanto carrega allowed */}
+              {ehProfessor && !!horario && loadingAllowed && (
+                <div className="mt-2 text-[12px] text-gray-600">
+                  Aguarde a verificação das sessões permitidas para continuar.
+                </div>
+              )}
+
               <Btn
                 className="mt-4 cursor-pointer"
                 onClick={confirmarHorario}
-                disabled={
-                  !horario ||
-                  navLock ||
-                  (ehProfessor && allowedTipos.length > 1 && !tipoSessao) // exige escolha quando houver AULA e JOGO
-                }
+                disabled={!canConfirmStep3}
               >
                 Confirmar
               </Btn>
