@@ -77,19 +77,6 @@ const DIA_IDX: Record<DiaSemana, number> = {
 };
 
 /* =========================
-   Regra — excluir noite em dias úteis (fins de semana liberado)
-========================= */
-const EXCLUDE_EVENING = new Set([
-  "18:00",
-  "19:00",
-  "20:00",
-  "21:00",
-  "22:00",
-  "23:00",
-]);
-const isWeekdayIdx = (idx: number) => idx >= 1 && idx <= 5;
-
-/* =========================
    Parse de intervalo
 ========================= */
 function parseMesToLocalRange(mes: string) {
@@ -103,12 +90,56 @@ function parseMesToLocalRange(mes: string) {
 }
 
 /* =========================
+   NOVO: janelas de AULA por esporte/dia (intervalos em minutos)
+========================= */
+type JanelaMap = Map<string, Array<{ ini: number; fim: number }>>;
+// chave: `${esporteId}|${dayIdx}`
+
+async function carregarJanelasAula(esporteIds: string[]): Promise<JanelaMap> {
+  if (!esporteIds || esporteIds.length === 0) return new Map();
+  const uniq = Array.from(new Set(esporteIds.filter(Boolean)));
+  if (uniq.length === 0) return new Map();
+
+  // ⚠️ Nome do model: EsporteJanelaAula (criado na sua migration)
+  const rows = await prisma.esporteJanelaAula.findMany({
+    where: { esporteId: { in: uniq }, ativo: true, tipoSessao: "AULA" },
+    select: { esporteId: true, diaSemana: true, inicioHHMM: true, fimHHMM: true },
+  });
+
+  const map: JanelaMap = new Map();
+  for (const r of rows) {
+    const key = `${r.esporteId}|${DIA_IDX[r.diaSemana]}`;
+    const arr = map.get(key) || [];
+    arr.push({ ini: hhmmToMinutes(r.inicioHHMM), fim: hhmmToMinutes(r.fimHHMM) });
+    map.set(key, arr);
+  }
+  return map;
+}
+
+function isDentroDeJanelaAula(
+  janelas: JanelaMap,
+  esporteId: string,
+  dayIdx: number,
+  horarioHHMM: string,
+  duracaoMin: number
+): boolean {
+  if (!esporteId) return false;
+  const key = `${esporteId}|${dayIdx}`;
+  const slots = janelas.get(key) || [];
+  if (slots.length === 0) return false; // sem janela AULA => não conta
+  const ini = hhmmToMinutes(horarioHHMM);
+  const fim = ini + duracaoMin;
+  return slots.some((s) => overlaps(ini, fim, s.ini, s.fim));
+}
+
+/* =========================
    Cálculo core (p/ um professor) — usa datasets carregados
 ========================= */
 type ComumRow = {
   data: Date;
   horario: string;
   quadraId: string;
+  esporteId: string; // 👈 NOVO
   tipoSessao: TipoSessaoProfessor | null;
   professorId: string | null; // informativo
   isencaoApoiado?: boolean | null; // 👈 não entra no VALOR
@@ -117,6 +148,7 @@ type PermRow = {
   diaSemana: DiaSemana;
   horario: string;
   quadraId: string;
+  esporteId: string; // 👈 NOVO
   dataInicio: Date | null;
   cancelamentos: { data: Date }[];
   tipoSessao: TipoSessaoProfessor | null;
@@ -131,7 +163,8 @@ function computeResumoProfessorFromDatasets(
     fromYMD,
     toYMD,
     duracaoMin,
-  }: { fromYMD: string; toYMD: string; duracaoMin: number },
+    janelasAula, // 👈 NOVO
+  }: { fromYMD: string; toYMD: string; duracaoMin: number; janelasAula: JanelaMap },
   comuns: ComumRow[],
   permanentes: PermRow[],
   bloqueiosMap: BloqueiosMap
@@ -154,14 +187,15 @@ function computeResumoProfessorFromDatasets(
     porDia.set(ymd, cur);
   };
 
-  // 1) Comuns — somente AULA (ou legado null ⇒ conta)
+  // 1) Comuns — somente AULA (ou legado null ⇒ conta), dentro da janela AULA
   for (const ag of comuns) {
     if (ag.tipoSessao === "JOGO") continue;
 
     const ymd = toISODateUTC(ag.data); // storage é 00:00Z do dia local
-    // 18–23h seg–sex não conta como AULA (fins de semana liberado)
-    const wd = localWeekdayIndexOfYMD(ymd);
-    if (isWeekdayIdx(wd) && EXCLUDE_EVENING.has(ag.horario)) continue;
+    const wd = localWeekdayIndexOfYMD(ymd); // 0..6
+
+    // ✅ Regra nova: só conta se estiver dentro de alguma janela AULA do esporte/dia
+    if (!isDentroDeJanelaAula(janelasAula, ag.esporteId, wd, ag.horario, duracaoMin)) continue;
 
     // bloqueio?
     const slots = bloqueiosMap.get(`${ag.quadraId}|${ymd}`) || [];
@@ -172,12 +206,12 @@ function computeResumoProfessorFromDatasets(
     pushAula(ymd, ag.quadraId, ag.horario, !!ag.isencaoApoiado);
   }
 
-  // 2) Permanentes — somente AULA (ou legado null ⇒ conta)
+  // 2) Permanentes — somente AULA (ou legado null ⇒ conta), dentro da janela AULA
   for (const p of permanentes) {
     if (p.tipoSessao === "JOGO") continue;
 
     const dayIdx = DIA_IDX[p.diaSemana];
-    if (isWeekdayIdx(dayIdx) && EXCLUDE_EVENING.has(p.horario)) continue;
+    if (!isDentroDeJanelaAula(janelasAula, p.esporteId, dayIdx, p.horario, duracaoMin)) continue;
 
     const dataInicioLocalYMD = p.dataInicio
       ? toISODateUTC(new Date(p.dataInicio))
@@ -325,7 +359,8 @@ async function aulasApoiadasDetalhadasPeriodoProfessor(
 async function aulasDetalhadasPeriodoProfessor(
   profId: string,
   inicioUTC: Date,
-  fimUTCExcl: Date
+  fimUTCExcl: Date,
+  duracaoMin: number
 ) {
   const ags = await prisma.agendamento.findMany({
     where: {
@@ -351,19 +386,20 @@ async function aulasDetalhadasPeriodoProfessor(
       multaAnulada: true,
       quadra: { select: { id: true, numero: true, nome: true } },
       esporte: { select: { id: true, nome: true } },
+      esporteId: true, // 👈 para checar janela
     },
     orderBy: [{ data: "asc" }, { horario: "asc" }],
   });
 
-  // aplica a MESMA regra do resumo:
-  //  - ignora noites (18h–23h) em dias úteis (SEG–SEX)
+  // Carrega janelas AULA dos esportes presentes
+  const esportesIn = Array.from(new Set(ags.map((a) => String(a.esporteId)).filter(Boolean)));
+  const janelasAula = await carregarJanelasAula(esportesIn);
+
+  // Filtra de acordo com janelas de AULA
   const filtradas = ags.filter((a) => {
     const ymd = toISODateUTC(a.data);
     const wd = localWeekdayIndexOfYMD(ymd); // 0..6
-    if (isWeekdayIdx(wd) && EXCLUDE_EVENING.has(a.horario)) {
-      return false;
-    }
-    return true;
+    return isDentroDeJanelaAula(janelasAula, String(a.esporteId), wd, a.horario, duracaoMin);
   });
 
   // normaliza para já ignorar multas anuladas
@@ -445,6 +481,7 @@ router.get("/me/resumo", async (req, res) => {
         tipoSessao: true,
         professorId: true,
         isencaoApoiado: true,
+        esporteId: true, // 👈 NOVO
       },
     });
 
@@ -471,6 +508,7 @@ router.get("/me/resumo", async (req, res) => {
         cancelamentos: { select: { data: true } },
         tipoSessao: true,
         professorId: true,
+        esporteId: true, // 👈 NOVO
       },
     });
 
@@ -497,11 +535,21 @@ router.get("/me/resumo", async (req, res) => {
       }
     }
 
+    // ====== CARREGAR JANELAS AULA DOS ESPORTES ENVOLVIDOS ======
+    const esportesIn = Array.from(
+      new Set([
+        ...comuns.map((c) => String(c.esporteId)),
+        ...permanentes.map((p) => String(p.esporteId)),
+      ].filter(Boolean))
+    );
+    const janelasAula = await carregarJanelasAula(esportesIn);
+
     // datasets no formato do cálculo
     const comunsDs: ComumRow[] = comuns.map((ag) => ({
       data: ag.data,
       horario: ag.horario,
       quadraId: ag.quadraId,
+      esporteId: String(ag.esporteId),
       tipoSessao: ag.tipoSessao,
       professorId: ag.professorId,
       isencaoApoiado: ag.isencaoApoiado ?? false,
@@ -510,6 +558,7 @@ router.get("/me/resumo", async (req, res) => {
       diaSemana: p.diaSemana,
       horario: p.horario,
       quadraId: p.quadraId,
+      esporteId: String(p.esporteId),
       dataInicio: p.dataInicio,
       cancelamentos: p.cancelamentos,
       tipoSessao: p.tipoSessao,
@@ -518,7 +567,7 @@ router.get("/me/resumo", async (req, res) => {
 
     const resumo = computeResumoProfessorFromDatasets(
       professor,
-      { fromYMD, toYMD, duracaoMin },
+      { fromYMD, toYMD, duracaoMin, janelasAula },
       comunsDs,
       permanentesDs,
       bloqueiosMap
@@ -559,7 +608,8 @@ router.get("/me/resumo", async (req, res) => {
     const aulasDetalhes = await aulasDetalhadasPeriodoProfessor(
       userId,
       inicioUTC,
-      fimUTCExcl
+      fimUTCExcl,
+      duracaoMin
     );
 
     return res.json({
@@ -660,6 +710,7 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
         tipoSessao: true,
         professorId: true,
         isencaoApoiado: true,
+        esporteId: true, // 👈 NOVO
       },
     });
 
@@ -686,6 +737,7 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
         cancelamentos: { select: { data: true } },
         tipoSessao: true,
         professorId: true,
+        esporteId: true, // 👈 NOVO
       },
     });
 
@@ -712,10 +764,20 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
       }
     }
 
+    // ====== CARREGAR JANELAS AULA DOS ESPORTES ENVOLVIDOS ======
+    const esportesIn = Array.from(
+      new Set([
+        ...comuns.map((c) => String(c.esporteId)),
+        ...permanentes.map((p) => String(p.esporteId)),
+      ].filter(Boolean))
+    );
+    const janelasAula = await carregarJanelasAula(esportesIn);
+
     const comunsDs: ComumRow[] = comuns.map((ag) => ({
       data: ag.data,
       horario: ag.horario,
       quadraId: ag.quadraId,
+      esporteId: String(ag.esporteId),
       tipoSessao: ag.tipoSessao,
       professorId: ag.professorId,
       isencaoApoiado: ag.isencaoApoiado ?? false,
@@ -724,6 +786,7 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
       diaSemana: p.diaSemana,
       horario: p.horario,
       quadraId: p.quadraId,
+      esporteId: String(p.esporteId),
       dataInicio: p.dataInicio,
       cancelamentos: p.cancelamentos,
       tipoSessao: p.tipoSessao,
@@ -732,7 +795,7 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
 
     const resumo = computeResumoProfessorFromDatasets(
       professor,
-      { fromYMD, toYMD, duracaoMin },
+      { fromYMD, toYMD, duracaoMin, janelasAula },
       comunsDs,
       permanentesDs,
       bloqueiosMap
@@ -771,7 +834,8 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
     const aulasDetalhes = await aulasDetalhadasPeriodoProfessor(
       profId,
       inicioUTC,
-      fimUTCExcl
+      fimUTCExcl,
+      duracaoMin
     );
 
     return res.json({
@@ -873,10 +937,7 @@ router.get("/admin", requireAdmin, async (req, res) => {
               OR: [
                 { professorId: { in: profIds } },
                 {
-                  AND: [
-                    { professorId: null },
-                    { usuarioId: { in: profIds } },
-                  ],
+                  AND: [{ professorId: null }, { usuarioId: { in: profIds } }],
                 },
               ],
             },
@@ -891,6 +952,7 @@ router.get("/admin", requireAdmin, async (req, res) => {
           professorId: true,
           tipoSessao: true,
           isencaoApoiado: true,
+          esporteId: true, // 👈 NOVO
         },
       }),
       prisma.agendamentoPermanente.findMany({
@@ -903,10 +965,7 @@ router.get("/admin", requireAdmin, async (req, res) => {
               OR: [
                 { professorId: { in: profIds } },
                 {
-                  AND: [
-                    { professorId: null },
-                    { usuarioId: { in: profIds } },
-                  ],
+                  AND: [{ professorId: null }, { usuarioId: { in: profIds } }],
                 },
               ],
             },
@@ -922,6 +981,7 @@ router.get("/admin", requireAdmin, async (req, res) => {
           cancelamentos: { select: { data: true } },
           professorId: true,
           tipoSessao: true,
+          esporteId: true, // 👈 NOVO
         },
       }),
       prisma.bloqueioQuadra.findMany({
@@ -943,10 +1003,7 @@ router.get("/admin", requireAdmin, async (req, res) => {
           OR: [
             { professorId: { in: profIds } },
             {
-              AND: [
-                { professorId: null },
-                { usuarioId: { in: profIds } },
-              ],
+              AND: [{ professorId: null }, { usuarioId: { in: profIds } }],
             },
           ],
           multa: { not: null },
@@ -968,6 +1025,7 @@ router.get("/admin", requireAdmin, async (req, res) => {
         data: ag.data,
         horario: ag.horario,
         quadraId: ag.quadraId,
+        esporteId: String(ag.esporteId),
         tipoSessao: ag.tipoSessao,
         professorId: ag.professorId,
         isencaoApoiado: ag.isencaoApoiado ?? false,
@@ -988,6 +1046,7 @@ router.get("/admin", requireAdmin, async (req, res) => {
         diaSemana: p.diaSemana,
         horario: p.horario,
         quadraId: p.quadraId,
+        esporteId: String(p.esporteId),
         dataInicio: p.dataInicio,
         cancelamentos: p.cancelamentos,
         tipoSessao: p.tipoSessao,
@@ -1020,6 +1079,15 @@ router.get("/admin", requireAdmin, async (req, res) => {
       );
     }
 
+    // ====== CARREGAR JANELAS AULA UMA ÚNICA VEZ PARA TODOS ======
+    const esportesIn = Array.from(
+      new Set([
+        ...comunsAll.map((c) => String(c.esporteId)),
+        ...permanentesAll.map((p) => String(p.esporteId)),
+      ].filter(Boolean))
+    );
+    const janelasAula = await carregarJanelasAula(esportesIn);
+
     // 4) Agrega por professor
     const resposta: Array<{
       id: string;
@@ -1044,7 +1112,7 @@ router.get("/admin", requireAdmin, async (req, res) => {
     for (const prof of professores) {
       const resumo = computeResumoProfessorFromDatasets(
         prof,
-        { fromYMD, toYMD, duracaoMin },
+        { fromYMD, toYMD, duracaoMin, janelasAula },
         comunsByProf.get(prof.id) || [],
         permsByProf.get(prof.id) || [],
         bloqueiosMapAdmin
