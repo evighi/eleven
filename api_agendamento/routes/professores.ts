@@ -116,6 +116,12 @@ async function carregarJanelasAula(esporteIds: string[]): Promise<JanelaMap> {
   return map;
 }
 
+/**
+ * ✅ Fallback permissivo para evitar total zerado:
+ * - Se esporteId for vazio/legado: PERMITE (true)
+ * - Se houver janelas cadastradas para esporte/dia: exige estar DENTRO
+ * - Se NÃO houver janelas cadastradas para esporte/dia: PERMITE (true)
+ */
 function isDentroDeJanelaAula(
   janelas: JanelaMap,
   esporteId: string,
@@ -123,10 +129,10 @@ function isDentroDeJanelaAula(
   horarioHHMM: string,
   duracaoMin: number
 ): boolean {
-  if (!esporteId) return false;
+  if (!esporteId) return true; // legado sem esporte → não restringe
   const key = `${esporteId}|${dayIdx}`;
   const slots = janelas.get(key) || [];
-  if (slots.length === 0) return false; // sem janela AULA => não conta
+  if (slots.length === 0) return true; // ⚠️ sem janela → não restringe
   const ini = hhmmToMinutes(horarioHHMM);
   const fim = ini + duracaoMin;
   return slots.some((s) => overlaps(ini, fim, s.ini, s.fim));
@@ -194,7 +200,7 @@ function computeResumoProfessorFromDatasets(
     const ymd = toISODateUTC(ag.data); // storage é 00:00Z do dia local
     const wd = localWeekdayIndexOfYMD(ymd); // 0..6
 
-    // ✅ Regra nova: só conta se estiver dentro de alguma janela AULA do esporte/dia
+    // ✅ Regra nova: fallback permissivo se não houver janela
     if (!isDentroDeJanelaAula(janelasAula, ag.esporteId, wd, ag.horario, duracaoMin)) continue;
 
     // bloqueio?
@@ -395,7 +401,7 @@ async function aulasDetalhadasPeriodoProfessor(
   const esportesIn = Array.from(new Set(ags.map((a) => String(a.esporteId)).filter(Boolean)));
   const janelasAula = await carregarJanelasAula(esportesIn);
 
-  // Filtra de acordo com janelas de AULA
+  // Filtra de acordo com janelas de AULA (com fallback permissivo)
   const filtradas = ags.filter((a) => {
     const ymd = toISODateUTC(a.data);
     const wd = localWeekdayIndexOfYMD(ymd); // 0..6
