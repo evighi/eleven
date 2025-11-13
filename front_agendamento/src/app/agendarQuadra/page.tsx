@@ -84,6 +84,9 @@ type ReservaSuccess = {
 /* tipo da sessão (somente p/ professor) */
 type TipoSessao = "AULA" | "JOGO";
 
+/* resposta do endpoint de sessões permitidas */
+type AllowedResp = { allow: Array<TipoSessao> };
+
 /* =========================================================
    Constantes e helpers
 ========================================================= */
@@ -496,7 +499,7 @@ export default function AgendarQuadraCliente() {
     [ehProfessor]
   );
 
-  /* estado do tipo de sessão */
+  /* estado do tipo de sessão (somente p/ professor) */
   const [tipoSessao, setTipoSessao] = useState<TipoSessao | null>(null);
 
   // ⭐ multa retornada pelo backend
@@ -505,6 +508,11 @@ export default function AgendarQuadraCliente() {
   // 🔸 Aula apoiada
   const [isApoiado, setIsApoiado] = useState<boolean>(false);
   const [apoiadoSel, setApoiadoSel] = useState<UsuarioBusca | null>(null);
+
+  // 🔸 sessões permitidas (professores)
+  const [allowedTipos, setAllowedTipos] = useState<Array<TipoSessao>>([]);
+  const [loadingAllowed, setLoadingAllowed] = useState<boolean>(false);
+  const [errorAllowed, setErrorAllowed] = useState<string | null>(null);
 
   // helpers URL
   const toAbs = useCallback(
@@ -673,6 +681,8 @@ export default function AgendarQuadraCliente() {
     setQuadras([]);
     setMsg("");
     setIsConcurrencyErr(false);
+    setAllowedTipos([]);       // 🔸 limpa sessões permitidas ao trocar esporte/dia
+    setTipoSessao(null);       // 🔸 limpa tipo escolhido
 
     let alive = true;
     const fetchHorarios = async () => {
@@ -779,18 +789,50 @@ export default function AgendarQuadraCliente() {
   /* estado com os dados da reserva confirmada */
   const [successInfo, setSuccessInfo] = useState<ReservaSuccess | null>(null);
 
-  /* ao professor definir horário, decide tipoSessao */
+  /* ====== NOVO: buscar sessões permitidas (professor) ====== */
   useEffect(() => {
+    setErrorAllowed(null);
+    setAllowedTipos([]);
     if (!ehProfessor) { setTipoSessao(null); return; }
-    if (!horario) { setTipoSessao(null); return; }
-    // >= 18:00 sempre JOGO; antes, default AULA (pode mudar no UI do step 3)
-    if (horario >= "18:00") setTipoSessao("JOGO");
-    else setTipoSessao((prev) => prev ?? "AULA");
-  }, [ehProfessor, horario]);
+    if (!esporteId || !diaISO || !horario) { setTipoSessao(null); return; }
+
+    let alive = true;
+    setLoadingAllowed(true);
+    axios.get<AllowedResp>(`${API_URL}/agendamentos/_sessoes-permitidas`, {
+      params: { esporteId, data: diaISO, horario },
+      withCredentials: true,
+    })
+      .then((res) => {
+        if (!alive) return;
+        const allow = Array.isArray(res.data?.allow) ? res.data.allow : [];
+        setAllowedTipos(allow);
+
+        // regra: jogo sempre liberado; se vier só JOGO, trava em JOGO; se vier AULA+JOGO, força escolha
+        if (allow.length === 1) setTipoSessao(allow[0]);
+        else setTipoSessao(null);
+      })
+      .catch((err) => {
+        console.error("Falha ao obter sessões permitidas:", err);
+        if (!alive) return;
+        setErrorAllowed("Não foi possível verificar as sessões permitidas.");
+        // fallback conservador: só JOGO
+        setAllowedTipos(["JOGO"]);
+        setTipoSessao("JOGO");
+      })
+      .finally(() => alive && setLoadingAllowed(false));
+
+    return () => { alive = false; };
+  }, [API_URL, ehProfessor, esporteId, diaISO, horario]);
 
   /* ========= Navegação ========= */
   const confirmarHorario = () => {
     if (!horario) return setMsg("Selecione um horário.");
+    // se professor e existir escolha (AULA/JOGO), exigir quando houver ambos
+    if (ehProfessor && allowedTipos.length > 1 && !tipoSessao) {
+      setMsg("Selecione se é Aula ou Jogo.");
+      setIsConcurrencyErr(false);
+      return;
+    }
     setMsg("");
     setIsConcurrencyErr(false);
     setStep(4);
@@ -852,9 +894,9 @@ export default function AgendarQuadraCliente() {
     if (jogadoresIds.length) extra.jogadoresIds = jogadoresIds;
     if (convidadosNomes.length) extra.convidadosNomes = convidadosNomes;
 
-    /* se professor, envia tipoSessao (>=18:00 força JOGO) */
+    /* professor envia tipoSessao — JOGO sempre permitido; se ambos permitidos e nada escolhido, força JOGO */
     if (ehProfessor) {
-      extra.tipoSessao = horario >= "18:00" ? "JOGO" : (tipoSessao ?? "AULA");
+      extra.tipoSessao = (tipoSessao as TipoSessao | null) ?? "JOGO";
     }
 
     /* 🔸 Aula apoiada: exige apoiado quando marcado em AULA */
@@ -866,7 +908,6 @@ export default function AgendarQuadraCliente() {
     if (ehProfessor && extra.tipoSessao === "AULA" && isApoiado && apoiadoSel?.id) {
       extra.isApoiado = true;
       extra.apoiadoUsuarioId = apoiadoSel.id;
-      // opcional: extra.obs = `[APOIADO:${apoiadoSel.id}]`;
     }
 
     const payload: ReservaPayloadBase & ReservaPayloadExtra = { ...base, ...extra };
@@ -1126,94 +1167,111 @@ export default function AgendarQuadraCliente() {
                 })}
               </div>
 
-              {/* escolha/indicador do tipo de sessão para professor + Aula apoiada */}
+              {/* ===== NOVO bloco para professores: Tipo de sessão por janela permitida ===== */}
               {ehProfessor && !!horario && (
                 <div className="mt-3 space-y-2">
-                  {horario >= "18:00" ? (
+                  <div className="text-[12px]">
+                    {loadingAllowed && (
+                      <div className="text-gray-500">Verificando sessões permitidas…</div>
+                    )}
+                    {!loadingAllowed && errorAllowed && (
+                      <div className="text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                        {errorAllowed} — mantendo <b>Jogo</b> como opção padrão.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Somente JOGO permitido (fora da janela de aulas) */}
+                  {allowedTipos.length === 1 && allowedTipos[0] === "JOGO" && (
                     <div className="text-[12px] rounded-md bg-gray-100 text-gray-800 px-3 py-2">
-                      Tipo de agendamento: <strong>Jogo</strong> (automático para horários pós 18:00)
+                      Tipo de agendamento: <strong>Jogo</strong>
+                      <span className="text-gray-600"> (Aula indisponível neste horário)</span>
                     </div>
-                  ) : (
+                  )}
+
+                  {/* AULA + JOGO permitidos (dentro da janela) */}
+                  {allowedTipos.includes("AULA") && allowedTipos.includes("JOGO") && (
                     <>
-                      <div className="text-[12px]">
-                        <p className="mb-1 text-gray-600">Tipo de agendamento:</p>
-                        <div className="grid grid-cols-2 gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setTipoSessao("AULA")}
-                            className={`rounded-md border px-3 py-2 text-left transition ${tipoSessao === "AULA" ? "bg-orange-50 border-orange-500" : "bg-gray-50 border-gray-200 hover:border-gray-300"}`}
-                          >
-                            <div className="text-sm font-semibold text-gray-800">Aula</div>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setTipoSessao("JOGO")}
-                            className={`rounded-md border px-3 py-2 text-left transition ${tipoSessao === "JOGO" ? "bg-orange-50 border-orange-500" : "bg-gray-50 border-gray-200 hover:border-gray-300"}`}
-                          >
-                            <div className="text-sm font-semibold text-gray-800">Jogo</div>
-                          </button>
-                        </div>
+                      <p className="text-[12px] text-gray-600">Tipo de agendamento:</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setTipoSessao("AULA")}
+                          className={`rounded-md border px-3 py-2 text-left transition ${tipoSessao === "AULA" ? "bg-orange-50 border-orange-500" : "bg-gray-50 border-gray-200 hover:border-gray-300"}`}
+                        >
+                          <div className="text-sm font-semibold text-gray-800">Aula</div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTipoSessao("JOGO")}
+                          className={`rounded-md border px-3 py-2 text-left transition ${tipoSessao === "JOGO" ? "bg-orange-50 border-orange-500" : "bg-gray-50 border-gray-200 hover:border-gray-300"}`}
+                        >
+                          <div className="text-sm font-semibold text-gray-800">Jogo</div>
+                        </button>
+                      </div>
+                    </>
+                  )}
+
+                  {/* 🔸 Aula apoiada: aparece somente quando for AULA */}
+                  {tipoSessao === "AULA" && (
+                    <div className="mt-2 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[13px] font-semibold text-gray-700">
+                          Aula apoiada?
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsApoiado((v) => !v);
+                            if (!isApoiado) setApoiadoSel(null);
+                          }}
+                          className={`px-3 py-1 rounded-md text-sm font-semibold transition ${isApoiado
+                              ? "bg-orange-600 text-white"
+                              : "bg-gray-200 text-gray-800 hover:bg-gray-300"
+                            }`}
+                        >
+                          {isApoiado ? "Sim" : "Não"}
+                        </button>
                       </div>
 
-                      {/* 🔸 Aula apoiada: aparece somente quando for AULA */}
-                      {tipoSessao === "AULA" && (
-                        <div className="mt-2 space-y-2">
-                          <div className="flex items-center justify-between">
-                            <label className="text-[13px] font-semibold text-gray-700">
-                              Aula apoiada?
-                            </label>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setIsApoiado((v) => !v);
-                                if (!isApoiado) setApoiadoSel(null);
-                              }}
-                              className={`px-3 py-1 rounded-md text-sm font-semibold transition ${isApoiado
-                                  ? "bg-orange-600 text-white"
-                                  : "bg-gray-200 text-gray-800 hover:bg-gray-300"
-                                }`}
-                            >
-                              {isApoiado ? "Sim" : "Não"}
-                            </button>
-                          </div>
-
-                          {isApoiado && (
-                            <div className="space-y-2">
-                              <p className="text-[12px] text-gray-600">
-                                Selecione o usuário apoiado. São aceitos perfis{" "}
-                                <b>CLIENTE_APOIADO</b> e também administradores/professor.
-                              </p>
-                              <UserPicker
-                                apiUrl={API_URL}
-                                value={apoiadoSel?.nome || ""}
-                                onSelect={(u) => setApoiadoSel(u)}
-                                onClear={() => setApoiadoSel(null)}
-                                excludeIds={[usuario?.id ?? ""]}
-                                /* 🔸 agora aceita CLIENTE_APOIADO + admins/prof */
-                                extraParams={{
-                                  tipos: "CLIENTE_APOIADO,ADMIN_MASTER,ADMIN_ATENDENTE,ADMIN_PROFESSORES",
-                                  apenasApoiados: 1,
-                                }}
-                                placeholder="Buscar usuário apoiado…"
-                              />
-                              {!apoiadoSel && (
-                                <div className="text-[12px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-                                  É obrigatório escolher o usuário apoiado quando a opção “Aula apoiada” estiver marcada.
-                                </div>
-                              )}
+                      {isApoiado && (
+                        <div className="space-y-2">
+                          <p className="text-[12px] text-gray-600">
+                            Selecione o usuário apoiado. São aceitos perfis{" "}
+                            <b>CLIENTE_APOIADO</b> e também administradores/professor.
+                          </p>
+                          <UserPicker
+                            apiUrl={API_URL}
+                            value={apoiadoSel?.nome || ""}
+                            onSelect={(u) => setApoiadoSel(u)}
+                            onClear={() => setApoiadoSel(null)}
+                            excludeIds={[usuario?.id ?? ""]}
+                            extraParams={{
+                              tipos: "CLIENTE_APOIADO,ADMIN_MASTER,ADMIN_ATENDENTE,ADMIN_PROFESSORES",
+                              apenasApoiados: 1,
+                            }}
+                            placeholder="Buscar usuário apoiado…"
+                          />
+                          {!apoiadoSel && (
+                            <div className="text-[12px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                              É obrigatório escolher o usuário apoiado quando a opção “Aula apoiada” estiver marcada.
                             </div>
                           )}
                         </div>
                       )}
-                    </>
+                    </div>
                   )}
-                </div>
+              </div>
               )}
 
               <Btn
                 className="mt-4 cursor-pointer"
                 onClick={confirmarHorario}
-                disabled={!horario || navLock}
+                disabled={
+                  !horario ||
+                  navLock ||
+                  (ehProfessor && allowedTipos.length > 1 && !tipoSessao) // exige escolha quando houver AULA e JOGO
+                }
               >
                 Confirmar
               </Btn>
@@ -1369,13 +1427,17 @@ export default function AgendarQuadraCliente() {
               {ehProfessor && (
                 <Resumo
                   label="Tipo de agendamento:"
-                  valor={horario >= "18:00" ? "Jogo (automático)" : (tipoSessao === "JOGO" ? "Jogo" : "Aula")}
+                  valor={
+                    allowedTipos.length > 1
+                      ? (tipoSessao === "JOGO" ? "Jogo" : "Aula")
+                      : "Jogo"
+                  }
                   onChange={() => setStep(3)}
                 />
               )}
 
               {/* 🔸 Aula apoiada na confirmação (somente quando AULA) */}
-              {ehProfessor && tipoSessao !== "JOGO" && (
+              {ehProfessor && tipoSessao === "AULA" && (
                 <Resumo
                   label="Aula apoiada:"
                   valor={isApoiado ? (apoiadoSel?.nome || "—") : "Não"}
@@ -1410,7 +1472,8 @@ export default function AgendarQuadraCliente() {
                 disabled={
                   loading ||
                   navLock ||
-                  (ehProfessor && tipoSessao !== "JOGO" && isApoiado && !apoiadoSel?.id) // 🔸 trava sem apoiado
+                  (ehProfessor && allowedTipos.length > 1 && !tipoSessao) || // exige escolha quando houver AULA e JOGO
+                  (ehProfessor && tipoSessao === "AULA" && isApoiado && !apoiadoSel?.id) // 🔸 trava sem apoiado
                 }
               >
                 {loading ? "Enviando..." : "Realizar Reserva"}
