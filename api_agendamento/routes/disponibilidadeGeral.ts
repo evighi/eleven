@@ -24,9 +24,9 @@ type UsuarioSelecionado = {
 
 type AgendamentoComUsuario =
   | {
-    id: string;
-    usuario: UsuarioSelecionado;
-  }
+      id: string;
+      usuario: UsuarioSelecionado;
+    }
   | null;
 
 // horário dentro do intervalo de bloqueio [início, fim)
@@ -68,13 +68,15 @@ const DIA_IDX: Record<DiaSemana, number> = {
   SEXTA: 5,
   SABADO: 6,
 };
+
 function toUtc00(isoYYYYMMDD: string) {
   return new Date(`${isoYYYYMMDD}T00:00:00.000Z`);
 }
+
 function toISODateUTC(d: Date) {
   return d.toISOString().slice(0, 10);
 }
-/** Próxima data do permanente PULANDO exceções (usa hoje como base ou dataInicio se no futuro) */
+
 /** Próxima data do permanente PULANDO exceções (usa hoje como base ou dataInicio se no futuro) */
 async function proximaDataPermanenteSemExcecao(p: {
   id: string;
@@ -83,13 +85,17 @@ async function proximaDataPermanenteSemExcecao(p: {
 }): Promise<string | null> {
   const hoje = startOfDay(new Date());
 
-  const base =
-    p.dataInicio && startOfDay(new Date(p.dataInicio)) > hoje
-      ? startOfDay(new Date(p.dataInicio))
-      : hoje;
+  // base = hoje, a não ser que dataInicio exista e seja no futuro
+  let base = hoje;
+  if (p.dataInicio) {
+    const inicio = startOfDay(new Date(p.dataInicio));
+    if (inicio > hoje) {
+      base = inicio;
+    }
+  }
 
-  const cur = base.getDay();                      // 0..6 local
-  const target = DIA_IDX[p.diaSemana] ?? 0;       // 0..6
+  const cur = base.getDay(); // 0..6 local
+  const target = DIA_IDX[p.diaSemana] ?? 0; // 0..6
   const delta = (target - cur + 7) % 7;
 
   let tentativa = addDays(base, delta);
@@ -109,7 +115,6 @@ async function proximaDataPermanenteSemExcecao(p: {
 
   return null;
 }
-
 
 /**
  * /disponibilidadeGeral/geral
@@ -154,119 +159,175 @@ router.get("/geral", async (req, res) => {
       include: { quadraEsportes: { include: { esporte: true } } },
     });
 
-    const quadrasDisponibilidade = await Promise.all(
-      quadras.map(async (quadra) => {
-        // 1) Permanente (se tiver "data", checa exceção e início do contrato)
-        let conflitoPermanente: AgendamentoComUsuario = null;
+    const quadraIds = quadras.map((q) => q.id);
+    const horarioStr = horario as string;
 
-        const per = await prisma.agendamentoPermanente.findFirst({
+    // ===== Permanentes (batch) =====
+    let permanentes:
+      | {
+          id: string;
+          quadraId: string;
+          usuario: UsuarioSelecionado;
+        }[] = [];
+
+    if (quadraIds.length > 0) {
+      if (range) {
+        // Com data: só permanentes que já começaram E não têm exceção pra esse dia
+        permanentes = await prisma.agendamentoPermanente.findMany({
           where: {
-            quadraId: quadra.id,
-            horario: horario as string,
+            quadraId: { in: quadraIds },
+            horario: horarioStr,
             diaSemana: diaSemanaFinal,
             status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
-            // ✔ só considera o permanente se o contrato já começou
-            ...(range
-              ? { OR: [{ dataInicio: null }, { dataInicio: { lte: range.inicio } }] }
-              : {}),
+            OR: [{ dataInicio: null }, { dataInicio: { lte: range.inicio } }],
+            cancelamentos: { none: { data: { gte: range.inicio, lt: range.fim } } },
           },
           select: {
             id: true,
+            quadraId: true,
             usuario: { select: { nome: true, email: true, celular: true } },
           },
         });
+      } else {
+        // Sem data: qualquer permanente ativo nesse dia/horário/quadra
+        permanentes = await prisma.agendamentoPermanente.findMany({
+          where: {
+            quadraId: { in: quadraIds },
+            horario: horarioStr,
+            diaSemana: diaSemanaFinal,
+            status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+          },
+          select: {
+            id: true,
+            quadraId: true,
+            usuario: { select: { nome: true, email: true, celular: true } },
+          },
+        });
+      }
+    }
 
-        if (per) {
-          if (range) {
-            const temExcecao = await prisma.agendamentoPermanenteCancelamento.findFirst({
-              where: {
-                agendamentoPermanenteId: per.id,
-                data: { gte: range.inicio, lt: range.fim },
-              },
-              select: { id: true },
-            });
-            if (!temExcecao) {
-              conflitoPermanente = {
-                id: per.id,
-                usuario: per.usuario as UsuarioSelecionado,
-              };
-            }
-          } else {
-            conflitoPermanente = {
-              id: per.id,
-              usuario: per.usuario as UsuarioSelecionado,
-            };
-          }
-        }
+    const permByQuadra = new Map<string, { id: string; usuario: UsuarioSelecionado }>();
+    permanentes.forEach((p) => {
+      if (!permByQuadra.has(p.quadraId)) {
+        permByQuadra.set(p.quadraId, {
+          id: p.id,
+          usuario: p.usuario as UsuarioSelecionado,
+        });
+      }
+    });
 
-        // 2) Comum (só dá pra checar se "data" foi informada)
-        let conflitoComum: AgendamentoComUsuario = null;
-        if (range) {
-          const com = await prisma.agendamento.findFirst({
-            where: {
-              quadraId: quadra.id,
-              horario: horario as string,
-              data: { gte: range.inicio, lt: range.fim },
-              status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
-            },
-            select: {
-              id: true,
-              usuario: { select: { nome: true, email: true, celular: true } },
-            },
-          });
-          if (com) {
-            conflitoComum = {
-              id: com.id,
-              usuario: com.usuario as UsuarioSelecionado,
-            };
-          }
-        }
+    // ===== Comuns (batch, só com data) =====
+    let comuns:
+      | {
+          id: string;
+          quadraId: string;
+          usuario: UsuarioSelecionado;
+        }[] = [];
+    if (range && quadraIds.length > 0) {
+      comuns = await prisma.agendamento.findMany({
+        where: {
+          quadraId: { in: quadraIds },
+          horario: horarioStr,
+          data: { gte: range.inicio, lt: range.fim },
+          status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+        },
+        select: {
+          id: true,
+          quadraId: true,
+          usuario: { select: { nome: true, email: true, celular: true } },
+        },
+      });
+    }
 
-        // 3) Bloqueio (se "data" foi informada)
-        let conflitoBloqueio: BloqueioQuadra | null = null;
-        if (range) {
-          const bloqueios = await prisma.bloqueioQuadra.findMany({
-            where: {
-              quadras: { some: { id: quadra.id } },
-              dataBloqueio: { gte: range.inicio, lt: range.fim },
-            },
-          });
-          conflitoBloqueio =
-            bloqueios.find((b) =>
-              horarioDentroDoBloqueio(horario as string, b.inicioBloqueio, b.fimBloqueio)
-            ) ?? null;
-        }
+    const comumByQuadra = new Map<string, { id: string; usuario: UsuarioSelecionado }>();
+    comuns.forEach((c) => {
+      if (!comumByQuadra.has(c.quadraId)) {
+        comumByQuadra.set(c.quadraId, {
+          id: c.id,
+          usuario: c.usuario as UsuarioSelecionado,
+        });
+      }
+    });
 
-        // quem está ocupando?
-        let tipoReserva: "permanente" | "comum" | null = null;
-        let usuario: UsuarioSelecionado | null = null;
-        let agendamentoId: string | null = null;
+    // ===== Bloqueios (batch, só com data) =====
+    let bloqueiosPorQuadra = new Map<string, BloqueioQuadra[]>();
+    if (range && quadraIds.length > 0) {
+      const bloqueios = await prisma.bloqueioQuadra.findMany({
+        where: {
+          dataBloqueio: { gte: range.inicio, lt: range.fim },
+          quadras: { some: { id: { in: quadraIds } } },
+        },
+        include: { quadras: { select: { id: true } } },
+      });
 
-        if (conflitoPermanente) {
-          tipoReserva = "permanente";
-          usuario = conflitoPermanente.usuario;
-          agendamentoId = conflitoPermanente.id;
-        } else if (conflitoComum) {
-          tipoReserva = "comum";
-          usuario = conflitoComum.usuario;
-          agendamentoId = conflitoComum.id;
-        }
+      bloqueiosPorQuadra = new Map<string, BloqueioQuadra[]>();
+      bloqueios.forEach((b) => {
+        b.quadras.forEach((q) => {
+          const list = bloqueiosPorQuadra.get(q.id) || [];
+          list.push(b);
+          bloqueiosPorQuadra.set(q.id, list);
+        });
+      });
+    }
 
-        const disponivel = !tipoReserva && !conflitoBloqueio;
+    // ===== Monta resposta das QUADRAS =====
+    const quadrasDisponibilidade = quadras.map((quadra) => {
+      let conflitoPermanente: AgendamentoComUsuario = null;
+      let conflitoComum: AgendamentoComUsuario = null;
+      let conflitoBloqueio: BloqueioQuadra | null = null;
 
-        return {
-          quadraId: quadra.id,
-          nome: quadra.nome,
-          numero: quadra.numero,
-          esporte: quadra.quadraEsportes.map((qe) => qe.esporte.nome).join(", "),
-          disponivel,
-          tipoReserva,
-          usuario,
-          agendamentoId,
-          bloqueada: !!conflitoBloqueio,
+      const per = permByQuadra.get(quadra.id);
+      if (per) {
+        conflitoPermanente = {
+          id: per.id,
+          usuario: per.usuario,
         };
-      })
-    );
+      }
+
+      if (range) {
+        const com = comumByQuadra.get(quadra.id);
+        if (com) {
+          conflitoComum = {
+            id: com.id,
+            usuario: com.usuario,
+          };
+        }
+
+        const bloqueiosQuadra = bloqueiosPorQuadra.get(quadra.id) || [];
+        conflitoBloqueio =
+          bloqueiosQuadra.find((b) =>
+            horarioDentroDoBloqueio(horarioStr, b.inicioBloqueio, b.fimBloqueio)
+          ) ?? null;
+      }
+
+      let tipoReserva: "permanente" | "comum" | null = null;
+      let usuario: UsuarioSelecionado | null = null;
+      let agendamentoId: string | null = null;
+
+      if (conflitoPermanente) {
+        tipoReserva = "permanente";
+        usuario = conflitoPermanente.usuario;
+        agendamentoId = conflitoPermanente.id;
+      } else if (conflitoComum) {
+        tipoReserva = "comum";
+        usuario = conflitoComum.usuario;
+        agendamentoId = conflitoComum.id;
+      }
+
+      const disponivel = !tipoReserva && !conflitoBloqueio;
+
+      return {
+        quadraId: quadra.id,
+        nome: quadra.nome,
+        numero: quadra.numero,
+        esporte: quadra.quadraEsportes.map((qe) => qe.esporte.nome).join(", "),
+        disponivel,
+        tipoReserva,
+        usuario,
+        agendamentoId,
+        bloqueada: !!conflitoBloqueio,
+      };
+    });
 
     // Agrupa por esporte
     const quadrasAgrupadasPorEsporte = quadrasDisponibilidade.reduce(
@@ -284,72 +345,117 @@ router.get("/geral", async (req, res) => {
     // -------------------- CHURRASQUEIRAS (COM INÍCIO & EXCEÇÕES) --------------------
     const churrasqueiras = await prisma.churrasqueira.findMany();
     const turnos: Turno[] = ["DIA", "NOITE"];
+    const churrasIds = churrasqueiras.map((c) => c.id);
+
+    // permanentes de churrasqueiras (batch)
+    let perChurras:
+      | {
+          id: string;
+          churrasqueiraId: string;
+          turno: Turno;
+          usuario: UsuarioSelecionado;
+        }[] = [];
+
+    if (churrasIds.length > 0) {
+      if (range) {
+        perChurras = await prisma.agendamentoPermanenteChurrasqueira.findMany({
+          where: {
+            diaSemana: diaSemanaFinal,
+            churrasqueiraId: { in: churrasIds },
+            turno: { in: turnos },
+            status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+            OR: [{ dataInicio: null }, { dataInicio: { lte: range.inicio } }],
+            cancelamentos: { none: { data: { gte: range.inicio, lt: range.fim } } },
+          },
+          select: {
+            id: true,
+            churrasqueiraId: true,
+            turno: true,
+            usuario: { select: { nome: true, email: true, celular: true } },
+          },
+        });
+      } else {
+        perChurras = await prisma.agendamentoPermanenteChurrasqueira.findMany({
+          where: {
+            diaSemana: diaSemanaFinal,
+            churrasqueiraId: { in: churrasIds },
+            turno: { in: turnos },
+            status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+          },
+          select: {
+            id: true,
+            churrasqueiraId: true,
+            turno: true,
+            usuario: { select: { nome: true, email: true, celular: true } },
+          },
+        });
+      }
+    }
+
+    const perChByKey = new Map<string, { id: string; usuario: UsuarioSelecionado }>();
+    perChurras.forEach((p) => {
+      const key = `${p.churrasqueiraId}|${p.turno}`;
+      if (!perChByKey.has(key)) {
+        perChByKey.set(key, {
+          id: p.id,
+          usuario: p.usuario as UsuarioSelecionado,
+        });
+      }
+    });
+
+    // comuns de churrasqueiras (batch, só com data)
+    let comChurras:
+      | {
+          id: string;
+          churrasqueiraId: string;
+          turno: Turno;
+          usuario: UsuarioSelecionado;
+        }[] = [];
+
+    if (range && churrasIds.length > 0) {
+      comChurras = await prisma.agendamentoChurrasqueira.findMany({
+        where: {
+          churrasqueiraId: { in: churrasIds },
+          turno: { in: turnos },
+          data: { gte: range.inicio, lt: range.fim },
+          status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+        },
+        select: {
+          id: true,
+          churrasqueiraId: true,
+          turno: true,
+          usuario: { select: { nome: true, email: true, celular: true } },
+        },
+      });
+    }
+
+    const comChByKey = new Map<string, { id: string; usuario: UsuarioSelecionado }>();
+    comChurras.forEach((c) => {
+      const key = `${c.churrasqueiraId}|${c.turno}`;
+      if (!comChByKey.has(key)) {
+        comChByKey.set(key, {
+          id: c.id,
+          usuario: c.usuario as UsuarioSelecionado,
+        });
+      }
+    });
 
     const churrasqueirasDisponibilidade = await Promise.all(
       churrasqueiras.map(async (churrasqueira) => {
         const disponibilidadesPorTurno = await Promise.all(
           turnos.map(async (turno) => {
-            // Permanente — só vale se já começou (ou sem dataInicio)
-            const per = await prisma.agendamentoPermanenteChurrasqueira.findFirst({
-              where: {
-                diaSemana: diaSemanaFinal,
-                turno,
-                churrasqueiraId: churrasqueira.id,
-                status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
-                ...(range ? { OR: [{ dataInicio: null }, { dataInicio: { lte: range.inicio } }] } : {}),
-              },
-              select: {
-                id: true,
-                usuario: { select: { nome: true, email: true, celular: true } },
-              },
-            });
-
-            // Se houver data específica, checar exceção do PERMANENTE para o dia
-            let perEfetivo: { id: string; usuario: UsuarioSelecionado } | null = null;
-            if (per) {
-              if (range) {
-                const exc =
-                  await prisma.agendamentoPermanenteChurrasqueiraCancelamento.findFirst({
-                    where: {
-                      agendamentoPermanenteChurrasqueiraId: per.id,
-                      data: { gte: range.inicio, lt: range.fim },
-                    },
-                    select: { id: true },
-                  });
-                if (!exc) {
-                  perEfetivo = { id: per.id, usuario: per.usuario as UsuarioSelecionado };
-                }
-              } else {
-                perEfetivo = { id: per.id, usuario: per.usuario as UsuarioSelecionado };
-              }
-            }
-
-            // Comum (só checa com "data")
-            let com: { id: string; usuario: UsuarioSelecionado } | null = null;
-            if (range) {
-              const c = await prisma.agendamentoChurrasqueira.findFirst({
-                where: {
-                  data: { gte: range.inicio, lt: range.fim },
-                  turno,
-                  churrasqueiraId: churrasqueira.id,
-                  status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
-                },
-                select: {
-                  id: true,
-                  usuario: { select: { nome: true, email: true, celular: true } },
-                },
-              });
-              if (c) com = { id: c.id, usuario: c.usuario as UsuarioSelecionado };
-            }
+            const key = `${churrasqueira.id}|${turno}`;
+            const per = perChByKey.get(key) || null;
+            const com = range ? comChByKey.get(key) || null : null;
 
             let tipoReserva: "permanente" | "comum" | null = null;
             let usuario: UsuarioSelecionado | null = null;
             let agendamentoId: string | null = null;
 
-            if (perEfetivo) {
+            if (per) {
               tipoReserva = "permanente";
-              usuario = perEfetivo.usuario;
-              agendamentoId = perEfetivo.id;
+              usuario = per.usuario;
+              agendamentoId = per.id;
             } else if (com) {
               tipoReserva = "comum";
               usuario = com.usuario;
@@ -675,14 +781,21 @@ router.get("/permanentes", async (req, res) => {
         horario: true,
         dataInicio: true,
         usuario: { select: { nome: true, email: true, celular: true } },
-        cancelamentos: { select: { id: true, data: true, motivo: true }, orderBy: { data: "asc" } },
+        cancelamentos: {
+          select: { id: true, data: true, motivo: true },
+          orderBy: { data: "asc" },
+        },
       },
     });
 
     // Calcula proximaData por permanente (pula exceções)
     const metaByPermId = new Map<
       string,
-      { proximaData: string | null; dataInicio: string | null; excecoes: { id: string; data: string; motivo: string | null }[] }
+      {
+        proximaData: string | null;
+        dataInicio: string | null;
+        excecoes: { id: string; data: string; motivo: string | null }[];
+      }
     >();
 
     await Promise.all(
@@ -711,7 +824,11 @@ router.get("/permanentes", async (req, res) => {
       {
         id: string;
         usuario: UsuarioSelecionado;
-        meta: { proximaData: string | null; dataInicio: string | null; excecoes: { id: string; data: string; motivo: string | null }[] };
+        meta: {
+          proximaData: string | null;
+          dataInicio: string | null;
+          excecoes: { id: string; data: string; motivo: string | null }[];
+        };
       }
     >();
     permanentes.forEach((p) => {
@@ -807,14 +924,21 @@ router.get("/permanentes", async (req, res) => {
         turno: true,
         dataInicio: true,
         usuario: { select: { nome: true, email: true, celular: true } },
-        cancelamentos: { select: { id: true, data: true, motivo: true }, orderBy: { data: "asc" } },
+        cancelamentos: {
+          select: { id: true, data: true, motivo: true },
+          orderBy: { data: "asc" },
+        },
       },
     });
 
     // calcula próxima data (pulando exceções) para cada permanente de churrasqueira
     const metaChByPermId = new Map<
       string,
-      { proximaData: string | null; dataInicio: string | null; excecoes: { id: string; data: string; motivo: string | null }[] }
+      {
+        proximaData: string | null;
+        dataInicio: string | null;
+        excecoes: { id: string; data: string; motivo: string | null }[];
+      }
     >();
 
     await Promise.all(
@@ -843,7 +967,11 @@ router.get("/permanentes", async (req, res) => {
       {
         id: string;
         usuario: UsuarioSelecionado;
-        meta: { proximaData: string | null; dataInicio: string | null; excecoes: { id: string; data: string; motivo: string | null }[] };
+        meta: {
+          proximaData: string | null;
+          dataInicio: string | null;
+          excecoes: { id: string; data: string; motivo: string | null }[];
+        };
       }
     >();
     perChurras.forEach((p) => {
