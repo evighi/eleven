@@ -197,6 +197,9 @@ model QuadraEsporte {
   esporte Esporte @relation(fields: [esporteId], references: [id])
 
   @@id([quadraId, esporteId])
+
+  /// índice extra para consultas por esporte (quadras por esporte)
+  @@index([esporteId])
 }
 
 model Churrasqueira {
@@ -268,6 +271,12 @@ model Agendamento {
   @@index([quadraId, data])
   @@index([professorId, tipoSessao, data])
   @@index([apoiadoUsuarioId, data])
+
+  /// índice mais específico para disponibilidade por quadra+data+horário
+  @@index([quadraId, data, horario])
+
+  /// índice para buscas por dia (intervalo de data) filtrando por status
+  @@index([data, status])
 }
 
 model AgendamentoPermanente {
@@ -308,6 +317,9 @@ model AgendamentoPermanente {
   @@index([usuarioId])
   @@index([quadraId, diaSemana, horario])
   @@index([professorId, tipoSessao, diaSemana])
+
+  /// índice para buscas por permanentes do dia-da-semana
+  @@index([diaSemana, status])
 }
 
 model AgendamentoChurrasqueira {
@@ -336,6 +348,9 @@ model AgendamentoChurrasqueira {
 
   @@index([usuarioId])
   @@index([churrasqueiraId, data])
+
+  /// índice para disponibilidade por churrasqueira+data+turno
+  @@index([churrasqueiraId, data, turno])
 }
 
 model AgendamentoPermanenteChurrasqueira {
@@ -382,6 +397,9 @@ model BloqueioQuadra {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  /// índice para buscas por bloqueios em um dia/intervalo
+  @@index([dataBloqueio])
 }
 
 // Exceção (um dia) — QUADRA
