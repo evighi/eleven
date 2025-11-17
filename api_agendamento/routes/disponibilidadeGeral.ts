@@ -499,7 +499,7 @@ router.get("/geral", async (req, res) => {
  *        (Agora inclui CHURRASQUEIRAS por turno para o mesmo dia)
  */
 router.get("/dia", async (req, res) => {
-  const { data } = req.query;
+  const { data, esporteId } = req.query; // 👈 NOVO: aceita esporteId também
   if (!data) {
     return res
       .status(400)
@@ -518,49 +518,72 @@ router.get("/dia", async (req, res) => {
     const horas = horasDoDia();
 
     // ========== QUADRAS + esportes ==========
+    // 👇 AQUI: se vier esporteId, já filtra as quadras por esporte
     const quadras = await prisma.quadra.findMany({
+      where: esporteId
+        ? { quadraEsportes: { some: { esporteId: esporteId as string } } }
+        : {},
       include: { quadraEsportes: { include: { esporte: true } } },
       orderBy: { numero: "asc" },
     });
 
-    // Permanentes do dia-da-semana, removendo os que têm exceção no dia e que ainda não iniciaram
-    const permanentes = await prisma.agendamentoPermanente.findMany({
-      where: {
-        diaSemana: diaSemanaFinal,
-        status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
-        OR: [{ dataInicio: null }, { dataInicio: { lte: inicio } }],
-        cancelamentos: { none: { data: { gte: inicio, lt: fim } } },
-      },
-      select: {
-        id: true,
-        quadraId: true,
-        horario: true,
-        usuario: { select: { nome: true, email: true, celular: true } },
-      },
-    });
+    const quadraIds = quadras.map((q) => q.id);
 
-    // Comuns do dia
-    const comuns = await prisma.agendamento.findMany({
-      where: {
-        status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
-        data: { gte: inicio, lt: fim },
-      },
-      select: {
-        id: true,
-        quadraId: true,
-        horario: true,
-        usuario: { select: { nome: true, email: true, celular: true } },
-      },
-    });
+    // Permanentes do dia-da-semana, só das quadras relevantes
+    const permanentes =
+      quadraIds.length === 0
+        ? []
+        : await prisma.agendamentoPermanente.findMany({
+            where: {
+              quadraId: { in: quadraIds }, // 👈 filtro por quadra
+              diaSemana: diaSemanaFinal,
+              status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+              OR: [{ dataInicio: null }, { dataInicio: { lte: inicio } }],
+              cancelamentos: { none: { data: { gte: inicio, lt: fim } } },
+            },
+            select: {
+              id: true,
+              quadraId: true,
+              horario: true,
+              usuario: { select: { nome: true, email: true, celular: true } },
+            },
+          });
 
-    // Bloqueios do dia
-    const bloqueios = await prisma.bloqueioQuadra.findMany({
-      where: { dataBloqueio: { gte: inicio, lt: fim } },
-      include: { quadras: { select: { id: true } } },
-    });
+    // Comuns do dia, só das quadras relevantes
+    const comuns =
+      quadraIds.length === 0
+        ? []
+        : await prisma.agendamento.findMany({
+            where: {
+              quadraId: { in: quadraIds }, // 👈 filtro por quadra
+              status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+              data: { gte: inicio, lt: fim },
+            },
+            select: {
+              id: true,
+              quadraId: true,
+              horario: true,
+              usuario: { select: { nome: true, email: true, celular: true } },
+            },
+          });
+
+    // Bloqueios do dia, só nas quadras relevantes
+    const bloqueios =
+      quadraIds.length === 0
+        ? []
+        : await prisma.bloqueioQuadra.findMany({
+            where: {
+              dataBloqueio: { gte: inicio, lt: fim },
+              quadras: { some: { id: { in: quadraIds } } }, // 👈 filtro por quadra
+            },
+            include: { quadras: { select: { id: true } } },
+          });
 
     // indexadores
-    const permByKey = new Map<string, { id: string; usuario: UsuarioSelecionado }>();
+    const permByKey = new Map<
+      string,
+      { id: string; usuario: UsuarioSelecionado }
+    >();
     permanentes.forEach((p) => {
       permByKey.set(`${p.quadraId}|${p.horario}`, {
         id: p.id,
@@ -568,7 +591,10 @@ router.get("/dia", async (req, res) => {
       });
     });
 
-    const comumByKey = new Map<string, { id: string; usuario: UsuarioSelecionado }>();
+    const comumByKey = new Map<
+      string,
+      { id: string; usuario: UsuarioSelecionado }
+    >();
     comuns.forEach((c) => {
       comumByKey.set(`${c.quadraId}|${c.horario}`, {
         id: c.id,
@@ -576,7 +602,10 @@ router.get("/dia", async (req, res) => {
       });
     });
 
-    const bloqueiosPorQuadra = new Map<string, { inicio: string; fim: string }[]>();
+    const bloqueiosPorQuadra = new Map<
+      string,
+      { inicio: string; fim: string }[]
+    >();
     bloqueios.forEach((b) => {
       b.quadras.forEach((q) => {
         const list = bloqueiosPorQuadra.get(q.id) || [];
@@ -585,7 +614,7 @@ router.get("/dia", async (req, res) => {
       });
     });
 
-    // estrutura final
+    // ===== estrutura final, IGUAL à que você já tinha =====
     type SlotInfo = {
       disponivel: boolean;
       bloqueada?: boolean;
@@ -660,14 +689,13 @@ router.get("/dia", async (req, res) => {
       blk.grupos = chunk(blk.quadras, 6);
     });
 
-    // ========== CHURRASQUEIRAS por turno no mesmo dia ==========
+    // ========== CHURRASQUEIRAS (mantém sua lógica atual) ==========
     const churrasqueiras = await prisma.churrasqueira.findMany({
       orderBy: { numero: "asc" },
     });
     const turnos: Turno[] = ["DIA", "NOITE"];
     const churrasIds = churrasqueiras.map((ch) => ch.id);
 
-    // 🔹 Permanentes de churrasqueiras (batch)
     let perChurras:
       | {
           id: string;
@@ -695,7 +723,10 @@ router.get("/dia", async (req, res) => {
       });
     }
 
-    const perChByKey = new Map<string, { id: string; usuario: UsuarioSelecionado }>();
+    const perChByKey = new Map<
+      string,
+      { id: string; usuario: UsuarioSelecionado }
+    >();
     perChurras.forEach((p) => {
       const key = `${p.churrasqueiraId}|${p.turno}`;
       if (!perChByKey.has(key)) {
@@ -706,7 +737,6 @@ router.get("/dia", async (req, res) => {
       }
     });
 
-    // 🔹 Comuns de churrasqueiras (batch)
     let comChurras:
       | {
           id: string;
@@ -732,7 +762,10 @@ router.get("/dia", async (req, res) => {
       });
     }
 
-    const comChByKey = new Map<string, { id: string; usuario: UsuarioSelecionado }>();
+    const comChByKey = new Map<
+      string,
+      { id: string; usuario: UsuarioSelecionado }
+    >();
     comChurras.forEach((c) => {
       const key = `${c.churrasqueiraId}|${c.turno}`;
       if (!comChByKey.has(key)) {
@@ -793,6 +826,7 @@ router.get("/dia", async (req, res) => {
       .json({ erro: "Erro ao montar disponibilidade do dia" });
   }
 });
+
 
 /**
  * ✅ /disponibilidadeGeral/permanentes

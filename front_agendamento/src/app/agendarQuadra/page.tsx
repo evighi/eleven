@@ -811,7 +811,7 @@ export default function AgendarQuadraCliente() {
         const { data } = await axios.get<DisponibilidadeDiaResp>(
           `${API_URL}/disponibilidadeGeral/dia`,
           {
-            params: { data: diaISO },
+            params: { data: diaISO, esporteId },
             withCredentials: true,
           }
         );
