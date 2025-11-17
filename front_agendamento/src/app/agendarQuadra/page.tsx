@@ -20,7 +20,12 @@ import AppImage from "@/components/AppImage";
 /* =========================================================
    Tipos
 ========================================================= */
-type EsporteAPI = { id: string | number; nome: string; imagem?: string | null; logoUrl?: string | null };
+type EsporteAPI = {
+  id: string | number;
+  nome: string;
+  imagem?: string | null;
+  logoUrl?: string | null;
+};
 type QuadraAPI = {
   id?: string;
   quadraId?: string;
@@ -30,7 +35,12 @@ type QuadraAPI = {
   imagem?: string | null;
   arquivo?: string | null;
 };
-type Disponibilidade = { quadraId: string; nome: string; numero: number; disponivel?: boolean };
+type Disponibilidade = {
+  quadraId: string;
+  nome: string;
+  numero: number;
+  disponivel?: boolean;
+};
 
 type Esporte = { id: string; nome: string; logoUrl?: string };
 type QuadraDisponivel = { quadraId: string; nome: string; numero: number; logoUrl?: string };
@@ -77,7 +87,7 @@ type ReservaSuccess = {
   quadraNome: string;
   quadraNumero?: string | number;
   quadraLogo?: string;
-  data: string;    // YYYY-MM-DD
+  data: string; // YYYY-MM-DD
   horario: string; // HH:MM
 };
 
@@ -87,12 +97,45 @@ type TipoSessao = "AULA" | "JOGO";
 /* resposta do endpoint de sessões permitidas */
 type AllowedResp = { allow: Array<TipoSessao> };
 
+/* ===== tipos mínimos da rota /disponibilidadeGeral/dia ===== */
+type SlotInfoDia = {
+  disponivel: boolean;
+  bloqueada?: boolean;
+  tipoReserva?: "comum" | "permanente";
+};
+type QuadraSlotsDia = {
+  quadraId: string;
+  nome: string;
+  numero: number;
+  slots: Record<string, SlotInfoDia>;
+};
+type DisponibilidadeDiaResp = {
+  data: string;
+  horas: string[];
+  esportes: Record<string, { quadras: QuadraSlotsDia[] }>;
+  // churrasqueiras também vem, mas não precisamos aqui
+};
+
 /* =========================================================
    Constantes e helpers
 ========================================================= */
 const HORARIOS = [
-  "08:00", "09:00", "10:00", "11:00", "12:00", "13:00",
-  "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00", "23:00",
+  "08:00",
+  "09:00",
+  "10:00",
+  "11:00",
+  "12:00",
+  "13:00",
+  "14:00",
+  "15:00",
+  "16:00",
+  "17:00",
+  "18:00",
+  "19:00",
+  "20:00",
+  "21:00",
+  "22:00",
+  "23:00",
 ] as const;
 
 /* gerador de faixas de horário (ex.: 7..22 -> ["07:00", ... "22:00"]) */
@@ -124,13 +167,48 @@ function dateFromIsoSP(isoYmd: string) {
   return new Date(`${isoYmd}T00:00:00-03:00`);
 }
 
-const DOW_MIXED = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
-const DOW_UPPER = ["DOMINGO", "SEGUNDA", "TERÇA", "QUARTA", "QUINTA", "SEXTA", "SÁBADO"];
+const DOW_MIXED = [
+  "Domingo",
+  "Segunda",
+  "Terça",
+  "Quarta",
+  "Quinta",
+  "Sexta",
+  "Sábado",
+];
+const DOW_UPPER = [
+  "DOMINGO",
+  "SEGUNDA",
+  "TERÇA",
+  "QUARTA",
+  "QUINTA",
+  "SEXTA",
+  "SÁBADO",
+];
 
 function diasProximos(qtd = 7) {
-  const out: { iso: string; d: number; mes: string; wdShort: string; wdFull: string }[] = [];
+  const out: {
+    iso: string;
+    d: number;
+    mes: string;
+    wdShort: string;
+    wdFull: string;
+  }[] = [];
   const wdShort = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
-  const meses = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"];
+  const meses = [
+    "JAN",
+    "FEV",
+    "MAR",
+    "ABR",
+    "MAI",
+    "JUN",
+    "JUL",
+    "AGO",
+    "SET",
+    "OUT",
+    "NOV",
+    "DEZ",
+  ];
 
   const base = new Date();
   for (let i = 0; i < qtd; i++) {
@@ -205,20 +283,24 @@ function StepTrail({
           const cls = isCurrent
             ? "bg-orange-600 border-orange-600 text-white"
             : isDone
-              ? "bg-gray-300 border-gray-400 text-gray-900"
-              : "bg-gray-100 border-gray-300 text-gray-700";
+            ? "bg-gray-300 border-gray-400 text-gray-900"
+            : "bg-gray-100 border-gray-300 text-gray-700";
 
           return (
             <div key={it.step} className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => (isDone ? onJump(it.step) : undefined)}
-                className={`${base} ${cls} ${isDone ? "cursor-pointer hover:brightness-95" : "cursor-default"}`}
+                className={`${base} ${cls} ${
+                  isDone ? "cursor-pointer hover:brightness-95" : "cursor-default"
+                }`}
                 title={isDone ? "Voltar para este passo" : undefined}
               >
                 {label}
               </button>
-              {i < items.length - 1 && <span className="text-gray-400">›</span>}
+              {i < items.length - 1 && (
+                <span className="text-gray-400">›</span>
+              )}
             </div>
           );
         })}
@@ -305,7 +387,7 @@ function UserPicker({
             params: {
               q,
               limit: 10,
-              ...(extraParams || {}), // 🔸 inclui filtros extras (apoiados, etc.)
+              ...(extraParams || {}),
             },
             withCredentials: true,
             signal: controller.signal,
@@ -373,7 +455,9 @@ function UserPicker({
           )}
 
           {!loading && results.length === 0 && term.trim().length >= 2 && (
-            <div className="px-3 py-2 text-sm text-gray-500">Nenhum usuário encontrado.</div>
+            <div className="px-3 py-2 text-sm text-gray-500">
+              Nenhum usuário encontrado.
+            </div>
           )}
 
           {!loading && results.length > 0 && (
@@ -391,7 +475,9 @@ function UserPicker({
                   >
                     <AvatarCircle label={u.nome || ""} />
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-medium text-orange-600">{u.nome}</div>
+                      <div className="truncate text-sm font-medium text-orange-600">
+                        {u.nome}
+                      </div>
                     </div>
                   </button>
                 </li>
@@ -481,7 +567,6 @@ export default function AgendarQuadraCliente() {
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
 
   // protege a rota
-  // depois — deixa professor entrar no fluxo de marcação
   const { isChecking } = useRequireAuth([
     "CLIENTE",
     "CLIENTE_APOIADO",
@@ -503,7 +588,7 @@ export default function AgendarQuadraCliente() {
   const [tipoSessao, setTipoSessao] = useState<TipoSessao | null>(null);
 
   // ⭐ multa retornada pelo backend
-  const [multaValor, setMultaValor] = useState<number>(0); // ⭐
+  const [multaValor, setMultaValor] = useState<number>(0);
 
   // 🔸 Aula apoiada
   const [isApoiado, setIsApoiado] = useState<boolean>(false);
@@ -531,9 +616,9 @@ export default function AgendarQuadraCliente() {
       const candidate = e.logoUrl || e.imagem || "";
       const normalized =
         candidate &&
-          !/^(https?:|data:|blob:)/i.test(candidate) &&
-          !candidate.startsWith("/") &&
-          !candidate.includes("/")
+        !/^(https?:|data:|blob:)/i.test(candidate) &&
+        !candidate.startsWith("/") &&
+        !candidate.includes("/")
           ? `/uploads/esportes/${candidate}`
           : candidate;
 
@@ -548,9 +633,9 @@ export default function AgendarQuadraCliente() {
       const candidate = q.logoUrl || q.imagem || q.arquivo || "";
       const normalized =
         candidate &&
-          !/^(https?:|data:|blob:)/i.test(String(candidate)) &&
-          !String(candidate).startsWith("/") &&
-          !String(candidate).includes("/")
+        !/^(https?:|data:|blob:)/i.test(String(candidate)) &&
+        !String(candidate).startsWith("/") &&
+        !String(candidate).includes("/")
           ? `/uploads/quadras/${candidate}`
           : String(candidate);
 
@@ -565,8 +650,8 @@ export default function AgendarQuadraCliente() {
   // dados
   const [esportes, setEsportes] = useState<Esporte[]>([]);
   const [loadingEsportes, setLoadingEsportes] = useState(false);
-  const [esporteId, setEsporteId] = useState<string>("");
   const dias = useMemo(() => diasProximos(7), []);
+  const [esporteId, setEsporteId] = useState<string>("");
   const [diaISO, setDiaISO] = useState<string>(dias[0]?.iso || "");
   const [horario, setHorario] = useState<string>("");
 
@@ -620,15 +705,25 @@ export default function AgendarQuadraCliente() {
   const updatePlayer = (id: string, patch: Partial<Player>) =>
     setPlayers((cur) => cur.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   const removePlayer = (id: string) =>
-    setPlayers((cur) => cur.filter((p) => p.id === id || p.kind !== "owner"));
+    setPlayers((cur) =>
+      cur.filter((p) => p.id === id || p.kind !== "owner")
+    );
   const addRegisteredField = () =>
-    setPlayers((cur) => [...cur, { id: cryptoRandom(), kind: "registered", value: "" }]);
+    setPlayers((cur) => [
+      ...cur,
+      { id: cryptoRandom(), kind: "registered", value: "" },
+    ]);
   const addGuestField = () =>
-    setPlayers((cur) => [...cur, { id: cryptoRandom(), kind: "guest", value: "" }]);
+    setPlayers((cur) => [
+      ...cur,
+      { id: cryptoRandom(), kind: "guest", value: "" },
+    ]);
 
   // ===== Vôlei selecionado? =====
   const isVoleiSelected = useMemo(() => {
-    const nome = (esportes.find((e) => String(e.id) === String(esporteId))?.nome || "").toLowerCase();
+    const nome = (
+      esportes.find((e) => String(e.id) === String(esporteId))?.nome || ""
+    ).toLowerCase();
     return nome.includes("vôlei") || nome.includes("volei");
   }, [esportes, esporteId]);
 
@@ -638,7 +733,10 @@ export default function AgendarQuadraCliente() {
     const loadEsportes = async () => {
       try {
         setLoadingEsportes(true);
-        const { data } = await axios.get<EsporteAPI[]>(`${API_URL}/esportes`, { withCredentials: true });
+        const { data } = await axios.get<EsporteAPI[]>(
+          `${API_URL}/esportes`,
+          { withCredentials: true }
+        );
         const list: Esporte[] = (data || []).map((e) => ({
           id: String(e.id),
           nome: e.nome,
@@ -658,7 +756,10 @@ export default function AgendarQuadraCliente() {
     if (isChecking) return;
     const loadQuadras = async () => {
       try {
-        const { data } = await axios.get<QuadraAPI[]>(`${API_URL}/quadras`, { withCredentials: true });
+        const { data } = await axios.get<QuadraAPI[]>(
+          `${API_URL}/quadras`,
+          { withCredentials: true }
+        );
         const map: Record<string, string> = {};
         (data || []).forEach((q) => {
           const id = String(q.id ?? q.quadraId ?? "");
@@ -674,62 +775,112 @@ export default function AgendarQuadraCliente() {
     loadQuadras();
   }, [isChecking, buildQuadraLogo, API_URL]);
 
+  /* ========= STEP 3: horários usando /disponibilidadeGeral/dia ========= */
   useEffect(() => {
     if (isChecking) return;
+
+    // sempre que esporte/dia mudam, reset UI
     setHorario("");
     setQuadraId("");
     setQuadras([]);
     setMsg("");
     setIsConcurrencyErr(false);
-    setAllowedTipos([]);       // 🔸 limpa sessões permitidas ao trocar esporte/dia
-    setTipoSessao(null);       // 🔸 limpa tipo escolhido
+    setAllowedTipos([]);
+    setTipoSessao(null);
 
     let alive = true;
+
     const fetchHorarios = async () => {
       if (!esporteId || !diaISO) {
         setHorariosMap({});
         return;
       }
 
-      const isToday = diaISO === todayIsoSP;
+      // nome do esporte selecionado, para casar com a chave de "esportes" da rota /dia
+      const esporteSelecionado = esportes.find(
+        (e) => String(e.id) === String(esporteId)
+      )?.nome;
 
-      /* para professor, não filtramos horários passados no dia atual */
-      const hoursToCheck = isToday && !ehProfessor
-        ? HORARIOS_UI.filter((h) => Number(h.slice(0, 2)) > hourNowSP)
-        : HORARIOS_UI;
+      if (!esporteSelecionado) {
+        setHorariosMap({});
+        return;
+      }
 
       setCarregandoHorarios(true);
       try {
-        const results = await Promise.all(
-          hoursToCheck.map(async (h) => {
-            try {
-              const { data } = await axios.get<Disponibilidade[]>(
-                `${API_URL}/disponibilidade`,
-                { withCredentials: true, params: { data: diaISO, horario: h, esporteId } }
-              );
-              const available = (data || []).some((q) => q.disponivel !== false);
-              return [h, available] as const;
-            } catch {
-              return [h, false] as const;
-            }
-          })
+        const { data } = await axios.get<DisponibilidadeDiaResp>(
+          `${API_URL}/disponibilidadeGeral/dia`,
+          {
+            params: { data: diaISO },
+            withCredentials: true,
+          }
         );
+
         if (!alive) return;
 
+        const blocoEsporte = data.esportes?.[esporteSelecionado];
+        const map: Record<string, boolean> = {};
+
+        if (!blocoEsporte) {
+          // esporte sem quadras naquele dia -> tudo falso
+          HORARIOS_UI.forEach((h) => (map[h] = false));
+          setHorariosMap(map);
+          return;
+        }
+
+        const isToday = diaISO === todayIsoSP;
+
+        HORARIOS_UI.forEach((h) => {
+          // regra do dia atual p/ cliente comum: não pode horários que já passaram
+          if (
+            isToday &&
+            !ehProfessor &&
+            Number(h.slice(0, 2)) <= hourNowSP
+          ) {
+            map[h] = false;
+            return;
+          }
+
+          const qualquerQuadraDisponivel = (blocoEsporte.quadras || []).some(
+            (q) => {
+              const slot = q.slots?.[h];
+              return (
+                slot &&
+                slot.disponivel === true &&
+                slot.bloqueada !== true
+              );
+            }
+          );
+
+          map[h] = qualquerQuadraDisponivel;
+        });
+
+        setHorariosMap(map);
+      } catch (err) {
+        console.error("Erro ao carregar /disponibilidadeGeral/dia", err);
         const map: Record<string, boolean> = {};
         HORARIOS_UI.forEach((h) => (map[h] = false));
-        results.forEach(([h, ok]) => (map[h] = ok));
         setHorariosMap(map);
       } finally {
         if (alive) setCarregandoHorarios(false);
       }
     };
+
     fetchHorarios();
     return () => {
       alive = false;
     };
-  }, [API_URL, esporteId, diaISO, isChecking, HORARIOS_UI, ehProfessor]);
+  }, [
+    API_URL,
+    esporteId,
+    diaISO,
+    esportes,
+    isChecking,
+    HORARIOS_UI,
+    ehProfessor,
+  ]);
 
+  /* ========= STEP 4: quadras segue usando /disponibilidade ========= */
   useEffect(() => {
     if (isChecking) return;
     const buscar = async () => {
@@ -741,16 +892,25 @@ export default function AgendarQuadraCliente() {
       try {
         const { data } = await axios.get<Disponibilidade[]>(
           `${API_URL}/disponibilidade`,
-          { withCredentials: true, params: { data: diaISO, horario, esporteId } }
+          {
+            withCredentials: true,
+            params: { data: diaISO, horario, esporteId },
+          }
         );
         const disponiveis = (data || [])
           .filter((q) => q.disponivel !== false)
           .map((q) => {
             const id = String(q.quadraId);
-            return { quadraId: id, nome: q.nome, numero: q.numero, logoUrl: quadraLogos[id] || "" };
+            return {
+              quadraId: id,
+              nome: q.nome,
+              numero: q.numero,
+              logoUrl: quadraLogos[id] || "",
+            };
           });
         setQuadras(disponiveis);
-        if (disponiveis.length === 0) setMsg("Nenhuma quadra disponível neste horário.");
+        if (disponiveis.length === 0)
+          setMsg("Nenhuma quadra disponível neste horário.");
       } catch (e) {
         console.error(e);
         setMsg("Erro ao verificar disponibilidade.");
@@ -763,7 +923,8 @@ export default function AgendarQuadraCliente() {
 
   /* ======= Rótulos do stepper ======= */
   const esporteNome = useMemo(
-    () => esportes.find((e) => String(e.id) === String(esporteId))?.nome || "",
+    () =>
+      esportes.find((e) => String(e.id) === String(esporteId))?.nome || "",
     [esportes, esporteId]
   );
   const quadraSel = useMemo(
@@ -772,15 +933,27 @@ export default function AgendarQuadraCliente() {
   );
   const trailItems = useMemo(
     () => [
-      { step: 1, hint: "Escolha o esporte", value: esporteId ? firstWord(esporteNome) : null },
-      { step: 2, hint: "Selecione o dia", value: diaISO ? formatarDiaCurto(diaISO) : null },
+      {
+        step: 1,
+        hint: "Escolha o esporte",
+        value: esporteId ? firstWord(esporteNome) : null,
+      },
+      {
+        step: 2,
+        hint: "Selecione o dia",
+        value: diaISO ? formatarDiaCurto(diaISO) : null,
+      },
       { step: 3, hint: "Selecione o horário", value: horario || null },
       {
         step: 4,
         hint: "Escolha a quadra",
         value: quadraSel ? `${quadraSel.numero} - ${quadraSel.nome}` : null,
       },
-      { step: 5, hint: isVoleiSelected ? "Jogadores (pulado)" : "Jogadores (opcional)", value: null },
+      {
+        step: 5,
+        hint: isVoleiSelected ? "Jogadores (pulado)" : "Jogadores (opcional)",
+        value: null,
+      },
       { step: 6, hint: "Confirmar", value: null },
     ],
     [esporteId, esporteNome, diaISO, horario, quadraSel, isVoleiSelected]
@@ -789,25 +962,31 @@ export default function AgendarQuadraCliente() {
   /* estado com os dados da reserva confirmada */
   const [successInfo, setSuccessInfo] = useState<ReservaSuccess | null>(null);
 
-  /* ====== NOVO: buscar sessões permitidas (professor) ====== */
+  /* ====== Sessões permitidas (professor) ====== */
   useEffect(() => {
     setErrorAllowed(null);
     setAllowedTipos([]);
-    if (!ehProfessor) { setTipoSessao(null); return; }
-    if (!esporteId || !diaISO || !horario) { setTipoSessao(null); return; }
+    if (!ehProfessor) {
+      setTipoSessao(null);
+      return;
+    }
+    if (!esporteId || !diaISO || !horario) {
+      setTipoSessao(null);
+      return;
+    }
 
     let alive = true;
     setLoadingAllowed(true);
-    axios.get<AllowedResp>(`${API_URL}/agendamentos/_sessoes-permitidas`, {
-      params: { esporteId, data: diaISO, horario },
-      withCredentials: true,
-    })
+    axios
+      .get<AllowedResp>(`${API_URL}/agendamentos/_sessoes-permitidas`, {
+        params: { esporteId, data: diaISO, horario },
+        withCredentials: true,
+      })
       .then((res) => {
         if (!alive) return;
         const allow = Array.isArray(res.data?.allow) ? res.data.allow : [];
         setAllowedTipos(allow);
 
-        // regra: jogo sempre liberado; se vier só JOGO, trava em JOGO; se vier AULA+JOGO, força escolha
         if (allow.length === 1) setTipoSessao(allow[0]);
         else setTipoSessao(null);
       })
@@ -815,13 +994,14 @@ export default function AgendarQuadraCliente() {
         console.error("Falha ao obter sessões permitidas:", err);
         if (!alive) return;
         setErrorAllowed("Não foi possível verificar as sessões permitidas.");
-        // fallback conservador: só JOGO
         setAllowedTipos(["JOGO"]);
         setTipoSessao("JOGO");
       })
       .finally(() => alive && setLoadingAllowed(false));
 
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [API_URL, ehProfessor, esporteId, diaISO, horario]);
 
   /* ========= Navegação ========= */
@@ -830,33 +1010,24 @@ export default function AgendarQuadraCliente() {
   const canConfirmStep3 = useMemo(() => {
     if (!horario || navLock) return false;
 
-    // Para professor: só habilita após terminar a verificação de sessões permitidas
     if (ehProfessor) {
-      // Enquanto carrega, não pode
       if (loadingAllowed) return false;
-
-      // Se terminou de carregar e existem AULA e JOGO, exigir escolha explícita
       if (allowedTipos.length > 1 && !tipoSessao) return false;
-
-      // Se terminou de carregar e só há JOGO ou houve fallback, ok
       return true;
     }
 
-    // Para cliente comum: basta ter horário habilitado
     return true;
   }, [horario, navLock, ehProfessor, loadingAllowed, allowedTipos.length, tipoSessao]);
 
   const confirmarHorario = () => {
     if (!horario) return setMsg("Selecione um horário.");
 
-    // Bloqueio extra por segurança: professor não avança enquanto carrega sessões
     if (ehProfessor && loadingAllowed) {
       setMsg("Aguarde a verificação das sessões permitidas…");
       setIsConcurrencyErr(false);
       return;
     }
 
-    // se professor e existir escolha (AULA/JOGO), exigir quando houver ambos
     if (ehProfessor && allowedTipos.length > 1 && !tipoSessao) {
       setMsg("Selecione se é Aula ou Jogo.");
       setIsConcurrencyErr(false);
@@ -881,21 +1052,31 @@ export default function AgendarQuadraCliente() {
   };
 
   function toErrorMessage(err: unknown): string {
-    const maybeAxios = err as { response?: { data?: unknown; statusText?: string }; message?: string };
+    const maybeAxios = err as {
+      response?: { data?: unknown; statusText?: string };
+      message?: string;
+    };
     const data = maybeAxios.response?.data;
 
-    if (isRecord(data) && typeof (data as any).erro === "string") return (data as any).erro;
+    if (isRecord(data) && typeof (data as any).erro === "string")
+      return (data as any).erro;
 
     if (isRecord(data) && Array.isArray((data as Record<string, unknown>).issues)) {
       const items = (data as Record<string, unknown>).issues as unknown[];
       const msgs = items
-        .map((i) => (isRecord(i) && typeof (i as any).message === "string" ? (i as any).message : null))
+        .map((i) =>
+          isRecord(i) && typeof (i as any).message === "string"
+            ? (i as any).message
+            : null
+        )
         .filter((s): s is string => !!s);
       if (msgs.length) return msgs.join(" • ");
     }
 
-    if (isRecord(data) && typeof (data as any).message === "string") return (data as any).message;
-    if (maybeAxios.response?.statusText) return String(maybeAxios.response.statusText);
+    if (isRecord(data) && typeof (data as any).message === "string")
+      return (data as any).message;
+    if (maybeAxios.response?.statusText)
+      return String(maybeAxios.response.statusText);
     if (typeof maybeAxios.message === "string") return maybeAxios.message;
 
     try {
@@ -908,7 +1089,13 @@ export default function AgendarQuadraCliente() {
   const realizarReserva = async () => {
     if (!quadraId || !diaISO || !horario || !esporteId) return;
 
-    const base: ReservaPayloadBase = { data: diaISO, horario, esporteId, quadraId, tipoReserva: "COMUM" };
+    const base: ReservaPayloadBase = {
+      data: diaISO,
+      horario,
+      esporteId,
+      quadraId,
+      tipoReserva: "COMUM",
+    };
 
     const jogadoresIds = players
       .filter((p) => p.kind === "registered" && p.userId)
@@ -916,50 +1103,68 @@ export default function AgendarQuadraCliente() {
 
     const convidadosNomes = players
       .filter((p) => p.kind === "guest")
-      .map((p) => (guestRefs.current[p.id]?.value ?? p.value ?? "").trim())
+      .map(
+        (p) =>
+          (guestRefs.current[p.id]?.value ?? p.value ?? "").trim()
+      )
       .filter(Boolean);
 
     const extra: ReservaPayloadExtra = {};
     if (jogadoresIds.length) extra.jogadoresIds = jogadoresIds;
     if (convidadosNomes.length) extra.convidadosNomes = convidadosNomes;
 
-    /* professor envia tipoSessao — JOGO sempre permitido; se ambos permitidos e nada escolhido, força JOGO */
     if (ehProfessor) {
       extra.tipoSessao = (tipoSessao as TipoSessao | null) ?? "JOGO";
     }
 
-    /* 🔸 Aula apoiada: exige apoiado quando marcado em AULA */
-    if (ehProfessor && extra.tipoSessao === "AULA" && isApoiado && !apoiadoSel?.id) {
+    if (
+      ehProfessor &&
+      extra.tipoSessao === "AULA" &&
+      isApoiado &&
+      !apoiadoSel?.id
+    ) {
       setMsg("Selecione o usuário apoiado para continuar.");
       setIsConcurrencyErr(false);
       return;
     }
-    if (ehProfessor && extra.tipoSessao === "AULA" && isApoiado && apoiadoSel?.id) {
+    if (
+      ehProfessor &&
+      extra.tipoSessao === "AULA" &&
+      isApoiado &&
+      apoiadoSel?.id
+    ) {
       extra.isApoiado = true;
       extra.apoiadoUsuarioId = apoiadoSel.id;
     }
 
-    const payload: ReservaPayloadBase & ReservaPayloadExtra = { ...base, ...extra };
+    const payload: ReservaPayloadBase & ReservaPayloadExtra = {
+      ...base,
+      ...extra,
+    };
 
     setLoading(true);
     setMsg("");
     setIsConcurrencyErr(false);
     try {
-      // ⭐ pegamos a resposta para verificar possível multa
-      const { data: novo } = await axios.post(`${API_URL}/agendamentos`, payload, { withCredentials: true }); // ⭐
+      const { data: novo } = await axios.post(
+        `${API_URL}/agendamentos`,
+        payload,
+        { withCredentials: true }
+      );
 
-      // ⭐ se o backend aplicou multa, guardamos p/ exibir no sucesso
-      const multa = Number(novo?.multa || 0); // ⭐
-      setMultaValor(Number.isFinite(multa) ? multa : 0); // ⭐
+      const multa = Number(novo?.multa || 0);
+      setMultaValor(Number.isFinite(multa) ? multa : 0);
 
-      // preencher o card de sucesso com as infos da seleção atual
-      const quadra = quadras.find((q) => String(q.quadraId) === String(quadraId));
+      const quadra = quadras.find(
+        (q) => String(q.quadraId) === String(quadraId)
+      );
       setSuccessInfo({
         tipo: "COMUM",
         esporte: esporteNome || "",
         quadraNome: quadra?.nome || "",
         quadraNumero: quadra?.numero,
-        quadraLogo: quadra?.logoUrl || (quadraId ? quadraLogos[quadraId] : undefined),
+        quadraLogo:
+          quadra?.logoUrl || (quadraId ? quadraLogos[quadraId] : undefined),
         data: diaISO,
         horario,
       });
@@ -968,14 +1173,18 @@ export default function AgendarQuadraCliente() {
     } catch (e: unknown) {
       console.error(e);
 
-      // Detecta especificamente o erro de concorrência para mensagem/ícone custom
       const ax: any = e;
-      const raw = ax?.response?.data?.erro || ax?.response?.data?.message || "";
+      const raw =
+        ax?.response?.data?.erro || ax?.response?.data?.message || "";
       const strip = (s: string) =>
-        String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+        String(s)
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase();
 
-      const isConcurrency =
-        strip(raw).includes("acabou de ser reservado por outra pessoa");
+      const isConcurrency = strip(raw).includes(
+        "acabou de ser reservado por outra pessoa"
+      );
 
       if (isConcurrency) {
         setIsConcurrencyErr(true);
@@ -1006,20 +1215,33 @@ export default function AgendarQuadraCliente() {
   }
 
   /* ========= UI helpers ========= */
-  const Card = ({ children, className = "" }: PropsWithChildren<{ className?: string }>) => (
-    <div className={`bg-white rounded-2xl shadow-md p-4 ${className}`}>{children}</div>
+  const Card = ({
+    children,
+    className = "",
+  }: PropsWithChildren<{ className?: string }>) => (
+    <div className={`bg-white rounded-2xl shadow-md p-4 ${className}`}>
+      {children}
+    </div>
   );
   const Btn = ({
     children,
     onClick,
     disabled = false,
     className = "",
-  }: PropsWithChildren<{ onClick: () => void; disabled?: boolean; className?: string }>) => (
+  }: PropsWithChildren<{
+    onClick: () => void;
+    disabled?: boolean;
+    className?: string;
+  }>) => (
     <button
       onClick={onClick}
       disabled={disabled}
       className={`w-full rounded-lg px-4 py-2 font-semibold transition
-        ${disabled ? "bg-gray-300 text-white" : "bg-orange-600 text-white hover:bg-orange-700"}
+        ${
+          disabled
+            ? "bg-gray-300 text-white"
+            : "bg-orange-600 text-white hover:bg-orange-700"
+        }
         ${className}`}
     >
       {children}
@@ -1036,7 +1258,9 @@ export default function AgendarQuadraCliente() {
             aria-label="Voltar"
             className="rounded-full bg-white/15 hover:bg-white/25 transition p-2 leading-none"
           >
-            <span className="inline-block rotate-180 text-xl cursor-pointer">➜</span>
+            <span className="inline-block rotate-180 text-xl cursor-pointer">
+              ➜
+            </span>
           </button>
           <h1 className="text-2xl font-extrabold drop-shadow-sm">
             {step === 7 ? "Reserva confirmada" : "Marque a sua quadra"}
@@ -1055,11 +1279,11 @@ export default function AgendarQuadraCliente() {
       )}
 
       <section className="px-4 py-4 relative">
-        {/* Chip flutuante de feedback */}
         {navLock && (
           <div className="fixed inset-x-0 top-3 z-50 flex justify-center px-4 pointer-events-none">
             <div className="flex items-center gap-2 bg-black/70 text-white text-xs px-3 py-1 rounded-full shadow">
-              <Spinner size="w-4 h-4" /> <span>{autoMsg ?? "Avançando..."}</span>
+              <Spinner size="w-4 h-4" />{" "}
+              <span>{autoMsg ?? "Avançando..."}</span>
             </div>
           </div>
         )}
@@ -1067,7 +1291,13 @@ export default function AgendarQuadraCliente() {
         <div className="max-w-sm mx-auto space-y-4">
           {msg && (
             <div className="flex items-center justify-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
-              {isConcurrencyErr && <img src="/icon_recemmarcada.png" alt="" className="w-4 h-4" />}
+              {isConcurrencyErr && (
+                <img
+                  src="/icon_recemmarcada.png"
+                  alt=""
+                  className="w-4 h-4"
+                />
+              )}
               <span>{msg}</span>
             </div>
           )}
@@ -1075,7 +1305,9 @@ export default function AgendarQuadraCliente() {
           {/* STEP 1 - Esporte */}
           {step === 1 && (
             <Card>
-              <p className="text-[13px] font-semibold text-gray-600 mb-3">Escolha o esporte:</p>
+              <p className="text-[13px] font-semibold text-gray-600 mb-3">
+                Escolha o esporte:
+              </p>
 
               {loadingEsportes && (
                 <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
@@ -1084,7 +1316,9 @@ export default function AgendarQuadraCliente() {
               )}
 
               {!loadingEsportes && esportes.length === 0 && (
-                <p className="text-sm text-gray-500">Nenhum esporte disponível.</p>
+                <p className="text-sm text-gray-500">
+                  Nenhum esporte disponível.
+                </p>
               )}
 
               <div className="grid grid-cols-4 gap-3">
@@ -1097,18 +1331,28 @@ export default function AgendarQuadraCliente() {
                       key={e.id}
                       disabled={navLock}
                       className={`rounded-xl border text-center px-2 py-3 text-[12px] leading-tight transition
-                ${ativo ? "bg-orange-50 border-orange-400 text-orange-700" : "bg-gray-50 border-gray-200 text-gray-700"}
-                ${navLock ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}
+                ${
+                  ativo
+                    ? "bg-orange-50 border-orange-400 text-orange-700"
+                    : "bg-gray-50 border-gray-200 text-gray-700"
+                }
+                ${
+                  navLock ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
+                }
                 ${pressed ? "ring-2 ring-orange-500 animate-pulse" : ""}`}
                       onPointerUp={() => {
                         if (navLock) return;
                         setMsg("");
                         setIsConcurrencyErr(false);
                         setPressEsporteId(String(e.id));
-                        flashAdvance(`Esporte: ${e.nome}`, () => {
-                          setEsporteId(String(e.id));
-                          setStep(2);
-                        }, () => setPressEsporteId(null));
+                        flashAdvance(
+                          `Esporte: ${e.nome}`,
+                          () => {
+                            setEsporteId(String(e.id));
+                            setStep(2);
+                          },
+                          () => setPressEsporteId(null)
+                        );
                       }}
                     >
                       <div className="mx-auto mb-2 w-9 h-9 rounded-full bg-gray-200 overflow-hidden relative flex items-center justify-center">
@@ -1131,7 +1375,9 @@ export default function AgendarQuadraCliente() {
           {/* STEP 2 - Dia */}
           {step === 2 && (
             <Card>
-              <p className="text-[13px] font-semibold text-gray-600 mb-3">Escolha o dia:</p>
+              <p className="text-[13px] font-semibold text-gray-600 mb-3">
+                Escolha o dia:
+              </p>
               <div className="flex gap-2 overflow-x-auto pb-1">
                 {dias.map((d) => {
                   const ativo = diaISO === d.iso;
@@ -1146,18 +1392,30 @@ export default function AgendarQuadraCliente() {
                         setMsg("");
                         setIsConcurrencyErr(false);
                         setPressDiaISO(d.iso);
-                        flashAdvance(`Dia: ${formatarDiaCurto(d.iso)}`, () => {
-                          setDiaISO(d.iso);
-                          setStep(3);
-                        }, () => setPressDiaISO(null));
+                        flashAdvance(
+                          `Dia: ${formatarDiaCurto(d.iso)}`,
+                          () => {
+                            setDiaISO(d.iso);
+                            setStep(3);
+                          },
+                          () => setPressDiaISO(null)
+                        );
                       }}
                       className={`min-w-[110px] rounded-xl border px-2 py-2 text-[12px] text-center transition
-                ${ativo ? "bg-orange-100 border-orange-500 text-orange-700" : "bg-gray-100 border-gray-200 text-gray-700"}
-                ${navLock ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}
+                ${
+                  ativo
+                    ? "bg-orange-100 border-orange-500 text-orange-700"
+                    : "bg-gray-100 border-gray-200 text-gray-700"
+                }
+                ${
+                  navLock ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
+                }
                 ${pressed ? "ring-2 ring-orange-500 animate-pulse" : ""}`}
                     >
                       <div className="text-[11px]">{d.mes}</div>
-                      <div className="text-lg font-bold">{String(d.d).padStart(2, "0")}</div>
+                      <div className="text-lg font-bold">
+                        {String(d.d).padStart(2, "0")}
+                      </div>
                       <div className="text-[11px]">{d.wdFull}</div>
                     </button>
                   );
@@ -1166,17 +1424,19 @@ export default function AgendarQuadraCliente() {
             </Card>
           )}
 
-          {/* STEP 3 - Horário */}
+          {/* STEP 3 - Horário (usa /disponibilidadeGeral/dia) */}
           {step === 3 && (
             <Card>
-              <p className="text-[13px] font-semibold text-gray-600 mb-3">Escolha o horário:</p>
+              <p className="text-[13px] font-semibold text-gray-600 mb-3">
+                Escolha o horário:
+              </p>
               {carregandoHorarios && (
                 <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
-                  <Spinner /> <span>Checando horários disponíveis…</span>
+                  <Spinner />{" "}
+                  <span>Checando horários disponíveis…</span>
                 </div>
               )}
               <div className="grid grid-cols-4 gap-2">
-                {/* usa HORARIOS_UI dinâmico */}
                 {HORARIOS_UI.map((h) => {
                   const ativo = horario === h;
                   const enabled = horariosMap[h] === true;
@@ -1187,8 +1447,16 @@ export default function AgendarQuadraCliente() {
                       onPointerUp={() => enabled && setHorario(h)}
                       disabled={!enabled || navLock}
                       className={`rounded-md px-2 py-2 text-sm border transition
-                ${ativo ? "bg-orange-100 border-orange-500 text-orange-700" : "bg-gray-100 border-gray-200 text-gray-700"}
-                ${enabled && !navLock ? "cursor-pointer" : "opacity-50 cursor-not-allowed"}`}
+                ${
+                  ativo
+                    ? "bg-orange-100 border-orange-500 text-orange-700"
+                    : "bg-gray-100 border-gray-200 text-gray-700"
+                }
+                ${
+                  enabled && !navLock
+                    ? "cursor-pointer"
+                    : "opacity-50 cursor-not-allowed"
+                }`}
                     >
                       {h}
                     </button>
@@ -1196,52 +1464,70 @@ export default function AgendarQuadraCliente() {
                 })}
               </div>
 
-              {/* ===== NOVO bloco para professores: Tipo de sessão por janela permitida ===== */}
               {ehProfessor && !!horario && (
                 <div className="mt-3 space-y-2">
                   <div className="text-[12px]">
                     {loadingAllowed && (
-                      <div className="text-gray-500">Verificando sessões permitidas…</div>
+                      <div className="text-gray-500">
+                        Verificando sessões permitidas…
+                      </div>
                     )}
                     {!loadingAllowed && errorAllowed && (
                       <div className="text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-                        {errorAllowed} — mantendo <b>Jogo</b> como opção padrão.
+                        {errorAllowed} — mantendo <b>Jogo</b> como opção
+                        padrão.
                       </div>
                     )}
                   </div>
 
-                  {/* Somente JOGO permitido (fora da janela de aulas) */}
-                  {allowedTipos.length === 1 && allowedTipos[0] === "JOGO" && (
-                    <div className="text-[12px] rounded-md bg-gray-100 text-gray-800 px-3 py-2">
-                      Tipo de agendamento: <strong>Jogo</strong>
-                      <span className="text-gray-600"> (Aula indisponível neste horário)</span>
-                    </div>
-                  )}
-
-                  {/* AULA + JOGO permitidos (dentro da janela) */}
-                  {allowedTipos.includes("AULA") && allowedTipos.includes("JOGO") && (
-                    <>
-                      <p className="text-[12px] text-gray-600">Tipo de agendamento:</p>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setTipoSessao("AULA")}
-                          className={`rounded-md border px-3 py-2 text-left transition ${tipoSessao === "AULA" ? "bg-orange-50 border-orange-500" : "bg-gray-50 border-gray-200 hover:border-gray-300"}`}
-                        >
-                          <div className="text-sm font-semibold text-gray-800">Aula</div>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setTipoSessao("JOGO")}
-                          className={`rounded-md border px-3 py-2 text-left transition ${tipoSessao === "JOGO" ? "bg-orange-50 border-orange-500" : "bg-gray-50 border-gray-200 hover:border-gray-300"}`}
-                        >
-                          <div className="text-sm font-semibold text-gray-800">Jogo</div>
-                        </button>
+                  {allowedTipos.length === 1 &&
+                    allowedTipos[0] === "JOGO" && (
+                      <div className="text-[12px] rounded-md bg-gray-100 text-gray-800 px-3 py-2">
+                        Tipo de agendamento: <strong>Jogo</strong>
+                        <span className="text-gray-600">
+                          {" "}
+                          (Aula indisponível neste horário)
+                        </span>
                       </div>
-                    </>
-                  )}
+                    )}
 
-                  {/* 🔸 Aula apoiada: aparece somente quando for AULA */}
+                  {allowedTipos.includes("AULA") &&
+                    allowedTipos.includes("JOGO") && (
+                      <>
+                        <p className="text-[12px] text-gray-600">
+                          Tipo de agendamento:
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setTipoSessao("AULA")}
+                            className={`rounded-md border px-3 py-2 text-left transition ${
+                              tipoSessao === "AULA"
+                                ? "bg-orange-50 border-orange-500"
+                                : "bg-gray-50 border-gray-200 hover:border-gray-300"
+                            }`}
+                          >
+                            <div className="text-sm font-semibold text-gray-800">
+                              Aula
+                            </div>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setTipoSessao("JOGO")}
+                            className={`rounded-md border px-3 py-2 text-left transition ${
+                              tipoSessao === "JOGO"
+                                ? "bg-orange-50 border-orange-500"
+                                : "bg-gray-50 border-gray-200 hover:border-gray-300"
+                            }`}
+                          >
+                            <div className="text-sm font-semibold text-gray-800">
+                              Jogo
+                            </div>
+                          </button>
+                        </div>
+                      </>
+                    )}
+
                   {tipoSessao === "AULA" && (
                     <div className="mt-2 space-y-2">
                       <div className="flex items-center justify-between">
@@ -1254,10 +1540,11 @@ export default function AgendarQuadraCliente() {
                             setIsApoiado((v) => !v);
                             if (!isApoiado) setApoiadoSel(null);
                           }}
-                          className={`px-3 py-1 rounded-md text-sm font-semibold transition ${isApoiado
+                          className={`px-3 py-1 rounded-md text-sm font-semibold transition ${
+                            isApoiado
                               ? "bg-orange-600 text-white"
                               : "bg-gray-200 text-gray-800 hover:bg-gray-300"
-                            }`}
+                          }`}
                         >
                           {isApoiado ? "Sim" : "Não"}
                         </button>
@@ -1267,7 +1554,8 @@ export default function AgendarQuadraCliente() {
                         <div className="space-y-2">
                           <p className="text-[12px] text-gray-600">
                             Selecione o usuário apoiado. São aceitos perfis{" "}
-                            <b>CLIENTE_APOIADO</b> e também administradores/professor.
+                            <b>CLIENTE_APOIADO</b> e também
+                            administradores/professor.
                           </p>
                           <UserPicker
                             apiUrl={API_URL}
@@ -1276,27 +1564,29 @@ export default function AgendarQuadraCliente() {
                             onClear={() => setApoiadoSel(null)}
                             excludeIds={[usuario?.id ?? ""]}
                             extraParams={{
-                              tipos: "CLIENTE_APOIADO,ADMIN_MASTER,ADMIN_ATENDENTE,ADMIN_PROFESSORES",
+                              tipos:
+                                "CLIENTE_APOIADO,ADMIN_MASTER,ADMIN_ATENDENTE,ADMIN_PROFESSORES",
                               apenasApoiados: 1,
                             }}
                             placeholder="Buscar usuário apoiado…"
                           />
                           {!apoiadoSel && (
                             <div className="text-[12px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-                              É obrigatório escolher o usuário apoiado quando a opção “Aula apoiada” estiver marcada.
+                              É obrigatório escolher o usuário apoiado
+                              quando a opção “Aula apoiada” estiver marcada.
                             </div>
                           )}
                         </div>
                       )}
                     </div>
                   )}
-              </div>
+                </div>
               )}
 
-              {/* Nota de aguarde para professores enquanto carrega allowed */}
               {ehProfessor && !!horario && loadingAllowed && (
                 <div className="mt-2 text-[12px] text-gray-600">
-                  Aguarde a verificação das sessões permitidas para continuar.
+                  Aguarde a verificação das sessões permitidas para
+                  continuar.
                 </div>
               )}
 
@@ -1313,16 +1603,21 @@ export default function AgendarQuadraCliente() {
           {/* STEP 4 - Quadra */}
           {step === 4 && (
             <Card>
-              <p className="text-[13px] font-semibold text-gray-600 mb-3">Escolha a quadra:</p>
+              <p className="text-[13px] font-semibold text-gray-600 mb-3">
+                Escolha a quadra:
+              </p>
 
               {loading && (
                 <div className="flex items-center gap-2 text-sm text-gray-500">
-                  <Spinner /> <span>Carregando disponibilidade…</span>
+                  <Spinner />{" "}
+                  <span>Carregando disponibilidade…</span>
                 </div>
               )}
 
               {!loading && quadras.length === 0 && (
-                <p className="text-sm text-gray-500">Nenhuma quadra disponível.</p>
+                <p className="text-sm text-gray-500">
+                  Nenhuma quadra disponível.
+                </p>
               )}
 
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -1338,13 +1633,23 @@ export default function AgendarQuadraCliente() {
                       onPointerUp={() => {
                         if (navLock) return;
                         setPressQuadraId(String(q.quadraId));
-                        flashAdvance(`Quadra ${q.numero} - ${q.nome}`, () => {
-                          avancarQuadraDireto(String(q.quadraId));
-                        }, () => setPressQuadraId(null));
+                        flashAdvance(
+                          `Quadra ${q.numero} - ${q.nome}`,
+                          () => {
+                            avancarQuadraDireto(String(q.quadraId));
+                          },
+                          () => setPressQuadraId(null)
+                        );
                       }}
                       className={`rounded-xl border p-3 transition flex flex-col items-center text-center
-                ${ativo ? "bg-orange-50 border-orange-500" : "bg-gray-50 border-gray-200 hover:border-gray-300"}
-                ${navLock ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}
+                ${
+                  ativo
+                    ? "bg-orange-50 border-orange-500"
+                    : "bg-gray-50 border-gray-200 hover:border-gray-300"
+                }
+                ${
+                  navLock ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
+                }
                 ${pressed ? "ring-2 ring-orange-500 animate-pulse" : ""}`}
                     >
                       <div className="relative w-full h-24 md:h-32 overflow-hidden flex items-center justify-center mb-2">
@@ -1356,23 +1661,28 @@ export default function AgendarQuadraCliente() {
                           fallbackSrc="/quadra.png"
                         />
                       </div>
-                      <p className="text-[13px] font-semibold text-gray-800 truncate">{q.nome}</p>
-                      <p className="text-[12px] text-gray-500">Quadra {q.numero}</p>
+                      <p className="text-[13px] font-semibold text-gray-800 truncate">
+                        {q.nome}
+                      </p>
+                      <p className="text-[12px] text-gray-500">
+                        Quadra {q.numero}
+                      </p>
                     </button>
                   );
                 })}
               </div>
-
-              {/* botão Avançar removido */}
             </Card>
           )}
 
           {/* STEP 5 - Jogadores (opcional) */}
           {step === 5 && !isVoleiSelected && (
             <Card>
-              <h1 className="text-[13px] font-bold text-gray-600 mb-2">Jogadores (opcional)</h1>
+              <h1 className="text-[13px] font-bold text-gray-600 mb-2">
+                Jogadores (opcional)
+              </h1>
               <p className="text-[13px] text-gray-600 mb-2">
-                Adicione jogadores cadastrados ou convidados, se quiser. Você pode continuar sem preencher.
+                Adicione jogadores cadastrados ou convidados, se quiser. Você
+                pode continuar sem preencher.
               </p>
 
               <div className="space-y-3">
@@ -1396,8 +1706,18 @@ export default function AgendarQuadraCliente() {
                             value={p.value}
                             excludeIds={[usuario?.id ?? ""]}
                             placeholder="Jogador com cadastro"
-                            onClear={() => updatePlayer(p.id, { value: "", userId: undefined })}
-                            onSelect={(u) => updatePlayer(p.id, { value: u.nome, userId: u.id })}
+                            onClear={() =>
+                              updatePlayer(p.id, {
+                                value: "",
+                                userId: undefined,
+                              })
+                            }
+                            onSelect={(u) =>
+                              updatePlayer(p.id, {
+                                value: u.nome,
+                                userId: u.id,
+                              })
+                            }
                           />
                         </div>
                       </div>
@@ -1410,7 +1730,7 @@ export default function AgendarQuadraCliente() {
                         inputRef={(el) => {
                           guestRefs.current[p.id] = el;
                         }}
-                        onDebouncedCommit={() => { }}
+                        onDebouncedCommit={() => {}}
                         onBlurCommit={(val) => {
                           updatePlayer(p.id, { value: val });
                         }}
@@ -1427,7 +1747,9 @@ export default function AgendarQuadraCliente() {
                   onClick={addRegisteredField}
                   className="w-full rounded-md bg-[#f3f3f3] hover:bg-[#ececec] text-[12px] font-semibold text-gray-700 px-3 py-2 text-left cursor-pointer"
                 >
-                  <span className="inline-block mr-2 text-orange-600">+</span>
+                  <span className="inline-block mr-2 text-orange-600">
+                    +
+                  </span>
                   Adicionar jogador cadastrado
                 </button>
 
@@ -1436,12 +1758,18 @@ export default function AgendarQuadraCliente() {
                   onClick={addGuestField}
                   className="w-full rounded-md bg-[#f3f3f3] hover:bg-[#ececec] text-[12px] font-semibold text-gray-700 px-3 py-2 text-left cursor-pointer"
                 >
-                  <span className="inline-block mr-2 text-orange-600">+</span>
+                  <span className="inline-block mr-2 text-orange-600">
+                    +
+                  </span>
                   Adicionar convidado (sem cadastro)
                 </button>
               </div>
 
-              <Btn className="mt-4 cursor-pointer" onClick={confirmarJogadores} disabled={navLock}>
+              <Btn
+                className="mt-4 cursor-pointer"
+                onClick={confirmarJogadores}
+                disabled={navLock}
+              >
                 Confirmar
               </Btn>
             </Card>
@@ -1450,29 +1778,39 @@ export default function AgendarQuadraCliente() {
           {/* STEP 6 - Confirmar */}
           {step === 6 && (
             <Card>
-              <p className="text-[13px] font-semibold text-gray-600 mb-3">Confirmar Reserva:</p>
+              <p className="text-[13px] font-semibold text-gray-600 mb-3">
+                Confirmar Reserva:
+              </p>
 
-              <Resumo label="Escolha o Dia:" valor={formatarDiaCurto(diaISO)} onChange={() => setStep(2)} />
-              <Resumo label="Escolha o Horário:" valor={horario} onChange={() => setStep(3)} />
+              <Resumo
+                label="Escolha o Dia:"
+                valor={formatarDiaCurto(diaISO)}
+                onChange={() => setStep(2)}
+              />
+              <Resumo
+                label="Escolha o Horário:"
+                valor={horario}
+                onChange={() => setStep(3)}
+              />
 
-              {/* mostra tipo da sessão na confirmação para professor */}
               {ehProfessor && (
                 <Resumo
                   label="Tipo de agendamento:"
                   valor={
                     allowedTipos.length > 1
-                      ? (tipoSessao === "JOGO" ? "Jogo" : "Aula")
+                      ? tipoSessao === "JOGO"
+                        ? "Jogo"
+                        : "Aula"
                       : "Jogo"
                   }
                   onChange={() => setStep(3)}
                 />
               )}
 
-              {/* 🔸 Aula apoiada na confirmação (somente quando AULA) */}
               {ehProfessor && tipoSessao === "AULA" && (
                 <Resumo
                   label="Aula apoiada:"
-                  valor={isApoiado ? (apoiadoSel?.nome || "—") : "Não"}
+                  valor={isApoiado ? apoiadoSel?.nome || "—" : "Não"}
                   onChange={() => setStep(3)}
                 />
               )}
@@ -1484,14 +1822,20 @@ export default function AgendarQuadraCliente() {
               />
               <Resumo
                 label="Escolha a Quadra:"
-                valor={`${quadraSel?.numero ?? ""} - ${quadraSel?.nome ?? ""}`}
+                valor={`${quadraSel?.numero ?? ""} - ${
+                  quadraSel?.nome ?? ""
+                }`}
                 onChange={() => setStep(4)}
               />
               <Resumo
                 label="Jogadores:"
                 valor={
                   players
-                    .filter((p) => (p.kind !== "registered" ? (p.value ?? "").trim() !== "" : !!p.userId))
+                    .filter((p) =>
+                      p.kind !== "registered"
+                        ? (p.value ?? "").trim() !== ""
+                        : !!p.userId
+                    )
                     .map((p) => p.value.trim())
                     .join(", ") || "—"
                 }
@@ -1504,8 +1848,11 @@ export default function AgendarQuadraCliente() {
                 disabled={
                   loading ||
                   navLock ||
-                  (ehProfessor && allowedTipos.length > 1 && !tipoSessao) || // exige escolha quando houver AULA e JOGO
-                  (ehProfessor && tipoSessao === "AULA" && isApoiado && !apoiadoSel?.id) // 🔸 trava sem apoiado
+                  (ehProfessor && allowedTipos.length > 1 && !tipoSessao) ||
+                  (ehProfessor &&
+                    tipoSessao === "AULA" &&
+                    isApoiado &&
+                    !apoiadoSel?.id)
                 }
               >
                 {loading ? "Enviando..." : "Realizar Reserva"}
@@ -1516,7 +1863,6 @@ export default function AgendarQuadraCliente() {
           {/* STEP 7 - Sucesso */}
           {step === 7 && (
             <Card className="flex flex-col items-center text-center py-6">
-              {/* topo visual */}
               <div className="relative w-52 h-52 mb-3">
                 <AppImage
                   src="/icons/realizada.png"
@@ -1527,9 +1873,10 @@ export default function AgendarQuadraCliente() {
                 />
               </div>
 
-              <h2 className="text-xl font-extrabold text-orange-600 mb-2">Reserva Realizada!</h2>
+              <h2 className="text-xl font-extrabold text-orange-600 mb-2">
+                Reserva Realizada!
+              </h2>
 
-              {/* card com dados da quadra/esporte/horário */}
               {successInfo && (
                 <div className="w-full mt-3 rounded-xl bg-[#f7f7f7] pt-3 pb-2 px-3 shadow-sm">
                   <div className="flex items-center gap-3">
@@ -1553,45 +1900,57 @@ export default function AgendarQuadraCliente() {
                       <p className="text-[12px] text-gray-600 leading-tight flex items-center gap-2">
                         {successInfo.esporte}
                         <span
-                          className={`text-[10px] px-2 py-[2px] rounded-full ${successInfo.tipo === "PERMANENTE"
-                            ? "bg-gray-200 text-gray-800"
-                            : "bg-orange-100 text-orange-600"
-                            }`}
+                          className={`text-[10px] px-2 py-[2px] rounded-full ${
+                            successInfo.tipo === "PERMANENTE"
+                              ? "bg-gray-200 text-gray-800"
+                              : "bg-orange-100 text-orange-600"
+                          }`}
                         >
-                          {successInfo.tipo === "PERMANENTE" ? "Permanente" : "Comum"}
+                          {successInfo.tipo === "PERMANENTE"
+                            ? "Permanente"
+                            : "Comum"}
                         </span>
                       </p>
 
                       <p className="text-[12px] text-gray-500">
-                        Dia {formatarDia(successInfo.data)} às {successInfo.horario}
+                        Dia {formatarDia(successInfo.data)} às{" "}
+                        {successInfo.horario}
                       </p>
 
                       {successInfo.quadraNumero && (
-                        <p className="text-[11px] text-gray-500">Quadra {successInfo.quadraNumero}</p>
+                        <p className="text-[11px] text-gray-500">
+                          Quadra {successInfo.quadraNumero}
+                        </p>
                       )}
                     </div>
                   </div>
 
-                  {/* ⭐ AVISO DE MULTA harmonizado no card de sucesso */}
                   {multaValor > 0 && (
                     <div className="mt-3 text-[12px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-                      Uma multa de <strong>{multaValor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</strong> foi aplicada por agendar em horário que já passou.
+                      Uma multa de{" "}
+                      <strong>
+                        {multaValor.toLocaleString("pt-BR", {
+                          style: "currency",
+                          currency: "BRL",
+                        })}
+                      </strong>{" "}
+                      foi aplicada por agendar em horário que já passou.
                     </div>
                   )}
-                  {/* fim ⭐ */}
                 </div>
               )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full mt-4">
-                <Btn onClick={() => router.push("/")}>Voltar à página inicial</Btn>
+                <Btn onClick={() => router.push("/")}>
+                  Voltar à página inicial
+                </Btn>
                 <button
                   onClick={() => {
-                    // resetar para um novo fluxo se quiser
                     setStep(1);
                     setSuccessInfo(null);
                     setMsg("");
                     setTipoSessao(null);
-                    setMultaValor(0); // ⭐ limpa multa para próximo fluxo
+                    setMultaValor(0);
                     setIsApoiado(false);
                     setApoiadoSel(null);
                   }}
@@ -1615,7 +1974,11 @@ function Resumo({
   label,
   valor,
   onChange,
-}: { label: string; valor: string; onChange: () => void }) {
+}: {
+  label: string;
+  valor: string;
+  onChange: () => void;
+}) {
   return (
     <div className="flex items-center justify-between gap-2 bg-gray-100 rounded-lg px-3 py-2 mb-2">
       <div>
