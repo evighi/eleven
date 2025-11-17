@@ -501,7 +501,9 @@ router.get("/geral", async (req, res) => {
 router.get("/dia", async (req, res) => {
   const { data } = req.query;
   if (!data) {
-    return res.status(400).json({ erro: "Parâmetro obrigatório: data (YYYY-MM-DD)" });
+    return res
+      .status(400)
+      .json({ erro: "Parâmetro obrigatório: data (YYYY-MM-DD)" });
   }
 
   const [y, m, d] = (data as string).split("-").map(Number);
@@ -610,7 +612,9 @@ router.get("/dia", async (req, res) => {
       const slots: Record<string, SlotInfo> = {};
       for (const hora of horas) {
         const intervals = bloqueiosPorQuadra.get(q.id) || [];
-        const bloqueada = intervals.some((iv) => horarioDentroDoBloqueio(hora, iv.inicio, iv.fim));
+        const bloqueada = intervals.some((iv) =>
+          horarioDentroDoBloqueio(hora, iv.inicio, iv.fim)
+        );
 
         const perm = permByKey.get(`${q.id}|${hora}`) || null;
         const com = comumByKey.get(`${q.id}|${hora}`) || null;
@@ -657,75 +661,124 @@ router.get("/dia", async (req, res) => {
     });
 
     // ========== CHURRASQUEIRAS por turno no mesmo dia ==========
-    const churrasqueiras = await prisma.churrasqueira.findMany({ orderBy: { numero: "asc" } });
+    const churrasqueiras = await prisma.churrasqueira.findMany({
+      orderBy: { numero: "asc" },
+    });
     const turnos: Turno[] = ["DIA", "NOITE"];
+    const churrasIds = churrasqueiras.map((ch) => ch.id);
 
-    const churrasqueirasDisponibilidade = await Promise.all(
-      churrasqueiras.map(async (ch) => {
-        const disponibilidade = await Promise.all(
-          turnos.map(async (turno) => {
-            // Permanente do dia/turno, que já tenha começado, e sem exceção no dia
-            const per = await prisma.agendamentoPermanenteChurrasqueira.findFirst({
-              where: {
-                diaSemana: diaSemanaFinal,
-                turno,
-                churrasqueiraId: ch.id,
-                status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
-                OR: [{ dataInicio: null }, { dataInicio: { lte: inicio } }],
-                cancelamentos: { none: { data: { gte: inicio, lt: fim } } },
-              },
-              select: {
-                id: true,
-                usuario: { select: { nome: true, email: true, celular: true } },
-              },
-            });
+    // 🔹 Permanentes de churrasqueiras (batch)
+    let perChurras:
+      | {
+          id: string;
+          churrasqueiraId: string;
+          turno: Turno;
+          usuario: UsuarioSelecionado;
+        }[] = [];
 
-            // Comum do dia/turno
-            const com = await prisma.agendamentoChurrasqueira.findFirst({
-              where: {
-                data: { gte: inicio, lt: fim },
-                turno,
-                churrasqueiraId: ch.id,
-                status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
-              },
-              select: {
-                id: true,
-                usuario: { select: { nome: true, email: true, celular: true } },
-              },
-            });
+    if (churrasIds.length > 0) {
+      perChurras = await prisma.agendamentoPermanenteChurrasqueira.findMany({
+        where: {
+          diaSemana: diaSemanaFinal,
+          churrasqueiraId: { in: churrasIds },
+          turno: { in: turnos },
+          status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+          OR: [{ dataInicio: null }, { dataInicio: { lte: inicio } }],
+          cancelamentos: { none: { data: { gte: inicio, lt: fim } } },
+        },
+        select: {
+          id: true,
+          churrasqueiraId: true,
+          turno: true,
+          usuario: { select: { nome: true, email: true, celular: true } },
+        },
+      });
+    }
 
-            let tipoReserva: "permanente" | "comum" | null = null;
-            let usuario: UsuarioSelecionado | null = null;
-            let agendamentoId: string | null = null;
+    const perChByKey = new Map<string, { id: string; usuario: UsuarioSelecionado }>();
+    perChurras.forEach((p) => {
+      const key = `${p.churrasqueiraId}|${p.turno}`;
+      if (!perChByKey.has(key)) {
+        perChByKey.set(key, {
+          id: p.id,
+          usuario: p.usuario as UsuarioSelecionado,
+        });
+      }
+    });
 
-            if (per) {
-              tipoReserva = "permanente";
-              usuario = per.usuario as UsuarioSelecionado;
-              agendamentoId = per.id;
-            } else if (com) {
-              tipoReserva = "comum";
-              usuario = com.usuario as UsuarioSelecionado;
-              agendamentoId = com.id;
-            }
+    // 🔹 Comuns de churrasqueiras (batch)
+    let comChurras:
+      | {
+          id: string;
+          churrasqueiraId: string;
+          turno: Turno;
+          usuario: UsuarioSelecionado;
+        }[] = [];
 
-            return {
-              turno,
-              disponivel: !tipoReserva,
-              tipoReserva,
-              usuario,
-              agendamentoId,
-            };
-          })
-        );
+    if (churrasIds.length > 0) {
+      comChurras = await prisma.agendamentoChurrasqueira.findMany({
+        where: {
+          churrasqueiraId: { in: churrasIds },
+          turno: { in: turnos },
+          data: { gte: inicio, lt: fim },
+          status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+        },
+        select: {
+          id: true,
+          churrasqueiraId: true,
+          turno: true,
+          usuario: { select: { nome: true, email: true, celular: true } },
+        },
+      });
+    }
+
+    const comChByKey = new Map<string, { id: string; usuario: UsuarioSelecionado }>();
+    comChurras.forEach((c) => {
+      const key = `${c.churrasqueiraId}|${c.turno}`;
+      if (!comChByKey.has(key)) {
+        comChByKey.set(key, {
+          id: c.id,
+          usuario: c.usuario as UsuarioSelecionado,
+        });
+      }
+    });
+
+    const churrasqueirasDisponibilidade = churrasqueiras.map((ch) => {
+      const disponibilidade = turnos.map((turno) => {
+        const key = `${ch.id}|${turno}`;
+        const per = perChByKey.get(key) || null;
+        const com = comChByKey.get(key) || null;
+
+        let tipoReserva: "permanente" | "comum" | null = null;
+        let usuario: UsuarioSelecionado | null = null;
+        let agendamentoId: string | null = null;
+
+        if (per) {
+          tipoReserva = "permanente";
+          usuario = per.usuario;
+          agendamentoId = per.id;
+        } else if (com) {
+          tipoReserva = "comum";
+          usuario = com.usuario;
+          agendamentoId = com.id;
+        }
 
         return {
-          churrasqueiraId: ch.id,
-          nome: ch.nome,
-          numero: ch.numero,
-          disponibilidade,
+          turno,
+          disponivel: !tipoReserva,
+          tipoReserva,
+          usuario,
+          agendamentoId,
         };
-      })
-    );
+      });
+
+      return {
+        churrasqueiraId: ch.id,
+        nome: ch.nome,
+        numero: ch.numero,
+        disponibilidade,
+      };
+    });
 
     return res.json({
       data,
@@ -735,7 +788,9 @@ router.get("/dia", async (req, res) => {
     });
   } catch (err) {
     console.error("Erro /disponibilidadeGeral/dia:", err);
-    return res.status(500).json({ erro: "Erro ao montar disponibilidade do dia" });
+    return res
+      .status(500)
+      .json({ erro: "Erro ao montar disponibilidade do dia" });
   }
 });
 
