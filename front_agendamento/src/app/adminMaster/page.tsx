@@ -158,6 +158,16 @@ function toDdMm(isoYmd: string) {
   return `${d}-${m}`;
 }
 
+/** Mostrar só primeiro e último nome na home */
+function firstAndLastName(fullName?: string | null) {
+  if (!fullName) return "";
+  const parts = fullName.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0];
+  const first = parts[0];
+  const last = parts[parts.length - 1];
+  return `${first} ${last}`;
+}
+
 /** Próximas datas do mesmo dia-da-semana. */
 function gerarProximasDatasDiaSemana(
   diaSemana: string,
@@ -260,10 +270,13 @@ export default function AdminHome() {
     }
     setLoadingDispon(true);
     try {
-      const res = await axios.get<DisponibilidadeGeral>(`${API_URL}/disponibilidadeGeral/geral`, {
-        params: { data, horario },
-        withCredentials: true,
-      });
+      const res = await axios.get<DisponibilidadeGeral>(
+        `${API_URL}/disponibilidadeGeral/geral-admin`,
+        {
+          params: { data, horario },
+          withCredentials: true,
+        }
+      );
       setDisponibilidade(res.data);
     } catch (error) {
       console.error(error);
@@ -313,8 +326,7 @@ export default function AdminHome() {
       const esporteNome =
         (typeof (res.data as any)?.esporte === "string"
           ? (res.data as any).esporte
-          : (res.data as any)?.esporte?.nome) ??
-        (extra?.esporte ?? null);
+          : (res.data as any)?.esporte?.nome) ?? (extra?.esporte ?? null);
 
       setAgendamentoSelecionado({
         dia: data,
@@ -631,7 +643,6 @@ export default function AdminHome() {
     router.push(`/adminMaster/churrasqueiras/agendarChurrasqueira?${qs}`);
   };
 
-
   return (
     <div className="space-y-8">
       {/* FILTROS */}
@@ -726,12 +737,13 @@ export default function AdminHome() {
                           abrirDetalhes(q, { horario, esporte });
                         }
                       }}
-                      className={`${clsBase} ${q.bloqueada
+                      className={`${clsBase} ${
+                        q.bloqueada
                           ? "border-2 border-red-500 bg-red-50"
                           : q.disponivel
-                            ? "border-2 border-green-500 bg-green-50"
-                            : "border-2 border-gray-500 bg-gray-50"
-                        }`}
+                          ? "border-2 border-green-500 bg-green-50"
+                          : "border-2 border-gray-500 bg-gray-50"
+                      }`}
                     >
                       <p className="font-medium">{q.nome}</p>
                       <p className="text-xs text-gray-700">Quadra {q.numero}</p>
@@ -742,7 +754,9 @@ export default function AdminHome() {
 
                       {hasAgendamento && (
                         <div className="mt-1">
-                          <p className="font-bold">{q.usuario?.nome}</p>
+                          <p className="font-bold">
+                            {firstAndLastName(q.usuario?.nome)}
+                          </p>
                           {q.usuario?.celular && (
                             <p className="text-[11px] text-gray-700">
                               {q.usuario.celular}
@@ -797,10 +811,11 @@ export default function AdminHome() {
                         );
                       }
                     }}
-                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${disponivel
+                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${
+                      disponivel
                         ? "border-2 border-green-500 bg-green-50"
                         : "border-2 border-gray-500 bg-gray-50"
-                      }`}
+                    }`}
                   >
                     <p className="font-medium">{c.nome}</p>
                     <p className="text-xs text-gray-700">
@@ -809,7 +824,9 @@ export default function AdminHome() {
 
                     {!disponivel && (
                       <div className="mt-1">
-                        <p className="font-bold">{diaInfo?.usuario?.nome}</p>
+                        <p className="font-bold">
+                          {firstAndLastName(diaInfo?.usuario?.nome)}
+                        </p>
                         {diaInfo?.usuario?.celular && (
                           <p className="text-[11px] text-gray-700">
                             {diaInfo.usuario.celular}
@@ -853,10 +870,11 @@ export default function AdminHome() {
                         );
                       }
                     }}
-                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${disponivel
+                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${
+                      disponivel
                         ? "border-2 border-green-500 bg-green-50"
                         : "border-2 border-gray-500 bg-gray-50"
-                      }`}
+                    }`}
                   >
                     <p className="font-medium">{c.nome}</p>
                     <p className="text-xs text-gray-700">
@@ -865,7 +883,9 @@ export default function AdminHome() {
 
                     {!disponivel && (
                       <div className="mt-1">
-                        <p className="font-bold">{noiteInfo?.usuario?.nome}</p>
+                        <p className="font-bold">
+                          {firstAndLastName(noiteInfo?.usuario?.nome)}
+                        </p>
                         {noiteInfo?.usuario?.celular && (
                           <p className="text-[11px] text-gray-700">
                             {noiteInfo.usuario.celular}
@@ -921,8 +941,8 @@ export default function AdminHome() {
               {typeof agendamentoSelecionado.usuario === "string"
                 ? agendamentoSelecionado.usuario
                 : [agendamentoSelecionado.usuario?.nome, agendamentoSelecionado.usuario?.celular]
-                  .filter(Boolean)
-                  .join(" — ")}
+                    .filter(Boolean)
+                    .join(" — ")}
             </p>
             {agendamentoSelecionado.esporte && (
               <p>
@@ -1056,10 +1076,11 @@ export default function AdminHome() {
                             key={d}
                             type="button"
                             onClick={() => setDataExcecaoSelecionada(d)}
-                            className={`px-3 py-2 rounded border text-sm ${ativo
+                            className={`px-3 py-2 rounded border text-sm ${
+                              ativo
                                 ? "border-indigo-600 bg-indigo-50 text-indigo-700"
                                 : "border-gray-300 hover:bg-gray-50"
-                              }`}
+                            }`}
                           >
                             {toDdMm(d)}
                           </button>
@@ -1100,7 +1121,7 @@ export default function AdminHome() {
             <h3 className="text-lg font-semibold mb-4">
               Transferir Agendamento{" "}
               {agendamentoSelecionado?.tipoLocal === "quadra" &&
-                agendamentoSelecionado?.tipoReserva === "permanente"
+              agendamentoSelecionado?.tipoReserva === "permanente"
                 ? "(Permanente)"
                 : "(Comum)"}
             </h3>
@@ -1126,8 +1147,9 @@ export default function AdminHome() {
               {usuariosFiltrados.map((user) => (
                 <li
                   key={user.id}
-                  className={`p-2 cursor-pointer hover:bg-blue-100 ${usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
-                    }`}
+                  className={`p-2 cursor-pointer hover:bg-blue-100 ${
+                    usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
+                  }`}
                   onClick={() => setUsuarioSelecionado(user)}
                   title={user.celular || ""}
                 >
@@ -1194,8 +1216,9 @@ export default function AdminHome() {
                 return (
                   <li
                     key={u.id}
-                    className={`p-2 cursor-pointer flex items-center justify-between hover:bg-orange-50 ${ativo ? "bg-orange-100" : ""
-                      }`}
+                    className={`p-2 cursor-pointer flex items-center justify-between hover:bg-orange-50 ${
+                      ativo ? "bg-orange-100" : ""
+                    }`}
                     onClick={() => alternarSelecionado(u.id)}
                     title={u.celular || ""}
                   >
