@@ -827,6 +827,153 @@ router.get("/dia", async (req, res) => {
   }
 });
 
+router.get("/slots-dia", async (req, res) => {
+  const { data, esporteId } = req.query;
+
+  if (!data || !esporteId) {
+    return res.status(400).json({
+      erro: "Parâmetros obrigatórios: data (YYYY-MM-DD) e esporteId",
+    });
+  }
+
+  const [y, m, d] = (data as string).split("-").map(Number);
+  const dataLocal = new Date(y, m - 1, d);
+  if (isNaN(dataLocal.getTime())) {
+    return res.status(400).json({ erro: "Data inválida" });
+  }
+
+  const diaSemanaFinal: DiaSemana = diasEnum[getDay(dataLocal)];
+  const { inicio, fim } = getUtcDayRange(String(data));
+
+  try {
+    const horas = horasDoDia();
+
+    // Quadras do esporte informado
+    const quadras = await prisma.quadra.findMany({
+      where: { quadraEsportes: { some: { esporteId: esporteId as string } } },
+      select: { id: true },
+    });
+
+    const quadraIds = quadras.map((q) => q.id);
+
+    // Se não houver quadras para esse esporte, tudo indisponível
+    if (quadraIds.length === 0) {
+      const disponiveis: Record<string, boolean> = {};
+      horas.forEach((h) => {
+        disponiveis[h] = false;
+      });
+      return res.json({
+        data,
+        diaSemana: diaSemanaFinal,
+        horas,
+        disponiveis,
+      });
+    }
+
+    // Permanentes do dia-da-semana, com dataInicio + exceções (mesma regra do /dia)
+    const permanentes = await prisma.agendamentoPermanente.findMany({
+      where: {
+        quadraId: { in: quadraIds },
+        diaSemana: diaSemanaFinal,
+        status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+        OR: [{ dataInicio: null }, { dataInicio: { lte: inicio } }],
+        cancelamentos: { none: { data: { gte: inicio, lt: fim } } },
+      },
+      select: {
+        quadraId: true,
+        horario: true,
+      },
+    });
+
+    // Comuns do dia
+    const comuns = await prisma.agendamento.findMany({
+      where: {
+        quadraId: { in: quadraIds },
+        status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+        data: { gte: inicio, lt: fim },
+      },
+      select: {
+        quadraId: true,
+        horario: true,
+      },
+    });
+
+    // Bloqueios do dia
+    const bloqueios = await prisma.bloqueioQuadra.findMany({
+      where: {
+        dataBloqueio: { gte: inicio, lt: fim },
+        quadras: { some: { id: { in: quadraIds } } },
+      },
+      include: { quadras: { select: { id: true } } },
+    });
+
+    // indexadores leves
+    const permSet = new Set<string>(); // `${quadraId}|${hora}`
+    permanentes.forEach((p) => {
+      permSet.add(`${p.quadraId}|${p.horario}`);
+    });
+
+    const comumSet = new Set<string>();
+    comuns.forEach((c) => {
+      comumSet.add(`${c.quadraId}|${c.horario}`);
+    });
+
+    const bloqueiosPorQuadra = new Map<
+      string,
+      { inicio: string; fim: string }[]
+    >();
+    bloqueios.forEach((b) => {
+      b.quadras.forEach((q) => {
+        const list = bloqueiosPorQuadra.get(q.id) || [];
+        list.push({ inicio: b.inicioBloqueio, fim: b.fimBloqueio });
+        bloqueiosPorQuadra.set(q.id, list);
+      });
+    });
+
+    // Mapa final: se existe AO MENOS 1 quadra livre naquele horário
+    const disponiveis: Record<string, boolean> = {};
+
+    for (const hora of horas) {
+      let anyDisponivel = false;
+
+      for (const quadraId of quadraIds) {
+        // 1) Se estiver bloqueada nesse horário, ignora essa quadra
+        const intervals = bloqueiosPorQuadra.get(quadraId) || [];
+        const bloqueada = intervals.some((iv) =>
+          horarioDentroDoBloqueio(hora, iv.inicio, iv.fim)
+        );
+        if (bloqueada) {
+          continue;
+        }
+
+        // 2) Se tiver permanente ou comum, quadra está ocupada nesse horário
+        const key = `${quadraId}|${hora}`;
+        const ocupado = permSet.has(key) || comumSet.has(key);
+
+        // 3) Se não tiver nada, essa quadra está livre
+        if (!ocupado) {
+          anyDisponivel = true;
+          break; // já basta uma quadra livre
+        }
+      }
+
+      disponiveis[hora] = anyDisponivel;
+    }
+
+    return res.json({
+      data,
+      diaSemana: diaSemanaFinal,
+      horas,
+      disponiveis,
+    });
+  } catch (err) {
+    console.error("Erro /disponibilidadeGeral/slots-dia:", err);
+    return res
+      .status(500)
+      .json({ erro: "Erro ao montar disponibilidade simplificada por hora" });
+  }
+});
+
 
 /**
  * ✅ /disponibilidadeGeral/permanentes
