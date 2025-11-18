@@ -43,7 +43,12 @@ type Disponibilidade = {
 };
 
 type Esporte = { id: string; nome: string; logoUrl?: string };
-type QuadraDisponivel = { quadraId: string; nome: string; numero: number; logoUrl?: string };
+type QuadraDisponivel = {
+  quadraId: string;
+  nome: string;
+  numero: number;
+  logoUrl?: string;
+};
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
@@ -97,7 +102,7 @@ type TipoSessao = "AULA" | "JOGO";
 /* resposta do endpoint de sessões permitidas */
 type AllowedResp = { allow: Array<TipoSessao> };
 
-/* ===== tipos mínimos da rota /disponibilidadeGeral/dia ===== */
+/* ===== tipos mínimos da rota /disponibilidadeGeral/dia (ainda que não usada mais no step 3) ===== */
 type SlotInfoDia = {
   disponivel: boolean;
   bloqueada?: boolean;
@@ -113,7 +118,14 @@ type DisponibilidadeDiaResp = {
   data: string;
   horas: string[];
   esportes: Record<string, { quadras: QuadraSlotsDia[] }>;
-  // churrasqueiras também vem, mas não precisamos aqui
+};
+
+/* ===== NOVO: tipos da rota /disponibilidadeGeral/slots-dia ===== */
+type SlotsDiaResp = {
+  data: string;
+  diaSemana: string;
+  horas: string[];
+  disponiveis: Record<string, boolean>;
 };
 
 /* =========================================================
@@ -733,10 +745,9 @@ export default function AgendarQuadraCliente() {
     const loadEsportes = async () => {
       try {
         setLoadingEsportes(true);
-        const { data } = await axios.get<EsporteAPI[]>(
-          `${API_URL}/esportes`,
-          { withCredentials: true }
-        );
+        const { data } = await axios.get<EsporteAPI[]>(`${API_URL}/esportes`, {
+          withCredentials: true,
+        });
         const list: Esporte[] = (data || []).map((e) => ({
           id: String(e.id),
           nome: e.nome,
@@ -756,10 +767,9 @@ export default function AgendarQuadraCliente() {
     if (isChecking) return;
     const loadQuadras = async () => {
       try {
-        const { data } = await axios.get<QuadraAPI[]>(
-          `${API_URL}/quadras`,
-          { withCredentials: true }
-        );
+        const { data } = await axios.get<QuadraAPI[]>(`${API_URL}/quadras`, {
+          withCredentials: true,
+        });
         const map: Record<string, string> = {};
         (data || []).forEach((q) => {
           const id = String(q.id ?? q.quadraId ?? "");
@@ -775,7 +785,7 @@ export default function AgendarQuadraCliente() {
     loadQuadras();
   }, [isChecking, buildQuadraLogo, API_URL]);
 
-  /* ========= STEP 3: horários usando /disponibilidadeGeral/dia ========= */
+  /* ========= STEP 3: horários usando /disponibilidadeGeral/slots-dia ========= */
   useEffect(() => {
     if (isChecking) return;
 
@@ -796,20 +806,10 @@ export default function AgendarQuadraCliente() {
         return;
       }
 
-      // nome do esporte selecionado, para casar com a chave de "esportes" da rota /dia
-      const esporteSelecionado = esportes.find(
-        (e) => String(e.id) === String(esporteId)
-      )?.nome;
-
-      if (!esporteSelecionado) {
-        setHorariosMap({});
-        return;
-      }
-
       setCarregandoHorarios(true);
       try {
-        const { data } = await axios.get<DisponibilidadeDiaResp>(
-          `${API_URL}/disponibilidadeGeral/dia`,
+        const { data } = await axios.get<SlotsDiaResp>(
+          `${API_URL}/disponibilidadeGeral/slots-dia`,
           {
             params: { data: diaISO, esporteId },
             withCredentials: true,
@@ -818,46 +818,24 @@ export default function AgendarQuadraCliente() {
 
         if (!alive) return;
 
-        const blocoEsporte = data.esportes?.[esporteSelecionado];
         const map: Record<string, boolean> = {};
-
-        if (!blocoEsporte) {
-          // esporte sem quadras naquele dia -> tudo falso
-          HORARIOS_UI.forEach((h) => (map[h] = false));
-          setHorariosMap(map);
-          return;
-        }
-
         const isToday = diaISO === todayIsoSP;
 
         HORARIOS_UI.forEach((h) => {
-          // regra do dia atual p/ cliente comum: não pode horários que já passaram
-          if (
-            isToday &&
-            !ehProfessor &&
-            Number(h.slice(0, 2)) <= hourNowSP
-          ) {
+          // Regra dia atual p/ cliente: não pode horários que já passaram (<= hora atual)
+          if (isToday && !ehProfessor && Number(h.slice(0, 2)) <= hourNowSP) {
             map[h] = false;
             return;
           }
 
-          const qualquerQuadraDisponivel = (blocoEsporte.quadras || []).some(
-            (q) => {
-              const slot = q.slots?.[h];
-              return (
-                slot &&
-                slot.disponivel === true &&
-                slot.bloqueada !== true
-              );
-            }
-          );
-
-          map[h] = qualquerQuadraDisponivel;
+          // Para todos: usa o boolean vindo do backend (se houver ao menos 1 quadra livre nesse horário)
+          const disponivelBackend = data.disponiveis?.[h] === true;
+          map[h] = disponivelBackend;
         });
 
         setHorariosMap(map);
       } catch (err) {
-        console.error("Erro ao carregar /disponibilidadeGeral/dia", err);
+        console.error("Erro ao carregar /disponibilidadeGeral/slots-dia", err);
         const map: Record<string, boolean> = {};
         HORARIOS_UI.forEach((h) => (map[h] = false));
         setHorariosMap(map);
@@ -870,15 +848,7 @@ export default function AgendarQuadraCliente() {
     return () => {
       alive = false;
     };
-  }, [
-    API_URL,
-    esporteId,
-    diaISO,
-    esportes,
-    isChecking,
-    HORARIOS_UI,
-    ehProfessor,
-  ]);
+  }, [API_URL, esporteId, diaISO, isChecking, HORARIOS_UI, ehProfessor]);
 
   /* ========= STEP 4: quadras segue usando /disponibilidade ========= */
   useEffect(() => {
@@ -1424,7 +1394,7 @@ export default function AgendarQuadraCliente() {
             </Card>
           )}
 
-          {/* STEP 3 - Horário (usa /disponibilidadeGeral/dia) */}
+          {/* STEP 3 - Horário (usa /disponibilidadeGeral/slots-dia) */}
           {step === 3 && (
             <Card>
               <p className="text-[13px] font-semibold text-gray-600 mb-3">
