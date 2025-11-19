@@ -27,15 +27,12 @@ export default function AdminHeader() {
   }
 
   const opcoes = [
-    { nome: "Perfil de Usuários", url: "/adminMaster/usuarios", imagem: "/icons/perfis.png" },
+    { nome: "Usuários", url: "/adminMaster/usuarios", imagem: "/icons/perfis.png" },
     { nome: "Professores", url: "/adminMaster/professores", imagem: "/icons/perfis.png" },
-    { nome: "Cadastrar Usuário", url: "/adminMaster/criacaoUser", imagem: "/icons/perfis.png" },
     { nome: "Esportes", url: "/adminMaster/esportes", imagem: "/icons/editar.png" },
-    { nome: "Usuários Pendentes de Exclusão", url: "/adminMaster/pendencias", imagem: "/icons/editar.png" },
     { nome: "Quadras", url: "/adminMaster/quadras", imagem: "/icons/editar.png" },
     { nome: "Churrasqueiras", url: "/adminMaster/churrasqueiras", imagem: "/icons/editar.png" },
     { nome: "Registros", url: "/adminMaster/logs", imagem: "/icons/editar.png" },
-    { nome: "Configurar Valor da Multa", url: "/adminMaster/configMulta", imagem: "/icons/editar.png" },
     { nome: "Bloqueio de Quadras", url: "/adminMaster/bloqueioQuadras", imagem: "/icons/bloq.png" },
     
   ];
