@@ -262,6 +262,10 @@ export default function AdminHome() {
     !!usuario &&
     ["ADMIN_MASTER", "ADMIN_PROFESSORES"].includes((usuario as { tipo?: string }).tipo || "");
 
+  // 👋 Nome para saudação
+  const nomeSaudacao =
+    firstAndLastName((usuario as { nome?: string } | null)?.nome || "") || "Admin";
+
   const buscarDisponibilidade = useCallback(async () => {
     if (!isAllowed) return;
     if (!data || !horario) {
@@ -645,6 +649,14 @@ export default function AdminHome() {
 
   return (
     <div className="space-y-8">
+      {/* 👋 SAUDAÇÃO ADMIN */}
+      <div className="bg-white p-4 shadow rounded-lg flex flex-col sm:flex-row sm:items-baseline gap-1">
+        <h1 className="text-2xl font-extrabold text-orange-600">
+          Oi, {nomeSaudacao}! 👋
+        </h1>
+        <p className="text-xs text-gray-500 sm:ml-2">Painel do administrador</p>
+      </div>
+
       {/* FILTROS */}
       <div className="bg-white p-4 shadow rounded-lg flex flex-col sm:flex-row sm:items-end gap-4">
         <div className="flex flex-col w-full sm:w-auto">
