@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import axios from 'axios'
 import AppImage from "@/components/AppImage";
 import { useSearchParams } from 'next/navigation'
@@ -18,6 +18,27 @@ interface Churrasqueira {
 
 // Agora esperamos também o celular (telefone)
 type UsuarioBusca = { id: string; nome: string; celular?: string | null }
+
+// 🔹 helper para “limpar” o campo de imagem vindo da API
+function sanitizeChurrasImagem(raw?: string | null): string | undefined {
+  if (!raw) return undefined
+
+  // já é URL absoluta → deixa como está
+  if (/^https?:\/\//i.test(raw) || /^data:|^blob:/i.test(raw)) {
+    return raw
+  }
+
+  // se vier algo tipo "/api/churrasqueiras/arquivo.png" ou "/uploads/churrasqueiras/arquivo.png"
+  const m = raw.match(/\/churrasqueiras\/([^/?#]+)/i)
+  if (m && m[1]) {
+    return m[1] // só o nome do arquivo → AppImage monta /api/uploads/churrasqueiras/{nome}
+  }
+
+  // se for um caminho qualquer com "/", pega só o último pedaço
+  const parts = raw.split(/[\\/]/)
+  const last = parts[parts.length - 1]
+  return last || undefined
+}
 
 export default function AgendamentoChurrasqueiraComum() {
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
@@ -41,34 +62,6 @@ export default function AgendamentoChurrasqueiraComum() {
 
   // Convidado como dono (nome livre)
   const [convidadoDonoNome, setConvidadoDonoNome] = useState<string>("")
-
-  // ===== helpers de imagem (mesmo conceito do agendar quadra) =====
-  const toAbs = useCallback(
-    (u?: string | null) => {
-      if (!u) return "";
-      if (/^(https?:|data:|blob:)/i.test(u)) return u; // já é URL absoluta
-      if (u.startsWith("/")) return `${API_URL}${u}`;  // caminho absoluto no backend
-      return `${API_URL}/${u}`;                       // caminho relativo simples
-    },
-    [API_URL]
-  );
-
-  const buildChurrasqueiraLogo = useCallback(
-    (c: Churrasqueira) => {
-      const candidate = c.logoUrl || c.imagemUrl || c.imagem || "";
-      const normalized =
-        candidate &&
-        !/^(https?:|data:|blob:)/i.test(candidate) &&
-        !candidate.startsWith("/") &&
-        !candidate.includes("/")
-          ? `/uploads/churrasqueiras/${candidate}`
-          : candidate;
-
-      const finalUrl = toAbs(normalized);
-      return finalUrl || "/churrasqueira.png";
-    },
-    [toAbs]
-  );
 
   // 🔹 Lê query params e pré-preenche a tela
   useEffect(() => {
@@ -103,14 +96,7 @@ export default function AgendamentoChurrasqueiraComum() {
         })
         const lista: Churrasqueira[] = Array.isArray(res.data) ? res.data : []
 
-        const disponiveis = lista
-          .filter((c) => c.disponivel !== false)
-          .map((c) => ({
-            ...c,
-            // normaliza a URL da imagem usando a mesma lógica do agendar quadra
-            imagemUrl: buildChurrasqueiraLogo(c),
-          }));
-
+        const disponiveis = lista.filter((c) => c.disponivel !== false)
         setChurrasqueirasDisponiveis(disponiveis)
         setMensagem(disponiveis.length === 0 ? 'Nenhuma churrasqueira disponível.' : '')
       } catch (err) {
@@ -122,7 +108,7 @@ export default function AgendamentoChurrasqueiraComum() {
       }
     }
     buscar()
-  }, [data, turno, API_URL, buildChurrasqueiraLogo])
+  }, [data, turno, API_URL])
 
   // Busca usuários (id + nome + celular) — debounce + AbortController
   useEffect(() => {
@@ -311,6 +297,12 @@ export default function AgendamentoChurrasqueiraComum() {
           <div className="grid grid-cols-2 gap-3">
             {churrasqueirasDisponiveis.map((c) => {
               const isActive = churrasqueiraSelecionada === String(c.churrasqueiraId)
+
+              // aqui aplicamos o helper pra limpar a imagem
+              const imgSrc = sanitizeChurrasImagem(
+                c.logoUrl ?? c.imagemUrl ?? c.imagem ?? undefined
+              )
+
               return (
                 <button
                   key={c.churrasqueiraId}
@@ -320,11 +312,12 @@ export default function AgendamentoChurrasqueiraComum() {
                 >
                   <div className="relative w-full h-24 md:h-32 overflow-hidden flex items-center justify-center mb-2 bg-white border rounded">
                     <AppImage
-                      src={c.imagemUrl || "/churrasqueira.png"}
+                      src={imgSrc}
+                      legacyDir="churrasqueiras"
                       alt={c.nome}
                       fill
                       className="object-contain pointer-events-none select-none"
-                      fallbackSrc="/churrasqueira.png"
+                      fallbackSrc="/quadra.png"  // se você tiver /churrasqueira.png no public, pode trocar aqui
                       priority={false}
                     />
                   </div>
