@@ -42,6 +42,32 @@ export default function AgendamentoChurrasqueiraComum() {
   // Convidado como dono (nome livre)
   const [convidadoDonoNome, setConvidadoDonoNome] = useState<string>("")
 
+  // ================== helper da IMAGEM ==================
+  // Resolve todos os formatos possíveis:
+  // - URL absoluta R2 (https://...)
+  // - caminho começando com /uploads/...
+  // - só o nome do arquivo (ex.: "churrasqueira1.png")
+  function getChurrasqueiraImagem(c: Churrasqueira): string | undefined {
+    const raw =
+      c.logoUrl ??
+      c.imagemUrl ??
+      c.imagem ??
+      ""
+
+    if (!raw) return undefined
+
+    // Já é URL absoluta (R2, S3, etc)
+    if (/^https?:\/\//i.test(raw)) return raw
+
+    // Já vem como "/uploads/..."
+    if (raw.startsWith("/uploads/")) {
+      return `${API_URL}${raw}`
+    }
+
+    // Caso legado: só o nome do arquivo
+    return `${API_URL}/uploads/churrasqueiras/${raw}`
+  }
+
   // 🔹 Lê query params e pré-preenche a tela
   useEffect(() => {
     const qData = searchParams.get('data')
@@ -277,6 +303,8 @@ export default function AgendamentoChurrasqueiraComum() {
           <div className="grid grid-cols-2 gap-3">
             {churrasqueirasDisponiveis.map((c) => {
               const isActive = churrasqueiraSelecionada === String(c.churrasqueiraId)
+              const imgSrc = getChurrasqueiraImagem(c)
+
               return (
                 <button
                   key={c.churrasqueiraId}
@@ -286,12 +314,12 @@ export default function AgendamentoChurrasqueiraComum() {
                 >
                   <div className="relative w-full h-24 md:h-32 overflow-hidden flex items-center justify-center mb-2 bg-white border rounded">
                     <AppImage
-                      src={c.logoUrl ?? c.imagemUrl ?? c.imagem ?? undefined}
-                      legacyDir="churrasqueiras"
+                      src={imgSrc}
                       alt={c.nome}
                       fill
                       className="object-contain pointer-events-none select-none"
-                      fallbackSrc="/churrasqueira.png"
+                      // 🔁 usa a mesma imagem genérica da quadra se quiser
+                      fallbackSrc="/quadra.png"
                       priority={false}
                     />
                   </div>
