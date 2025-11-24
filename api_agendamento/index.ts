@@ -37,6 +37,9 @@ import proximaDataPermanenteDisponivelChurrasqueira from "./routes/proximaDataPe
 // 👇 NOVO: rota de configurações (inclui valor padrão da multa)
 import routesConfiguracoes from "./routes/configuracoes";
 
+// 👇 NOVO: rota de motivos de bloqueio
+import routesMotivosBloqueio from "./routes/motivosBloqueio";
+
 import verificarToken from "./middleware/authMiddleware";
 
 const app = express();
@@ -75,7 +78,10 @@ app.use("/disponibilidade", routesDisponibilidade);
 app.use("/proximaDataPermanenteDisponivel", proximaDataPermanenteDisponivel);
 app.use("/churrasqueiras", routesChurrasqueiras);
 app.use("/agendamentosChurrasqueiras", routesAgendamentosChurrasqueiras);
-app.use("/agendamentosPermanentesChurrasqueiras", routesAgendamentosPermanentesChurrasqueiras);
+app.use(
+  "/agendamentosPermanentesChurrasqueiras",
+  routesAgendamentosPermanentesChurrasqueiras
+);
 app.use("/disponibilidadeChurrasqueiras", routesDisponibilidadeChurrasqueiras);
 app.use("/disponibilidadeGeral", routesDisponibilidadeGeral);
 app.use("/usuariosAdmin", routesUsuariosAdmin);
@@ -86,13 +92,20 @@ app.use("/configuracoes", routesConfiguracoes);
 app.use("/configEsportesHorarios", routesConfigEsportesHorarios);
 
 app.use("/bloqueios", routesBloqueios);
+
+// 👇 NOVO: CRUD de motivos de bloqueio
+app.use("/motivos-bloqueio", routesMotivosBloqueio);
+
 app.use("/usuarios", routesUsuarios);
 app.use("/audit", routesAudit);
 app.use("/professores", routesProfessores);
 // 👇 NOVO: expõe as rotas de deleções (precisa ser protegida)
 app.use("/delecoes", routesDelecoes);
 // 👇 NOVO: próximas datas para permanente de churrasqueira
-app.use("/proximaDataPermanenteDisponivelChurrasqueira", proximaDataPermanenteDisponivelChurrasqueira);
+app.use(
+  "/proximaDataPermanenteDisponivelChurrasqueira",
+  proximaDataPermanenteDisponivelChurrasqueira
+);
 
 // Health/root
 app.get("/", (_req, res) => {
