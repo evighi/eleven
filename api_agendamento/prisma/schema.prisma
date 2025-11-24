@@ -43,8 +43,8 @@ enum Turno {
 }
 
 enum DeletionStatus {
-  PENDING // aguardando janela de 90 dias
-  DONE    // exclusão concluída
+  PENDING   // aguardando janela de 90 dias
+  DONE      // exclusão concluída
   CANCELLED // cancelado pelo admin
 }
 
@@ -145,29 +145,23 @@ model Esporte {
 }
 
 /// 👇 NOVO MODEL: Janela de horários para AULA/JOGO por esporte.
-/// - Se `diaSemana` for NULL => regra padrão para todos os dias (recomendado ter no máx. 1 por tipoSessao).
-/// - Armazena horas no formato "HH:MM" local (ex.: "07:00").
-/// - `tipoSessao` deixa preparado para você ter janelas distintas de AULA e JOGO, se desejar.
 model EsporteJanelaAula {
   id        String   @id @default(uuid())
 
   esporteId String
   esporte   Esporte  @relation(fields: [esporteId], references: [id])
 
-  diaSemana DiaSemana?              // null = regra padrão para todos os dias
-  tipoSessao TipoSessaoProfessor    @default(AULA)
+  diaSemana DiaSemana?           // null = regra padrão para todos os dias
+  tipoSessao TipoSessaoProfessor @default(AULA)
 
-  inicioHHMM String                 // ex.: "07:00"
-  fimHHMM    String                 // ex.: "19:00"
+  inicioHHMM String              // ex.: "07:00"
+  fimHHMM    String              // ex.: "19:00"
 
   ativo     Boolean  @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Único por esporte + (diaSemana ou null) + tipo de sessão.
-  // OBS: em Postgres, UNIQUE permite múltiplos NULL; então **garanta via API**
-  // que exista no máximo 1 registro com diaSemana = NULL por (esporteId, tipoSessao).
   @@unique([esporteId, diaSemana, tipoSessao], map: "uniq_janela_esporte_dia_tipo")
   @@index([esporteId, diaSemana, tipoSessao])
 }
@@ -197,8 +191,6 @@ model QuadraEsporte {
   esporte Esporte @relation(fields: [esporteId], references: [id])
 
   @@id([quadraId, esporteId])
-
-  /// índice extra para consultas por esporte (quadras por esporte)
   @@index([esporteId])
 }
 
@@ -271,11 +263,7 @@ model Agendamento {
   @@index([quadraId, data])
   @@index([professorId, tipoSessao, data])
   @@index([apoiadoUsuarioId, data])
-
-  /// índice mais específico para disponibilidade por quadra+data+horário
   @@index([quadraId, data, horario])
-
-  /// índice para buscas por dia (intervalo de data) filtrando por status
   @@index([data, status])
 }
 
@@ -317,8 +305,6 @@ model AgendamentoPermanente {
   @@index([usuarioId])
   @@index([quadraId, diaSemana, horario])
   @@index([professorId, tipoSessao, diaSemana])
-
-  /// índice para buscas por permanentes do dia-da-semana
   @@index([diaSemana, status])
 }
 
@@ -348,8 +334,6 @@ model AgendamentoChurrasqueira {
 
   @@index([usuarioId])
   @@index([churrasqueiraId, data])
-
-  /// índice para disponibilidade por churrasqueira+data+turno
   @@index([churrasqueiraId, data, turno])
 }
 
@@ -382,6 +366,22 @@ model AgendamentoPermanenteChurrasqueira {
   @@unique([churrasqueiraId, diaSemana, turno], map: "uniq_perm_churra_slot")
 }
 
+//
+// 🔹 NOVO MODEL: motivos de bloqueio de quadras
+//
+model MotivoBloqueio {
+  id        String  @id @default(uuid())
+  nome      String  @unique        // ex.: "Manutenção", "Torneio"
+  descricao String?
+  ativo     Boolean @default(true)
+
+  // relação inversa: bloqueios que usam este motivo
+  bloqueios BloqueioQuadra[] @relation("MotivoNoBloqueio")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 // Nova model para bloquear quadras por dia e horário
 model BloqueioQuadra {
   id           String   @id @default(uuid())
@@ -395,11 +395,17 @@ model BloqueioQuadra {
   bloqueadoPor   Usuario @relation("UsuarioBloqueios", fields: [bloqueadoPorId], references: [id])
   bloqueadoPorId String
 
+  // 👇 NOVO: motivo opcional (palavra-chave cadastrada)
+  motivoId String?
+  motivo   MotivoBloqueio? @relation("MotivoNoBloqueio", fields: [motivoId], references: [id])
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   /// índice para buscas por bloqueios em um dia/intervalo
   @@index([dataBloqueio])
+  /// índice auxiliar por motivo (ex.: relatórios por motivo)
+  @@index([motivoId])
 }
 
 // Exceção (um dia) — QUADRA
@@ -438,7 +444,6 @@ model ConfiguracaoSistema {
   id               Int     @id
   valorMultaPadrao Decimal @db.Decimal(10, 2)
 }
-
 
 // =====================
 // AUDITORIA
@@ -491,7 +496,7 @@ model UserDeletionQueue {
   usuarioId String  @unique
   usuario   Usuario @relation("DeletionTargetUser", fields: [usuarioId], references: [id])
 
-  // Quem solicitou (opcional) — segunda relação com Usuario
+  // Quem solicitou (opcional)
   requestedById String?
   requestedBy   Usuario? @relation("DeletionRequestedBy", fields: [requestedById], references: [id])
 
