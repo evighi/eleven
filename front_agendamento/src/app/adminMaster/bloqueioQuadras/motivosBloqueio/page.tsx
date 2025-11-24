@@ -5,7 +5,8 @@ import axios from "axios";
 
 type MotivoBloqueio = {
   id: string;
-  descricao: string;
+  nome: string;
+  descricao: string | null;
   ativo: boolean;
 };
 
@@ -17,12 +18,14 @@ export default function MotivosBloqueioPage() {
   const [salvando, setSalvando] = useState(false);
 
   const [editandoId, setEditandoId] = useState<string | null>(null);
-  const [descricao, setDescricao] = useState<string>("");
+
+  // 👇 este campo será enviado como `nome` para a API
+  const [nome, setNome] = useState<string>("");
   const [ativo, setAtivo] = useState<boolean>(true);
 
   const resetForm = () => {
     setEditandoId(null);
-    setDescricao("");
+    setNome("");
     setAtivo(true);
   };
 
@@ -47,7 +50,7 @@ export default function MotivosBloqueioPage() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!descricao.trim()) {
+    if (!nome.trim()) {
       alert("Informe a descrição do motivo.");
       return;
     }
@@ -55,16 +58,24 @@ export default function MotivosBloqueioPage() {
     setSalvando(true);
     try {
       if (editandoId) {
+        // PUT envia nome + ativo
         await axios.put(
           `${API_URL}/motivosBloqueio/${editandoId}`,
-          { descricao: descricao.trim(), ativo },
+          {
+            nome: nome.trim(),
+            ativo,
+          },
           { withCredentials: true }
         );
         alert("Motivo atualizado com sucesso!");
       } else {
+        // POST envia nome + ativo
         await axios.post(
           `${API_URL}/motivosBloqueio`,
-          { descricao: descricao.trim(), ativo },
+          {
+            nome: nome.trim(),
+            ativo,
+          },
           { withCredentials: true }
         );
         alert("Motivo criado com sucesso!");
@@ -86,7 +97,7 @@ export default function MotivosBloqueioPage() {
 
   const handleEditar = (motivo: MotivoBloqueio) => {
     setEditandoId(motivo.id);
-    setDescricao(motivo.descricao);
+    setNome(motivo.nome);
     setAtivo(motivo.ativo);
   };
 
@@ -127,8 +138,8 @@ export default function MotivosBloqueioPage() {
             <input
               type="text"
               className="border p-2 rounded-lg"
-              value={descricao}
-              onChange={(e) => setDescricao(e.target.value)}
+              value={nome}
+              onChange={(e) => setNome(e.target.value)}
               placeholder="Ex.: Manutenção, Torneio, Evento, etc."
             />
           </div>
@@ -195,7 +206,7 @@ export default function MotivosBloqueioPage() {
             <tbody>
               {motivos.map((m) => (
                 <tr key={m.id} className="border-b last:border-0">
-                  <td className="py-2">{m.descricao}</td>
+                  <td className="py-2">{m.nome}</td>
                   <td className="py-2">
                     {m.ativo ? (
                       <span className="text-green-700 font-medium">Ativo</span>
