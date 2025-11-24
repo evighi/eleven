@@ -94,7 +94,7 @@ app.use("/configEsportesHorarios", routesConfigEsportesHorarios);
 app.use("/bloqueios", routesBloqueios);
 
 // 👇 NOVO: CRUD de motivos de bloqueio
-app.use("/motivos-bloqueio", routesMotivosBloqueio);
+app.use("/motivosBloqueio", routesMotivosBloqueio);
 
 app.use("/usuarios", routesUsuarios);
 app.use("/audit", routesAudit);
