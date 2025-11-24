@@ -29,7 +29,7 @@ export default function MotivosBloqueioPage() {
   const carregarMotivos = async () => {
     setCarregando(true);
     try {
-      const res = await axios.get<MotivoBloqueio[]>(`${API_URL}/motivos-bloqueio`, {
+      const res = await axios.get<MotivoBloqueio[]>(`${API_URL}/motivosBloqueio`, {
         withCredentials: true,
       });
       setMotivos(res.data);
@@ -56,14 +56,14 @@ export default function MotivosBloqueioPage() {
     try {
       if (editandoId) {
         await axios.put(
-          `${API_URL}/motivos-bloqueio/${editandoId}`,
+          `${API_URL}/motivosBloqueio/${editandoId}`,
           { descricao: descricao.trim(), ativo },
           { withCredentials: true }
         );
         alert("Motivo atualizado com sucesso!");
       } else {
         await axios.post(
-          `${API_URL}/motivos-bloqueio`,
+          `${API_URL}/motivosBloqueio`,
           { descricao: descricao.trim(), ativo },
           { withCredentials: true }
         );
@@ -94,7 +94,7 @@ export default function MotivosBloqueioPage() {
     if (!window.confirm("Tem certeza que deseja excluir este motivo?")) return;
 
     try {
-      await axios.delete(`${API_URL}/motivos-bloqueio/${id}`, {
+      await axios.delete(`${API_URL}/motivosBloqueio/${id}`, {
         withCredentials: true,
       });
       alert("Motivo excluído com sucesso!");
