@@ -19,27 +19,6 @@ interface Churrasqueira {
 // Agora esperamos também o celular (telefone)
 type UsuarioBusca = { id: string; nome: string; celular?: string | null }
 
-// 🔹 helper para “limpar” o campo de imagem vindo da API
-function sanitizeChurrasImagem(raw?: string | null): string | undefined {
-  if (!raw) return undefined
-
-  // já é URL absoluta → deixa como está
-  if (/^https?:\/\//i.test(raw) || /^data:|^blob:/i.test(raw)) {
-    return raw
-  }
-
-  // se vier algo tipo "/api/churrasqueiras/arquivo.png" ou "/uploads/churrasqueiras/arquivo.png"
-  const m = raw.match(/\/churrasqueiras\/([^/?#]+)/i)
-  if (m && m[1]) {
-    return m[1] // só o nome do arquivo → AppImage monta /api/uploads/churrasqueiras/{nome}
-  }
-
-  // se for um caminho qualquer com "/", pega só o último pedaço
-  const parts = raw.split(/[\\/]/)
-  const last = parts[parts.length - 1]
-  return last || undefined
-}
-
 export default function AgendamentoChurrasqueiraComum() {
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
   const searchParams = useSearchParams();
@@ -94,9 +73,10 @@ export default function AgendamentoChurrasqueiraComum() {
           params: { data, turno },
           withCredentials: true,
         })
-        const lista: Churrasqueira[] = Array.isArray(res.data) ? res.data : []
 
+        const lista: Churrasqueira[] = Array.isArray(res.data) ? res.data : []
         const disponiveis = lista.filter((c) => c.disponivel !== false)
+
         setChurrasqueirasDisponiveis(disponiveis)
         setMensagem(disponiveis.length === 0 ? 'Nenhuma churrasqueira disponível.' : '')
       } catch (err) {
@@ -297,12 +277,6 @@ export default function AgendamentoChurrasqueiraComum() {
           <div className="grid grid-cols-2 gap-3">
             {churrasqueirasDisponiveis.map((c) => {
               const isActive = churrasqueiraSelecionada === String(c.churrasqueiraId)
-
-              // aqui aplicamos o helper pra limpar a imagem
-              const imgSrc = sanitizeChurrasImagem(
-                c.logoUrl ?? c.imagemUrl ?? c.imagem ?? undefined
-              )
-
               return (
                 <button
                   key={c.churrasqueiraId}
@@ -312,12 +286,12 @@ export default function AgendamentoChurrasqueiraComum() {
                 >
                   <div className="relative w-full h-24 md:h-32 overflow-hidden flex items-center justify-center mb-2 bg-white border rounded">
                     <AppImage
-                      src={imgSrc}
+                      src={c.logoUrl ?? c.imagemUrl ?? c.imagem ?? undefined}
                       legacyDir="churrasqueiras"
                       alt={c.nome}
                       fill
                       className="object-contain pointer-events-none select-none"
-                      fallbackSrc="/quadra.png"  // se você tiver /churrasqueira.png no public, pode trocar aqui
+                      fallbackSrc="/churrasqueira.png"
                       priority={false}
                     />
                   </div>
