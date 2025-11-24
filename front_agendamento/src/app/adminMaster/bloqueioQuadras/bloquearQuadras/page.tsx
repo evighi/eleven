@@ -73,7 +73,7 @@ export default function BloqueioQuadrasPage() {
     const fetchMotivos = async () => {
       setLoadingMotivos(true);
       try {
-        const res = await axios.get<MotivoBloqueio[]>(`${API_URL}/motivos-bloqueio`, {
+        const res = await axios.get<MotivoBloqueio[]>(`${API_URL}/motivosBloqueio`, {
           withCredentials: true,
         });
         const ativos = res.data.filter((m) => m.ativo);
@@ -136,10 +136,6 @@ export default function BloqueioQuadrasPage() {
 
     if (!usuario) return "Usuário não autenticado.";
     if (quadrasSelecionadas.length === 0) return "Selecione pelo menos uma quadra.";
-
-    if (semMotivos) {
-      return "Não há motivos de bloqueio cadastrados. Cadastre ao menos um motivo antes de bloquear.";
-    }
 
     if (!motivoSelecionadoId) {
       return "Selecione o motivo do bloqueio.";

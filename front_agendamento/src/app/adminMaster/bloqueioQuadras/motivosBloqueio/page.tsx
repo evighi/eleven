@@ -19,14 +19,18 @@ export default function MotivosBloqueioPage() {
 
   const [editandoId, setEditandoId] = useState<string | null>(null);
 
-  // 👇 este campo será enviado como `nome` para a API
+  // campo que vira `nome` na API
   const [nome, setNome] = useState<string>("");
   const [ativo, setAtivo] = useState<boolean>(true);
+
+  // controla se o card de formulário está visível
+  const [mostrarForm, setMostrarForm] = useState<boolean>(false);
 
   const resetForm = () => {
     setEditandoId(null);
     setNome("");
     setAtivo(true);
+    setMostrarForm(false); // esconde o formulário
   };
 
   const carregarMotivos = async () => {
@@ -81,7 +85,7 @@ export default function MotivosBloqueioPage() {
         alert("Motivo criado com sucesso!");
       }
 
-      resetForm();
+      resetForm(); // limpa e fecha o form
       await carregarMotivos();
     } catch (err: any) {
       console.error(err);
@@ -99,6 +103,7 @@ export default function MotivosBloqueioPage() {
     setEditandoId(motivo.id);
     setNome(motivo.nome);
     setAtivo(motivo.ativo);
+    setMostrarForm(true); // abre o form em modo edição
   };
 
   const handleExcluir = async (id: string) => {
@@ -120,66 +125,87 @@ export default function MotivosBloqueioPage() {
     }
   };
 
+  const handleCriarNovoClick = () => {
+    // garantir que seja um cadastro novo
+    setEditandoId(null);
+    setNome("");
+    setAtivo(true);
+    setMostrarForm(true);
+  };
+
   return (
     <div className="space-y-8">
-      <h1 className="text-xl font-semibold text-orange-700">
-        Motivos de Bloqueio
-      </h1>
+      {/* Título + botão de criar */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold text-orange-700">
+          Motivos de Bloqueio
+        </h1>
 
-      {/* Formulário */}
-      <div className="bg-white p-4 rounded-lg shadow">
-        <h2 className="text-lg font-semibold mb-3">
-          {editandoId ? "Editar motivo" : "Cadastrar novo motivo"}
-        </h2>
+        {!mostrarForm && (
+          <button
+            type="button"
+            onClick={handleCriarNovoClick}
+            className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded text-sm"
+          >
+            + Criar novo motivo
+          </button>
+        )}
+      </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="flex flex-col">
-            <label className="text-sm text-gray-600">Descrição</label>
-            <input
-              type="text"
-              className="border p-2 rounded-lg"
-              value={nome}
-              onChange={(e) => setNome(e.target.value)}
-              placeholder="Ex.: Manutenção, Torneio, Evento, etc."
-            />
-          </div>
+      {/* Formulário (só aparece quando mostrarForm = true) */}
+      {mostrarForm && (
+        <div className="bg-white p-4 rounded-lg shadow">
+          <h2 className="text-lg font-semibold mb-3">
+            {editandoId ? "Editar motivo" : "Cadastrar novo motivo"}
+          </h2>
 
-          <label className="inline-flex items-center gap-2 text-sm text-gray-700">
-            <input
-              type="checkbox"
-              checked={ativo}
-              onChange={(e) => setAtivo(e.target.checked)}
-            />
-            Motivo ativo
-          </label>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="flex flex-col">
+              <label className="text-sm text-gray-600">Descrição</label>
+              <input
+                type="text"
+                className="border p-2 rounded-lg"
+                value={nome}
+                onChange={(e) => setNome(e.target.value)}
+                placeholder="Ex.: Manutenção, Torneio, Evento, etc."
+              />
+            </div>
 
-          <div className="flex gap-3">
-            <button
-              type="submit"
-              disabled={salvando}
-              className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded disabled:opacity-60"
-            >
-              {salvando
-                ? editandoId
-                  ? "Salvando..."
-                  : "Criando..."
-                : editandoId
-                ? "Salvar alterações"
-                : "Criar motivo"}
-            </button>
+            <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={ativo}
+                onChange={(e) => setAtivo(e.target.checked)}
+              />
+              Motivo ativo
+            </label>
 
-            {editandoId && (
+            <div className="flex gap-3">
+              <button
+                type="submit"
+                disabled={salvando}
+                className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded disabled:opacity-60"
+              >
+                {salvando
+                  ? editandoId
+                    ? "Salvando..."
+                    : "Criando..."
+                  : editandoId
+                  ? "Salvar alterações"
+                  : "Criar motivo"}
+              </button>
+
               <button
                 type="button"
                 onClick={resetForm}
                 className="bg-gray-200 hover:bg-gray-300 text-gray-900 px-4 py-2 rounded"
               >
-                Cancelar edição
+                Cancelar
               </button>
-            )}
-          </div>
-        </form>
-      </div>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* Lista */}
       <div className="bg-white p-4 rounded-lg shadow">
