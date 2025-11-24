@@ -17,24 +17,37 @@ router.use(requireAdmin);
 
 // helpers
 const horaRegex = /^([01]\d|2[0-3]):[0-5]\d$/;
+
 const bloqueioSchema = z.object({
   quadraIds: z.array(z.string().uuid()).nonempty("Selecione ao menos 1 quadra"),
   dataBloqueio: z.coerce.date(),
   inicioBloqueio: z.string().regex(horaRegex, "Hora inicial inválida (HH:MM)"),
   fimBloqueio: z.string().regex(horaRegex, "Hora final inválida (HH:MM)"),
+  // 👇 NOVO: motivoId opcional (palavra-chave cadastrada)
+  motivoId: z.string().uuid().optional().nullable(),
 });
 
 router.post("/", async (req, res) => {
   const parsed = bloqueioSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ erro: "Dados inválidos", detalhes: parsed.error.errors });
+    return res
+      .status(400)
+      .json({ erro: "Dados inválidos", detalhes: parsed.error.errors });
   }
 
-  const { quadraIds, dataBloqueio, inicioBloqueio, fimBloqueio } = parsed.data;
+  const {
+    quadraIds,
+    dataBloqueio,
+    inicioBloqueio,
+    fimBloqueio,
+    motivoId,
+  } = parsed.data;
 
   // valida janela de horário
   if (inicioBloqueio >= fimBloqueio) {
-    return res.status(400).json({ erro: "Hora inicial deve ser menor que a final" });
+    return res
+      .status(400)
+      .json({ erro: "Hora inicial deve ser menor que a final" });
   }
 
   // id do usuário logado (não confiar no body)
@@ -74,11 +87,13 @@ router.post("/", async (req, res) => {
         inicioBloqueio,
         fimBloqueio,
         bloqueadoPorId,
+        motivoId: motivoId ?? null,
         quadras: { connect: uniqueQuadraIds.map((id) => ({ id })) },
       },
       include: {
         bloqueadoPor: { select: { id: true, nome: true, email: true } },
         quadras: { select: { id: true, nome: true, numero: true } },
+        motivo: { select: { id: true, nome: true, descricao: true } },
       },
     });
 
@@ -93,6 +108,8 @@ router.post("/", async (req, res) => {
         inicioBloqueio: bloqueioCriado.inicioBloqueio,
         fimBloqueio: bloqueioCriado.fimBloqueio,
         bloqueadoPorId,
+        motivoId: bloqueioCriado.motivoId ?? null,
+        motivoNome: bloqueioCriado.motivo?.nome ?? null,
         quadras: bloqueioCriado.quadras.map((q) => ({
           id: q.id,
           nome: q.nome,
@@ -108,10 +125,22 @@ router.post("/", async (req, res) => {
   } catch (error: any) {
     // Quadra inexistente -> P2025
     if (error?.code === "P2025") {
-      return res.status(404).json({ erro: "Uma ou mais quadras não foram encontradas" });
+      return res
+        .status(404)
+        .json({ erro: "Uma ou mais quadras não foram encontradas" });
     }
+
+    // FK de motivo inválido
+    if (error?.code === "P2003" && String(error?.meta?.field_name || "").includes("motivoId")) {
+      return res
+        .status(400)
+        .json({ erro: "Motivo de bloqueio inválido ou inexistente" });
+    }
+
     console.error("Erro ao criar bloqueio:", error);
-    return res.status(500).json({ erro: "Erro interno ao tentar bloquear as quadras" });
+    return res
+      .status(500)
+      .json({ erro: "Erro interno ao tentar bloquear as quadras" });
   }
 });
 
@@ -120,17 +149,19 @@ router.get("/", async (_req, res) => {
     const bloqueios = await prisma.bloqueioQuadra.findMany({
       select: {
         id: true,
-        createdAt: true,            // 👈 ADICIONADO
+        createdAt: true,
         dataBloqueio: true,
         inicioBloqueio: true,
         fimBloqueio: true,
         bloqueadoPor: { select: { id: true, nome: true, email: true } },
         quadras: { select: { id: true, nome: true, numero: true } },
+        motivo: { select: { id: true, nome: true, descricao: true } },
+        motivoId: true,
       },
       orderBy: [
         { dataBloqueio: "desc" },
         { inicioBloqueio: "asc" },
-        { createdAt: "desc" },     // opcional: desempate consistente
+        { createdAt: "desc" },
       ],
     });
 
@@ -141,13 +172,15 @@ router.get("/", async (_req, res) => {
   }
 });
 
-
 router.delete("/:id", async (req, res) => {
   try {
     // carrega antes para logar metadados
     const atual = await prisma.bloqueioQuadra.findUnique({
       where: { id: req.params.id },
-      include: { quadras: { select: { id: true, nome: true, numero: true } } },
+      include: {
+        quadras: { select: { id: true, nome: true, numero: true } },
+        motivo: { select: { id: true, nome: true } },
+      },
     });
 
     if (!atual) {
@@ -166,6 +199,8 @@ router.delete("/:id", async (req, res) => {
         dataBloqueio: atual.dataBloqueio.toISOString().slice(0, 10),
         inicioBloqueio: atual.inicioBloqueio,
         fimBloqueio: atual.fimBloqueio,
+        motivoId: atual.motivoId ?? null,
+        motivoNome: atual.motivo?.nome ?? null,
         quadras: atual.quadras.map((q) => ({
           id: q.id,
           nome: q.nome,

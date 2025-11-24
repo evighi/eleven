@@ -11,19 +11,30 @@ type QuadraDTO = {
   esportes: { id: string; nome: string }[];
 };
 
+type MotivoBloqueio = {
+  id: string;
+  descricao: string;
+  ativo: boolean;
+};
+
 export default function BloqueioQuadrasPage() {
   const { usuario } = useAuthStore();
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
 
   // Filtros / Formulário
-  const [data, setData] = useState<string>("");      // Data do bloqueio
-  const [inicio, setInicio] = useState<string>("");  // Início do bloqueio (HH:MM)
-  const [fim, setFim] = useState<string>("");        // Fim do bloqueio (HH:MM ou "00:00" na UI)
+  const [data, setData] = useState<string>(""); // Data do bloqueio
+  const [inicio, setInicio] = useState<string>(""); // Início do bloqueio (HH:MM)
+  const [fim, setFim] = useState<string>(""); // Fim do bloqueio (HH:MM ou "00:00" na UI)
 
   // Quadras
   const [quadras, setQuadras] = useState<QuadraDTO[]>([]);
   const [loadingQuadras, setLoadingQuadras] = useState<boolean>(false);
   const [quadrasSelecionadas, setQuadrasSelecionadas] = useState<string[]>([]);
+
+  // Motivos
+  const [motivos, setMotivos] = useState<MotivoBloqueio[]>([]);
+  const [loadingMotivos, setLoadingMotivos] = useState<boolean>(false);
+  const [motivoSelecionadoId, setMotivoSelecionadoId] = useState<string>("");
 
   // Submissão
   const [enviando, setEnviando] = useState<boolean>(false);
@@ -34,13 +45,9 @@ export default function BloqueioQuadrasPage() {
     []
   );
 
-  // Select de INÍCIO usa apenas as horas cheias do dia
   const opcoesHoraInicio = HORAS_BASE;
-
-  // Select de FIM mostra "00:00" para representar "até meia-noite" (será normalizado para 23:59)
   const opcoesHoraFimUI = useMemo(() => [...HORAS_BASE, "00:00"], [HORAS_BASE]);
 
-  // Normaliza o valor do FIM antes de comparar/enviar
   const normalizeFim = (valor: string) => (valor === "00:00" ? "23:59" : valor);
 
   // Carregar quadras (com esportes) ao entrar
@@ -60,6 +67,32 @@ export default function BloqueioQuadrasPage() {
     };
     fetchQuadras();
   }, [API_URL]);
+
+  // Carregar motivos de bloqueio (somente ativos)
+  useEffect(() => {
+    const fetchMotivos = async () => {
+      setLoadingMotivos(true);
+      try {
+        const res = await axios.get<MotivoBloqueio[]>(`${API_URL}/motivos-bloqueio`, {
+          withCredentials: true,
+        });
+        const ativos = res.data.filter((m) => m.ativo);
+        setMotivos(ativos);
+
+        // Se tiver exatamente 1 motivo, já pré-seleciona
+        if (ativos.length === 1) {
+          setMotivoSelecionadoId(ativos[0].id);
+        }
+      } catch (error) {
+        console.error("Erro ao buscar motivos de bloqueio:", error);
+      } finally {
+        setLoadingMotivos(false);
+      }
+    };
+    fetchMotivos();
+  }, [API_URL]);
+
+  const semMotivos = !loadingMotivos && motivos.length === 0;
 
   // Agrupar quadras por esporte
   const quadrasPorEsporte = useMemo(() => {
@@ -103,6 +136,15 @@ export default function BloqueioQuadrasPage() {
 
     if (!usuario) return "Usuário não autenticado.";
     if (quadrasSelecionadas.length === 0) return "Selecione pelo menos uma quadra.";
+
+    if (semMotivos) {
+      return "Não há motivos de bloqueio cadastrados. Cadastre ao menos um motivo antes de bloquear.";
+    }
+
+    if (!motivoSelecionadoId) {
+      return "Selecione o motivo do bloqueio.";
+    }
+
     return null;
   };
 
@@ -122,16 +164,18 @@ export default function BloqueioQuadrasPage() {
         `${API_URL}/bloqueios`,
         {
           quadraIds: quadrasSelecionadas,
-          dataBloqueio: data,     // "YYYY-MM-DD"
+          dataBloqueio: data, // "YYYY-MM-DD"
           inicioBloqueio: inicio, // ex.: "22:00"
-          fimBloqueio: fimReq,    // "23:59" quando UI seleciona "00:00"
-          bloqueadoPorId: usuario?.id,
+          fimBloqueio: fimReq, // "23:59" quando UI seleciona "00:00"
+          motivoBloqueioId: motivoSelecionadoId,
+          // bloqueadoPorId é ignorado no back (usamos o usuário do token)
         },
         { withCredentials: true }
       );
 
       alert("Quadras bloqueadas com sucesso!");
       setQuadrasSelecionadas([]);
+      // mantém data/horários e motivo selecionado, se você quiser resetar tudo, pode limpar aqui também
     } catch (e: unknown) {
       console.error(e);
       let msg = "Erro ao criar bloqueio.";
@@ -202,7 +246,36 @@ export default function BloqueioQuadrasPage() {
             ))}
           </select>
           <span className="mt-1 text-[11px] text-gray-500">
-            Dica: selecione <strong>00:00</strong> para bloquear até o fim do dia (enviado como 23:59).
+            Dica: selecione <strong>00:00</strong> para bloquear até o fim do dia
+            (enviado como 23:59).
+          </span>
+        </div>
+
+        {/* Motivo do bloqueio */}
+        <div className="flex flex-col">
+          <label className="text-sm text-gray-600">Motivo do bloqueio</label>
+          <select
+            className="border p-2 rounded-lg"
+            value={motivoSelecionadoId}
+            onChange={(e) => setMotivoSelecionadoId(e.target.value)}
+            disabled={loadingMotivos || semMotivos}
+          >
+            <option value="">
+              {loadingMotivos
+                ? "Carregando motivos..."
+                : semMotivos
+                ? "Nenhum motivo cadastrado"
+                : "Selecione o motivo"}
+            </option>
+            {motivos.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.descricao}
+              </option>
+            ))}
+          </select>
+          <span className="mt-1 text-[11px] text-gray-500">
+            Cadastre e gerencie motivos em{" "}
+            <strong>Admin &gt; Bloqueios &gt; Motivos</strong>.
           </span>
         </div>
       </div>
