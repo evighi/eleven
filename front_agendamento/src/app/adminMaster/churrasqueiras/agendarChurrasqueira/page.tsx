@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import axios from 'axios'
 import AppImage from "@/components/AppImage";
 import { useSearchParams } from 'next/navigation'
-import Spinner from "@/components/Spinner"; // 👈 NOVO
+import Spinner from "@/components/Spinner";
 
 interface Churrasqueira {
   churrasqueiraId: string
@@ -31,7 +31,7 @@ export default function AgendamentoChurrasqueiraComum() {
   const [carregandoDisp, setCarregandoDisp] = useState<boolean>(false)
 
   // 🔄 carregando ao confirmar agendamento
-  const [carregandoAgendar, setCarregandoAgendar] = useState<boolean>(false) // 👈 NOVO
+  const [carregandoAgendar, setCarregandoAgendar] = useState<boolean>(false)
 
   // Dono cadastrado (busca)
   const [buscaUsuario, setBuscaUsuario] = useState<string>("")
@@ -41,6 +41,34 @@ export default function AgendamentoChurrasqueiraComum() {
 
   // Convidado como dono (nome livre)
   const [convidadoDonoNome, setConvidadoDonoNome] = useState<string>("")
+
+  // ===== helpers de imagem (mesmo conceito do agendar quadra) =====
+  const toAbs = useCallback(
+    (u?: string | null) => {
+      if (!u) return "";
+      if (/^(https?:|data:|blob:)/i.test(u)) return u; // já é URL absoluta
+      if (u.startsWith("/")) return `${API_URL}${u}`;  // caminho absoluto no backend
+      return `${API_URL}/${u}`;                       // caminho relativo simples
+    },
+    [API_URL]
+  );
+
+  const buildChurrasqueiraLogo = useCallback(
+    (c: Churrasqueira) => {
+      const candidate = c.logoUrl || c.imagemUrl || c.imagem || "";
+      const normalized =
+        candidate &&
+        !/^(https?:|data:|blob:)/i.test(candidate) &&
+        !candidate.startsWith("/") &&
+        !candidate.includes("/")
+          ? `/uploads/churrasqueiras/${candidate}`
+          : candidate;
+
+      const finalUrl = toAbs(normalized);
+      return finalUrl || "/churrasqueira.png";
+    },
+    [toAbs]
+  );
 
   // 🔹 Lê query params e pré-preenche a tela
   useEffect(() => {
@@ -74,7 +102,15 @@ export default function AgendamentoChurrasqueiraComum() {
           withCredentials: true,
         })
         const lista: Churrasqueira[] = Array.isArray(res.data) ? res.data : []
-        const disponiveis = lista.filter((c) => c.disponivel !== false)
+
+        const disponiveis = lista
+          .filter((c) => c.disponivel !== false)
+          .map((c) => ({
+            ...c,
+            // normaliza a URL da imagem usando a mesma lógica do agendar quadra
+            imagemUrl: buildChurrasqueiraLogo(c),
+          }));
+
         setChurrasqueirasDisponiveis(disponiveis)
         setMensagem(disponiveis.length === 0 ? 'Nenhuma churrasqueira disponível.' : '')
       } catch (err) {
@@ -86,7 +122,7 @@ export default function AgendamentoChurrasqueiraComum() {
       }
     }
     buscar()
-  }, [data, turno, API_URL])
+  }, [data, turno, API_URL, buildChurrasqueiraLogo])
 
   // Busca usuários (id + nome + celular) — debounce + AbortController
   useEffect(() => {
@@ -139,8 +175,8 @@ export default function AgendamentoChurrasqueiraComum() {
       ),
     }
 
-    setCarregandoAgendar(true)   // 👈 liga spinner
-    setMensagem('')              // limpa mensagem anterior
+    setCarregandoAgendar(true)
+    setMensagem('')
 
     try {
       await axios.post(`${API_URL}/agendamentosChurrasqueiras`, body, { withCredentials: true })
@@ -158,7 +194,7 @@ export default function AgendamentoChurrasqueiraComum() {
         'Erro ao realizar agendamento.'
       setMensagem(msg)
     } finally {
-      setCarregandoAgendar(false) // 👈 desliga spinner
+      setCarregandoAgendar(false)
     }
   }
 
@@ -282,14 +318,12 @@ export default function AgendamentoChurrasqueiraComum() {
                   className={`p-2 rounded border text-left bg-gray-50 hover:bg-gray-100 transition ${isActive ? 'ring-2 ring-green-600 bg-green-50' : ''}`}
                   onClick={() => setChurrasqueiraSelecionada(String(c.churrasqueiraId))}
                 >
-                  <div className="relative w-full aspect-[4/3] rounded overflow-hidden bg-white border mb-2">
+                  <div className="relative w-full h-24 md:h-32 overflow-hidden flex items-center justify-center mb-2 bg-white border rounded">
                     <AppImage
-                      src={c.imagemUrl ?? c.logoUrl ?? c.imagem ?? undefined}
-                      legacyDir="churrasqueiras"
+                      src={c.imagemUrl || "/churrasqueira.png"}
                       alt={c.nome}
                       fill
-                      className="object-cover"
-                      sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                      className="object-contain pointer-events-none select-none"
                       fallbackSrc="/churrasqueira.png"
                       priority={false}
                     />
@@ -306,7 +340,7 @@ export default function AgendamentoChurrasqueiraComum() {
           <button
             className="mt-4 bg-orange-600 text-white px-4 py-2 rounded disabled:opacity-60 disabled:cursor-not-allowed"
             onClick={agendar}
-            disabled={botaoDesabilitado || carregandoAgendar} // 👈 trava enquanto envia
+            disabled={botaoDesabilitado || carregandoAgendar}
           >
             {carregandoAgendar ? (
               <span className="inline-flex items-center gap-2">
