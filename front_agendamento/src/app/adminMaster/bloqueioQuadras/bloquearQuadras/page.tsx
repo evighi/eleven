@@ -11,9 +11,11 @@ type QuadraDTO = {
   esportes: { id: string; nome: string }[];
 };
 
+// 👇 agora bate com o que a API retorna
 type MotivoBloqueio = {
   id: string;
-  descricao: string;
+  nome: string;
+  descricao: string | null;
   ativo: boolean;
 };
 
@@ -137,6 +139,10 @@ export default function BloqueioQuadrasPage() {
     if (!usuario) return "Usuário não autenticado.";
     if (quadrasSelecionadas.length === 0) return "Selecione pelo menos uma quadra.";
 
+    if (semMotivos) {
+      return "Não há motivos de bloqueio cadastrados. Cadastre ao menos um motivo antes de bloquear.";
+    }
+
     if (!motivoSelecionadoId) {
       return "Selecione o motivo do bloqueio.";
     }
@@ -163,7 +169,8 @@ export default function BloqueioQuadrasPage() {
           dataBloqueio: data, // "YYYY-MM-DD"
           inicioBloqueio: inicio, // ex.: "22:00"
           fimBloqueio: fimReq, // "23:59" quando UI seleciona "00:00"
-          motivoBloqueioId: motivoSelecionadoId,
+          // 👇 nome correto que o back espera
+          motivoId: motivoSelecionadoId,
           // bloqueadoPorId é ignorado no back (usamos o usuário do token)
         },
         { withCredentials: true }
@@ -171,7 +178,6 @@ export default function BloqueioQuadrasPage() {
 
       alert("Quadras bloqueadas com sucesso!");
       setQuadrasSelecionadas([]);
-      // mantém data/horários e motivo selecionado, se você quiser resetar tudo, pode limpar aqui também
     } catch (e: unknown) {
       console.error(e);
       let msg = "Erro ao criar bloqueio.";
@@ -242,8 +248,7 @@ export default function BloqueioQuadrasPage() {
             ))}
           </select>
           <span className="mt-1 text-[11px] text-gray-500">
-            Dica: selecione <strong>00:00</strong> para bloquear até o fim do dia
-            (enviado como 23:59).
+            Dica: selecione <strong>00:00</strong> para bloquear até o fim do dia (enviado como 23:59).
           </span>
         </div>
 
@@ -265,14 +270,10 @@ export default function BloqueioQuadrasPage() {
             </option>
             {motivos.map((m) => (
               <option key={m.id} value={m.id}>
-                {m.descricao}
+                {m.nome}
               </option>
             ))}
           </select>
-          <span className="mt-1 text-[11px] text-gray-500">
-            Cadastre e gerencie motivos em{" "}
-            <strong>Admin &gt; Bloqueios &gt; Motivos</strong>.
-          </span>
         </div>
       </div>
 
