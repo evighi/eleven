@@ -2,90 +2,113 @@
 
 import { useEffect, useState } from 'react'
 import axios from 'axios'
-import AppImage from "@/components/AppImage";
+import AppImage from '@/components/AppImage'
 import { useSearchParams } from 'next/navigation'
-import Spinner from "@/components/Spinner";
+import Spinner from '@/components/Spinner'
 
-interface Churrasqueira {
+/** ===== Tipos ===== */
+
+interface ChurrasqueiraDisp {
   churrasqueiraId: string
   nome: string
   numero: number
+  disponivel?: boolean
+  // opcionalmente podem vir coisas de imagem daqui também,
+  // mas vamos preferir o mapa carregado da rota /churrasqueiras
   imagem?: string | null
   imagemUrl?: string | null
   logoUrl?: string | null
-  disponivel?: boolean
 }
 
-// Agora esperamos também o celular (telefone)
+interface ChurrasqueiraAPI {
+  id: string
+  nome: string
+  numero: number
+  imagem?: string | null
+  logoUrl?: string | null
+}
+
 type UsuarioBusca = { id: string; nome: string; celular?: string | null }
 
+/** ===== Componente ===== */
+
 export default function AgendamentoChurrasqueiraComum() {
-  const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
-  const searchParams = useSearchParams();
+  const API_URL = process.env.NEXT_PUBLIC_URL_API || 'http://localhost:3001'
+  const searchParams = useSearchParams()
 
-  const [data, setData] = useState<string>("")
-  const [turno, setTurno] = useState<string>("")
-  const [churrasqueirasDisponiveis, setChurrasqueirasDisponiveis] = useState<Churrasqueira[]>([])
-  const [churrasqueiraSelecionada, setChurrasqueiraSelecionada] = useState<string>("")
-  const [mensagem, setMensagem] = useState<string>("")
+  const [data, setData] = useState<string>('')
+  const [turno, setTurno] = useState<string>('')
+
+  const [churrasqueirasDisponiveis, setChurrasqueirasDisponiveis] = useState<
+    ChurrasqueiraDisp[]
+  >([])
+  const [churrasqueiraSelecionada, setChurrasqueiraSelecionada] =
+    useState<string>('')
+
+  const [mensagem, setMensagem] = useState<string>('')
   const [carregandoDisp, setCarregandoDisp] = useState<boolean>(false)
-
-  // 🔄 carregando ao confirmar agendamento
   const [carregandoAgendar, setCarregandoAgendar] = useState<boolean>(false)
 
-  // Dono cadastrado (busca)
-  const [buscaUsuario, setBuscaUsuario] = useState<string>("")
-  const [usuariosEncontrados, setUsuariosEncontrados] = useState<UsuarioBusca[]>([])
-  const [usuarioSelecionado, setUsuarioSelecionado] = useState<UsuarioBusca | null>(null)
+  // 🔹 mapa de logos, igual fazemos em agendarQuadra
+  const [churrasqueiraLogos, setChurrasqueiraLogos] = useState<
+    Record<string, string>
+  >({})
+
+  // Dono do agendamento
+  const [buscaUsuario, setBuscaUsuario] = useState<string>('')
+  const [usuariosEncontrados, setUsuariosEncontrados] = useState<
+    UsuarioBusca[]
+  >([])
+  const [usuarioSelecionado, setUsuarioSelecionado] =
+    useState<UsuarioBusca | null>(null)
   const [buscandoUsuarios, setBuscandoUsuarios] = useState<boolean>(false)
 
-  // Convidado como dono (nome livre)
-  const [convidadoDonoNome, setConvidadoDonoNome] = useState<string>("")
+  const [convidadoDonoNome, setConvidadoDonoNome] = useState<string>('')
 
-  // ================== helper da IMAGEM ==================
-  // Resolve todos os formatos possíveis:
-  // - URL absoluta R2 (https://...)
-  // - caminho começando com /uploads/...
-  // - só o nome do arquivo (ex.: "churrasqueira1.png")
-  function getChurrasqueiraImagem(c: Churrasqueira): string | undefined {
-    const raw =
-      c.logoUrl ??
-      c.imagemUrl ??
-      c.imagem ??
-      ""
+  /** ===== 1) Carrega mapa de logos em /churrasqueiras (igual quadras) ===== */
 
-    if (!raw) return undefined
+  useEffect(() => {
+    const carregarChurrasqueiras = async () => {
+      try {
+        const { data } = await axios.get<ChurrasqueiraAPI[]>(
+          `${API_URL}/churrasqueiras`,
+          { withCredentials: true }
+        )
 
-    // Já é URL absoluta (R2, S3, etc)
-    if (/^https?:\/\//i.test(raw)) return raw
+        const map: Record<string, string> = {}
+        ;(data || []).forEach((c) => {
+          const id = String(c.id)
+          const src = c.logoUrl || c.imagem || ''
+          if (!id || !src) return
+          map[id] = src
+        })
 
-    // Já vem como "/uploads/..."
-    if (raw.startsWith("/uploads/")) {
-      return `${API_URL}${raw}`
+        setChurrasqueiraLogos(map)
+      } catch (e) {
+        console.warn(
+          'Não foi possível carregar /churrasqueiras para montar os logos.',
+          e
+        )
+      }
     }
 
-    // Caso legado: só o nome do arquivo
-    return `${API_URL}/uploads/churrasqueiras/${raw}`
-  }
+    carregarChurrasqueiras()
+  }, [API_URL])
 
-  // 🔹 Lê query params e pré-preenche a tela
+  /** ===== 2) Lê query params ===== */
+
   useEffect(() => {
     const qData = searchParams.get('data')
     const qTurno = searchParams.get('turno')
     const qChurras = searchParams.get('churrasqueiraId')
 
-    if (qData && /^\d{4}-\d{2}-\d{2}$/.test(qData)) {
-      setData(qData)
-    }
-    if (qTurno && (qTurno === 'DIA' || qTurno === 'NOITE')) {
-      setTurno(qTurno)
-    }
-    if (qChurras) {
-      setChurrasqueiraSelecionada(String(qChurras))
-    }
+    if (qData && /^\d{4}-\d{2}-\d{2}$/.test(qData)) setData(qData)
+    if (qTurno && (qTurno === 'DIA' || qTurno === 'NOITE')) setTurno(qTurno)
+    if (qChurras) setChurrasqueiraSelecionada(String(qChurras))
   }, [searchParams])
 
-  // Disponibilidade por data + turno
+  /** ===== 3) Disponibilidade por data + turno ===== */
+
   useEffect(() => {
     const buscar = async () => {
       if (!data || !turno) {
@@ -93,18 +116,46 @@ export default function AgendamentoChurrasqueiraComum() {
         setMensagem('')
         return
       }
+
       setCarregandoDisp(true)
       try {
-        const res = await axios.get(`${API_URL}/disponibilidadeChurrasqueiras`, {
-          params: { data, turno },
-          withCredentials: true,
-        })
+        const res = await axios.get<ChurrasqueiraDisp[]>(
+          `${API_URL}/disponibilidadeChurrasqueiras`,
+          {
+            params: { data, turno },
+            withCredentials: true,
+          }
+        )
 
-        const lista: Churrasqueira[] = Array.isArray(res.data) ? res.data : []
-        const disponiveis = lista.filter((c) => c.disponivel !== false)
+        const lista: ChurrasqueiraDisp[] = Array.isArray(res.data)
+          ? res.data
+          : []
+
+        const disponiveis = lista
+          .filter((c) => c.disponivel !== false)
+          .map((c) => {
+            const id = String(c.churrasqueiraId)
+
+            // 👉 prioridade: usar o que já funciona na tela /churrasqueiras
+            const logoFromMap = churrasqueiraLogos[id]
+
+            return {
+              ...c,
+              logoUrl:
+                logoFromMap ||
+                c.logoUrl ||
+                c.imagemUrl ||
+                c.imagem ||
+                null,
+            }
+          })
 
         setChurrasqueirasDisponiveis(disponiveis)
-        setMensagem(disponiveis.length === 0 ? 'Nenhuma churrasqueira disponível.' : '')
+        setMensagem(
+          disponiveis.length === 0
+            ? 'Nenhuma churrasqueira disponível.'
+            : ''
+        )
       } catch (err) {
         console.error(err)
         setMensagem('Erro ao verificar disponibilidade.')
@@ -113,10 +164,12 @@ export default function AgendamentoChurrasqueiraComum() {
         setCarregandoDisp(false)
       }
     }
-    buscar()
-  }, [data, turno, API_URL])
 
-  // Busca usuários (id + nome + celular) — debounce + AbortController
+    buscar()
+  }, [data, turno, API_URL, churrasqueiraLogos])
+
+  /** ===== 4) Busca usuários (dono) ===== */
+
   useEffect(() => {
     const q = buscaUsuario.trim()
     if (q.length < 2) {
@@ -132,12 +185,16 @@ export default function AgendamentoChurrasqueiraComum() {
       try {
         const { data: lista } = await axios.get<UsuarioBusca[]>(
           `${API_URL}/clientes`,
-          { params: { nome: q }, withCredentials: true, signal: ctrl.signal as any }
+          {
+            params: { nome: q },
+            withCredentials: true,
+            signal: ctrl.signal as any,
+          }
         )
         setUsuariosEncontrados(Array.isArray(lista) ? lista : [])
       } catch (err: any) {
-        if (err?.name !== "CanceledError" && err?.code !== "ERR_CANCELED") {
-          console.error("Falha ao buscar usuários:", err)
+        if (err?.name !== 'CanceledError' && err?.code !== 'ERR_CANCELED') {
+          console.error('Falha ao buscar usuários:', err)
         }
         setUsuariosEncontrados([])
       } finally {
@@ -151,9 +208,18 @@ export default function AgendamentoChurrasqueiraComum() {
     }
   }, [buscaUsuario, API_URL])
 
+  /** ===== 5) Agendar ===== */
+
   const agendar = async () => {
-    if (!data || !turno || !churrasqueiraSelecionada || (!usuarioSelecionado && !convidadoDonoNome.trim())) {
-      setMensagem('Selecione data, turno, uma churrasqueira e um usuário OU preencha o convidado.')
+    if (
+      !data ||
+      !turno ||
+      !churrasqueiraSelecionada ||
+      (!usuarioSelecionado && !convidadoDonoNome.trim())
+    ) {
+      setMensagem(
+        'Selecione data, turno, uma churrasqueira e um usuário OU preencha o convidado.'
+      )
       return
     }
 
@@ -163,15 +229,16 @@ export default function AgendamentoChurrasqueiraComum() {
       churrasqueiraId: churrasqueiraSelecionada,
       ...(usuarioSelecionado
         ? { usuarioId: usuarioSelecionado.id }
-        : { convidadosNomes: [convidadoDonoNome.trim()] }
-      ),
+        : { convidadosNomes: [convidadoDonoNome.trim()] }),
     }
 
     setCarregandoAgendar(true)
     setMensagem('')
 
     try {
-      await axios.post(`${API_URL}/agendamentosChurrasqueiras`, body, { withCredentials: true })
+      await axios.post(`${API_URL}/agendamentosChurrasqueiras`, body, {
+        withCredentials: true,
+      })
       setMensagem('✅ Agendamento realizado com sucesso!')
       setChurrasqueiraSelecionada('')
       setUsuarioSelecionado(null)
@@ -190,16 +257,28 @@ export default function AgendamentoChurrasqueiraComum() {
     }
   }
 
-  // min da data = hoje
+  /** ===== 6) Helpers ===== */
+
   const hoje = new Date()
-  const minDate = new Date(hoje.getTime() - hoje.getTimezoneOffset() * 60000).toISOString().slice(0, 10)
+  const minDate = new Date(
+    hoje.getTime() - hoje.getTimezoneOffset() * 60000
+  )
+    .toISOString()
+    .slice(0, 10)
 
   const botaoDesabilitado =
-    !data || !turno || !churrasqueiraSelecionada || (!usuarioSelecionado && !convidadoDonoNome.trim())
+    !data ||
+    !turno ||
+    !churrasqueiraSelecionada ||
+    (!usuarioSelecionado && !convidadoDonoNome.trim())
+
+  /** ===== Render ===== */
 
   return (
     <div className="max-w-xl mx-auto mt-10 p-6 bg-white shadow rounded-xl">
-      <h1 className="text-2xl font-bold mb-4">Agendar Churrasqueira (Comum)</h1>
+      <h1 className="text-2xl font-bold mb-4">
+        Agendar Churrasqueira (Comum)
+      </h1>
 
       <label className="block mb-2">Data</label>
       <input
@@ -225,7 +304,7 @@ export default function AgendamentoChurrasqueiraComum() {
       <div className="space-y-2 mb-4">
         <label className="block font-semibold">Dono do agendamento</label>
 
-        {/* Busca usuário cadastrado */}
+        {/* usuário cadastrado */}
         <div>
           <input
             type="text"
@@ -237,7 +316,9 @@ export default function AgendamentoChurrasqueiraComum() {
               setUsuarioSelecionado(null)
             }}
           />
-          {buscandoUsuarios && <div className="text-xs text-gray-500 mb-1">Buscando…</div>}
+          {buscandoUsuarios && (
+            <div className="text-xs text-gray-500 mb-1">Buscando…</div>
+          )}
 
           {usuariosEncontrados.length > 0 && (
             <ul className="border rounded mb-2 max-h-40 overflow-y-auto">
@@ -251,10 +332,14 @@ export default function AgendamentoChurrasqueiraComum() {
                     setUsuariosEncontrados([])
                     setConvidadoDonoNome('')
                   }}
-                  title={u.celular || ""}
+                  title={u.celular || ''}
                 >
                   <div className="font-medium">{u.nome}</div>
-                  {u.celular && <div className="text-xs text-gray-600">{u.celular}</div>}
+                  {u.celular && (
+                    <div className="text-xs text-gray-600">
+                      {u.celular}
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
@@ -262,15 +347,22 @@ export default function AgendamentoChurrasqueiraComum() {
 
           {usuarioSelecionado && (
             <p className="text-xs text-green-700">
-              Usuário selecionado: <strong>{usuarioSelecionado.nome}</strong>
+              Usuário selecionado:{' '}
+              <strong>{usuarioSelecionado.nome}</strong>
               {usuarioSelecionado.celular ? (
-                <> — <span className="text-gray-700">{usuarioSelecionado.celular}</span></>
+                <>
+                  {' '}
+                  —{' '}
+                  <span className="text-gray-700">
+                    {usuarioSelecionado.celular}
+                  </span>
+                </>
               ) : null}
             </p>
           )}
         </div>
 
-        {/* Convidado dono (alternativa ao usuário cadastrado) */}
+        {/* convidado dono */}
         <div>
           <input
             type="text"
@@ -287,39 +379,60 @@ export default function AgendamentoChurrasqueiraComum() {
             }}
           />
           <p className="text-[11px] text-gray-500 mt-1">
-            Preencha <strong>um</strong> dos dois: usuário cadastrado <em>ou</em> convidado dono.
+            Preencha <strong>um</strong> dos dois: usuário cadastrado{' '}
+            <em>ou</em> convidado dono.
           </p>
         </div>
       </div>
 
       {/* Lista de churrasqueiras */}
       {carregandoDisp && (
-        <p className="text-sm text-gray-500 mb-2">Carregando disponibilidade…</p>
+        <p className="text-sm text-gray-500 mb-2">
+          Carregando disponibilidade…
+        </p>
       )}
+
       {churrasqueirasDisponiveis.length > 0 && (
         <div className="mb-4">
-          <h2 className="mb-2 font-semibold">Churrasqueiras Disponíveis</h2>
+          <h2 className="mb-2 font-semibold">
+            Churrasqueiras Disponíveis
+          </h2>
 
           <div className="grid grid-cols-2 gap-3">
             {churrasqueirasDisponiveis.map((c) => {
-              const isActive = churrasqueiraSelecionada === String(c.churrasqueiraId)
-              const imgSrc = getChurrasqueiraImagem(c)
+              const isActive =
+                churrasqueiraSelecionada ===
+                String(c.churrasqueiraId)
+
+              const id = String(c.churrasqueiraId)
+              const imgSrc =
+                churrasqueiraLogos[id] ||
+                c.logoUrl ||
+                c.imagemUrl ||
+                c.imagem ||
+                undefined
 
               return (
                 <button
                   key={c.churrasqueiraId}
                   type="button"
-                  className={`p-2 rounded border text-left bg-gray-50 hover:bg-gray-100 transition ${isActive ? 'ring-2 ring-green-600 bg-green-50' : ''}`}
-                  onClick={() => setChurrasqueiraSelecionada(String(c.churrasqueiraId))}
+                  className={`p-2 rounded border text-left bg-gray-50 hover:bg-gray-100 transition ${
+                    isActive
+                      ? 'ring-2 ring-green-600 bg-green-50'
+                      : ''
+                  }`}
+                  onClick={() =>
+                    setChurrasqueiraSelecionada(String(c.churrasqueiraId))
+                  }
                 >
                   <div className="relative w-full h-24 md:h-32 overflow-hidden flex items-center justify-center mb-2 bg-white border rounded">
                     <AppImage
                       src={imgSrc}
+                      legacyDir="churrasqueiras"
                       alt={c.nome}
                       fill
                       className="object-contain pointer-events-none select-none"
-                      // 🔁 usa a mesma imagem genérica da quadra se quiser
-                      fallbackSrc="/quadra.png"
+                      fallbackSrc="/churrasqueira.png"
                       priority={false}
                     />
                   </div>
@@ -342,13 +455,17 @@ export default function AgendamentoChurrasqueiraComum() {
                 <Spinner size="w-4 h-4" /> Agendando…
               </span>
             ) : (
-              "Confirmar Agendamento"
+              'Confirmar Agendamento'
             )}
           </button>
         </div>
       )}
 
-      {mensagem && <p className="mt-4 text-center text-sm text-gray-700">{mensagem}</p>}
+      {mensagem && (
+        <p className="mt-4 text-center text-sm text-gray-700">
+          {mensagem}
+        </p>
+      )}
     </div>
   )
 }
