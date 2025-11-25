@@ -51,6 +51,7 @@ interface DisponQuadra {
   agendamentoId?: string;
   id?: string;
   tipoLocal?: TipoLocal;
+  motivoBloqueioNome?: string | null;
 }
 
 interface ChurrasTurno {
@@ -749,19 +750,21 @@ export default function AdminHome() {
                           abrirDetalhes(q, { horario, esporte });
                         }
                       }}
-                      className={`${clsBase} ${
-                        q.bloqueada
+                      className={`${clsBase} ${q.bloqueada
                           ? "border-2 border-red-500 bg-red-50"
                           : q.disponivel
-                          ? "border-2 border-green-500 bg-green-50"
-                          : "border-2 border-gray-500 bg-gray-50"
-                      }`}
+                            ? "border-2 border-green-500 bg-green-50"
+                            : "border-2 border-gray-500 bg-gray-50"
+                        }`}
                     >
                       <p className="font-medium">{q.nome}</p>
                       <p className="text-xs text-gray-700">Quadra {q.numero}</p>
 
                       {q.bloqueada && (
-                        <div className="text-red-600 font-bold">Bloqueada</div>
+                        <div className="text-red-600 font-bold">
+                          Bloqueada
+                          {q.motivoBloqueioNome ? ` - ${q.motivoBloqueioNome}` : ""}
+                        </div>
                       )}
 
                       {hasAgendamento && (
@@ -823,11 +826,10 @@ export default function AdminHome() {
                         );
                       }
                     }}
-                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${
-                      disponivel
+                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${disponivel
                         ? "border-2 border-green-500 bg-green-50"
                         : "border-2 border-gray-500 bg-gray-50"
-                    }`}
+                      }`}
                   >
                     <p className="font-medium">{c.nome}</p>
                     <p className="text-xs text-gray-700">
@@ -882,11 +884,10 @@ export default function AdminHome() {
                         );
                       }
                     }}
-                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${
-                      disponivel
+                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${disponivel
                         ? "border-2 border-green-500 bg-green-50"
                         : "border-2 border-gray-500 bg-gray-50"
-                    }`}
+                      }`}
                   >
                     <p className="font-medium">{c.nome}</p>
                     <p className="text-xs text-gray-700">
@@ -953,8 +954,8 @@ export default function AdminHome() {
               {typeof agendamentoSelecionado.usuario === "string"
                 ? agendamentoSelecionado.usuario
                 : [agendamentoSelecionado.usuario?.nome, agendamentoSelecionado.usuario?.celular]
-                    .filter(Boolean)
-                    .join(" — ")}
+                  .filter(Boolean)
+                  .join(" — ")}
             </p>
             {agendamentoSelecionado.esporte && (
               <p>
@@ -1088,11 +1089,10 @@ export default function AdminHome() {
                             key={d}
                             type="button"
                             onClick={() => setDataExcecaoSelecionada(d)}
-                            className={`px-3 py-2 rounded border text-sm ${
-                              ativo
+                            className={`px-3 py-2 rounded border text-sm ${ativo
                                 ? "border-indigo-600 bg-indigo-50 text-indigo-700"
                                 : "border-gray-300 hover:bg-gray-50"
-                            }`}
+                              }`}
                           >
                             {toDdMm(d)}
                           </button>
@@ -1133,7 +1133,7 @@ export default function AdminHome() {
             <h3 className="text-lg font-semibold mb-4">
               Transferir Agendamento{" "}
               {agendamentoSelecionado?.tipoLocal === "quadra" &&
-              agendamentoSelecionado?.tipoReserva === "permanente"
+                agendamentoSelecionado?.tipoReserva === "permanente"
                 ? "(Permanente)"
                 : "(Comum)"}
             </h3>
@@ -1159,9 +1159,8 @@ export default function AdminHome() {
               {usuariosFiltrados.map((user) => (
                 <li
                   key={user.id}
-                  className={`p-2 cursor-pointer hover:bg-blue-100 ${
-                    usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
-                  }`}
+                  className={`p-2 cursor-pointer hover:bg-blue-100 ${usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
+                    }`}
                   onClick={() => setUsuarioSelecionado(user)}
                   title={user.celular || ""}
                 >
@@ -1228,9 +1227,8 @@ export default function AdminHome() {
                 return (
                   <li
                     key={u.id}
-                    className={`p-2 cursor-pointer flex items-center justify-between hover:bg-orange-50 ${
-                      ativo ? "bg-orange-100" : ""
-                    }`}
+                    className={`p-2 cursor-pointer flex items-center justify-between hover:bg-orange-50 ${ativo ? "bg-orange-100" : ""
+                      }`}
                     onClick={() => alternarSelecionado(u.id)}
                     title={u.celular || ""}
                   >

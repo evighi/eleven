@@ -1942,4 +1942,70 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
   }
 });
 
+// 📊 Estatísticas gerais de agendamentos
+// GET /agendamentos/estatisticas/resumo
+router.get("/estatisticas/resumo", verificarToken, async (req, res) => {
+  const reqCustom = req as typeof req & {
+    usuario?: { usuarioLogadoTipo?: string };
+  };
+
+  if (!reqCustom.usuario) {
+    return res.status(401).json({ erro: "Não autenticado" });
+  }
+
+  // 👉 Somente admins podem ver o resumo geral
+  if (!isAdminRole(reqCustom.usuario.usuarioLogadoTipo)) {
+    return res.status(403).json({ erro: "Apenas administradores podem ver as estatísticas" });
+  }
+
+  try {
+    // usamos o mesmo helper que você já tem para trabalhar com o "dia local"
+    const { amanhaUTC00 } = getStoredUtcBoundaryForLocalDay(new Date());
+
+    // base: todos agendamentos até hoje (inclusive), ignorando cancelados/transferidos
+    const whereBase = {
+      data: { lt: amanhaUTC00 },
+      status: { notIn: ["CANCELADO", "TRANSFERIDO"] as any },
+    };
+
+    // ✅ total de agendamentos até hoje
+    const totalAteHoje = await prisma.agendamento.count({ where: whereBase });
+
+    // ✅ contagem por dia
+    const porDia = await prisma.agendamento.groupBy({
+      by: ["data"],
+      where: whereBase,
+      _count: { _all: true },
+    });
+
+    const diasComAgendamento = porDia.length;
+    const somaAgendamentos = porDia.reduce(
+      (acc, d) => acc + d._count._all,
+      0
+    );
+
+    const mediaPorDia =
+      diasComAgendamento > 0 ? somaAgendamentos / diasComAgendamento : 0;
+
+    // devolve também o detalhamento por dia, caso o agente queira usar
+    const detalhesPorDia = porDia
+      .sort((a, b) => a.data.getTime() - b.data.getTime())
+      .map((d) => ({
+        data: d.data.toISOString().slice(0, 10), // YYYY-MM-DD
+        total: d._count._all,
+      }));
+
+    return res.json({
+      totalAteHoje,
+      diasComAgendamento,
+      mediaPorDia,
+      detalhesPorDia,
+    });
+  } catch (err) {
+    console.error("Erro ao calcular estatísticas de agendamentos:", err);
+    return res.status(500).json({ erro: "Erro ao calcular estatísticas de agendamentos" });
+  }
+});
+
+
 export default router;
