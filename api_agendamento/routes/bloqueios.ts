@@ -144,9 +144,22 @@ router.post("/", async (req, res) => {
   }
 });
 
-router.get("/", async (_req, res) => {
+router.get("/", async (req, res) => {
   try {
+    const { motivoId } = req.query;
+
+    const where: any = {};
+
+    // 👇 Se vier "SEM_MOTIVO" do front, filtra bloqueios sem motivo
+    if (motivoId === "SEM_MOTIVO") {
+      where.motivoId = null;
+    } else if (typeof motivoId === "string" && motivoId.trim() !== "") {
+      // 👇 Se vier um motivoId válido, filtra por ele
+      where.motivoId = motivoId;
+    }
+
     const bloqueios = await prisma.bloqueioQuadra.findMany({
+      where,
       select: {
         id: true,
         createdAt: true,
@@ -171,6 +184,7 @@ router.get("/", async (_req, res) => {
     return res.status(500).json({ erro: "Erro ao buscar bloqueios" });
   }
 });
+
 
 router.delete("/:id", async (req, res) => {
   try {
