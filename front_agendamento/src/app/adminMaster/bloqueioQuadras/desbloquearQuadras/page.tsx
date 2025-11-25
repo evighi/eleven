@@ -14,7 +14,7 @@ type UsuarioResumo = {
   nome: string;
 };
 
-// 👇 NOVO: tipo para o motivo de bloqueio
+// 👇 Tipo do motivo de bloqueio (mesmo usado no backend)
 type MotivoBloqueio = {
   id: string;
   nome: string;
@@ -23,14 +23,14 @@ type MotivoBloqueio = {
 
 type Bloqueio = {
   id: string;
-  createdAt: string;       // ISO completo com horário
-  dataBloqueio: string;    // vem como ISO Date, mas queremos tratar como YMD
-  inicioBloqueio: string;  // "HH:MM"
-  fimBloqueio: string;     // "HH:MM"
+  createdAt: string; // ISO completo com horário
+  dataBloqueio: string; // vem como ISO Date, mas queremos tratar como YMD
+  inicioBloqueio: string; // "HH:MM"
+  fimBloqueio: string; // "HH:MM"
   bloqueadoPor: UsuarioResumo;
   quadras: Quadra[];
 
-  // 👇 CAMPOS NOVOS (podem vir nulos em bloqueios antigos)
+  // campos novos
   motivoId?: string | null;
   motivo?: MotivoBloqueio | null;
 };
@@ -44,11 +44,43 @@ export default function DesbloqueioQuadrasPage() {
   const [confirmarDesbloqueio, setConfirmarDesbloqueio] = useState<boolean>(false);
   const [deletando, setDeletando] = useState<boolean>(false);
 
+  // 👇 NOVO: lista de motivos para o select
+  const [motivos, setMotivos] = useState<MotivoBloqueio[]>([]);
+  // 👇 NOVO: motivo selecionado no filtro
+  const [motivoIdFiltro, setMotivoIdFiltro] = useState<string>("");
+
+  // Carrega motivos ativos para o select
+  useEffect(() => {
+    const fetchMotivos = async () => {
+      try {
+        const res = await axios.get<MotivoBloqueio[]>(
+          `${API_URL}/motivos-bloqueio`,
+          {
+            params: { ativos: "true" },
+            withCredentials: true,
+          }
+        );
+        setMotivos(res.data);
+      } catch (error) {
+        console.error("Erro ao buscar motivos de bloqueio:", error);
+      }
+    };
+
+    fetchMotivos();
+  }, [API_URL]);
+
+  // Carrega bloqueios (com filtro opcional por motivoId)
   useEffect(() => {
     const fetchBloqueios = async () => {
       setLoading(true);
       try {
+        const params: any = {};
+        if (motivoIdFiltro) {
+          params.motivoId = motivoIdFiltro;
+        }
+
         const res = await axios.get<Bloqueio[]>(`${API_URL}/bloqueios`, {
+          params,
           withCredentials: true,
         });
         setBloqueios(res.data);
@@ -58,8 +90,9 @@ export default function DesbloqueioQuadrasPage() {
         setLoading(false);
       }
     };
+
     fetchBloqueios();
-  }, [API_URL]);
+  }, [API_URL, motivoIdFiltro]);
 
   const confirmarDesbloqueioHandler = async () => {
     if (!bloqueioSelecionado) return;
@@ -80,9 +113,8 @@ export default function DesbloqueioQuadrasPage() {
     }
   };
 
-  // 👇 NÃO usar new Date para campos "date-only" vindos do back como 00:00Z
+  // NÃO usar new Date para campos "date-only" vindos do back como 00:00Z
   const formatDateYMD = (isoLike: string) => {
-    // pega apenas a parte YYYY-MM-DD se existir, senão tenta heurística
     const m = isoLike.match(/^(\d{4}-\d{2}-\d{2})/);
     const ymd = m ? m[1] : isoLike.slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return isoLike; // fallback
@@ -90,7 +122,7 @@ export default function DesbloqueioQuadrasPage() {
     return `${d}/${mth}/${y}`;
   };
 
-  // createdAt é um carimbo completo (data+hora) — aqui pode usar toLocaleString
+  // createdAt é um carimbo completo (data+hora)
   const formatDateTime = (iso: string) => {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return iso;
@@ -100,6 +132,38 @@ export default function DesbloqueioQuadrasPage() {
   return (
     <div className="space-y-8">
       <h1 className="text-xl font-semibold text-orange-700">Desbloquear Quadras</h1>
+
+      {/* 👇 Filtro por motivo */}
+      <div className="bg-white p-4 rounded-lg shadow flex flex-wrap items-end gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Filtrar por motivo
+          </label>
+          <select
+            value={motivoIdFiltro}
+            onChange={(e) => setMotivoIdFiltro(e.target.value)}
+            className="border border-gray-300 rounded px-3 py-2 text-sm min-w-[220px]"
+          >
+            <option value="">Todos os motivos</option>
+            <option value="SEM_MOTIVO">Sem motivo definido</option>
+            {motivos.map((motivo) => (
+              <option key={motivo.id} value={motivo.id}>
+                {motivo.nome}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {motivoIdFiltro && (
+          <button
+            type="button"
+            onClick={() => setMotivoIdFiltro("")}
+            className="text-sm px-3 py-2 rounded bg-gray-200 hover:bg-gray-300"
+          >
+            Limpar filtro
+          </button>
+        )}
+      </div>
 
       <div>
         {loading ? (
@@ -119,7 +183,9 @@ export default function DesbloqueioQuadrasPage() {
                         </h2>
                         <p className="text-sm text-gray-600">
                           Criado em:{" "}
-                          <span className="font-medium">{formatDateTime(bloqueio.createdAt)}</span>
+                          <span className="font-medium">
+                            {formatDateTime(bloqueio.createdAt)}
+                          </span>
                         </p>
                         <p className="text-sm text-gray-600">
                           Dia bloqueado:{" "}
@@ -134,7 +200,7 @@ export default function DesbloqueioQuadrasPage() {
                           </span>
                         </p>
 
-                        {/* 👇 NOVO: mostrar motivo, se existir */}
+                        {/* Motivo, se existir */}
                         {bloqueio.motivo && (
                           <div className="mt-2 text-sm text-gray-700">
                             <p>
@@ -148,6 +214,11 @@ export default function DesbloqueioQuadrasPage() {
                               </p>
                             )}
                           </div>
+                        )}
+                        {!bloqueio.motivo && (
+                          <p className="mt-2 text-sm text-gray-500">
+                            <span className="font-semibold">Motivo:</span> — (não informado)
+                          </p>
                         )}
                       </div>
 
@@ -163,7 +234,9 @@ export default function DesbloqueioQuadrasPage() {
                     </div>
 
                     <div className="mt-3">
-                      <p className="text-sm text-gray-700 font-medium mb-1">Quadras bloqueadas:</p>
+                      <p className="text-sm text-gray-700 font-medium mb-1">
+                        Quadras bloqueadas:
+                      </p>
                       <ul className="list-disc ml-5 text-sm text-gray-700">
                         {bloqueio.quadras.map((quadra) => (
                           <li key={quadra.id}>
