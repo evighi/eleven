@@ -54,7 +54,7 @@ export default function DesbloqueioQuadrasPage() {
     const fetchMotivos = async () => {
       try {
         const res = await axios.get<MotivoBloqueio[]>(
-          `${API_URL}/motivos-bloqueio`,
+          `${API_URL}/motivosBloqueio`,
           {
             params: { ativos: "true" },
             withCredentials: true,
