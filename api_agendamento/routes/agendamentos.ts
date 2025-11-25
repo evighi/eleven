@@ -916,6 +916,7 @@ router.get("/me", verificarToken, async (req, res) => {
       dataBloqueio: Date;
       inicioBloqueio: string;
       fimBloqueio: string;
+      motivo?: { nome: string } | null;
       quadras: { id: string }[];
     }> = [];
 
@@ -931,9 +932,12 @@ router.get("/me", verificarToken, async (req, res) => {
           inicioBloqueio: true,
           fimBloqueio: true,
           quadras: { select: { id: true } },
+          // 👇 relação correta, igual ao schema
+          motivo: { select: { nome: true } },
         },
       });
     }
+
 
     const bloqueiosIndex = new Map<string, Array<typeof bloqueios[number]>>();
     for (const b of bloqueios) {
@@ -950,7 +954,9 @@ router.get("/me", verificarToken, async (req, res) => {
       const quadraLogoUrl = resolveQuadraImg(p.quadra?.imagem) || "/quadra.png";
 
       let proximaDataBloqueada = false;
-      let bloqueioInfo: { data: string; inicio: string; fim: string } | undefined;
+      let bloqueioInfo:
+        | { data: string; inicio: string; fim: string; motivoNome?: string | null }
+        | undefined;
 
       if (proximaData) {
         const k = `${p.quadra?.id ?? p.quadraId}|${proximaData}`;
@@ -964,6 +970,7 @@ router.get("/me", verificarToken, async (req, res) => {
             data: proximaData,
             inicio: hit.inicioBloqueio,
             fim: hit.fimBloqueio,
+            motivoNome: hit.motivo?.nome ?? null,
           };
         }
       }
@@ -980,6 +987,11 @@ router.get("/me", verificarToken, async (req, res) => {
         diaSemana: p.diaSemana,
         proximaData,
         proximaDataBloqueada,
+        // 👇 campos “flat” que o front já usa
+        proximaDataBloqueioInicio: bloqueioInfo?.inicio ?? null,
+        proximaDataBloqueioFim: bloqueioInfo?.fim ?? null,
+        proximaDataBloqueioMotivoNome: bloqueioInfo?.motivoNome ?? null,
+        // (mantém bloqueioInfo se algo mais estiver usando)
         ...(bloqueioInfo ? { bloqueioInfo } : {}),
         quadraNome: p.quadra?.nome ?? "",
         quadraNumero: p.quadra?.numero ?? null,

@@ -29,6 +29,7 @@ type AgendamentoAPI = {
   proximaDataBloqueada?: boolean;
   proximaDataBloqueioInicio?: string;
   proximaDataBloqueioFim?: string;
+  proximaDataBloqueioMotivoNome?: string | null; // 👈 motivo vindo da API
 
   nome?: string;
   local?: string;
@@ -61,6 +62,7 @@ type AgendamentoCard = {
   bloqueado?: boolean;
   bloqueioInicio?: string | null;
   bloqueioFim?: string | null;
+  bloqueioMotivo?: string | null; // 👈 motivo já normalizado
 
   nextISO: string | null;
   sortTs: number;
@@ -114,7 +116,13 @@ export default function Home() {
     if (!diaSemana) return null;
 
     const DIA_IDX: Record<NonNullable<AgendamentoAPI["diaSemana"]>, number> = {
-      DOMINGO: 0, SEGUNDA: 1, TERCA: 2, QUARTA: 3, QUINTA: 4, SEXTA: 5, SABADO: 6,
+      DOMINGO: 0,
+      SEGUNDA: 1,
+      TERCA: 2,
+      QUARTA: 3,
+      QUINTA: 4,
+      SEXTA: 5,
+      SABADO: 6,
     };
 
     const tz = "America/Sao_Paulo";
@@ -127,7 +135,10 @@ export default function Home() {
     const hasHM = typeof horario === "string" && /^\d{2}:\d{2}$/.test(horario);
     if (delta === 0 && hasHM) {
       const hmNow = new Intl.DateTimeFormat("en-GB", {
-        timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false,
+        timeZone: tz,
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
       }).format(now);
       if (hmNow >= horario) delta = 7;
     }
@@ -136,7 +147,10 @@ export default function Home() {
     d.setDate(d.getDate() + delta);
 
     const ymd = new Intl.DateTimeFormat("en-CA", {
-      timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
     }).format(d);
 
     return ymd;
@@ -157,8 +171,8 @@ export default function Home() {
 
       const nextISO =
         raw.tipoReserva === "COMUM"
-          ? (raw.data ?? null)
-          : (raw.proximaData ?? proximaDataLocalQuandoFaltar(raw.diaSemana, raw.horario) ?? null);
+          ? raw.data ?? null
+          : raw.proximaData ?? proximaDataLocalQuandoFaltar(raw.diaSemana, raw.horario) ?? null;
 
       const sortTs = nextISO ? tsFromSP(nextISO, raw.horario) : Number.POSITIVE_INFINITY;
 
@@ -167,6 +181,7 @@ export default function Home() {
       const bloqueado = raw.tipoReserva === "PERMANENTE" ? !!raw.proximaDataBloqueada : false;
       const bloqueioInicio = raw.proximaDataBloqueioInicio ?? null;
       const bloqueioFim = raw.proximaDataBloqueioFim ?? null;
+      const bloqueioMotivo = raw.proximaDataBloqueioMotivoNome ?? null;
 
       return {
         id: raw.id,
@@ -184,6 +199,7 @@ export default function Home() {
         bloqueado,
         bloqueioInicio,
         bloqueioFim,
+        bloqueioMotivo,
       };
     },
     [paraDDMM]
@@ -314,7 +330,11 @@ export default function Home() {
                               ? "bg-gray-200 text-gray-800"
                               : "bg-orange-100 text-orange-700"
                           }`}
-                          title={a.tipo === "PERMANENTE" ? "Agendamento permanente" : "Agendamento comum"}
+                          title={
+                            a.tipo === "PERMANENTE"
+                              ? "Agendamento permanente"
+                              : "Agendamento comum"
+                          }
                         >
                           {a.tipo === "PERMANENTE" ? "Permanente" : "Comum"}
                         </span>
@@ -322,7 +342,7 @@ export default function Home() {
                         {isBloqueado && (
                           <span
                             className="text-[10px] px-2 py-[2px] rounded-full bg-red-100 text-red-700"
-                            title="Ocorrência bloqueada por evento"
+                            title={a.bloqueioMotivo || "Ocorrência bloqueada por evento"}
                           >
                             Bloqueado
                           </span>
@@ -334,18 +354,31 @@ export default function Home() {
                           isBloqueado ? "text-red-600 font-semibold" : "text-gray-500"
                         }`}
                       >
-                        {/^\d{2}\/\d{2}$/.test(a.dia)
-                          ? <>Dia {a.dia} às {a.hora}</>
-                          : <>Toda {a.dia} às {a.hora}</>}
+                        {/^\d{2}\/\d{2}$/.test(a.dia) ? (
+                          <>
+                            Dia {a.dia} às {a.hora}
+                          </>
+                        ) : (
+                          <>
+                            Toda {a.dia} às {a.hora}
+                          </>
+                        )}
                       </p>
 
                       {isBloqueado && (
                         <p className="mt-0.5 text-[11px] sm:text-[12px] text-red-600">
                           A quadra está bloqueada nesta data
                           {a.bloqueioInicio && a.bloqueioFim ? (
-                            <> (das {a.bloqueioInicio} às {a.bloqueioFim})</>
-                          ) : null}.
-                          Seu agendamento permanece, mas não será utilizável por conta do evento.
+                            <>
+                              {" "}
+                              (das {a.bloqueioInicio} às {a.bloqueioFim})
+                            </>
+                          ) : null}
+                          .
+                          {a.bloqueioMotivo && (
+                            <> Motivo: {a.bloqueioMotivo}.</>
+                          )}{" "}
+                          Seu agendamento permanece, mas não será utilizável por conta do bloqueio.
                         </p>
                       )}
 
@@ -432,7 +465,7 @@ export default function Home() {
               </div>
             )}
 
-            {/* >>> NOVO: Quadro do Professor (apenas para ADMIN_PROFESSORES) */}
+            {/* >>> Quadro do Professor (apenas para ADMIN_PROFESSORES) */}
             {ehProfessor && (
               <div className="rounded-2xl bg-white shadow-md p-3 md:p-4">
                 <h3 className="text-[13px] sm:text-sm font-semibold text-gray-500 mb-2">
