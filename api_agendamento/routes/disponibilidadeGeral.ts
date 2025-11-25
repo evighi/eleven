@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { PrismaClient, DiaSemana, Turno, BloqueioQuadra } from "@prisma/client";
+import { PrismaClient, DiaSemana, Turno } from "@prisma/client";
 import { addDays, getDay, startOfDay } from "date-fns";
 
 const prisma = new PrismaClient();
@@ -31,9 +31,9 @@ type UsuarioAdminHome = {
 
 type AgendamentoComUsuario =
   | {
-      id: string;
-      usuario: UsuarioSelecionado;
-    }
+    id: string;
+    usuario: UsuarioSelecionado;
+  }
   | null;
 
 // horário dentro do intervalo de bloqueio [início, fim)
@@ -172,10 +172,10 @@ router.get("/geral", async (req, res) => {
     // ===== Permanentes (batch) =====
     let permanentes:
       | {
-          id: string;
-          quadraId: string;
-          usuario: UsuarioSelecionado;
-        }[] = [];
+        id: string;
+        quadraId: string;
+        usuario: UsuarioSelecionado;
+      }[] = [];
 
     if (quadraIds.length > 0) {
       if (range) {
@@ -226,10 +226,10 @@ router.get("/geral", async (req, res) => {
     // ===== Comuns (batch, só com data) =====
     let comuns:
       | {
-          id: string;
-          quadraId: string;
-          usuario: UsuarioSelecionado;
-        }[] = [];
+        id: string;
+        quadraId: string;
+        usuario: UsuarioSelecionado;
+      }[] = [];
     if (range && quadraIds.length > 0) {
       comuns = await prisma.agendamento.findMany({
         where: {
@@ -257,21 +257,31 @@ router.get("/geral", async (req, res) => {
     });
 
     // ===== Bloqueios (batch, só com data) =====
-    let bloqueiosPorQuadra = new Map<string, BloqueioQuadra[]>();
+    let bloqueiosPorQuadra = new Map<
+      string,
+      { inicio: string; fim: string; motivoNome: string | null }[]
+    >();
     if (range && quadraIds.length > 0) {
       const bloqueios = await prisma.bloqueioQuadra.findMany({
         where: {
           dataBloqueio: { gte: range.inicio, lt: range.fim },
           quadras: { some: { id: { in: quadraIds } } },
         },
-        include: { quadras: { select: { id: true } } },
+        include: {
+          quadras: { select: { id: true } },
+          motivo: { select: { nome: true } }, // 👈 pega o nome do motivo
+        },
       });
 
-      bloqueiosPorQuadra = new Map<string, BloqueioQuadra[]>();
+      bloqueiosPorQuadra = new Map();
       bloqueios.forEach((b) => {
         b.quadras.forEach((q) => {
           const list = bloqueiosPorQuadra.get(q.id) || [];
-          list.push(b);
+          list.push({
+            inicio: b.inicioBloqueio,
+            fim: b.fimBloqueio,
+            motivoNome: b.motivo?.nome ?? null,
+          });
           bloqueiosPorQuadra.set(q.id, list);
         });
       });
@@ -281,7 +291,9 @@ router.get("/geral", async (req, res) => {
     const quadrasDisponibilidade = quadras.map((quadra) => {
       let conflitoPermanente: AgendamentoComUsuario = null;
       let conflitoComum: AgendamentoComUsuario = null;
-      let conflitoBloqueio: BloqueioQuadra | null = null;
+      let conflitoBloqueio:
+        | { inicio: string; fim: string; motivoNome: string | null }
+        | null = null;
 
       const per = permByQuadra.get(quadra.id);
       if (per) {
@@ -303,7 +315,7 @@ router.get("/geral", async (req, res) => {
         const bloqueiosQuadra = bloqueiosPorQuadra.get(quadra.id) || [];
         conflitoBloqueio =
           bloqueiosQuadra.find((b) =>
-            horarioDentroDoBloqueio(horarioStr, b.inicioBloqueio, b.fimBloqueio)
+            horarioDentroDoBloqueio(horarioStr, b.inicio, b.fim)
           ) ?? null;
       }
 
@@ -333,6 +345,7 @@ router.get("/geral", async (req, res) => {
         usuario,
         agendamentoId,
         bloqueada: !!conflitoBloqueio,
+        motivoBloqueioNome: conflitoBloqueio?.motivoNome ?? null, // 👈 NOVO CAMPO
       };
     });
 
@@ -357,11 +370,11 @@ router.get("/geral", async (req, res) => {
     // permanentes de churrasqueiras (batch)
     let perChurras:
       | {
-          id: string;
-          churrasqueiraId: string;
-          turno: Turno;
-          usuario: UsuarioSelecionado;
-        }[] = [];
+        id: string;
+        churrasqueiraId: string;
+        turno: Turno;
+        usuario: UsuarioSelecionado;
+      }[] = [];
 
     if (churrasIds.length > 0) {
       if (range) {
@@ -413,11 +426,11 @@ router.get("/geral", async (req, res) => {
     // comuns de churrasqueiras (batch, só com data)
     let comChurras:
       | {
-          id: string;
-          churrasqueiraId: string;
-          turno: Turno;
-          usuario: UsuarioSelecionado;
-        }[] = [];
+        id: string;
+        churrasqueiraId: string;
+        turno: Turno;
+        usuario: UsuarioSelecionado;
+      }[] = [];
 
     if (range && churrasIds.length > 0) {
       comChurras = await prisma.agendamentoChurrasqueira.findMany({
@@ -553,10 +566,10 @@ router.get("/geral-admin", async (req, res) => {
     // ===== Permanentes (batch) =====
     let permanentes:
       | {
-          id: string;
-          quadraId: string;
-          usuario: UsuarioAdminHome;
-        }[] = [];
+        id: string;
+        quadraId: string;
+        usuario: UsuarioAdminHome;
+      }[] = [];
 
     if (quadraIds.length > 0) {
       if (range) {
@@ -607,10 +620,10 @@ router.get("/geral-admin", async (req, res) => {
     // ===== Comuns (batch, só com data) =====
     let comuns:
       | {
-          id: string;
-          quadraId: string;
-          usuario: UsuarioAdminHome;
-        }[] = [];
+        id: string;
+        quadraId: string;
+        usuario: UsuarioAdminHome;
+      }[] = [];
 
     if (range && quadraIds.length > 0) {
       comuns = await prisma.agendamento.findMany({
@@ -639,21 +652,31 @@ router.get("/geral-admin", async (req, res) => {
     });
 
     // ===== Bloqueios (batch, só com data) =====
-    let bloqueiosPorQuadra = new Map<string, BloqueioQuadra[]>();
+    let bloqueiosPorQuadra = new Map<
+      string,
+      { inicio: string; fim: string; motivoNome: string | null }[]
+    >();
     if (range && quadraIds.length > 0) {
       const bloqueios = await prisma.bloqueioQuadra.findMany({
         where: {
           dataBloqueio: { gte: range.inicio, lt: range.fim },
           quadras: { some: { id: { in: quadraIds } } },
         },
-        include: { quadras: { select: { id: true } } },
+        include: {
+          quadras: { select: { id: true } },
+          motivo: { select: { nome: true } }, // 👈 pega o nome do motivo
+        },
       });
 
-      bloqueiosPorQuadra = new Map<string, BloqueioQuadra[]>();
+      bloqueiosPorQuadra = new Map();
       bloqueios.forEach((b) => {
         b.quadras.forEach((q) => {
           const list = bloqueiosPorQuadra.get(q.id) || [];
-          list.push(b);
+          list.push({
+            inicio: b.inicioBloqueio,
+            fim: b.fimBloqueio,
+            motivoNome: b.motivo?.nome ?? null,
+          });
           bloqueiosPorQuadra.set(q.id, list);
         });
       });
@@ -663,7 +686,9 @@ router.get("/geral-admin", async (req, res) => {
     const quadrasDisponibilidade = quadras.map((quadra) => {
       let conflitoPermanente: { id: string; usuario: UsuarioAdminHome } | null = null;
       let conflitoComum: { id: string; usuario: UsuarioAdminHome } | null = null;
-      let conflitoBloqueio: BloqueioQuadra | null = null;
+      let conflitoBloqueio:
+        | { inicio: string; fim: string; motivoNome: string | null }
+        | null = null;
 
       const per = permByQuadra.get(quadra.id);
       if (per) {
@@ -685,7 +710,7 @@ router.get("/geral-admin", async (req, res) => {
         const bloqueiosQuadra = bloqueiosPorQuadra.get(quadra.id) || [];
         conflitoBloqueio =
           bloqueiosQuadra.find((b) =>
-            horarioDentroDoBloqueio(horarioStr, b.inicioBloqueio, b.fimBloqueio)
+            horarioDentroDoBloqueio(horarioStr, b.inicio, b.fim)
           ) ?? null;
       }
 
@@ -715,6 +740,7 @@ router.get("/geral-admin", async (req, res) => {
         usuario,
         agendamentoId,
         bloqueada: !!conflitoBloqueio,
+        motivoBloqueioNome: conflitoBloqueio?.motivoNome ?? null, // 👈 NOVO CAMPO
       };
     });
 
@@ -740,6 +766,7 @@ router.get("/geral-admin", async (req, res) => {
           usuario: UsuarioAdminHome | null;
           agendamentoId: string | null;
           bloqueada: boolean;
+          motivoBloqueioNome: string | null;
         }[]
       >
     );
@@ -752,11 +779,11 @@ router.get("/geral-admin", async (req, res) => {
     // permanentes de churrasqueiras (batch)
     let perChurras:
       | {
-          id: string;
-          churrasqueiraId: string;
-          turno: Turno;
-          usuario: UsuarioAdminHome;
-        }[] = [];
+        id: string;
+        churrasqueiraId: string;
+        turno: Turno;
+        usuario: UsuarioAdminHome;
+      }[] = [];
 
     if (churrasIds.length > 0) {
       if (range) {
@@ -808,11 +835,11 @@ router.get("/geral-admin", async (req, res) => {
     // comuns de churrasqueiras (batch, só com data)
     let comChurras:
       | {
-          id: string;
-          churrasqueiraId: string;
-          turno: Turno;
-          usuario: UsuarioAdminHome;
-        }[] = [];
+        id: string;
+        churrasqueiraId: string;
+        turno: Turno;
+        usuario: UsuarioAdminHome;
+      }[] = [];
 
     if (range && churrasIds.length > 0) {
       comChurras = await prisma.agendamentoChurrasqueira.findMany({
@@ -939,50 +966,50 @@ router.get("/dia", async (req, res) => {
       quadraIds.length === 0
         ? []
         : await prisma.agendamentoPermanente.findMany({
-            where: {
-              quadraId: { in: quadraIds }, // 👈 filtro por quadra
-              diaSemana: diaSemanaFinal,
-              status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
-              OR: [{ dataInicio: null }, { dataInicio: { lte: inicio } }],
-              cancelamentos: { none: { data: { gte: inicio, lt: fim } } },
-            },
-            select: {
-              id: true,
-              quadraId: true,
-              horario: true,
-              usuario: { select: { nome: true, email: true, celular: true } },
-            },
-          });
+          where: {
+            quadraId: { in: quadraIds }, // 👈 filtro por quadra
+            diaSemana: diaSemanaFinal,
+            status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+            OR: [{ dataInicio: null }, { dataInicio: { lte: inicio } }],
+            cancelamentos: { none: { data: { gte: inicio, lt: fim } } },
+          },
+          select: {
+            id: true,
+            quadraId: true,
+            horario: true,
+            usuario: { select: { nome: true, email: true, celular: true } },
+          },
+        });
 
     // Comuns do dia, só das quadras relevantes
     const comuns =
       quadraIds.length === 0
         ? []
         : await prisma.agendamento.findMany({
-            where: {
-              quadraId: { in: quadraIds }, // 👈 filtro por quadra
-              status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
-              data: { gte: inicio, lt: fim },
-            },
-            select: {
-              id: true,
-              quadraId: true,
-              horario: true,
-              usuario: { select: { nome: true, email: true, celular: true } },
-            },
-          });
+          where: {
+            quadraId: { in: quadraIds }, // 👈 filtro por quadra
+            status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+            data: { gte: inicio, lt: fim },
+          },
+          select: {
+            id: true,
+            quadraId: true,
+            horario: true,
+            usuario: { select: { nome: true, email: true, celular: true } },
+          },
+        });
 
     // Bloqueios do dia, só nas quadras relevantes
     const bloqueios =
       quadraIds.length === 0
         ? []
         : await prisma.bloqueioQuadra.findMany({
-            where: {
-              dataBloqueio: { gte: inicio, lt: fim },
-              quadras: { some: { id: { in: quadraIds } } }, // 👈 filtro por quadra
-            },
-            include: { quadras: { select: { id: true } } },
-          });
+          where: {
+            dataBloqueio: { gte: inicio, lt: fim },
+            quadras: { some: { id: { in: quadraIds } } }, // 👈 filtro por quadra
+          },
+          include: { quadras: { select: { id: true } } },
+        });
 
     // indexadores
     const permByKey = new Map<
@@ -1103,11 +1130,11 @@ router.get("/dia", async (req, res) => {
 
     let perChurras:
       | {
-          id: string;
-          churrasqueiraId: string;
-          turno: Turno;
-          usuario: UsuarioSelecionado;
-        }[] = [];
+        id: string;
+        churrasqueiraId: string;
+        turno: Turno;
+        usuario: UsuarioSelecionado;
+      }[] = [];
 
     if (churrasIds.length > 0) {
       perChurras = await prisma.agendamentoPermanenteChurrasqueira.findMany({
@@ -1144,11 +1171,11 @@ router.get("/dia", async (req, res) => {
 
     let comChurras:
       | {
-          id: string;
-          churrasqueiraId: string;
-          turno: Turno;
-          usuario: UsuarioSelecionado;
-        }[] = [];
+        id: string;
+        churrasqueiraId: string;
+        turno: Turno;
+        usuario: UsuarioSelecionado;
+      }[] = [];
 
     if (churrasIds.length > 0) {
       comChurras = await prisma.agendamentoChurrasqueira.findMany({
@@ -1286,52 +1313,52 @@ router.get("/dia-todos-horarios", async (req, res) => {
       quadraIds.length === 0
         ? []
         : await prisma.agendamentoPermanente.findMany({
-            where: {
-              quadraId: { in: quadraIds },
-              diaSemana: diaSemanaFinal,
-              status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
-              OR: [{ dataInicio: null }, { dataInicio: { lte: inicio } }],
-              cancelamentos: { none: { data: { gte: inicio, lt: fim } } },
-            },
-            select: {
-              id: true,
-              quadraId: true,
-              horario: true,
-              // 👇 Aqui só nome (enxugado)
-              usuario: { select: { nome: true } },
-            },
-          });
+          where: {
+            quadraId: { in: quadraIds },
+            diaSemana: diaSemanaFinal,
+            status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+            OR: [{ dataInicio: null }, { dataInicio: { lte: inicio } }],
+            cancelamentos: { none: { data: { gte: inicio, lt: fim } } },
+          },
+          select: {
+            id: true,
+            quadraId: true,
+            horario: true,
+            // 👇 Aqui só nome (enxugado)
+            usuario: { select: { nome: true } },
+          },
+        });
 
     // Comuns do dia, só das quadras relevantes
     const comuns =
       quadraIds.length === 0
         ? []
         : await prisma.agendamento.findMany({
-            where: {
-              quadraId: { in: quadraIds },
-              status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
-              data: { gte: inicio, lt: fim },
-            },
-            select: {
-              id: true,
-              quadraId: true,
-              horario: true,
-              // 👇 Aqui só nome também
-              usuario: { select: { nome: true } },
-            },
-          });
+          where: {
+            quadraId: { in: quadraIds },
+            status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+            data: { gte: inicio, lt: fim },
+          },
+          select: {
+            id: true,
+            quadraId: true,
+            horario: true,
+            // 👇 Aqui só nome também
+            usuario: { select: { nome: true } },
+          },
+        });
 
     // Bloqueios do dia, só nas quadras relevantes
     const bloqueios =
       quadraIds.length === 0
         ? []
         : await prisma.bloqueioQuadra.findMany({
-            where: {
-              dataBloqueio: { gte: inicio, lt: fim },
-              quadras: { some: { id: { in: quadraIds } } },
-            },
-            include: { quadras: { select: { id: true } } },
-          });
+          where: {
+            dataBloqueio: { gte: inicio, lt: fim },
+            quadras: { some: { id: { in: quadraIds } } },
+          },
+          include: { quadras: { select: { id: true } } },
+        });
 
     // indexadores
     const permByKey = new Map<
@@ -1452,11 +1479,11 @@ router.get("/dia-todos-horarios", async (req, res) => {
 
     let perChurras:
       | {
-          id: string;
-          churrasqueiraId: string;
-          turno: Turno;
-          usuario: UsuarioResumo;
-        }[] = [];
+        id: string;
+        churrasqueiraId: string;
+        turno: Turno;
+        usuario: UsuarioResumo;
+      }[] = [];
 
     if (churrasIds.length > 0) {
       perChurras = await prisma.agendamentoPermanenteChurrasqueira.findMany({
@@ -1494,11 +1521,11 @@ router.get("/dia-todos-horarios", async (req, res) => {
 
     let comChurras:
       | {
-          id: string;
-          churrasqueiraId: string;
-          turno: Turno;
-          usuario: UsuarioResumo;
-        }[] = [];
+        id: string;
+        churrasqueiraId: string;
+        turno: Turno;
+        usuario: UsuarioResumo;
+      }[] = [];
 
     if (churrasIds.length > 0) {
       comChurras = await prisma.agendamentoChurrasqueira.findMany({
