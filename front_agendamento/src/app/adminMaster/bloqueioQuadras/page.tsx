@@ -5,7 +5,8 @@ import AppImage from "@/components/AppImage";
 export default function QuadrasHome() {
   const opcoes = [
     { nome: "Bloquear Quadras", url: "/adminMaster/bloqueioQuadras/bloquearQuadras", imagem: "/icons/bloq.png" }, 
-    { nome: "Desbloquear Quadra", url: "/adminMaster/bloqueioQuadras/desbloquearQuadras", imagem: "/icons/editar.png" }
+    { nome: "Desbloquear Quadra", url: "/adminMaster/bloqueioQuadras/desbloquearQuadras", imagem: "/icons/editar.png" },
+    { nome: "Motivos de Bloqueio", url: "/adminMaster/bloqueioQuadras/motivosBloqueio", imagem: "/icons/editar.png" }
   ];
 
   return (
