@@ -14,7 +14,6 @@ type UsuarioResumo = {
   nome: string;
 };
 
-// 👇 Tipo do motivo de bloqueio (mesmo usado no backend)
 type MotivoBloqueio = {
   id: string;
   nome: string;
@@ -23,16 +22,24 @@ type MotivoBloqueio = {
 
 type Bloqueio = {
   id: string;
-  createdAt: string; // ISO completo com horário
-  dataBloqueio: string; // vem como ISO Date, mas queremos tratar como YMD
+  createdAt: string;      // ISO completo com horário
+  dataBloqueio: string;   // ISO date
   inicioBloqueio: string; // "HH:MM"
-  fimBloqueio: string; // "HH:MM"
+  fimBloqueio: string;    // "HH:MM"
   bloqueadoPor: UsuarioResumo;
   quadras: Quadra[];
 
-  // campos novos
   motivoId?: string | null;
   motivo?: MotivoBloqueio | null;
+};
+
+// helper simples pra gerar YYYY-MM-DD no fuso LOCAL (navegador, Brasil)
+const hojeLocalYMD = () => {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 };
 
 export default function DesbloqueioQuadrasPage() {
@@ -44,22 +51,21 @@ export default function DesbloqueioQuadrasPage() {
   const [confirmarDesbloqueio, setConfirmarDesbloqueio] = useState<boolean>(false);
   const [deletando, setDeletando] = useState<boolean>(false);
 
-  // 👇 NOVO: lista de motivos para o select
+  // filtros
   const [motivos, setMotivos] = useState<MotivoBloqueio[]>([]);
-  // 👇 NOVO: motivo selecionado no filtro
   const [motivoIdFiltro, setMotivoIdFiltro] = useState<string>("");
 
-  // Carrega motivos ativos para o select
+  // já começa filtrando pelo DIA DE HOJE
+  const [dataFiltro, setDataFiltro] = useState<string>(hojeLocalYMD);
+
+  // ---- Motivos ativos ----
   useEffect(() => {
     const fetchMotivos = async () => {
       try {
-        const res = await axios.get<MotivoBloqueio[]>(
-          `${API_URL}/motivosBloqueio`,
-          {
-            params: { ativos: "true" },
-            withCredentials: true,
-          }
-        );
+        const res = await axios.get<MotivoBloqueio[]>(`${API_URL}/motivos-bloqueio`, {
+          params: { ativos: "true" },
+          withCredentials: true,
+        });
         setMotivos(res.data);
       } catch (error) {
         console.error("Erro ao buscar motivos de bloqueio:", error);
@@ -69,14 +75,20 @@ export default function DesbloqueioQuadrasPage() {
     fetchMotivos();
   }, [API_URL]);
 
-  // Carrega bloqueios (com filtro opcional por motivoId)
+  // ---- Bloqueios (filtro por motivo + dataLocal) ----
   useEffect(() => {
     const fetchBloqueios = async () => {
       setLoading(true);
       try {
         const params: any = {};
+
         if (motivoIdFiltro) {
           params.motivoId = motivoIdFiltro;
+        }
+
+        // se tiver dataFiltro, manda como dataLocal (YYYY-MM-DD)
+        if (dataFiltro) {
+          params.dataLocal = dataFiltro;
         }
 
         const res = await axios.get<Bloqueio[]>(`${API_URL}/bloqueios`, {
@@ -92,7 +104,7 @@ export default function DesbloqueioQuadrasPage() {
     };
 
     fetchBloqueios();
-  }, [API_URL, motivoIdFiltro]);
+  }, [API_URL, motivoIdFiltro, dataFiltro]);
 
   const confirmarDesbloqueioHandler = async () => {
     if (!bloqueioSelecionado) return;
@@ -113,16 +125,16 @@ export default function DesbloqueioQuadrasPage() {
     }
   };
 
-  // NÃO usar new Date para campos "date-only" vindos do back como 00:00Z
+  // NÃO usar new Date pra campos date-only que vêm zerados em UTC
   const formatDateYMD = (isoLike: string) => {
     const m = isoLike.match(/^(\d{4}-\d{2}-\d{2})/);
     const ymd = m ? m[1] : isoLike.slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return isoLike; // fallback
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return isoLike;
     const [y, mth, d] = ymd.split("-");
     return `${d}/${mth}/${y}`;
   };
 
-  // createdAt é um carimbo completo (data+hora)
+  // createdAt é carimbo completo
   const formatDateTime = (iso: string) => {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return iso;
@@ -133,16 +145,17 @@ export default function DesbloqueioQuadrasPage() {
     <div className="space-y-8">
       <h1 className="text-xl font-semibold text-orange-700">Desbloquear Quadras</h1>
 
-      {/* 👇 Filtro por motivo */}
+      {/* Filtros (motivo + data) */}
       <div className="bg-white p-4 rounded-lg shadow flex flex-wrap items-end gap-4">
-        <div>
+        {/* Filtro por motivo */}
+        <div className="flex flex-col">
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Filtrar por motivo
+            Motivo
           </label>
           <select
             value={motivoIdFiltro}
             onChange={(e) => setMotivoIdFiltro(e.target.value)}
-            className="border border-gray-300 rounded px-3 py-2 text-sm min-w-[220px]"
+            className="border border-gray-300 rounded px-3 py-2 text-sm min-w-[200px]"
           >
             <option value="">Todos os motivos</option>
             <option value="SEM_MOTIVO">Sem motivo definido</option>
@@ -154,101 +167,113 @@ export default function DesbloqueioQuadrasPage() {
           </select>
         </div>
 
-        {motivoIdFiltro && (
+        {/* Filtro por data */}
+        <div className="flex flex-col">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Dia
+          </label>
+          <input
+            type="date"
+            value={dataFiltro}
+            onChange={(e) => setDataFiltro(e.target.value)}
+            className="border border-gray-300 rounded px-3 py-2 text-sm min-w-[160px]"
+          />
+        </div>
+
+        {(motivoIdFiltro || dataFiltro !== hojeLocalYMD()) && (
           <button
             type="button"
-            onClick={() => setMotivoIdFiltro("")}
+            onClick={() => {
+              setMotivoIdFiltro("");
+              setDataFiltro(hojeLocalYMD());
+            }}
             className="text-sm px-3 py-2 rounded bg-gray-200 hover:bg-gray-300"
           >
-            Limpar filtro
+            Limpar filtros
           </button>
         )}
       </div>
 
+      {/* Lista de bloqueios */}
       <div>
         {loading ? (
           <p>Carregando bloqueios...</p>
+        ) : bloqueios.length === 0 ? (
+          <p>Nenhum bloqueio encontrado.</p>
         ) : (
-          <div>
-            {bloqueios.length === 0 ? (
-              <p>Nenhum bloqueio encontrado.</p>
-            ) : (
-              <div className="space-y-4">
-                {bloqueios.map((bloqueio) => (
-                  <div key={bloqueio.id} className="bg-white p-4 rounded-lg shadow">
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <h2 className="text-lg font-semibold text-orange-700">
-                          Bloqueio criado por {bloqueio.bloqueadoPor?.nome ?? "—"}
-                        </h2>
-                        <p className="text-sm text-gray-600">
-                          Criado em:{" "}
-                          <span className="font-medium">
-                            {formatDateTime(bloqueio.createdAt)}
-                          </span>
-                        </p>
-                        <p className="text-sm text-gray-600">
-                          Dia bloqueado:{" "}
-                          <span className="font-medium">
-                            {formatDateYMD(bloqueio.dataBloqueio)}
-                          </span>
-                        </p>
-                        <p className="text-sm text-gray-600">
-                          Horário:{" "}
-                          <span className="font-medium">
-                            {bloqueio.inicioBloqueio} – {bloqueio.fimBloqueio}
-                          </span>
-                        </p>
+          <div className="space-y-4">
+            {bloqueios.map((bloqueio) => (
+              <div key={bloqueio.id} className="bg-white p-4 rounded-lg shadow">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-lg font-semibold text-orange-700">
+                      Bloqueio criado por {bloqueio.bloqueadoPor?.nome ?? "—"}
+                    </h2>
+                    <p className="text-sm text-gray-600">
+                      Criado em:{" "}
+                      <span className="font-medium">
+                        {formatDateTime(bloqueio.createdAt)}
+                      </span>
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      Dia bloqueado:{" "}
+                      <span className="font-medium">
+                        {formatDateYMD(bloqueio.dataBloqueio)}
+                      </span>
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      Horário:{" "}
+                      <span className="font-medium">
+                        {bloqueio.inicioBloqueio} – {bloqueio.fimBloqueio}
+                      </span>
+                    </p>
 
-                        {/* Motivo, se existir */}
-                        {bloqueio.motivo && (
-                          <div className="mt-2 text-sm text-gray-700">
-                            <p>
-                              <span className="font-semibold">Motivo:</span>{" "}
-                              {bloqueio.motivo.nome}
-                            </p>
-                            {bloqueio.motivo.descricao && (
-                              <p className="text-gray-600">
-                                <span className="font-semibold">Detalhes:</span>{" "}
-                                {bloqueio.motivo.descricao}
-                              </p>
-                            )}
-                          </div>
-                        )}
-                        {!bloqueio.motivo && (
-                          <p className="mt-2 text-sm text-gray-500">
-                            <span className="font-semibold">Motivo:</span> — (não informado)
+                    {/* Motivo, se existir */}
+                    {bloqueio.motivo ? (
+                      <div className="mt-2 text-sm text-gray-700">
+                        <p>
+                          <span className="font-semibold">Motivo:</span>{" "}
+                          {bloqueio.motivo.nome}
+                        </p>
+                        {bloqueio.motivo.descricao && (
+                          <p className="text-gray-600">
+                            <span className="font-semibold">Detalhes:</span>{" "}
+                            {bloqueio.motivo.descricao}
                           </p>
                         )}
                       </div>
-
-                      <button
-                        onClick={() => {
-                          setBloqueioSelecionado(bloqueio);
-                          setConfirmarDesbloqueio(true);
-                        }}
-                        className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded cursor-pointer"
-                      >
-                        Desbloquear
-                      </button>
-                    </div>
-
-                    <div className="mt-3">
-                      <p className="text-sm text-gray-700 font-medium mb-1">
-                        Quadras bloqueadas:
+                    ) : (
+                      <p className="mt-2 text-sm text-gray-500">
+                        <span className="font-semibold">Motivo:</span> — (não informado)
                       </p>
-                      <ul className="list-disc ml-5 text-sm text-gray-700">
-                        {bloqueio.quadras.map((quadra) => (
-                          <li key={quadra.id}>
-                            {quadra.nome} — Nº {quadra.numero}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
+                    )}
                   </div>
-                ))}
+
+                  <button
+                    onClick={() => {
+                      setBloqueioSelecionado(bloqueio);
+                      setConfirmarDesbloqueio(true);
+                    }}
+                    className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded cursor-pointer"
+                  >
+                    Desbloquear
+                  </button>
+                </div>
+
+                <div className="mt-3">
+                  <p className="text-sm text-gray-700 font-medium mb-1">
+                    Quadras bloqueadas:
+                  </p>
+                  <ul className="list-disc ml-5 text-sm text-gray-700">
+                    {bloqueio.quadras.map((quadra) => (
+                      <li key={quadra.id}>
+                        {quadra.nome} — Nº {quadra.numero}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </div>
-            )}
+            ))}
           </div>
         )}
       </div>
