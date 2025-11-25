@@ -6,6 +6,7 @@ export default function EsportesHome() {
   const opcoes = [
     { nome: "Quadro dos professores", url: "/adminMaster/professores/quadroProfessores", imagem: "/icons/editar.png" },
     { nome: "Configurar Valor da Multa", url: "/adminMaster/professores/configMulta", imagem: "/icons/editar.png"  },
+    { nome: "Configurar Horários possíveis de aulas", url: "/adminMaster/professores/horariosAula", imagem: "/icons/editar.png"  },
   ];
 
   return (
