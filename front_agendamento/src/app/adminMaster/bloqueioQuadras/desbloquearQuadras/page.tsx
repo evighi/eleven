@@ -14,6 +14,13 @@ type UsuarioResumo = {
   nome: string;
 };
 
+// 👇 NOVO: tipo para o motivo de bloqueio
+type MotivoBloqueio = {
+  id: string;
+  nome: string;
+  descricao?: string | null;
+};
+
 type Bloqueio = {
   id: string;
   createdAt: string;       // ISO completo com horário
@@ -22,6 +29,10 @@ type Bloqueio = {
   fimBloqueio: string;     // "HH:MM"
   bloqueadoPor: UsuarioResumo;
   quadras: Quadra[];
+
+  // 👇 CAMPOS NOVOS (podem vir nulos em bloqueios antigos)
+  motivoId?: string | null;
+  motivo?: MotivoBloqueio | null;
 };
 
 export default function DesbloqueioQuadrasPage() {
@@ -122,6 +133,22 @@ export default function DesbloqueioQuadrasPage() {
                             {bloqueio.inicioBloqueio} – {bloqueio.fimBloqueio}
                           </span>
                         </p>
+
+                        {/* 👇 NOVO: mostrar motivo, se existir */}
+                        {bloqueio.motivo && (
+                          <div className="mt-2 text-sm text-gray-700">
+                            <p>
+                              <span className="font-semibold">Motivo:</span>{" "}
+                              {bloqueio.motivo.nome}
+                            </p>
+                            {bloqueio.motivo.descricao && (
+                              <p className="text-gray-600">
+                                <span className="font-semibold">Detalhes:</span>{" "}
+                                {bloqueio.motivo.descricao}
+                              </p>
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       <button
