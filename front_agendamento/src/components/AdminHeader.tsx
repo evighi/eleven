@@ -102,7 +102,7 @@ export default function AdminHeader() {
           onClick={() => scroll("left")}
           className="
             hidden sm:flex
-            absolute left-2 inset-y-0 my-auto z-10
+            absolute left-2 top-1/2 -translate-y-1/2 z-10
             p-1
             bg-transparent
             text-gray-500
@@ -111,14 +111,14 @@ export default function AdminHeader() {
           "
           aria-label="Rolar para a esquerda"
         >
-          <ChevronLeft size={18} />
+          <ChevronLeft size={22} />
         </button>
 
         <button
           onClick={() => scroll("right")}
           className="
             hidden sm:flex
-            absolute right-2 inset-y-0 my-auto z-10
+            absolute right-2 top-1/2 -translate-y-1/2 z-10
             p-1
             bg-transparent
             text-gray-500
@@ -127,7 +127,7 @@ export default function AdminHeader() {
           "
           aria-label="Rolar para a direita"
         >
-          <ChevronRight size={18} />
+          <ChevronRight size={22} />
         </button>
 
         {/* container dos botões */}
