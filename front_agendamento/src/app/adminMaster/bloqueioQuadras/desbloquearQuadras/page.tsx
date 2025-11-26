@@ -23,7 +23,7 @@ type MotivoBloqueio = {
 type Bloqueio = {
   id: string;
   createdAt: string;      // ISO completo com horário
-  dataBloqueio: string;   // ISO date
+  dataBloqueio: string;   // ISO date (YYYY-MM-DD...)
   inicioBloqueio: string; // "HH:MM"
   fimBloqueio: string;    // "HH:MM"
   bloqueadoPor: UsuarioResumo;
@@ -33,7 +33,7 @@ type Bloqueio = {
   motivo?: MotivoBloqueio | null;
 };
 
-// helper simples pra gerar YYYY-MM-DD no fuso LOCAL (navegador, Brasil)
+// opcional: ainda deixo, só para caso queira resetar para hoje depois
 const hojeLocalYMD = () => {
   const d = new Date();
   const y = d.getFullYear();
@@ -55,8 +55,8 @@ export default function DesbloqueioQuadrasPage() {
   const [motivos, setMotivos] = useState<MotivoBloqueio[]>([]);
   const [motivoIdFiltro, setMotivoIdFiltro] = useState<string>("");
 
-  // já começa filtrando pelo DIA DE HOJE
-  const [dataFiltro, setDataFiltro] = useState<string>(hojeLocalYMD);
+  // 👉 agora começa VAZIO (sem filtro de dia)
+  const [dataFiltro, setDataFiltro] = useState<string>("");
 
   // ---- Motivos ativos ----
   useEffect(() => {
@@ -75,7 +75,7 @@ export default function DesbloqueioQuadrasPage() {
     fetchMotivos();
   }, [API_URL]);
 
-  // ---- Bloqueios (filtro por motivo + dataLocal) ----
+  // ---- Bloqueios (filtro por motivo + data) ----
   useEffect(() => {
     const fetchBloqueios = async () => {
       setLoading(true);
@@ -86,9 +86,9 @@ export default function DesbloqueioQuadrasPage() {
           params.motivoId = motivoIdFiltro;
         }
 
-        // se tiver dataFiltro, manda como dataLocal (YYYY-MM-DD)
+        // 👉 agora envia no param "data", que é o que o back espera
         if (dataFiltro) {
-          params.dataLocal = dataFiltro;
+          params.data = dataFiltro; // YYYY-MM-DD
         }
 
         const res = await axios.get<Bloqueio[]>(`${API_URL}/bloqueios`, {
@@ -180,12 +180,12 @@ export default function DesbloqueioQuadrasPage() {
           />
         </div>
 
-        {(motivoIdFiltro || dataFiltro !== hojeLocalYMD()) && (
+        {(motivoIdFiltro || dataFiltro) && (
           <button
             type="button"
             onClick={() => {
               setMotivoIdFiltro("");
-              setDataFiltro(hojeLocalYMD());
+              setDataFiltro(""); // 👉 volta a listar tudo, sem filtro de dia
             }}
             className="text-sm px-3 py-2 rounded bg-gray-200 hover:bg-gray-300"
           >
