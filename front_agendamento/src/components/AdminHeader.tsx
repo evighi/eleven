@@ -34,7 +34,6 @@ export default function AdminHeader() {
     { nome: "Bloqueio de Quadras", url: "/adminMaster/bloqueioQuadras", imagem: "/icons/bloq.png" },
     { nome: "Usuários", url: "/adminMaster/usuarios", imagem: "/icons/perfis.png" },
     { nome: "Professores", url: "/adminMaster/professores", imagem: "/icons/perfis.png" },
-    // se depois tiver "Patrocinadores", é só adicionar aqui no mesmo padrão
   ];
 
   const scroll = (dir: "left" | "right") => {
@@ -86,12 +85,12 @@ export default function AdminHeader() {
         </div>
       </header>
 
-      {/* FAIXA DOS BOTÕES (tipo “pills”) */}
-      <div className="relative bg-[#f4f4f5] border-b border-gray-200 py-2">
+      {/* FAIXA DOS BOTÕES */}
+      <div className="relative bg-white border-b border-gray-200 py-2">
         {/* setas de navegação (somem no mobile) */}
         <button
           onClick={() => scroll("left")}
-          className="hidden sm:flex absolute left-2 top-1/2 -translate-y-1/2 z-10 p-1.5 rounded-full bg-white border border-gray-200 shadow-sm hover:bg-gray-50 transition"
+          className="hidden sm:flex absolute left-2 top-1/2 -translate-y-1/2 z-10 p-1.5 rounded-md text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition"
           aria-label="Rolar para a esquerda"
         >
           <ChevronLeft size={18} />
@@ -106,7 +105,7 @@ export default function AdminHeader() {
             <Link
               key={nome}
               href={url}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-white border border-gray-300 shadow-sm text-xs sm:text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-400 hover:text-gray-900 transition whitespace-nowrap"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-white border border-gray-300 text-xs sm:text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-400 hover:text-gray-900 transition whitespace-nowrap"
             >
               <Image
                 src={imagem}
@@ -122,7 +121,7 @@ export default function AdminHeader() {
 
         <button
           onClick={() => scroll("right")}
-          className="hidden sm:flex absolute right-2 top-1/2 -translate-y-1/2 z-10 p-1.5 rounded-full bg-white border border-gray-200 shadow-sm hover:bg-gray-50 transition"
+          className="hidden sm:flex absolute right-2 top-1/2 -translate-y-1/2 z-10 p-1.5 rounded-md text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition"
           aria-label="Rolar para a direita"
         >
           <ChevronRight size={18} />
