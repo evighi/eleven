@@ -23,9 +23,19 @@ const bloqueioSchema = z.object({
   dataBloqueio: z.coerce.date(),
   inicioBloqueio: z.string().regex(horaRegex, "Hora inicial inválida (HH:MM)"),
   fimBloqueio: z.string().regex(horaRegex, "Hora final inválida (HH:MM)"),
-  // 👇 NOVO: motivoId opcional (palavra-chave cadastrada)
+  // 👇 motivoId opcional (palavra-chave cadastrada)
   motivoId: z.string().uuid().optional().nullable(),
 });
+
+// 👇 Helper igual ao que você usa em disponibilidadeGeral:
+//    recebe "YYYY-MM-DD" e monta o range [início,fim) em UTC
+function getUtcDayRange(dateStr: string) {
+  const base = dateStr.slice(0, 10);
+  const inicio = new Date(`${base}T00:00:00.000Z`);
+  const fim = new Date(`${base}T00:00:00.000Z`);
+  fim.setUTCDate(fim.getUTCDate() + 1);
+  return { inicio, fim };
+}
 
 router.post("/", async (req, res) => {
   const parsed = bloqueioSchema.safeParse(req.body);
@@ -146,16 +156,32 @@ router.post("/", async (req, res) => {
 
 router.get("/", async (req, res) => {
   try {
-    const { motivoId } = req.query;
+    const { motivoId, data } = req.query;
 
     const where: any = {};
 
-    // 👇 Se vier "SEM_MOTIVO" do front, filtra bloqueios sem motivo
+    // 👇 filtro por motivo
     if (motivoId === "SEM_MOTIVO") {
       where.motivoId = null;
     } else if (typeof motivoId === "string" && motivoId.trim() !== "") {
-      // 👇 Se vier um motivoId válido, filtra por ele
       where.motivoId = motivoId;
+    }
+
+    // 👇 filtro por data (YYYY-MM-DD) usando range UTC [início, fim)
+    if (typeof data === "string" && data.trim() !== "") {
+      const dataStr = data.trim();
+
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dataStr)) {
+        return res
+          .status(400)
+          .json({ erro: "Parâmetro 'data' inválido. Use o formato YYYY-MM-DD." });
+      }
+
+      const { inicio, fim } = getUtcDayRange(dataStr);
+      where.dataBloqueio = {
+        gte: inicio,
+        lt: fim,
+      };
     }
 
     const bloqueios = await prisma.bloqueioQuadra.findMany({
@@ -184,7 +210,6 @@ router.get("/", async (req, res) => {
     return res.status(500).json({ erro: "Erro ao buscar bloqueios" });
   }
 });
-
 
 router.delete("/:id", async (req, res) => {
   try {
