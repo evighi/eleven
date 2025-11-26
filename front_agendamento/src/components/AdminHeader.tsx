@@ -100,7 +100,15 @@ export default function AdminHeader() {
         {/* setas fixas nos cantos (desktop) */}
         <button
           onClick={() => scroll("left")}
-          className="hidden sm:flex absolute left-2 inset-y-0 my-auto z-10 p-1.5 rounded-md text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition"
+          className="
+            hidden sm:flex
+            absolute left-2 inset-y-0 my-auto z-10
+            p-1
+            bg-transparent
+            text-gray-500
+            hover:text-gray-700
+            transition
+          "
           aria-label="Rolar para a esquerda"
         >
           <ChevronLeft size={18} />
@@ -108,7 +116,15 @@ export default function AdminHeader() {
 
         <button
           onClick={() => scroll("right")}
-          className="hidden sm:flex absolute right-2 inset-y-0 my-auto z-10 p-1.5 rounded-md text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition"
+          className="
+            hidden sm:flex
+            absolute right-2 inset-y-0 my-auto z-10
+            p-1
+            bg-transparent
+            text-gray-500
+            hover:text-gray-700
+            transition
+          "
           aria-label="Rolar para a direita"
         >
           <ChevronRight size={18} />
@@ -151,7 +167,6 @@ export default function AdminHeader() {
                   whitespace-nowrap
                 "
               >
-                {/* padding interno padronizado: 16px; usamos gap menor pra equilibrar visual */}
                 <span className="inline-flex items-center gap-2">
                   <Image
                     src={imagem}
