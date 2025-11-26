@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { Menu, ChevronLeft, ChevronRight } from "lucide-react";
+import { Menu, ChevronLeft, ChevronRight, Bell } from "lucide-react";
 import { useRef, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/context/AuthStore";
@@ -27,92 +27,105 @@ export default function AdminHeader() {
   }
 
   const opcoes = [
-    { nome: "Usuários", url: "/adminMaster/usuarios", imagem: "/icons/perfis.png" },
-    { nome: "Professores", url: "/adminMaster/professores", imagem: "/icons/perfis.png" },
-    { nome: "Esportes", url: "/adminMaster/esportes", imagem: "/icons/editar.png" },
     { nome: "Quadras", url: "/adminMaster/quadras", imagem: "/icons/icon_quadras.png" },
+    { nome: "Esportes", url: "/adminMaster/esportes", imagem: "/icons/editar.png" },
     { nome: "Churrasqueiras", url: "/adminMaster/churrasqueiras", imagem: "/icons/editar.png" },
     { nome: "Registros", url: "/adminMaster/logs", imagem: "/icons/editar.png" },
     { nome: "Bloqueio de Quadras", url: "/adminMaster/bloqueioQuadras", imagem: "/icons/bloq.png" },
-    
+    { nome: "Usuários", url: "/adminMaster/usuarios", imagem: "/icons/perfis.png" },
+    { nome: "Professores", url: "/adminMaster/professores", imagem: "/icons/perfis.png" },
+    // se depois tiver "Patrocinadores", é só adicionar aqui no mesmo padrão
   ];
 
   const scroll = (dir: "left" | "right") => {
     if (!scrollRef.current) return;
-    const amount = dir === "left" ? -200 : 200;
+    const amount = dir === "left" ? -220 : 220;
     scrollRef.current.scrollBy({ left: amount, behavior: "smooth" });
   };
 
   return (
     <>
-      {/* Drawer */}
+      {/* Drawer lateral */}
       <AdminSideMenu open={open} onClose={() => setOpen(false)} />
 
-      {/* HEADER */}
-      <header className="bg-gray-300 text-gray-800 p-4 flex items-center justify-between shadow">
-        <Link href="/adminMaster" aria-label="Ir para o painel Admin Master" className="flex items-center">
+      {/* HEADER SUPERIOR */}
+      <header className="bg-white text-gray-800 border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+        <Link
+          href="/adminMaster"
+          aria-label="Ir para o painel Admin Master"
+          className="flex items-center"
+        >
           <Image
             src="/logoelevenhor.png"
             alt="Logo da Eleven"
             width={160}
             height={48}
             priority
-            className="w-auto h-12"
+            className="w-auto h-10"
           />
         </Link>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          {/* sino de notificações, só visual por enquanto */}
+          <button
+            type="button"
+            className="p-2 rounded-full text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition"
+            aria-label="Notificações"
+          >
+            <Bell size={20} />
+          </button>
+
+          {/* menu hamburguer */}
           <button
             onClick={() => setOpen(true)}
-            className="bg-gray-300 p-2 rounded hover:bg-gray-400 transition cursor-pointer"
+            className="p-2 rounded-full text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition cursor-pointer"
             aria-label="Abrir menu"
           >
-            <Menu size={24} />
+            <Menu size={22} />
           </button>
         </div>
       </header>
 
-      {/* CARROSSEL CENTRALIZADO */}
-      <div className="relative bg-gray-50 p-3 shadow flex items-center justify-center">
+      {/* FAIXA DOS BOTÕES (tipo “pills”) */}
+      <div className="relative bg-[#f4f4f5] border-b border-gray-200 py-2">
+        {/* setas de navegação (somem no mobile) */}
         <button
           onClick={() => scroll("left")}
-          className="absolute left-2 z-10 bg-white p-2 rounded-full shadow-md hover:bg-gray-100 transition hidden sm:flex"
+          className="hidden sm:flex absolute left-2 top-1/2 -translate-y-1/2 z-10 p-1.5 rounded-full bg-white border border-gray-200 shadow-sm hover:bg-gray-50 transition"
           aria-label="Rolar para a esquerda"
         >
-          <ChevronLeft size={20} />
+          <ChevronLeft size={18} />
         </button>
 
         <div
           ref={scrollRef}
-          className="flex overflow-x-auto gap-6 px-8 scrollbar-hide scroll-smooth snap-x snap-mandatory"
+          className="flex items-center gap-3 px-4 sm:px-10 overflow-x-auto scrollbar-hide scroll-smooth"
           style={{ scrollBehavior: "smooth", WebkitOverflowScrolling: "touch" }}
         >
           {opcoes.map(({ nome, url, imagem }) => (
             <Link
               key={nome}
               href={url}
-              className="flex flex-col items-center min-w-[80px] text-gray-700 hover:text-orange-600 transition snap-start"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-white border border-gray-300 shadow-sm text-xs sm:text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-400 hover:text-gray-900 transition whitespace-nowrap"
             >
-              <div className="w-14 h-14 flex items-center justify-center bg-white rounded-full shadow-md">
-                <Image
-                  src={imagem}
-                  alt={nome}
-                  width={32}
-                  height={32}
-                  className="w-8 h-8"
-                />
-              </div>
-              <span className="text-xs mt-2 text-center">{nome}</span>
+              <Image
+                src={imagem}
+                alt={nome}
+                width={18}
+                height={18}
+                className="w-[18px] h-[18px] object-contain"
+              />
+              <span className="font-medium">{nome}</span>
             </Link>
           ))}
         </div>
 
         <button
           onClick={() => scroll("right")}
-          className="absolute right-2 z-10 bg-white p-2 rounded-full shadow-md hover:bg-gray-100 transition hidden sm:flex"
+          className="hidden sm:flex absolute right-2 top-1/2 -translate-y-1/2 z-10 p-1.5 rounded-full bg-white border border-gray-200 shadow-sm hover:bg-gray-50 transition"
           aria-label="Rolar para a direita"
         >
-          <ChevronRight size={20} />
+          <ChevronRight size={18} />
         </button>
       </div>
     </>
