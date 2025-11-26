@@ -28,12 +28,12 @@ export default function AdminHeader() {
 
   const opcoes = [
     { nome: "Quadras", url: "/adminMaster/quadras", imagem: "/icons/icon_quadras.png" },
-    { nome: "Esportes", url: "/adminMaster/esportes", imagem: "/icons/editar.png" },
-    { nome: "Churrasqueiras", url: "/adminMaster/churrasqueiras", imagem: "/icons/editar.png" },
-    { nome: "Registros", url: "/adminMaster/logs", imagem: "/icons/editar.png" },
-    { nome: "Bloqueio de Quadras", url: "/adminMaster/bloqueioQuadras", imagem: "/icons/bloq.png" },
-    { nome: "Usuários", url: "/adminMaster/usuarios", imagem: "/icons/perfis.png" },
-    { nome: "Professores", url: "/adminMaster/professores", imagem: "/icons/perfis.png" },
+    { nome: "Esportes", url: "/adminMaster/esportes", imagem: "/icons/icone_esportes.png" },
+    { nome: "Churrasqueiras", url: "/adminMaster/churrasqueiras", imagem: "/icons/icone_churrasqueiras.png" },
+    { nome: "Registros", url: "/adminMaster/logs", imagem: "/icons/icone_registros.png" },
+    { nome: "Bloqueio de Quadras", url: "/adminMaster/bloqueioQuadras", imagem: "/icons/icone_bloqueio.png" },
+    { nome: "Usuários", url: "/adminMaster/usuarios", imagem: "/icons/icone_usuarios.png" },
+    { nome: "Professores", url: "/adminMaster/professores", imagem: "/icons/icone_professores.png" },
   ];
 
   const scroll = (dir: "left" | "right") => {
@@ -86,46 +86,49 @@ export default function AdminHeader() {
       </header>
 
       {/* FAIXA DOS BOTÕES */}
-      <div className="relative bg-white border-b border-gray-200 py-2">
-        {/* setas de navegação (somem no mobile) */}
-        <button
-          onClick={() => scroll("left")}
-          className="hidden sm:flex absolute left-2 top-1/2 -translate-y-1/2 z-10 p-1.5 rounded-md text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition"
-          aria-label="Rolar para a esquerda"
-        >
-          <ChevronLeft size={18} />
-        </button>
+      <div className="bg-white border-b border-gray-200 py-2">
+        {/* container centralizado e responsivo */}
+        <div className="relative max-w-5xl mx-auto px-4 sm:px-8">
+          {/* setas de navegação (somem no mobile) */}
+          <button
+            onClick={() => scroll("left")}
+            className="hidden sm:flex absolute left-0 top-1/2 -translate-y-1/2 z-10 p-1.5 rounded-md text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition"
+            aria-label="Rolar para a esquerda"
+          >
+            <ChevronLeft size={18} />
+          </button>
 
-        <div
-          ref={scrollRef}
-          className="flex items-center gap-3 px-4 sm:px-10 overflow-x-auto scrollbar-hide scroll-smooth"
-          style={{ scrollBehavior: "smooth", WebkitOverflowScrolling: "touch" }}
-        >
-          {opcoes.map(({ nome, url, imagem }) => (
-            <Link
-              key={nome}
-              href={url}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-white border border-gray-300 text-xs sm:text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-400 hover:text-gray-900 transition whitespace-nowrap"
-            >
-              <Image
-                src={imagem}
-                alt={nome}
-                width={18}
-                height={18}
-                className="w-[18px] h-[18px] object-contain"
-              />
-              <span className="font-medium">{nome}</span>
-            </Link>
-          ))}
+          <div
+            ref={scrollRef}
+            className="flex items-center justify-center gap-2 sm:gap-3 overflow-x-auto scrollbar-hide scroll-smooth min-w-0 px-6 sm:px-8"
+            style={{ scrollBehavior: "smooth", WebkitOverflowScrolling: "touch" }}
+          >
+            {opcoes.map(({ nome, url, imagem }) => (
+              <Link
+                key={nome}
+                href={url}
+                className="inline-flex items-center gap-2 px-3 sm:px-4 py-2 rounded-md bg-white border border-gray-300 text-[11px] sm:text-xs md:text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-400 hover:text-gray-900 transition whitespace-nowrap"
+              >
+                <Image
+                  src={imagem}
+                  alt={nome}
+                  width={18}
+                  height={18}
+                  className="w-[16px] h-[16px] sm:w-[18px] sm:h-[18px] object-contain"
+                />
+                <span className="font-medium">{nome}</span>
+              </Link>
+            ))}
+          </div>
+
+          <button
+            onClick={() => scroll("right")}
+            className="hidden sm:flex absolute right-0 top-1/2 -translate-y-1/2 z-10 p-1.5 rounded-md text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition"
+            aria-label="Rolar para a direita"
+          >
+            <ChevronRight size={18} />
+          </button>
         </div>
-
-        <button
-          onClick={() => scroll("right")}
-          className="hidden sm:flex absolute right-2 top-1/2 -translate-y-1/2 z-10 p-1.5 rounded-md text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition"
-          aria-label="Rolar para a direita"
-        >
-          <ChevronRight size={18} />
-        </button>
       </div>
     </>
   );
