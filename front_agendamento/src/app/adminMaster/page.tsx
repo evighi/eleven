@@ -5,6 +5,7 @@ import { useAuthStore } from "@/context/AuthStore";
 import Spinner from "@/components/Spinner";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Calendar, Clock, ChevronDown } from "lucide-react";
 
 /** Helpers de data/hora em America/Sao_Paulo */
 const SP_TZ = "America/Sao_Paulo";
@@ -209,6 +210,7 @@ export default function AdminHome() {
 
   const [data, setData] = useState("");
   const [horario, setHorario] = useState("");
+  const [mostrarDispon, setMostrarDispon] = useState(true);
 
   const [disponibilidade, setDisponibilidade] = useState<DisponibilidadeGeral | null>(null);
   const [loadingDispon, setLoadingDispon] = useState<boolean>(true);
@@ -668,126 +670,284 @@ export default function AdminHome() {
       </h2>
 
       {/* FILTROS – card branco como no Figma */}
-      <div className="bg-white p-4 shadow rounded-lg flex flex-col sm:flex-row sm:items-end gap-4">
-        <div className="flex flex-col w-full sm:w-auto">
+      <div className="bg-white p-4 shadow rounded-lg flex flex-col sm:flex-row sm:items-center gap-4">
+        {/* Campo Data */}
+        <div className="flex flex-col w-full sm:w-[260px]">
           <label className="text-sm text-gray-600 mb-1">Data</label>
-          <input
-            type="date"
-            className="border border-gray-300 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-            value={data}
-            onChange={(e) => setData(e.target.value)}
-          />
+          <div className="flex items-center border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
+            <Calendar className="w-4 h-4 text-gray-500 mr-2" />
+            <input
+              type="date"
+              className="flex-1 bg-transparent outline-none border-none text-sm text-gray-800 [appearance:none]"
+              value={data}
+              onChange={(e) => setData(e.target.value)}
+            />
+            <ChevronDown className="w-4 h-4 text-gray-500 ml-2" />
+          </div>
         </div>
 
-        <div className="flex flex-col w-full sm:w-auto">
+        {/* Campo Horário */}
+        <div className="flex flex-col w-full sm:w-[200px]">
           <label className="text-sm text-gray-600 mb-1">Horário</label>
-          <select
-            className="border border-gray-300 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-            value={horario}
-            onChange={(e) => setHorario(e.target.value)}
-          >
-            <option value="">Selecione</option>
-            {Array.from({ length: 17 }, (_, i) => {
-              const hora = (7 + i).toString().padStart(2, "0") + ":00";
-              return (
-                <option key={hora} value={hora}>
-                  {hora}
-                </option>
-              );
-            })}
-          </select>
+          <div className="flex items-center border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
+            <Clock className="w-4 h-4 text-gray-500 mr-2" />
+            <select
+              className="flex-1 bg-transparent outline-none border-none text-sm text-gray-800 [appearance:none]"
+              value={horario}
+              onChange={(e) => setHorario(e.target.value)}
+            >
+              <option value="">00:00</option>
+              {Array.from({ length: 17 }, (_, i) => {
+                const hora = (7 + i).toString().padStart(2, "0") + ":00";
+                return (
+                  <option key={hora} value={hora}>
+                    {hora}
+                  </option>
+                );
+              })}
+            </select>
+            <ChevronDown className="w-4 h-4 text-gray-500 ml-2" />
+          </div>
         </div>
 
-        <div className="sm:ml-auto">
+        {/* Botão principal + seta para recolher */}
+        <div className="flex items-center gap-2 sm:ml-auto">
           <Link
             href={`/adminMaster/todosHorarios?data=${data || todayStrSP()}`}
             className="inline-flex items-center justify-center px-5 py-2.5 rounded-lg font-semibold bg-orange-600 hover:bg-orange-700 text-white text-sm cursor-pointer transition"
           >
-            Ver todos os horários
+            Ver todas as reservas
           </Link>
+
+          {/* Botão seta para recolher disponibilidade */}
+          <button
+            type="button"
+            onClick={() => setMostrarDispon((v) => !v)}
+            className="inline-flex items-center justify-center w-10 h-10 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition"
+            aria-label={mostrarDispon ? "Recolher disponibilidade" : "Mostrar disponibilidade"}
+          >
+            <ChevronDown
+              className={`w-5 h-5 transition-transform ${
+                mostrarDispon ? "" : "rotate-180"
+              }`}
+            />
+          </button>
         </div>
       </div>
 
       {/* DISPONIBILIDADE */}
-      {loadingDispon || !disponibilidade ? (
-        <div className="flex items-center gap-2 text-gray-600">
-          <Spinner />
-          <span>Carregando disponibilidade…</span>
-        </div>
-      ) : (
-        <div className="space-y-10">
-          {/* QUADRAS */}
-          {Object.keys(disponibilidade.quadras).map((esporte) => (
-            <div key={esporte}>
+      {mostrarDispon &&
+        (loadingDispon || !disponibilidade ? (
+          <div className="flex items-center gap-2 text-gray-600">
+            <Spinner />
+            <span>Carregando disponibilidade…</span>
+          </div>
+        ) : (
+          <div className="space-y-10">
+            {/* QUADRAS */}
+            {Object.keys(disponibilidade.quadras).map((esporte) => (
+              <div key={esporte}>
+                <div className="flex items-center mb-4">
+                  <h2 className="text-lg font-semibold text-orange-700">
+                    {esporte}, {horario}
+                  </h2>
+                  <div className="flex-1 border-t border-gray-300 ml-3" />
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4">
+                  {disponibilidade.quadras[esporte].map((q: DisponQuadra) => {
+                    const clickable = !q.bloqueada;
+                    const clsBase =
+                      "p-3 rounded-lg text-center shadow-sm flex flex-col justify-center " +
+                      (clickable ? "cursor-pointer" : "cursor-not-allowed");
+
+                    // ✅ Só mostra "Comum/Permanente" quando realmente há agendamento
+                    // - Se for PERMANENTE: mostra mesmo se estiver bloqueada
+                    // - Se for COMUM: só mostra se NÃO estiver bloqueada
+                    const hasAgendamento =
+                      !q.disponivel &&
+                      !!q.tipoReserva &&
+                      (q.tipoReserva === "permanente" || !q.bloqueada);
+
+                    return (
+                      <div
+                        key={q.quadraId}
+                        onClick={() => {
+                          if (q.bloqueada) return;
+                          if (q.disponivel) {
+                            abrirConfirmacaoAgendar({
+                              data,
+                              horario,
+                              esporte,
+                              quadraId: q.quadraId,
+                              quadraNome: q.nome,
+                              quadraNumero: q.numero,
+                            });
+                          } else {
+                            abrirDetalhes(q, { horario, esporte });
+                          }
+                        }}
+                        className={`${
+                          clsBase
+                        } ${
+                          q.bloqueada
+                            ? "border-2 border-red-500 bg-red-50"
+                            : q.disponivel
+                            ? "border-2 border-green-500 bg-green-50"
+                            : "border-2 border-gray-500 bg-gray-50"
+                        }`}
+                      >
+                        <p className="font-medium">{q.nome}</p>
+                        <p className="text-xs text-gray-700">Quadra {q.numero}</p>
+
+                        {q.bloqueada && (
+                          <div className="text-red-600 font-bold">
+                            Bloqueada
+                            {q.motivoBloqueioNome ? ` - ${q.motivoBloqueioNome}` : ""}
+                          </div>
+                        )}
+
+                        {hasAgendamento && (
+                          <div className="mt-1">
+                            <p className="font-bold">
+                              {firstAndLastName(q.usuario?.nome)}
+                            </p>
+                            {q.usuario?.celular && (
+                              <p className="text-[11px] text-gray-700">
+                                {q.usuario.celular}
+                              </p>
+                            )}
+                            <span className="inline-block text-[11px] mt-1 px-2 py-0.5 rounded bg-white/70">
+                              {q.tipoReserva === "permanente"
+                                ? "Permanente"
+                                : "Comum"}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+
+            {/* CHURRASQUEIRAS */}
+            <div>
               <div className="flex items-center mb-4">
                 <h2 className="text-lg font-semibold text-orange-700">
-                  {esporte}, {horario}
+                  Churrasqueiras
                 </h2>
                 <div className="flex-1 border-t border-gray-300 ml-3" />
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4">
-                {disponibilidade.quadras[esporte].map((q: DisponQuadra) => {
-                  const clickable = !q.bloqueada;
-                  const clsBase =
-                    "p-3 rounded-lg text-center shadow-sm flex flex-col justify-center " +
-                    (clickable ? "cursor-pointer" : "cursor-not-allowed");
-
-                  // ✅ Só mostra "Comum/Permanente" quando realmente há agendamento
-                  // - Se for PERMANENTE: mostra mesmo se estiver bloqueada
-                  // - Se for COMUM: só mostra se NÃO estiver bloqueada
-                  const hasAgendamento =
-                    !q.disponivel &&
-                    !!q.tipoReserva &&
-                    (q.tipoReserva === "permanente" || !q.bloqueada);
+              {/* Dia */}
+              <h3 className="text-sm font-semibold mb-2 text-gray-800">Dia</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4 mb-6">
+                {disponibilidade.churrasqueiras.map((c: ChurrasqueiraDisp) => {
+                  const diaInfo = c.disponibilidade.find((t) => t.turno === "DIA");
+                  const disponivel = !!diaInfo?.disponivel;
 
                   return (
                     <div
-                      key={q.quadraId}
+                      key={c.churrasqueiraId + "-dia"}
                       onClick={() => {
-                        if (q.bloqueada) return;
-                        if (q.disponivel) {
-                          abrirConfirmacaoAgendar({
+                        if (disponivel) {
+                          abrirConfirmacaoChurras({
                             data,
-                            horario,
-                            esporte,
-                            quadraId: q.quadraId,
-                            quadraNome: q.nome,
-                            quadraNumero: q.numero,
+                            turno: "DIA",
+                            churrasqueiraId: c.churrasqueiraId,
+                            churrasqueiraNome: c.nome,
+                            churrasqueiraNumero: c.numero,
                           });
                         } else {
-                          abrirDetalhes(q, { horario, esporte });
+                          abrirDetalhes(
+                            { ...(diaInfo as DetalheItemMin), tipoLocal: "churrasqueira" },
+                            { turno: "DIA" }
+                          );
                         }
                       }}
-                      className={`${clsBase} ${q.bloqueada
-                        ? "border-2 border-red-500 bg-red-50"
-                        : q.disponivel
+                      className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${
+                        disponivel
                           ? "border-2 border-green-500 bg-green-50"
                           : "border-2 border-gray-500 bg-gray-50"
-                        }`}
+                      }`}
                     >
-                      <p className="font-medium">{q.nome}</p>
-                      <p className="text-xs text-gray-700">Quadra {q.numero}</p>
+                      <p className="font-medium">{c.nome}</p>
+                      <p className="text-xs text-gray-700">
+                        Churrasqueira {c.numero}
+                      </p>
 
-                      {q.bloqueada && (
-                        <div className="text-red-600 font-bold">
-                          Bloqueada
-                          {q.motivoBloqueioNome ? ` - ${q.motivoBloqueioNome}` : ""}
-                        </div>
-                      )}
-
-                      {hasAgendamento && (
+                      {!disponivel && (
                         <div className="mt-1">
                           <p className="font-bold">
-                            {firstAndLastName(q.usuario?.nome)}
+                            {firstAndLastName(diaInfo?.usuario?.nome)}
                           </p>
-                          {q.usuario?.celular && (
+                          {diaInfo?.usuario?.celular && (
                             <p className="text-[11px] text-gray-700">
-                              {q.usuario.celular}
+                              {diaInfo.usuario.celular}
                             </p>
                           )}
-                          <span className="inline-block text-[11px] mt-1 px-2 py-0.5 rounded bg-white/70">
-                            {q.tipoReserva === "permanente"
+                          <span className="inline-block text-[11px] px-2 py-0.5 rounded bg-white/70">
+                            {diaInfo?.tipoReserva === "permanente"
+                              ? "Permanente"
+                              : "Comum"}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Noite */}
+              <h3 className="text-sm font-semibold mb-2 text-gray-800">Noite</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4">
+                {disponibilidade.churrasqueiras.map((c: ChurrasqueiraDisp) => {
+                  const noiteInfo = c.disponibilidade.find((t) => t.turno === "NOITE");
+                  const disponivel = !!noiteInfo?.disponivel;
+
+                  return (
+                    <div
+                      key={c.churrasqueiraId + "-noite"}
+                      onClick={() => {
+                        if (disponivel) {
+                          abrirConfirmacaoChurras({
+                            data,
+                            turno: "NOITE",
+                            churrasqueiraId: c.churrasqueiraId,
+                            churrasqueiraNome: c.nome,
+                            churrasqueiraNumero: c.numero,
+                          });
+                        } else {
+                          abrirDetalhes(
+                            { ...(noiteInfo as DetalheItemMin), tipoLocal: "churrasqueira" },
+                            { turno: "NOITE" }
+                          );
+                        }
+                      }}
+                      className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${
+                        disponivel
+                          ? "border-2 border-green-500 bg-green-50"
+                          : "border-2 border-gray-500 bg-gray-50"
+                      }`}
+                    >
+                      <p className="font-medium">{c.nome}</p>
+                      <p className="text-xs text-gray-700">
+                        Churrasqueira {c.numero}
+                      </p>
+
+                      {!disponivel && (
+                        <div className="mt-1">
+                          <p className="font-bold">
+                            {firstAndLastName(noiteInfo?.usuario?.nome)}
+                          </p>
+                          {noiteInfo?.usuario?.celular && (
+                            <p className="text-[11px] text-gray-700">
+                              {noiteInfo.usuario.celular}
+                            </p>
+                          )}
+                          <span className="inline-block text-[11px] px-2 py-0.5 rounded bg-white/70">
+                            {noiteInfo?.tipoReserva === "permanente"
                               ? "Permanente"
                               : "Comum"}
                           </span>
@@ -798,135 +958,8 @@ export default function AdminHome() {
                 })}
               </div>
             </div>
-          ))}
-
-          {/* CHURRASQUEIRAS */}
-          <div>
-            <div className="flex items-center mb-4">
-              <h2 className="text-lg font-semibold text-orange-700">
-                Churrasqueiras
-              </h2>
-              <div className="flex-1 border-t border-gray-300 ml-3" />
-            </div>
-
-            {/* Dia */}
-            <h3 className="text-sm font-semibold mb-2 text-gray-800">Dia</h3>
-            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4 mb-6">
-              {disponibilidade.churrasqueiras.map((c: ChurrasqueiraDisp) => {
-                const diaInfo = c.disponibilidade.find((t) => t.turno === "DIA");
-                const disponivel = !!diaInfo?.disponivel;
-
-                return (
-                  <div
-                    key={c.churrasqueiraId + "-dia"}
-                    onClick={() => {
-                      if (disponivel) {
-                        abrirConfirmacaoChurras({
-                          data,
-                          turno: "DIA",
-                          churrasqueiraId: c.churrasqueiraId,
-                          churrasqueiraNome: c.nome,
-                          churrasqueiraNumero: c.numero,
-                        });
-                      } else {
-                        abrirDetalhes(
-                          { ...(diaInfo as DetalheItemMin), tipoLocal: "churrasqueira" },
-                          { turno: "DIA" }
-                        );
-                      }
-                    }}
-                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${disponivel
-                      ? "border-2 border-green-500 bg-green-50"
-                      : "border-2 border-gray-500 bg-gray-50"
-                      }`}
-                  >
-                    <p className="font-medium">{c.nome}</p>
-                    <p className="text-xs text-gray-700">
-                      Churrasqueira {c.numero}
-                    </p>
-
-                    {!disponivel && (
-                      <div className="mt-1">
-                        <p className="font-bold">
-                          {firstAndLastName(diaInfo?.usuario?.nome)}
-                        </p>
-                        {diaInfo?.usuario?.celular && (
-                          <p className="text-[11px] text-gray-700">
-                            {diaInfo.usuario.celular}
-                          </p>
-                        )}
-                        <span className="inline-block text-[11px] px-2 py-0.5 rounded bg-white/70">
-                          {diaInfo?.tipoReserva === "permanente"
-                            ? "Permanente"
-                            : "Comum"}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Noite */}
-            <h3 className="text-sm font-semibold mb-2 text-gray-800">Noite</h3>
-            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4">
-              {disponibilidade.churrasqueiras.map((c: ChurrasqueiraDisp) => {
-                const noiteInfo = c.disponibilidade.find((t) => t.turno === "NOITE");
-                const disponivel = !!noiteInfo?.disponivel;
-
-                return (
-                  <div
-                    key={c.churrasqueiraId + "-noite"}
-                    onClick={() => {
-                      if (disponivel) {
-                        abrirConfirmacaoChurras({
-                          data,
-                          turno: "NOITE",
-                          churrasqueiraId: c.churrasqueiraId,
-                          churrasqueiraNome: c.nome,
-                          churrasqueiraNumero: c.numero,
-                        });
-                      } else {
-                        abrirDetalhes(
-                          { ...(noiteInfo as DetalheItemMin), tipoLocal: "churrasqueira" },
-                          { turno: "NOITE" }
-                        );
-                      }
-                    }}
-                    className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${disponivel
-                      ? "border-2 border-green-500 bg-green-50"
-                      : "border-2 border-gray-500 bg-gray-50"
-                      }`}
-                  >
-                    <p className="font-medium">{c.nome}</p>
-                    <p className="text-xs text-gray-700">
-                      Churrasqueira {c.numero}
-                    </p>
-
-                    {!disponivel && (
-                      <div className="mt-1">
-                        <p className="font-bold">
-                          {firstAndLastName(noiteInfo?.usuario?.nome)}
-                        </p>
-                        {noiteInfo?.usuario?.celular && (
-                          <p className="text-[11px] text-gray-700">
-                            {noiteInfo.usuario.celular}
-                          </p>
-                        )}
-                        <span className="inline-block text-[11px] px-2 py-0.5 rounded bg-white/70">
-                          {noiteInfo?.tipoReserva === "permanente"
-                            ? "Permanente"
-                            : "Comum"}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
           </div>
-        </div>
-      )}
+        ))}
 
       {/* OVERLAY: carregando detalhes */}
       {loadingDetalhes && (
@@ -963,8 +996,8 @@ export default function AdminHome() {
               {typeof agendamentoSelecionado.usuario === "string"
                 ? agendamentoSelecionado.usuario
                 : [agendamentoSelecionado.usuario?.nome, agendamentoSelecionado.usuario?.celular]
-                  .filter(Boolean)
-                  .join(" — ")}
+                    .filter(Boolean)
+                    .join(" — ")}
             </p>
             {agendamentoSelecionado.esporte && (
               <p>
@@ -1098,10 +1131,11 @@ export default function AdminHome() {
                             key={d}
                             type="button"
                             onClick={() => setDataExcecaoSelecionada(d)}
-                            className={`px-3 py-2 rounded border text-sm ${ativo
-                              ? "border-indigo-600 bg-indigo-50 text-indigo-700"
-                              : "border-gray-300 hover:bg-gray-50"
-                              }`}
+                            className={`px-3 py-2 rounded border text-sm ${
+                              ativo
+                                ? "border-indigo-600 bg-indigo-50 text-indigo-700"
+                                : "border-gray-300 hover:bg-gray-50"
+                            }`}
                           >
                             {toDdMm(d)}
                           </button>
@@ -1142,7 +1176,7 @@ export default function AdminHome() {
             <h3 className="text-lg font-semibold mb-4">
               Transferir Agendamento{" "}
               {agendamentoSelecionado?.tipoLocal === "quadra" &&
-                agendamentoSelecionado?.tipoReserva === "permanente"
+              agendamentoSelecionado?.tipoReserva === "permanente"
                 ? "(Permanente)"
                 : "(Comum)"}
             </h3>
@@ -1168,8 +1202,9 @@ export default function AdminHome() {
               {usuariosFiltrados.map((user) => (
                 <li
                   key={user.id}
-                  className={`p-2 cursor-pointer hover:bg-blue-100 ${usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
-                    }`}
+                  className={`p-2 cursor-pointer hover:bg-blue-100 ${
+                    usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
+                  }`}
                   onClick={() => setUsuarioSelecionado(user)}
                   title={user.celular || ""}
                 >
@@ -1236,8 +1271,9 @@ export default function AdminHome() {
                 return (
                   <li
                     key={u.id}
-                    className={`p-2 cursor-pointer flex items-center justify-between hover:bg-orange-50 ${ativo ? "bg-orange-100" : ""
-                      }`}
+                    className={`p-2 cursor-pointer flex items-center justify-between hover:bg-orange-50 ${
+                      ativo ? "bg-orange-100" : ""
+                    }`}
                     onClick={() => alternarSelecionado(u.id)}
                     title={u.celular || ""}
                   >
@@ -1252,7 +1288,9 @@ export default function AdminHome() {
               {!carregandoJogadores &&
                 usuariosParaJogadores.length === 0 &&
                 buscaJogador.trim().length >= 2 && (
-                  <li className="p-2 text-sm text-gray-500">Nenhum usuário encontrado</li>
+                  <li className="p-2 text-sm text-gray-500">
+                    Nenhum usuário encontrado
+                  </li>
                 )}
             </ul>
 
@@ -1302,7 +1340,8 @@ export default function AdminHome() {
               )}
             </div>
 
-            {(jogadoresSelecionadosIds.length > 0 || convidadosPendentes.length > 0) && (
+            {(jogadoresSelecionadosIds.length > 0 ||
+              convidadosPendentes.length > 0) && (
               <div className="text-xs text-gray-600 mb-2">
                 Selecionados: {jogadoresSelecionadosIds.length} · Convidados:{" "}
                 {convidadosPendentes.length}
