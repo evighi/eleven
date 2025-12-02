@@ -668,10 +668,9 @@ export default function AdminHome() {
       </h2>
 
       {/* FILTROS – card branco como na imagem 1 */}
-      <div className="bg-white px-4 py-3 shadow-sm rounded-xl flex flex-col sm:flex-row sm:items-center gap-4 border border-gray-100">
+      <div className="bg-white px-4 py-3 shadow-sm rounded-xl flex flex-col sm:flex-row sm:items-center gap-4">
         {/* Campo Data */}
         <div className="flex flex-col w-full sm:w-[260px]">
-          <span className="text-xs font-medium text-gray-600 mb-1">Data</span>
           <div className="flex items-center h-11 border border-gray-300 rounded-full px-3 text-sm bg-white">
             <Calendar className="w-4 h-4 text-gray-500 mr-2" />
             <input
@@ -686,7 +685,6 @@ export default function AdminHome() {
 
         {/* Campo Horário */}
         <div className="flex flex-col w-full sm:w-[200px]">
-          <span className="text-xs font-medium text-gray-600 mb-1">Horário</span>
           <div className="flex items-center h-11 border border-gray-300 rounded-full px-3 text-sm bg-white">
             <Clock className="w-4 h-4 text-gray-500 mr-2" />
             <select
@@ -721,7 +719,7 @@ export default function AdminHome() {
           <button
             type="button"
             onClick={() => setMostrarDispon((v) => !v)}
-            className="inline-flex items-center justify-center h-11 w-11 rounded-full border border-gray-300 text-gray-700 hover:bg-gray-100 transition"
+            className="inline-flex items-center justify-center h-20 w-20 rounded-full  text-gray-700 hover:bg-gray-100 transition"
             aria-label={mostrarDispon ? "Recolher disponibilidade" : "Mostrar disponibilidade"}
           >
             <ChevronDown
