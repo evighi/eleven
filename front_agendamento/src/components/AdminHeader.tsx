@@ -160,7 +160,7 @@ export default function AdminHeader() {
                       inline-flex items-center 
                       px-4 py-3
                       rounded-md 
-                      bg-gray-150 
+                      bg-gray-100 
                       border border-[#AFAFAF]
                       text-xs sm:text-sm 
                       text-gray-700 
