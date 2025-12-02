@@ -668,7 +668,7 @@ export default function AdminHome() {
       </h2>
 
       {/* FILTROS – card branco como na imagem 1 */}
-      <div className="bg-white px-4 py-3 shadow-sm rounded-xl flex flex-col sm:flex-row sm:items-center gap-4">
+      <div className="bg-white px-4 py-3 shadow-sm rounded-xl flex flex-col sm:flex-row sm:items-center gap-4 border border-gray-100">
         {/* Campo Data */}
         <div className="flex flex-col w-full sm:w-[260px]">
           <div className="flex items-center h-11 border border-gray-300 rounded-full px-3 text-sm bg-white">
@@ -719,7 +719,7 @@ export default function AdminHome() {
           <button
             type="button"
             onClick={() => setMostrarDispon((v) => !v)}
-            className="inline-flex items-center justify-center h-20 w-20 rounded-full  text-gray-700 hover:bg-gray-100 transition"
+            className="inline-flex items-center justify-center h-11 w-11 rounded-full border border-gray-300 text-gray-700 hover:bg-gray-100 transition"
             aria-label={mostrarDispon ? "Recolher disponibilidade" : "Mostrar disponibilidade"}
           >
             <ChevronDown
