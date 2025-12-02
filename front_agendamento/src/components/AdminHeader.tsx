@@ -94,7 +94,7 @@ export default function AdminHeader() {
                 className="p-2 rounded-full text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition cursor-pointer"
                 aria-label="Abrir menu"
               >
-                <Menu size={28} />
+                <Menu size={32} />
               </button>
             </div>
           </header>
@@ -160,7 +160,7 @@ export default function AdminHeader() {
                       inline-flex items-center 
                       px-4 py-3
                       rounded-md 
-                      bg-gray-200 
+                      bg-gray-150 
                       border border-[#AFAFAF]
                       text-xs sm:text-sm 
                       text-gray-700 
