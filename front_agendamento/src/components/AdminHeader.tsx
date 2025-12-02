@@ -82,10 +82,11 @@ export default function AdminHeader() {
             <div className="flex items-center gap-3">
               <button
                 type="button"
-                className="p-2 rounded-full text-gray-500 bg-gray-700 hover:text-gray-700 hover:bg-gray-100 transition"
+                className="p-2 rounded-full text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition"
                 aria-label="Notificações"
               >
-                <Bell size={24} />
+                {/* sino preenchido em gray-600 */}
+                <Bell size={24} className="text-gray-600" fill="currentColor" />
               </button>
 
               <button
