@@ -79,13 +79,13 @@ export default function AdminHeader() {
               />
             </Link>
 
-            <div className="flex items-center bg-gray-500 gap-3">
+            <div className="flex items-center gap-3">
               <button
                 type="button"
-                className="p-2 rounded-full text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition"
+                className="p-2 rounded-full text-gray-500 bg-gray-700 hover:text-gray-700 hover:bg-gray-100 transition"
                 aria-label="Notificações"
               >
-                <Bell size={22} />
+                <Bell size={24} />
               </button>
 
               <button
@@ -93,7 +93,7 @@ export default function AdminHeader() {
                 className="p-2 rounded-full text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition cursor-pointer"
                 aria-label="Abrir menu"
               >
-                <Menu size={26} />
+                <Menu size={28} />
               </button>
             </div>
           </header>
