@@ -710,7 +710,7 @@ export default function AdminHome() {
         <div className="flex items-center gap-2 sm:ml-auto">
           <Link
             href={`/adminMaster/todosHorarios?data=${data || todayStrSP()}`}
-            className="inline-flex items-center justify-center h-11 px-6 rounded-full font-semibold bg-orange-600 hover:bg-orange-700 text-white text-sm cursor-pointer transition shadow-sm"
+            className="inline-flex items-center justify-center h-11 px-6 rounded-md font-semibold bg-orange-600 hover:bg-orange-700 text-white text-sm cursor-pointer transition shadow-sm"
           >
             Ver todas as reservas
           </Link>
@@ -719,11 +719,11 @@ export default function AdminHome() {
           <button
             type="button"
             onClick={() => setMostrarDispon((v) => !v)}
-            className="inline-flex items-center justify-center h-11 w-11 rounded-full border border-gray-300 text-gray-700 hover:bg-gray-100 transition"
+            className="inline-flex items-center justify-center h-11 w-11 rounded-full text-gray-700 hover:bg-gray-100 transition"
             aria-label={mostrarDispon ? "Recolher disponibilidade" : "Mostrar disponibilidade"}
           >
             <ChevronDown
-              className={`w-5 h-5 transition-transform ${
+              className={`w-12 h-12 transition-transform ${
                 mostrarDispon ? "" : "rotate-180"
               }`}
             />
