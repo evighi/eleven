@@ -60,7 +60,7 @@ export default function AdminHeader() {
       <AdminSideMenu open={open} onClose={() => setOpen(false)} />
 
       {/* BLOCO DO HEADER (logo + botões) CENTRALIZADO */}
-      <div className="border-b border-gray-200">
+      <div className="border-b border-gray-700">
         <div className="max-w-6xl mx-auto bg-white">
           {/* HEADER SUPERIOR */}
           <header className="text-gray-800 px-4 py-3 flex items-center justify-between border-b-2 border-gray-300">
