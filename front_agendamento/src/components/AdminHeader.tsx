@@ -114,7 +114,7 @@ export default function AdminHeader() {
               "
               aria-label="Rolar para a esquerda"
             >
-              <ChevronLeft size={24} />
+              <ChevronLeft size={28} />
             </button>
 
             <button
@@ -130,7 +130,7 @@ export default function AdminHeader() {
               "
               aria-label="Rolar para a direita"
             >
-              <ChevronRight size={24} />
+              <ChevronRight size={28} />
             </button>
 
             {/* container dos botões */}
