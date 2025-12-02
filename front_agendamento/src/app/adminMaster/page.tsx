@@ -652,14 +652,20 @@ export default function AdminHome() {
     <div className="space-y-6">
       {/* 👋 SAUDAÇÃO ADMIN – estilo Figma */}
       <div className="mt-4 mb-2">
-        <h1 className="text-3xl sm:text-[32px] font-extrabold text-orange-600 tracking-tight">
+        <h1 className="text-[34px] sm:text-[40px] leading-tight font-extrabold text-orange-600 tracking-tight">
           Olá, {nomeSaudacao}! <span className="inline-block align-middle">👋</span>
         </h1>
-        <p className="mt-1 text-sm text-gray-500">Administrador Master</p>
+
+        {/* um pouco maior que antes, mas menor que o Olá */}
+        <p className="mt-1 text-base sm:text-lg font-medium text-gray-500">
+          Administrador Master
+        </p>
       </div>
 
-      {/* TÍTULO DA SEÇÃO RESERVAS */}
-      <h2 className="text-2xl font-semibold text-gray-900">Reservas</h2>
+      {/* TÍTULO DA SEÇÃO RESERVAS – mais grosso e maior */}
+      <h2 className="text-[24px] sm:text-[28px] font-extrabold text-gray-900">
+        Reservas
+      </h2>
 
       {/* FILTROS – card branco como no Figma */}
       <div className="bg-white p-4 shadow rounded-lg flex flex-col sm:flex-row sm:items-end gap-4">
