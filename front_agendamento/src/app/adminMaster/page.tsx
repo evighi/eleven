@@ -649,31 +649,34 @@ export default function AdminHome() {
   };
 
   return (
-    <div className="space-y-8">
-      {/* 👋 SAUDAÇÃO ADMIN */}
-      <div className="bg-white p-4 shadow rounded-lg flex flex-col sm:flex-row sm:items-baseline gap-1">
-        <h1 className="text-2xl font-extrabold text-orange-600">
-          Oi, {nomeSaudacao}! 👋
+    <div className="space-y-6">
+      {/* 👋 SAUDAÇÃO ADMIN – estilo Figma */}
+      <div className="mt-4 mb-2">
+        <h1 className="text-3xl sm:text-[32px] font-extrabold text-orange-600 tracking-tight">
+          Olá, {nomeSaudacao}! <span className="inline-block align-middle">👋</span>
         </h1>
-        <p className="text-xs text-gray-500 sm:ml-2">Painel do administrador</p>
+        <p className="mt-1 text-sm text-gray-500">Administrador Master</p>
       </div>
 
-      {/* FILTROS */}
+      {/* TÍTULO DA SEÇÃO RESERVAS */}
+      <h2 className="text-2xl font-semibold text-gray-900">Reservas</h2>
+
+      {/* FILTROS – card branco como no Figma */}
       <div className="bg-white p-4 shadow rounded-lg flex flex-col sm:flex-row sm:items-end gap-4">
         <div className="flex flex-col w-full sm:w-auto">
-          <label className="text-sm text-gray-600">Data</label>
+          <label className="text-sm text-gray-600 mb-1">Data</label>
           <input
             type="date"
-            className="border p-2 rounded-lg"
+            className="border border-gray-300 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
             value={data}
             onChange={(e) => setData(e.target.value)}
           />
         </div>
 
         <div className="flex flex-col w-full sm:w-auto">
-          <label className="text-sm text-gray-600">Horário</label>
+          <label className="text-sm text-gray-600 mb-1">Horário</label>
           <select
-            className="border p-2 rounded-lg"
+            className="border border-gray-300 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
             value={horario}
             onChange={(e) => setHorario(e.target.value)}
           >
@@ -692,7 +695,7 @@ export default function AdminHome() {
         <div className="sm:ml-auto">
           <Link
             href={`/adminMaster/todosHorarios?data=${data || todayStrSP()}`}
-            className="inline-flex items-center justify-center px-4 py-2 rounded-lg font-semibold bg-orange-600 hover:bg-orange-700 text-white cursor-pointer"
+            className="inline-flex items-center justify-center px-5 py-2.5 rounded-lg font-semibold bg-orange-600 hover:bg-orange-700 text-white text-sm cursor-pointer transition"
           >
             Ver todos os horários
           </Link>
@@ -751,10 +754,10 @@ export default function AdminHome() {
                         }
                       }}
                       className={`${clsBase} ${q.bloqueada
-                          ? "border-2 border-red-500 bg-red-50"
-                          : q.disponivel
-                            ? "border-2 border-green-500 bg-green-50"
-                            : "border-2 border-gray-500 bg-gray-50"
+                        ? "border-2 border-red-500 bg-red-50"
+                        : q.disponivel
+                          ? "border-2 border-green-500 bg-green-50"
+                          : "border-2 border-gray-500 bg-gray-50"
                         }`}
                     >
                       <p className="font-medium">{q.nome}</p>
@@ -827,8 +830,8 @@ export default function AdminHome() {
                       }
                     }}
                     className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${disponivel
-                        ? "border-2 border-green-500 bg-green-50"
-                        : "border-2 border-gray-500 bg-gray-50"
+                      ? "border-2 border-green-500 bg-green-50"
+                      : "border-2 border-gray-500 bg-gray-50"
                       }`}
                   >
                     <p className="font-medium">{c.nome}</p>
@@ -885,8 +888,8 @@ export default function AdminHome() {
                       }
                     }}
                     className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${disponivel
-                        ? "border-2 border-green-500 bg-green-50"
-                        : "border-2 border-gray-500 bg-gray-50"
+                      ? "border-2 border-green-500 bg-green-50"
+                      : "border-2 border-gray-500 bg-gray-50"
                       }`}
                   >
                     <p className="font-medium">{c.nome}</p>
@@ -1090,8 +1093,8 @@ export default function AdminHome() {
                             type="button"
                             onClick={() => setDataExcecaoSelecionada(d)}
                             className={`px-3 py-2 rounded border text-sm ${ativo
-                                ? "border-indigo-600 bg-indigo-50 text-indigo-700"
-                                : "border-gray-300 hover:bg-gray-50"
+                              ? "border-indigo-600 bg-indigo-50 text-indigo-700"
+                              : "border-gray-300 hover:bg-gray-50"
                               }`}
                           >
                             {toDdMm(d)}
