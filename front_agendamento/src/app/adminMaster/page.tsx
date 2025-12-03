@@ -744,10 +744,11 @@ export default function AdminHome() {
             {horarioAberto && (
               <div
                 className="
-        absolute left-0 right-0 z-20 mt-1
-        max-h-[70vh] overflow-y-auto
-        rounded-md border border-gray-200 bg-white shadow-lg text-sm
-      "
+      absolute left-0 right-0 top-full mt-1  /* 👈 coloca logo abaixo do botão */
+      z-20
+      max-h-[70vh] overflow-y-auto
+      rounded-md border border-gray-200 bg-white shadow-lg text-sm
+    "
               >
                 {/* opção "default" */}
                 <button
@@ -788,6 +789,7 @@ export default function AdminHome() {
                 })}
               </div>
             )}
+
           </div>
 
 
