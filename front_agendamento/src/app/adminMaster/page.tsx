@@ -688,11 +688,11 @@ export default function AdminHome() {
           </div>
 
           {/* Campo Horário – card inteiro clicável com dropdown customizado */}
-          <div className="relative flex w-full sm:w-[170px]">
+          <div className="relative flex w-full sm:w-[150px]">
             <button
               type="button"
               onClick={() => setHorarioAberto((v) => !v)}
-              className="flex items-center justify-between h-11 border border-gray-600 rounded-md px-3 text-sm bg-white w-full hover:border-gray-200 hover:shadow-sm transition"
+              className="flex items-center justify-between h-11 border border-gray-600 rounded-md px-3 text-sm bg-white w-full hover:border-gray-900 hover:shadow-sm transition"
             >
               <div className="flex items-center">
                 <Clock className="w-4 h-4 text-gray-600 mr-2" />
