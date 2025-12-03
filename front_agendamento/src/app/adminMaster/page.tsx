@@ -714,11 +714,27 @@ export default function AdminHome() {
         <div className="flex-1 flex flex-col sm:flex-row sm:items-center justify-end gap-3 sm:gap-4">
           {/* Campo Data – card inteiro clicável, input escondido */}
           <div className="relative flex w-full sm:w-[190px]">
-            {/* Botão visual (tudo clicável) */}
+            {/* input real, escondido por baixo, sem capturar clique */}
+            <input
+              ref={dataInputRef}
+              type="date"
+              value={data}
+              onChange={(e) => setData(e.target.value)}
+              tabIndex={-1}
+              className="
+      absolute inset-0 w-full h-full
+      opacity-0 pointer-events-none
+      [appearance:none]
+      [&::-webkit-calendar-picker-indicator]:opacity-0
+      [&::-webkit-inner-spin-button]:appearance-none
+    "
+            />
+
+            {/* Botão visual (agora realmente toda a área é clicável) */}
             <button
               type="button"
               onClick={() => dataInputRef.current?.showPicker()}
-              className="flex items-center justify-between h-11 border border-gray-600 rounded-md px-3 text-sm bg-white w-full hover:border-gray-900 hover:shadow-sm transition"
+              className="relative z-10 flex items-center justify-between h-11 border border-gray-600 rounded-md px-3 text-sm bg-white w-full hover:border-gray-900 hover:shadow-sm transition"
             >
               <div className="flex items-center">
                 <Calendar className="w-4 h-4 text-gray-600 mr-2" />
@@ -729,21 +745,6 @@ export default function AdminHome() {
 
               <ChevronDown className="w-4 h-4 text-gray-600 ml-2" />
             </button>
-
-            {/* input real, escondido (sem ícone padrão) */}
-            <input
-              ref={dataInputRef}
-              type="date"
-              value={data}
-              onChange={(e) => setData(e.target.value)}
-              className="
-      absolute inset-0 w-full h-full opacity-0
-      cursor-pointer
-      [appearance:none]
-      [&::-webkit-calendar-picker-indicator]:opacity-0
-      [&::-webkit-inner-spin-button]:appearance-none
-    "
-            />
           </div>
 
           {/* Campo Horário – card inteiro clicável com dropdown customizado */}
