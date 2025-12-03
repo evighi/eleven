@@ -578,7 +578,7 @@ export default function AdminHome() {
 
   const adicionarConvidado = () => {
     const nome = convidadoNome.trim();
-       if (!nome) return;
+    if (!nome) return;
     if (!convidadosPendentes.includes(nome)) {
       setConvidadosPendentes((prev) => [...prev, nome]);
     }
@@ -662,14 +662,13 @@ export default function AdminHome() {
         </p>
       </div>
 
-      {/* TÍTULO DA SEÇÃO RESERVAS */}
-      <h2 className="text-[24px] sm:text-[26px] font-extrabold text-gray-900">
-        Reservas
-      </h2>
-
       {/* FILTROS – card branco como na imagem 1 */}
       <div className="bg-white px-4 py-3 shadow-sm rounded-xl flex flex-col sm:flex-row sm:items-center gap-4 border border-gray-100">
         {/* Campo Data */}
+        {/* TÍTULO DA SEÇÃO RESERVAS */}
+        <h2 className="text-[24px] sm:text-[26px] font-extrabold text-gray-900">
+          Reservas
+        </h2>
         <div className="flex flex-col w-full sm:w-[260px]">
           <div className="flex items-center h-11 border border-gray-300 rounded-md px-3 text-sm bg-white">
             <Calendar className="w-4 h-4 text-gray-500 mr-2" />
@@ -723,9 +722,8 @@ export default function AdminHome() {
             aria-label={mostrarDispon ? "Recolher disponibilidade" : "Mostrar disponibilidade"}
           >
             <ChevronDown
-              className={`w-12 h-12 transition-transform ${
-                mostrarDispon ? "" : "rotate-180"
-              }`}
+              className={`w-12 h-12 transition-transform ${mostrarDispon ? "" : "rotate-180"
+                }`}
             />
           </button>
         </div>
@@ -783,15 +781,13 @@ export default function AdminHome() {
                             abrirDetalhes(q, { horario, esporte });
                           }
                         }}
-                        className={`${
-                          clsBase
-                        } ${
-                          q.bloqueada
+                        className={`${clsBase
+                          } ${q.bloqueada
                             ? "border-2 border-red-500 bg-red-50"
                             : q.disponivel
-                            ? "border-2 border-green-500 bg-green-50"
-                            : "border-2 border-gray-500 bg-gray-50"
-                        }`}
+                              ? "border-2 border-green-500 bg-green-50"
+                              : "border-2 border-gray-500 bg-gray-50"
+                          }`}
                       >
                         <p className="font-medium">{q.nome}</p>
                         <p className="text-xs text-gray-700">Quadra {q.numero}</p>
@@ -862,11 +858,10 @@ export default function AdminHome() {
                           );
                         }
                       }}
-                      className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${
-                        disponivel
+                      className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${disponivel
                           ? "border-2 border-green-500 bg-green-50"
                           : "border-2 border-gray-500 bg-gray-50"
-                      }`}
+                        }`}
                     >
                       <p className="font-medium">{c.nome}</p>
                       <p className="text-xs text-gray-700">
@@ -921,11 +916,10 @@ export default function AdminHome() {
                           );
                         }
                       }}
-                      className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${
-                        disponivel
+                      className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${disponivel
                           ? "border-2 border-green-500 bg-green-50"
                           : "border-2 border-gray-500 bg-gray-50"
-                      }`}
+                        }`}
                     >
                       <p className="font-medium">{c.nome}</p>
                       <p className="text-xs text-gray-700">
@@ -992,8 +986,8 @@ export default function AdminHome() {
               {typeof agendamentoSelecionado.usuario === "string"
                 ? agendamentoSelecionado.usuario
                 : [agendamentoSelecionado.usuario?.nome, agendamentoSelecionado.usuario?.celular]
-                    .filter(Boolean)
-                    .join(" — ")}
+                  .filter(Boolean)
+                  .join(" — ")}
             </p>
             {agendamentoSelecionado.esporte && (
               <p>
@@ -1127,11 +1121,10 @@ export default function AdminHome() {
                             key={d}
                             type="button"
                             onClick={() => setDataExcecaoSelecionada(d)}
-                            className={`px-3 py-2 rounded border text-sm ${
-                              ativo
+                            className={`px-3 py-2 rounded border text-sm ${ativo
                                 ? "border-indigo-600 bg-indigo-50 text-indigo-700"
                                 : "border-gray-300 hover:bg-gray-50"
-                            }`}
+                              }`}
                           >
                             {toDdMm(d)}
                           </button>
@@ -1172,7 +1165,7 @@ export default function AdminHome() {
             <h3 className="text-lg font-semibold mb-4">
               Transferir Agendamento{" "}
               {agendamentoSelecionado?.tipoLocal === "quadra" &&
-              agendamentoSelecionado?.tipoReserva === "permanente"
+                agendamentoSelecionado?.tipoReserva === "permanente"
                 ? "(Permanente)"
                 : "(Comum)"}
             </h3>
@@ -1198,9 +1191,8 @@ export default function AdminHome() {
               {usuariosFiltrados.map((user) => (
                 <li
                   key={user.id}
-                  className={`p-2 cursor-pointer hover:bg-blue-100 ${
-                    usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
-                  }`}
+                  className={`p-2 cursor-pointer hover:bg-blue-100 ${usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
+                    }`}
                   onClick={() => setUsuarioSelecionado(user)}
                   title={user.celular || ""}
                 >
@@ -1267,9 +1259,8 @@ export default function AdminHome() {
                 return (
                   <li
                     key={u.id}
-                    className={`p-2 cursor-pointer flex items-center justify-between hover:bg-orange-50 ${
-                      ativo ? "bg-orange-100" : ""
-                    }`}
+                    className={`p-2 cursor-pointer flex items-center justify-between hover:bg-orange-50 ${ativo ? "bg-orange-100" : ""
+                      }`}
                     onClick={() => alternarSelecionado(u.id)}
                     title={u.celular || ""}
                   >
@@ -1338,11 +1329,11 @@ export default function AdminHome() {
 
             {(jogadoresSelecionadosIds.length > 0 ||
               convidadosPendentes.length > 0) && (
-              <div className="text-xs text-gray-600 mb-2">
-                Selecionados: {jogadoresSelecionadosIds.length} · Convidados:{" "}
-                {convidadosPendentes.length}
-              </div>
-            )}
+                <div className="text-xs text-gray-600 mb-2">
+                  Selecionados: {jogadoresSelecionadosIds.length} · Convidados:{" "}
+                  {convidadosPendentes.length}
+                </div>
+              )}
 
             <div className="flex justify-end gap-3">
               <button
