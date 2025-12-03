@@ -258,6 +258,8 @@ export default function AdminHome() {
   const [mostrarConfirmaChurras, setMostrarConfirmaChurras] = useState(false);
   const [preReservaChurras, setPreReservaChurras] = useState<PreReservaChurras | null>(null);
 
+  const [horarioAberto, setHorarioAberto] = useState(false);
+
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
   const { usuario } = useAuthStore();
 
@@ -685,27 +687,65 @@ export default function AdminHome() {
             </div>
           </div>
 
-          {/* Campo Horário */}
-          <div className="flex w-full sm:w-[150px]">
-            <div className="flex items-center h-11 border border-gray-600 rounded-md px-3 text-sm bg-white w-full">
-              <Clock className="w-4 h-4 text-gray-600 mr-2" />
-              <select
-                className="flex-1 bg-transparent outline-none border-none text-sm text-gray-800 [appearance:none]"
-                value={horario}
-                onChange={(e) => setHorario(e.target.value)}
-              >
-                <option value="">00:00</option>
+          {/* Campo Horário – card inteiro clicável com dropdown customizado */}
+          <div className="relative flex w-full sm:w-[170px]">
+            <button
+              type="button"
+              onClick={() => setHorarioAberto((v) => !v)}
+              className="flex items-center justify-between h-11 border border-gray-600 rounded-md px-3 text-sm bg-white w-full hover:border-orange-500 hover:shadow-sm transition"
+            >
+              <div className="flex items-center">
+                <Clock className="w-4 h-4 text-gray-600 mr-2" />
+                <span className="text-sm text-gray-800">
+                  {horario || "00:00"}
+                </span>
+              </div>
+
+              <ChevronDown
+                className={`w-4 h-4 text-gray-600 ml-2 transition-transform ${horarioAberto ? "rotate-180" : ""
+                  }`}
+              />
+            </button>
+
+            {horarioAberto && (
+              <div className="absolute z-20 mt-1 w-full max-h-60 overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg text-sm">
+                {/* opção "00:00" */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHorario("");
+                    setHorarioAberto(false);
+                  }}
+                  className={`w-full text-left px-3 py-1.5 ${horario === ""
+                      ? "bg-orange-100 text-orange-700 font-semibold"
+                      : "hover:bg-orange-50 text-gray-800"
+                    }`}
+                >
+                  00:00
+                </button>
+
                 {Array.from({ length: 17 }, (_, i) => {
                   const hora = (7 + i).toString().padStart(2, "0") + ":00";
+                  const selecionado = horario === hora;
                   return (
-                    <option key={hora} value={hora}>
+                    <button
+                      key={hora}
+                      type="button"
+                      onClick={() => {
+                        setHorario(hora);
+                        setHorarioAberto(false);
+                      }}
+                      className={`w-full text-left px-3 py-1.5 ${selecionado
+                          ? "bg-orange-100 text-orange-700 font-semibold"
+                          : "hover:bg-orange-50 text-gray-800"
+                        }`}
+                    >
                       {hora}
-                    </option>
+                    </button>
                   );
                 })}
-              </select>
-              <ChevronDown className="w-4 h-4 text-gray-500 ml-2" />
-            </div>
+              </div>
+            )}
           </div>
 
           {/* Botão principal + seta para recolher */}
