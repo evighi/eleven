@@ -663,7 +663,7 @@ export default function AdminHome() {
       </div>
 
       {/* FILTROS – card branco como na imagem 1 */}
-      <div className="bg-white px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-10">
+      <div className="bg-white px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-2">
         {/* Campo Data */}
         {/* TÍTULO DA SEÇÃO RESERVAS */}
         <h2 className="text-[24px] sm:text-[26px] font-extrabold text-gray-900">
