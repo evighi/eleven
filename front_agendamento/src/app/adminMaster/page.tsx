@@ -651,27 +651,29 @@ export default function AdminHome() {
   };
 
   return (
-    <div className="space-y-6">
-      {/* 👋 SAUDAÇÃO ADMIN – bem próximo do Figma */}
-      <div className="mt-4 mb-3">
+    <div className="space-y-8">
+      {/* 👋 SAUDAÇÃO + subtítulo alinhado */}
+      <div className="mt-4">
         <h1 className="text-[32px] sm:text-[38px] leading-tight font-extrabold text-orange-600 tracking-tight">
           Olá, {nomeSaudacao}! <span className="inline-block align-middle">👋</span>
         </h1>
-        <p className="mt-1 text-sm sm:text-base font-medium text-gray-500">
-          Administrador Master
-        </p>
+
+        <div className="mt-1 flex flex-col sm:flex-row sm:items-baseline sm:gap-4">
+          <p className="text-sm sm:text-base font-medium text-gray-500">
+            Administrador Master
+          </p>
+          {/* Reservas de Quadras alinhado com Administrador Master */}
+          <h2 className="text-[24px] sm:text-[26px] font-extrabold text-gray-900 mt-2 sm:mt-0">
+            Reservas de Quadras
+          </h2>
+        </div>
       </div>
 
-        <h2 className="text-[24px] sm:text-[26px] font-extrabold text-gray-900">
-        </h2>
-      {/* FILTROS – card branco como na imagem 1 */}
-      <div className="bg-white px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-4">
+      {/* FILTROS – mais espaço depois do título e filtros mais perto do botão */}
+      <div className="bg-white px-4 py-3 shadow-sm rounded-xl flex flex-col sm:flex-row sm:items-center gap-3 border border-gray-100">
         {/* Campo Data */}
-        {/* TÍTULO DA SEÇÃO RESERVAS */}
-        <h2 className="text-[24px] sm:text-[26px] font-extrabold text-gray-900">
-          Reservas de Quadras
-        </h2>
-        <div className="flex flex-col w-full sm:w-[190px]">
+        <div className="flex flex-col w-full sm:w-[200px]">
+          <span className="text-xs font-medium text-gray-600 mb-1">Data</span>
           <div className="flex items-center h-11 border border-gray-600 rounded-md px-3 text-sm bg-white">
             <Calendar className="w-4 h-4 text-gray-500 mr-2" />
             <input
@@ -686,6 +688,7 @@ export default function AdminHome() {
 
         {/* Campo Horário */}
         <div className="flex flex-col w-full sm:w-[150px]">
+          <span className="text-xs font-medium text-gray-600 mb-1">Horário</span>
           <div className="flex items-center h-11 border border-gray-600 rounded-md px-3 text-sm bg-white">
             <Clock className="w-4 h-4 text-gray-600 mr-2" />
             <select
@@ -707,11 +710,11 @@ export default function AdminHome() {
           </div>
         </div>
 
-        {/* Botão principal + seta para recolher */}
-        <div className="flex items-center gap-2 sm:ml-auto">
+        {/* Botão principal + seta para recolher – colados nos filtros */}
+        <div className="flex items-center gap-2 sm:ml-2">
           <Link
             href={`/adminMaster/todosHorarios?data=${data || todayStrSP()}`}
-            className="inline-flex items-center justify-center h-11 px-6 rounded-md font-semibold bg-orange-600 hover:bg-orange-700 text-white text-sm cursor-pointer transition shadow-sm"
+            className="inline-flex items-center justify-center h-11 px-6 rounded-md font-semibold bg-orange-600 hover:bg-orange-700 text-white text-sm cursor-pointer transition shadow-sm whitespace-nowrap"
           >
             Ver todas as reservas
           </Link>
@@ -724,13 +727,13 @@ export default function AdminHome() {
             aria-label={mostrarDispon ? "Recolher disponibilidade" : "Mostrar disponibilidade"}
           >
             <ChevronDown
-              className={`w-12 h-12 transition-transform ${mostrarDispon ? "" : "rotate-180"
+              className={`w-5 h-5 transition-transform ${mostrarDispon ? "" : "rotate-180"
                 }`}
             />
           </button>
         </div>
       </div>
-
+      
       {/* DISPONIBILIDADE */}
       {mostrarDispon &&
         (loadingDispon || !disponibilidade ? (
@@ -861,8 +864,8 @@ export default function AdminHome() {
                         }
                       }}
                       className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${disponivel
-                          ? "border-2 border-green-500 bg-green-50"
-                          : "border-2 border-gray-500 bg-gray-50"
+                        ? "border-2 border-green-500 bg-green-50"
+                        : "border-2 border-gray-500 bg-gray-50"
                         }`}
                     >
                       <p className="font-medium">{c.nome}</p>
@@ -919,8 +922,8 @@ export default function AdminHome() {
                         }
                       }}
                       className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${disponivel
-                          ? "border-2 border-green-500 bg-green-50"
-                          : "border-2 border-gray-500 bg-gray-50"
+                        ? "border-2 border-green-500 bg-green-50"
+                        : "border-2 border-gray-500 bg-gray-50"
                         }`}
                     >
                       <p className="font-medium">{c.nome}</p>
@@ -1124,8 +1127,8 @@ export default function AdminHome() {
                             type="button"
                             onClick={() => setDataExcecaoSelecionada(d)}
                             className={`px-3 py-2 rounded border text-sm ${ativo
-                                ? "border-indigo-600 bg-indigo-50 text-indigo-700"
-                                : "border-gray-300 hover:bg-gray-50"
+                              ? "border-indigo-600 bg-indigo-50 text-indigo-700"
+                              : "border-gray-300 hover:bg-gray-50"
                               }`}
                           >
                             {toDdMm(d)}
