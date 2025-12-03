@@ -725,7 +725,7 @@ export default function AdminHome() {
               aria-label={mostrarDispon ? "Recolher disponibilidade" : "Mostrar disponibilidade"}
             >
               <ChevronDown
-                className={`w-5 h-5 transition-transform ${mostrarDispon ? "" : "rotate-180"
+                className={`w-10 h-10 transition-transform ${mostrarDispon ? "" : "rotate-180"
                   }`}
               />
             </button>
