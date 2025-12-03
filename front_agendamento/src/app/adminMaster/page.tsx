@@ -692,12 +692,12 @@ export default function AdminHome() {
             <button
               type="button"
               onClick={() => setHorarioAberto((v) => !v)}
-              className="flex items-center justify-between h-11 border border-gray-600 rounded-md px-3 text-sm bg-white w-full hover:border-orange-500 hover:shadow-sm transition"
+              className="flex items-center justify-between h-11 border border-gray-600 rounded-md px-3 text-sm bg-white w-full hover:border-gray-200 hover:shadow-sm transition"
             >
               <div className="flex items-center">
                 <Clock className="w-4 h-4 text-gray-600 mr-2" />
                 <span className="text-sm text-gray-800">
-                  {horario || "00:00"}
+                  {horario || "Selecione um horário"}
                 </span>
               </div>
 
@@ -721,7 +721,7 @@ export default function AdminHome() {
                       : "hover:bg-orange-50 text-gray-800"
                     }`}
                 >
-                  00:00
+                  Selecione um horário
                 </button>
 
                 {Array.from({ length: 17 }, (_, i) => {
