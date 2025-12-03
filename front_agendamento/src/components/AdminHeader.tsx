@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { Menu, ChevronLeft, ChevronRight } from "lucide-react";
+import { Menu, ChevronLeft, ChevronRight, Bell } from "lucide-react";
 import { useRef, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/context/AuthStore";
@@ -27,93 +27,165 @@ export default function AdminHeader() {
   }
 
   const opcoes = [
-    { nome: "Usuários", url: "/adminMaster/usuarios", imagem: "/icons/perfis.png" },
-    { nome: "Professores", url: "/adminMaster/professores", imagem: "/icons/perfis.png" },
-    { nome: "Esportes", url: "/adminMaster/esportes", imagem: "/icons/editar.png" },
     { nome: "Quadras", url: "/adminMaster/quadras", imagem: "/icons/icon_quadras.png" },
-    { nome: "Churrasqueiras", url: "/adminMaster/churrasqueiras", imagem: "/icons/editar.png" },
-    { nome: "Registros", url: "/adminMaster/logs", imagem: "/icons/editar.png" },
-    { nome: "Bloqueio de Quadras", url: "/adminMaster/bloqueioQuadras", imagem: "/icons/bloq.png" },
-    
+    { nome: "Esportes", url: "/adminMaster/esportes", imagem: "/icons/icone_esportes.png" },
+    {
+      nome: "Churrasqueiras",
+      url: "/adminMaster/churrasqueiras",
+      imagem: "/icons/icone_churrasqueiras.png",
+    },
+    { nome: "Registros", url: "/adminMaster/logs", imagem: "/icons/icone_registros.png" },
+    {
+      nome: "Bloqueio de Quadras",
+      url: "/adminMaster/bloqueioQuadras",
+      imagem: "/icons/icone_bloqueio.png",
+    },
+    { nome: "Usuários", url: "/adminMaster/usuarios", imagem: "/icons/icone_usuarios.png" },
+    {
+      nome: "Professores",
+      url: "/adminMaster/professores",
+      imagem: "/icons/icone_professores.png",
+    },
   ];
 
   const scroll = (dir: "left" | "right") => {
     if (!scrollRef.current) return;
-    const amount = dir === "left" ? -200 : 200;
+    const amount = dir === "left" ? -220 : 220;
     scrollRef.current.scrollBy({ left: amount, behavior: "smooth" });
   };
 
   return (
     <>
-      {/* Drawer */}
+      {/* Drawer lateral */}
       <AdminSideMenu open={open} onClose={() => setOpen(false)} />
 
-      {/* HEADER */}
-      <header className="bg-gray-300 text-gray-800 p-4 flex items-center justify-between shadow">
-        <Link href="/adminMaster" aria-label="Ir para o painel Admin Master" className="flex items-center">
-          <Image
-            src="/logoelevenhor.png"
-            alt="Logo da Eleven"
-            width={160}
-            height={48}
-            priority
-            className="w-auto h-12"
-          />
-        </Link>
-
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => setOpen(true)}
-            className="bg-gray-300 p-2 rounded hover:bg-gray-400 transition cursor-pointer"
-            aria-label="Abrir menu"
-          >
-            <Menu size={24} />
-          </button>
-        </div>
-      </header>
-
-      {/* CARROSSEL CENTRALIZADO */}
-      <div className="relative bg-gray-50 p-3 shadow flex items-center justify-center">
-        <button
-          onClick={() => scroll("left")}
-          className="absolute left-2 z-10 bg-white p-2 rounded-full shadow-md hover:bg-gray-100 transition hidden sm:flex"
-          aria-label="Rolar para a esquerda"
-        >
-          <ChevronLeft size={20} />
-        </button>
-
-        <div
-          ref={scrollRef}
-          className="flex overflow-x-auto gap-6 px-8 scrollbar-hide scroll-smooth snap-x snap-mandatory"
-          style={{ scrollBehavior: "smooth", WebkitOverflowScrolling: "touch" }}
-        >
-          {opcoes.map(({ nome, url, imagem }) => (
+      {/* BLOCO DO HEADER (logo + botões) CENTRALIZADO */}
+      <div>
+        <div className="max-w-6xl mx-auto bg-white">
+          {/* HEADER SUPERIOR */}
+          <header className="text-gray-800 px-4 py-3 flex items-center justify-between border-b-2 border-gray-500">
             <Link
-              key={nome}
-              href={url}
-              className="flex flex-col items-center min-w-[80px] text-gray-700 hover:text-orange-600 transition snap-start"
+              href="/adminMaster"
+              aria-label="Ir para o painel Admin Master"
+              className="flex items-center"
             >
-              <div className="w-14 h-14 flex items-center justify-center bg-white rounded-full shadow-md">
-                <Image
-                  src={imagem}
-                  alt={nome}
-                  width={32}
-                  height={32}
-                  className="w-8 h-8"
-                />
-              </div>
-              <span className="text-xs mt-2 text-center">{nome}</span>
+              <Image
+                src="/logoelevenhor.png"
+                alt="Logo da Eleven"
+                width={160}
+                height={48}
+                priority
+                className="w-auto h-10"
+              />
             </Link>
-          ))}
-        </div>
 
-        <button
-          onClick={() => scroll("right")}
-          className="absolute right-2 z-10 bg-white p-2 rounded-full shadow-md hover:bg-gray-100 transition hidden sm:flex"
-          aria-label="Rolar para a direita"
-        >
-          <ChevronRight size={20} />
-        </button>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                className="p-2 rounded-full text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition"
+                aria-label="Notificações"
+              >
+                {/* sino preenchido em gray-600 */}
+                <Bell size={24} className="text-gray-600" fill="currentColor" />
+              </button>
+
+              <button
+                onClick={() => setOpen(true)}
+                className="p-2 rounded-full text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition cursor-pointer"
+                aria-label="Abrir menu"
+              >
+                <Menu size={32} />
+              </button>
+            </div>
+          </header>
+
+          {/* FAIXA DOS BOTÕES */}
+          <div className="relative py-2">
+            {/* setas fixas nos cantos (desktop) */}
+            <button
+              onClick={() => scroll("left")}
+              className="
+                hidden sm:flex
+                absolute left-4 top-1/2 -translate-y-1/2 z-10
+                p-1
+                bg-transparent
+                text-gray-700
+                hover:text-gray-500
+                transition
+              "
+              aria-label="Rolar para a esquerda"
+            >
+              <ChevronLeft size={30} />
+            </button>
+
+            <button
+              onClick={() => scroll("right")}
+              className="
+                hidden sm:flex
+                absolute right-4 top-1/2 -translate-y-1/2 z-10
+                p-1
+                bg-transparent
+                text-gray-700
+                hover:text-gray-500
+                transition
+              "
+              aria-label="Rolar para a direita"
+            >
+              <ChevronRight size={30} />
+            </button>
+
+            {/* container dos botões */}
+            <div className="px-2 sm:px-8">
+              <div
+                ref={scrollRef}
+                className="
+                  mx-auto 
+                  flex 
+                  items-center 
+                  justify-start sm:justify-center 
+                  gap-2 sm:gap-3 
+                  overflow-x-auto 
+                  scrollbar-hide 
+                  scroll-smooth 
+                  min-w-0
+                "
+                style={{ scrollBehavior: "smooth", WebkitOverflowScrolling: "touch" }}
+              >
+                {opcoes.map(({ nome, url, imagem }) => (
+                  <Link
+                    key={nome}
+                    href={url}
+                    className="
+                      shrink-0
+                      inline-flex items-center 
+                      px-4 py-3
+                      rounded-md 
+                      bg-gray-100 
+                      border border-[#AFAFAF]
+                      text-xs sm:text-sm 
+                      text-gray-700 
+                      shadow-[0_4px_8px_rgba(0,0,0,0.1)]
+                      hover:bg-gray-50 hover:border-gray-400 hover:text-gray-900 
+                      transition 
+                      whitespace-nowrap
+                    "
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      <Image
+                        src={imagem}
+                        alt={nome}
+                        width={20}
+                        height={20}
+                        className="w-5 h-5 object-contain"
+                      />
+                      <span className="font-medium">{nome}</span>
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </>
   );
