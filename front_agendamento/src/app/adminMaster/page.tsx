@@ -671,7 +671,7 @@ export default function AdminHome() {
       <div className="bg-white px-4 py-3 shadow-sm rounded-xl flex flex-col sm:flex-row sm:items-center gap-4 border border-gray-100">
         {/* Campo Data */}
         <div className="flex flex-col w-full sm:w-[260px]">
-          <div className="flex items-center h-11 border border-gray-300 rounded-full px-3 text-sm bg-white">
+          <div className="flex items-center h-11 border border-gray-300 rounded-md px-3 text-sm bg-white">
             <Calendar className="w-4 h-4 text-gray-500 mr-2" />
             <input
               type="date"
@@ -685,7 +685,7 @@ export default function AdminHome() {
 
         {/* Campo Horário */}
         <div className="flex flex-col w-full sm:w-[200px]">
-          <div className="flex items-center h-11 border border-gray-300 rounded-full px-3 text-sm bg-white">
+          <div className="flex items-center h-11 border border-gray-300 rounded-md px-3 text-sm bg-white">
             <Clock className="w-4 h-4 text-gray-500 mr-2" />
             <select
               className="flex-1 bg-transparent outline-none border-none text-sm text-gray-800 [appearance:none]"
