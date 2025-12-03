@@ -651,89 +651,88 @@ export default function AdminHome() {
   };
 
   return (
-    <div className="space-y-8">
-      {/* 👋 SAUDAÇÃO + subtítulo alinhado */}
+    <div className="space-y-10">
+      {/* 👋 SAUDAÇÃO ADMIN – bem próximo do Figma */}
       <div className="mt-4">
         <h1 className="text-[32px] sm:text-[38px] leading-tight font-extrabold text-orange-600 tracking-tight">
           Olá, {nomeSaudacao}! <span className="inline-block align-middle">👋</span>
         </h1>
-
-        <div className="mt-1 flex flex-col sm:flex-row sm:items-baseline sm:gap-4">
-          <p className="text-sm sm:text-base font-medium text-gray-500">
-            Administrador Master
-          </p>
-          {/* Reservas de Quadras alinhado com Administrador Master */}
-          <h2 className="text-[24px] sm:text-[26px] font-extrabold text-gray-900 mt-2 sm:mt-0">
-            Reservas de Quadras
-          </h2>
-        </div>
+        <p className="mt-1 text-sm sm:text-base font-medium text-gray-500">
+          Administrador Master
+        </p>
       </div>
 
-      {/* FILTROS – mais espaço depois do título e filtros mais perto do botão */}
-      <div className="bg-white px-4 py-3 shadow-sm rounded-xl flex flex-col sm:flex-row sm:items-center gap-3 border border-gray-100">
-        {/* Campo Data */}
-        <div className="flex flex-col w-full sm:w-[200px]">
-          <span className="text-xs font-medium text-gray-600 mb-1">Data</span>
-          <div className="flex items-center h-11 border border-gray-600 rounded-md px-3 text-sm bg-white">
-            <Calendar className="w-4 h-4 text-gray-500 mr-2" />
-            <input
-              type="date"
-              className="flex-1 bg-transparent outline-none border-none text-sm text-gray-800 [appearance:none]"
-              value={data}
-              onChange={(e) => setData(e.target.value)}
-            />
-            <ChevronDown className="w-4 h-4 text-gray-600 ml-2" />
-          </div>
-        </div>
+      {/* FILTROS – título + data/horário + botão tudo na mesma linha */}
+      <div className="bg-white px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6">
+        {/* TÍTULO DA SEÇÃO RESERVAS – alinhado com o Administrador Master */}
+        <h2 className="text-[24px] sm:text-[26px] font-extrabold text-gray-900 -ml-1 sm:-ml-1">
+          Reservas de Quadras
+        </h2>
 
-        {/* Campo Horário */}
-        <div className="flex flex-col w-full sm:w-[150px]">
-          <span className="text-xs font-medium text-gray-600 mb-1">Horário</span>
-          <div className="flex items-center h-11 border border-gray-600 rounded-md px-3 text-sm bg-white">
-            <Clock className="w-4 h-4 text-gray-600 mr-2" />
-            <select
-              className="flex-1 bg-transparent outline-none border-none text-sm text-gray-800 [appearance:none]"
-              value={horario}
-              onChange={(e) => setHorario(e.target.value)}
+        {/* Bloco com filtros + botão, alinhado à direita e com pouco espaço entre eles */}
+        <div className="flex-1 flex flex-col sm:flex-row sm:items-center justify-end gap-3 sm:gap-4">
+          {/* Campo Data */}
+          <div className="flex w-full sm:w-[190px]">
+            <div className="flex items-center h-11 border border-gray-600 rounded-md px-3 text-sm bg-white w-full">
+              <Calendar className="w-4 h-4 text-gray-500 mr-2" />
+              <input
+                type="date"
+                className="flex-1 bg-transparent outline-none border-none text-sm text-gray-800 [appearance:none]"
+                value={data}
+                onChange={(e) => setData(e.target.value)}
+              />
+              <ChevronDown className="w-4 h-4 text-gray-600 ml-2" />
+            </div>
+          </div>
+
+          {/* Campo Horário */}
+          <div className="flex w-full sm:w-[150px]">
+            <div className="flex items-center h-11 border border-gray-600 rounded-md px-3 text-sm bg-white w-full">
+              <Clock className="w-4 h-4 text-gray-600 mr-2" />
+              <select
+                className="flex-1 bg-transparent outline-none border-none text-sm text-gray-800 [appearance:none]"
+                value={horario}
+                onChange={(e) => setHorario(e.target.value)}
+              >
+                <option value="">00:00</option>
+                {Array.from({ length: 17 }, (_, i) => {
+                  const hora = (7 + i).toString().padStart(2, "0") + ":00";
+                  return (
+                    <option key={hora} value={hora}>
+                      {hora}
+                    </option>
+                  );
+                })}
+              </select>
+              <ChevronDown className="w-4 h-4 text-gray-500 ml-2" />
+            </div>
+          </div>
+
+          {/* Botão principal + seta para recolher */}
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/adminMaster/todosHorarios?data=${data || todayStrSP()}`}
+              className="inline-flex items-center justify-center h-11 px-6 rounded-md font-semibold bg-orange-600 hover:bg-orange-700 text-white text-sm cursor-pointer transition shadow-sm whitespace-nowrap"
             >
-              <option value="">00:00</option>
-              {Array.from({ length: 17 }, (_, i) => {
-                const hora = (7 + i).toString().padStart(2, "0") + ":00";
-                return (
-                  <option key={hora} value={hora}>
-                    {hora}
-                  </option>
-                );
-              })}
-            </select>
-            <ChevronDown className="w-4 h-4 text-gray-500 ml-2" />
+              Ver todas as reservas
+            </Link>
+
+            {/* Botão seta para recolher disponibilidade */}
+            <button
+              type="button"
+              onClick={() => setMostrarDispon((v) => !v)}
+              className="inline-flex items-center justify-center h-11 w-11 rounded-full text-gray-700 hover:bg-gray-100 transition"
+              aria-label={mostrarDispon ? "Recolher disponibilidade" : "Mostrar disponibilidade"}
+            >
+              <ChevronDown
+                className={`w-5 h-5 transition-transform ${mostrarDispon ? "" : "rotate-180"
+                  }`}
+              />
+            </button>
           </div>
         </div>
-
-        {/* Botão principal + seta para recolher – colados nos filtros */}
-        <div className="flex items-center gap-2 sm:ml-2">
-          <Link
-            href={`/adminMaster/todosHorarios?data=${data || todayStrSP()}`}
-            className="inline-flex items-center justify-center h-11 px-6 rounded-md font-semibold bg-orange-600 hover:bg-orange-700 text-white text-sm cursor-pointer transition shadow-sm whitespace-nowrap"
-          >
-            Ver todas as reservas
-          </Link>
-
-          {/* Botão seta para recolher disponibilidade */}
-          <button
-            type="button"
-            onClick={() => setMostrarDispon((v) => !v)}
-            className="inline-flex items-center justify-center h-11 w-11 rounded-full text-gray-700 hover:bg-gray-100 transition"
-            aria-label={mostrarDispon ? "Recolher disponibilidade" : "Mostrar disponibilidade"}
-          >
-            <ChevronDown
-              className={`w-5 h-5 transition-transform ${mostrarDispon ? "" : "rotate-180"
-                }`}
-            />
-          </button>
-        </div>
       </div>
-      
+
       {/* DISPONIBILIDADE */}
       {mostrarDispon &&
         (loadingDispon || !disponibilidade ? (
