@@ -671,9 +671,9 @@ export default function AdminHome() {
         <h2 className="text-[24px] sm:text-[26px] font-extrabold text-gray-900">
           Reservas de Quadras
         </h2>
-        <div className="flex flex-col w-full sm:w-[260px]">
+        <div className="flex flex-col w-full sm:w-[190px]">
           <div className="flex items-center h-11 border border-gray-600 rounded-md px-3 text-sm bg-white">
-            <Calendar className="w-2 h-4 text-gray-500 mr-2" />
+            <Calendar className="w-4 h-4 text-gray-500 mr-2" />
             <input
               type="date"
               className="flex-1 bg-transparent outline-none border-none text-sm text-gray-800 [appearance:none]"
@@ -685,9 +685,9 @@ export default function AdminHome() {
         </div>
 
         {/* Campo Horário */}
-        <div className="flex flex-col w-full sm:w-[200px]">
+        <div className="flex flex-col w-full sm:w-[150px]">
           <div className="flex items-center h-11 border border-gray-600 rounded-md px-3 text-sm bg-white">
-            <Clock className="w-2 h-4 text-gray-600 mr-2" />
+            <Clock className="w-4 h-4 text-gray-600 mr-2" />
             <select
               className="flex-1 bg-transparent outline-none border-none text-sm text-gray-800 [appearance:none]"
               value={horario}
