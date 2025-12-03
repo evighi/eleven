@@ -713,7 +713,7 @@ export default function AdminHome() {
         {/* Bloco com filtros + botão, alinhado à direita e com pouco espaço entre eles */}
         <div className="flex-1 flex flex-col sm:flex-row sm:items-center justify-end gap-3 sm:gap-4">
           {/* Campo Data – card inteiro clicável, input escondido */}
-          <div className="relative flex w-full sm:w-[190px]">
+          <div className="relative flex w-full sm:w-[160px]">
             {/* input real, escondido por baixo, sem capturar clique */}
             <input
               ref={dataInputRef}
@@ -750,7 +750,7 @@ export default function AdminHome() {
           {/* Campo Horário – card inteiro clicável com dropdown customizado */}
           <div
             ref={horarioWrapperRef}
-            className="relative flex w-full sm:w-[150px]"
+            className="relative flex w-full sm:w-[140px]"
           >
             <button
               type="button"
