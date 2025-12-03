@@ -662,6 +662,8 @@ export default function AdminHome() {
         </p>
       </div>
 
+        <h2 className="text-[24px] sm:text-[26px] font-extrabold text-gray-900">
+        </h2>
       {/* FILTROS – card branco como na imagem 1 */}
       <div className="bg-white px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-2">
         {/* Campo Data */}
@@ -669,7 +671,7 @@ export default function AdminHome() {
         <h2 className="text-[24px] sm:text-[26px] font-extrabold text-gray-900">
           Reservas
         </h2>
-        <div className="flex flex-col w-full sm:w-[260px]">
+        <div className="flex flex-col w-full sm:w-[260px] gap-6">
           <div className="flex items-center h-11 border border-gray-300 rounded-md px-3 text-sm bg-white">
             <Calendar className="w-4 h-4 text-gray-500 mr-2" />
             <input
