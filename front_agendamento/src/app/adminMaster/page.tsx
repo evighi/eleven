@@ -665,14 +665,14 @@ export default function AdminHome() {
         <h2 className="text-[24px] sm:text-[26px] font-extrabold text-gray-900">
         </h2>
       {/* FILTROS – card branco como na imagem 1 */}
-      <div className="bg-white px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-2">
+      <div className="bg-white px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-4">
         {/* Campo Data */}
         {/* TÍTULO DA SEÇÃO RESERVAS */}
-        <h2 className="text-[24px] sm:text-[26px] font-extrabold text-gray-900 gap-6">
+        <h2 className="text-[24px] sm:text-[26px] font-extrabold text-gray-900">
           Reservas de Quadras
         </h2>
         <div className="flex flex-col w-full sm:w-[260px]">
-          <div className="flex items-center h-11 border border-gray-300 rounded-md px-3 text-sm bg-white">
+          <div className="flex items-center h-11 border border-gray-600 rounded-md px-3 text-sm bg-white">
             <Calendar className="w-4 h-4 text-gray-500 mr-2" />
             <input
               type="date"
@@ -680,14 +680,14 @@ export default function AdminHome() {
               value={data}
               onChange={(e) => setData(e.target.value)}
             />
-            <ChevronDown className="w-4 h-4 text-gray-500 ml-2" />
+            <ChevronDown className="w-4 h-4 text-gray-600 ml-2" />
           </div>
         </div>
 
         {/* Campo Horário */}
         <div className="flex flex-col w-full sm:w-[200px]">
-          <div className="flex items-center h-11 border border-gray-300 rounded-md px-3 text-sm bg-white">
-            <Clock className="w-4 h-4 text-gray-500 mr-2" />
+          <div className="flex items-center h-11 border border-gray-600 rounded-md px-3 text-sm bg-white">
+            <Clock className="w-4 h-4 text-gray-600 mr-2" />
             <select
               className="flex-1 bg-transparent outline-none border-none text-sm text-gray-800 [appearance:none]"
               value={horario}
