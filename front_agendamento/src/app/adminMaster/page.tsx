@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import axios from "axios";
 import { useAuthStore } from "@/context/AuthStore";
 import Spinner from "@/components/Spinner";
@@ -208,6 +208,8 @@ function gerarProximasDatasDiaSemana(
 export default function AdminHome() {
   const router = useRouter();
 
+  const horarioWrapperRef = useRef<HTMLDivElement | null>(null);
+
   const [data, setData] = useState("");
   const [horario, setHorario] = useState("");
   const [mostrarDispon, setMostrarDispon] = useState(true);
@@ -305,6 +307,35 @@ export default function AdminHome() {
   useEffect(() => {
     buscarDisponibilidade();
   }, [buscarDisponibilidade]);
+
+  // Fecha ao clicar fora
+  useEffect(() => {
+    if (!horarioAberto) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        horarioWrapperRef.current &&
+        !horarioWrapperRef.current.contains(event.target as Node)
+      ) {
+        setHorarioAberto(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [horarioAberto]);
+
+  // Quando abre, centraliza o horário selecionado na lista
+  useEffect(() => {
+    if (!horarioAberto) return;
+
+    const selectedId = horario ? `hora-${horario}` : "hora-default";
+    const el = document.getElementById(selectedId);
+    if (el) {
+      el.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+  }, [horarioAberto, horario]);
+
 
   // Detalhes
   const abrirDetalhes = async (item: DetalheItemMin, extra?: DetalheExtra) => {
@@ -688,7 +719,10 @@ export default function AdminHome() {
           </div>
 
           {/* Campo Horário – card inteiro clicável com dropdown customizado */}
-          <div className="relative flex w-full sm:w-[150px]">
+          <div
+            ref={horarioWrapperRef}
+            className="relative flex w-full sm:w-[170px]"
+          >
             <button
               type="button"
               onClick={() => setHorarioAberto((v) => !v)}
@@ -708,9 +742,16 @@ export default function AdminHome() {
             </button>
 
             {horarioAberto && (
-              <div className="absolute z-20 mt-1 w-full max-h-60 overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg text-sm">
-                {/* opção "00:00" */}
+              <div
+                className="
+        absolute left-0 right-0 z-20 mt-1
+        max-h-[70vh] overflow-y-auto
+        rounded-md border border-gray-200 bg-white shadow-lg text-sm
+      "
+              >
+                {/* opção "default" */}
                 <button
+                  id="hora-default"
                   type="button"
                   onClick={() => {
                     setHorario("");
@@ -730,6 +771,7 @@ export default function AdminHome() {
                   return (
                     <button
                       key={hora}
+                      id={`hora-${hora}`}
                       type="button"
                       onClick={() => {
                         setHorario(hora);
@@ -747,6 +789,7 @@ export default function AdminHome() {
               </div>
             )}
           </div>
+
 
           {/* Botão principal + seta para recolher */}
           <div className="flex items-center gap-2">
