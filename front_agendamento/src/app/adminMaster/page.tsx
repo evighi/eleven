@@ -665,7 +665,7 @@ export default function AdminHome() {
       {/* FILTROS – título + data/horário + botão tudo na mesma linha */}
       <div className="bg-white px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6">
         {/* TÍTULO DA SEÇÃO RESERVAS – alinhado com o Administrador Master */}
-        <h2 className="text-[24px] sm:text-[26px] font-extrabold text-gray-900 -ml-2 sm:-ml-2">
+        <h2 className="text-[24px] sm:text-[26px] font-extrabold text-gray-900 -ml-4 sm:-ml-4">
           Reservas de Quadras
         </h2>
 
