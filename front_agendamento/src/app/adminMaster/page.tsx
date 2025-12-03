@@ -672,7 +672,7 @@ export default function AdminHome() {
           Reservas de Quadras
         </h2>
         <div className="flex flex-col w-full sm:w-[260px]">
-          <div className="flex items-center h-11 border border-gray-600 rounded-md px-3 text-sm bg-white">
+          <div className="flex items-center h-7 border border-gray-600 rounded-md px-3 text-sm bg-white">
             <Calendar className="w-4 h-4 text-gray-500 mr-2" />
             <input
               type="date"
@@ -686,7 +686,7 @@ export default function AdminHome() {
 
         {/* Campo Horário */}
         <div className="flex flex-col w-full sm:w-[200px]">
-          <div className="flex items-center h-11 border border-gray-600 rounded-md px-3 text-sm bg-white">
+          <div className="flex items-center h-4 border border-gray-600 rounded-md px-3 text-sm bg-white">
             <Clock className="w-4 h-4 text-gray-600 mr-2" />
             <select
               className="flex-1 bg-transparent outline-none border-none text-sm text-gray-800 [appearance:none]"
