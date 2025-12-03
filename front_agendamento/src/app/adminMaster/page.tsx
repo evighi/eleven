@@ -30,6 +30,12 @@ const hourStrSP = (d = new Date()) => {
   return `${String(clamped).padStart(2, "0")}:00`;
 };
 
+const formatarDataBR = (iso?: string) => {
+  if (!iso) return "Selecione uma data";
+  const [ano, mes, dia] = iso.split("-");
+  return `${dia}/${mes}/${ano}`;
+};
+
 /* ================== TIPAGENS ================== */
 type TipoReserva = "comum" | "permanente";
 type Turno = "DIA" | "NOITE";
@@ -209,6 +215,8 @@ export default function AdminHome() {
   const router = useRouter();
 
   const horarioWrapperRef = useRef<HTMLDivElement | null>(null);
+  // logo antes do return, dentro do componente:
+  const dataInputRef = useRef<HTMLInputElement | null>(null);
 
   const [data, setData] = useState("");
   const [horario, setHorario] = useState("");
@@ -704,24 +712,44 @@ export default function AdminHome() {
 
         {/* Bloco com filtros + botão, alinhado à direita e com pouco espaço entre eles */}
         <div className="flex-1 flex flex-col sm:flex-row sm:items-center justify-end gap-3 sm:gap-4">
-          {/* Campo Data */}
-          <div className="flex w-full sm:w-[190px]">
-            <div className="flex items-center h-11 border border-gray-600 rounded-md px-3 text-sm bg-white w-full">
-              <Calendar className="w-4 h-4 text-gray-500 mr-2" />
-              <input
-                type="date"
-                className="flex-1 bg-transparent outline-none border-none text-sm text-gray-800 [appearance:none]"
-                value={data}
-                onChange={(e) => setData(e.target.value)}
-              />
+          {/* Campo Data – card inteiro clicável, input escondido */}
+          <div className="relative flex w-full sm:w-[190px]">
+            {/* Botão visual (tudo clicável) */}
+            <button
+              type="button"
+              onClick={() => dataInputRef.current?.showPicker()}
+              className="flex items-center justify-between h-11 border border-gray-600 rounded-md px-3 text-sm bg-white w-full hover:border-gray-900 hover:shadow-sm transition"
+            >
+              <div className="flex items-center">
+                <Calendar className="w-4 h-4 text-gray-600 mr-2" />
+                <span className="text-sm text-gray-800">
+                  {formatarDataBR(data)}
+                </span>
+              </div>
+
               <ChevronDown className="w-4 h-4 text-gray-600 ml-2" />
-            </div>
+            </button>
+
+            {/* input real, escondido (sem ícone padrão) */}
+            <input
+              ref={dataInputRef}
+              type="date"
+              value={data}
+              onChange={(e) => setData(e.target.value)}
+              className="
+      absolute inset-0 w-full h-full opacity-0
+      cursor-pointer
+      [appearance:none]
+      [&::-webkit-calendar-picker-indicator]:opacity-0
+      [&::-webkit-inner-spin-button]:appearance-none
+    "
+            />
           </div>
 
           {/* Campo Horário – card inteiro clicável com dropdown customizado */}
           <div
             ref={horarioWrapperRef}
-            className="relative flex w-full sm:w-[170px]"
+            className="relative flex w-full sm:w-[150px]"
           >
             <button
               type="button"
@@ -759,8 +787,8 @@ export default function AdminHome() {
                     setHorarioAberto(false);
                   }}
                   className={`w-full text-left px-3 py-1.5 ${horario === ""
-                      ? "bg-orange-100 text-orange-700 font-semibold"
-                      : "hover:bg-orange-50 text-gray-800"
+                    ? "bg-orange-100 text-orange-700 font-semibold"
+                    : "hover:bg-orange-50 text-gray-800"
                     }`}
                 >
                   Selecione um horário
@@ -779,8 +807,8 @@ export default function AdminHome() {
                         setHorarioAberto(false);
                       }}
                       className={`w-full text-left px-3 py-1.5 ${selecionado
-                          ? "bg-orange-100 text-orange-700 font-semibold"
-                          : "hover:bg-orange-50 text-gray-800"
+                        ? "bg-orange-100 text-orange-700 font-semibold"
+                        : "hover:bg-orange-50 text-gray-800"
                         }`}
                     >
                       {hora}
