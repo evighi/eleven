@@ -712,23 +712,23 @@ export default function AdminHome() {
 
         {/* Bloco com filtros + botão, alinhado à direita e com pouco espaço entre eles */}
         <div className="flex-1 flex flex-col sm:flex-row sm:items-center justify-end gap-3 sm:gap-4">
-          {/* Campo Data – input ocupa tudo, ícones por cima (clique funciona bem no mobile) */}
-          <div className="relative flex w-full sm:w-[260px]">
+          {/* Campo Data – funciona bem no mobile e desktop */}
+          <div className="relative flex w-full sm:w-[160px]">
             {/* Ícone calendário à esquerda (decorativo) */}
             <Calendar
               className="
       pointer-events-none
       absolute left-3 top-1/2 -translate-y-1/2
-      w-4 h-4 text-gray-500
+      w-4 h-4 text-gray-600
     "
             />
 
-            {/* Ícone seta à direita (decorativo) */}
+            {/* Seta à direita (decorativa) */}
             <ChevronDown
               className="
       pointer-events-none
       absolute right-3 top-1/2 -translate-y-1/2
-      w-4 h-4 text-gray-500
+      w-4 h-4 text-gray-600
     "
             />
 
@@ -737,15 +737,17 @@ export default function AdminHome() {
               value={data}
               onChange={(e) => setData(e.target.value)}
               className="
-      h-11 w-full rounded-full border border-gray-300 bg-white
+      h-11 w-full rounded-md border border-gray-600 bg-white
       text-sm text-gray-800 outline-none
       pl-9 pr-8
+      hover:border-gray-900 hover:shadow-sm transition
       [appearance:none]
-      [&::-webkit-calendar-picker-indicator]:opacity-0
       [&::-webkit-inner-spin-button]:appearance-none
+      [&::-webkit-calendar-picker-indicator]:opacity-0
     "
             />
           </div>
+
 
           {/* Campo Horário – card inteiro clicável com dropdown customizado */}
           <div
