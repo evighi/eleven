@@ -736,7 +736,7 @@ export default function AdminHome() {
         {/* Bloco com filtros + botão, alinhado à direita e com pouco espaço entre eles */}
         <div className="flex-1 flex flex-col sm:flex-row sm:items-center justify-end gap-3 sm:gap-4">
           {/* Campo Data – custom datepicker, sem input nativo */}
-          <div className="relative w-full sm:w-[190px]">
+          <div className="relative w-full sm:w-[220px]">
             {/* Botão visual */}
             <button
               type="button"
@@ -758,7 +758,14 @@ export default function AdminHome() {
 
             {/* POPUP do calendário */}
             {dataPickerAberto && (
-              <div className="absolute z-20 mt-1 right-0 w-72 rounded-lg border border-gray-200 bg-white shadow-lg p-3">
+              <div
+                className="
+        absolute z-20 mt-1 right-0
+        w-full                      /* 👈 mesma largura do botão */
+        rounded-lg border border-gray-200 bg-white
+        shadow-lg p-3
+      "
+              >
                 {/* Cabeçalho: mês/ano + setas */}
                 <div className="flex items-center justify-between mb-2">
                   <button
