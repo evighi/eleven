@@ -1001,7 +1001,7 @@ export default function AdminHome() {
                     const isPermanente = q.tipoReserva === "permanente";
                     const isComum = q.tipoReserva === "comum";
 
-                    // cores do card conforme status (bem parecido com o Figma)
+                    // cores do card conforme status
                     let statusClasses =
                       "border-slate-300 bg-slate-50 text-slate-800"; // padrão / permanente
 
@@ -1015,7 +1015,7 @@ export default function AdminHome() {
 
                     const cardBase =
                       "relative flex flex-col justify-between items-stretch " +
-                      "rounded-2xl border shadow-sm px-3 py-3 " +
+                      "rounded-2xl border shadow-sm px-4 py-4 min-h-[150px] " + // 👈 estiquei um pouco
                       "transition-transform hover:-translate-y-0.5 hover:shadow-md " +
                       (clickable ? "cursor-pointer" : "cursor-not-allowed opacity-90");
 
@@ -1050,23 +1050,47 @@ export default function AdminHome() {
                         }}
                         className={`${cardBase} ${statusClasses}`}
                       >
-                        {/* TOPO: NOME DA QUADRA / LOCAL (linha cinza pequena) */}
+                        {/* TOPO: NOME DA QUADRA / LOCAL */}
                         <p className="text-[11px] font-medium text-gray-500 mb-1">
                           Quadra {q.numero} • {q.nome}
                         </p>
 
-                        {/* MIolo: ÍCONE grande + NOME / “DISPONÍVEL” */}
+                        {/* MIolo: ÍCONE GRANDE + NOME / BLOQUEADO / DISPONÍVEL */}
                         <div className="flex-1 flex flex-col items-center justify-center text-center py-1">
-                          {/* >>> ÍCONE GRANDE AQUI (conforme status) <<< */}
+                          {/* >>> ÍCONE GRANDE POR STATUS <<< */}
                           <div className="mb-1">
-                            {/* ex: <SeuIconeAqui className="w-5 h-5" /> */}
+                            {q.bloqueada && (
+                              <>
+                                {/* ÍCONE GRANDE BLOQUEADO */}
+                                {/* ex: <IconeBloqueado className="w-6 h-6" /> */}
+                              </>
+                            )}
+
+                            {q.disponivel && !q.bloqueada && (
+                              <>
+                                {/* ÍCONE GRANDE DISPONÍVEL */}
+                                {/* ex: <IconeDisponivel className="w-6 h-6" /> */}
+                              </>
+                            )}
+
+                            {!q.disponivel && !q.bloqueada && isPermanente && (
+                              <>
+                                {/* ÍCONE GRANDE PERMANENTE */}
+                                {/* ex: <IconePermanente className="w-6 h-6" /> */}
+                              </>
+                            )}
+
+                            {!q.disponivel && !q.bloqueada && isComum && (
+                              <>
+                                {/* ÍCONE GRANDE AVULSA */}
+                                {/* ex: <IconeAvulsa className="w-6 h-6" /> */}
+                              </>
+                            )}
                           </div>
 
                           {q.bloqueada ? (
                             <>
                               <p className="text-sm font-extrabold leading-tight">
-                                {/* texto principal bloqueado */}
-                                {/* ex: "Luis Eduardo" se quiser manter, ou só "Bloqueado" */}
                                 {q.usuario?.nome
                                   ? firstAndLastName(q.usuario.nome)
                                   : "Bloqueado"}
@@ -1093,22 +1117,45 @@ export default function AdminHome() {
                           )}
                         </div>
 
-                        {/* BASE DO CARD: tipo + espaço para ícone pequeno (igual Figma) */}
+                        {/* BASE DO CARD: tipo + ÍCONE PEQUENO */}
                         <div className="mt-1 pt-1 flex items-center justify-between text-[11px]">
                           <div className="flex items-center gap-1">
-                            {/* >>> ÍCONE PEQUENO AQUI (usuário / check / aviso etc.) <<< */}
+                            {/* >>> ÍCONE PEQUENO POR STATUS <<< */}
                             <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-current text-[9px]">
-                              {/* icon */}
+                              {q.bloqueada && (
+                                <>
+                                  {/* ÍCONE PEQUENO BLOQUEADO */}
+                                  {/* ex: <IconeBloqueadoMini className="w-3 h-3" /> */}
+                                </>
+                              )}
+
+                              {q.disponivel && !q.bloqueada && (
+                                <>
+                                  {/* ÍCONE PEQUENO DISPONÍVEL */}
+                                  {/* ex: <IconeDisponivelMini className="w-3 h-3" /> */}
+                                </>
+                              )}
+
+                              {!q.disponivel && !q.bloqueada && isPermanente && (
+                                <>
+                                  {/* ÍCONE PEQUENO PERMANENTE */}
+                                  {/* ex: <IconePermanenteMini className="w-3 h-3" /> */}
+                                </>
+                              )}
+
+                              {!q.disponivel && !q.bloqueada && isComum && (
+                                <>
+                                  {/* ÍCONE PEQUENO AVULSA */}
+                                  {/* ex: <IconeAvulsaMini className="w-3 h-3" /> */}
+                                </>
+                              )}
                             </span>
+
                             <span className="font-semibold">{labelTipo}</span>
                           </div>
 
-                          {/* texto auxiliar à direita (pode ser esporte ou vazio) */}
-                          {!q.disponivel && !q.bloqueada && (
-                            <span className="text-[10px] opacity-80">
-                              {esporte}
-                            </span>
-                          )}
+                          {/* Direita vazia agora (sem nome do esporte) pra ficar igual ao layout */}
+                          <span className="text-[10px] opacity-0 select-none">.</span>
                         </div>
                       </button>
                     );
@@ -1116,6 +1163,7 @@ export default function AdminHome() {
                 </div>
               </section>
             ))}
+
 
 
             {/* ================== CHURRASQUEIRAS ================== */}
