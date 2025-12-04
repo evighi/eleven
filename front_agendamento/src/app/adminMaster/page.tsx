@@ -976,9 +976,9 @@ export default function AdminHome() {
                 key={esporte}
                 className="rounded-3xl bg-gray-50/80 border border-gray-100 px-4 sm:px-6 py-5 shadow-sm"
               >
-                {/* header do esporte */}
+                {/* HEADER DO ESPORTE */}
                 <div className="flex items-baseline justify-between mb-4">
-                  <h2 className="text-lg sm:text-xl font-semibold text-gray-800">
+                  <h2 className="text-xl font-semibold text-gray-800">
                     {esporte}
                   </h2>
                   <p className="hidden sm:block text-xs text-gray-500">
@@ -988,8 +988,8 @@ export default function AdminHome() {
                   </p>
                 </div>
 
-                {/* linha de cards – scroll horizontal em telas menores */}
-                <div className="flex gap-3 sm:gap-4 overflow-x-auto pb-1">
+                {/* GRID DE CARDS – até 8 por linha em telas grandes, sem scroll */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
                   {disponibilidade.quadras[esporte].map((q: DisponQuadra) => {
                     const clickable = !q.bloqueada;
 
@@ -1001,28 +1001,32 @@ export default function AdminHome() {
                     const isPermanente = q.tipoReserva === "permanente";
                     const isComum = q.tipoReserva === "comum";
 
+                    // cores do card conforme status (bem parecido com o Figma)
                     let statusClasses =
-                      "border-gray-300 bg-gray-50 text-gray-800"; // padrão
+                      "border-slate-300 bg-slate-50 text-slate-800"; // padrão / permanente
 
                     if (q.bloqueada) {
-                      statusClasses =
-                        "border-red-300 bg-red-50 text-red-700";
+                      statusClasses = "border-red-400 bg-red-50 text-red-800";
                     } else if (q.disponivel) {
-                      statusClasses =
-                        "border-emerald-300 bg-emerald-50 text-emerald-700";
+                      statusClasses = "border-emerald-400 bg-emerald-50 text-emerald-800";
                     } else if (isComum) {
-                      statusClasses =
-                        "border-amber-300 bg-amber-50 text-amber-800";
-                    } else if (isPermanente) {
-                      statusClasses =
-                        "border-gray-300 bg-gray-50 text-gray-800";
+                      statusClasses = "border-amber-400 bg-amber-50 text-amber-800";
                     }
 
                     const cardBase =
-                      "min-w-[150px] sm:min-w-[170px] max-w-[180px] " +
+                      "relative flex flex-col justify-between items-stretch " +
                       "rounded-2xl border shadow-sm px-3 py-3 " +
-                      "flex flex-col justify-between text-left " +
-                      "transition-transform hover:-translate-y-0.5 hover:shadow-md";
+                      "transition-transform hover:-translate-y-0.5 hover:shadow-md " +
+                      (clickable ? "cursor-pointer" : "cursor-not-allowed opacity-90");
+
+                    const labelTipo =
+                      q.bloqueada
+                        ? "Bloqueado"
+                        : q.disponivel
+                          ? "Disponível"
+                          : isPermanente
+                            ? "Permanente"
+                            : "Avulsa";
 
                     return (
                       <button
@@ -1044,68 +1048,62 @@ export default function AdminHome() {
                             abrirDetalhes(q, { horario, esporte });
                           }
                         }}
-                        className={`${cardBase} ${statusClasses} ${clickable ? "cursor-pointer" : "cursor-not-allowed"
-                          }`}
+                        className={`${cardBase} ${statusClasses}`}
                       >
-                        {/* topo: info da quadra */}
-                        <div>
-                          <p className="text-[11px] font-medium text-gray-500 mb-1">
-                            Quadra {q.numero} • {q.nome}
-                          </p>
+                        {/* TOPO: NOME DA QUADRA / LOCAL (linha cinza pequena) */}
+                        <p className="text-[11px] font-medium text-gray-500 mb-1">
+                          Quadra {q.numero} • {q.nome}
+                        </p>
 
-                          {/* miolo: usuário ou “Disponível” */}
+                        {/* MIolo: ÍCONE grande + NOME / “DISPONÍVEL” */}
+                        <div className="flex-1 flex flex-col items-center justify-center text-center py-1">
+                          {/* >>> ÍCONE GRANDE AQUI (conforme status) <<< */}
+                          <div className="mb-1">
+                            {/* ex: <SeuIconeAqui className="w-5 h-5" /> */}
+                          </div>
+
                           {q.bloqueada ? (
-                            <div className="mt-2 mb-3">
-                              <p className="text-sm font-extrabold">
-                                {/* espaço p/ ÍCONE BLOQUEADO */}
+                            <>
+                              <p className="text-sm font-extrabold leading-tight">
+                                {/* texto principal bloqueado */}
+                                {/* ex: "Luis Eduardo" se quiser manter, ou só "Bloqueado" */}
+                                {q.usuario?.nome
+                                  ? firstAndLastName(q.usuario.nome)
+                                  : "Bloqueado"}
                               </p>
-                              <p className="text-xs font-semibold">
-                                Bloqueado
+                              <p className="text-[11px] mt-1 font-semibold">
+                                {q.motivoBloqueioNome || "Manutenção"}
                               </p>
-                              {q.motivoBloqueioNome && (
-                                <p className="mt-0.5 text-[11px]">
-                                  {q.motivoBloqueioNome}
-                                </p>
-                              )}
-                            </div>
+                            </>
                           ) : hasAgendamento ? (
-                            <div className="mt-2 mb-3">
+                            <>
                               <p className="text-sm font-extrabold leading-tight">
                                 {firstAndLastName(q.usuario?.nome)}
                               </p>
                               {q.usuario?.celular && (
-                                <p className="text-[11px] text-gray-700">
+                                <p className="text-[11px] mt-1">
                                   {q.usuario.celular}
                                 </p>
                               )}
-                            </div>
+                            </>
                           ) : (
-                            <div className="mt-4 mb-4">
-                              <p className="text-sm font-extrabold">
-                                Disponível
-                              </p>
-                            </div>
+                            <p className="text-sm font-extrabold leading-tight">
+                              Disponível
+                            </p>
                           )}
                         </div>
 
-                        {/* base do card: tipo + lugar pro ícone */}
-                        <div className="mt-auto pt-1 flex items-center justify-between text-[11px]">
+                        {/* BASE DO CARD: tipo + espaço para ícone pequeno (igual Figma) */}
+                        <div className="mt-1 pt-1 flex items-center justify-between text-[11px]">
                           <div className="flex items-center gap-1">
-                            {/* >>> AQUI VOCÊ COLOCA SEU ÍCONE (usuário / check / aviso etc.) <<< */}
+                            {/* >>> ÍCONE PEQUENO AQUI (usuário / check / aviso etc.) <<< */}
                             <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-current text-[9px]">
                               {/* icon */}
                             </span>
-                            <span className="font-semibold">
-                              {q.bloqueada
-                                ? "Bloqueado"
-                                : q.disponivel
-                                  ? "Disponível"
-                                  : isPermanente
-                                    ? "Permanente"
-                                    : "Avulsa"}
-                            </span>
+                            <span className="font-semibold">{labelTipo}</span>
                           </div>
 
+                          {/* texto auxiliar à direita (pode ser esporte ou vazio) */}
                           {!q.disponivel && !q.bloqueada && (
                             <span className="text-[10px] opacity-80">
                               {esporte}
@@ -1118,6 +1116,7 @@ export default function AdminHome() {
                 </div>
               </section>
             ))}
+
 
             {/* ================== CHURRASQUEIRAS ================== */}
             <section className="rounded-3xl bg-gray-50/80 border border-gray-100 px-4 sm:px-6 py-5 shadow-sm">
