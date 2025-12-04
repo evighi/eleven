@@ -713,7 +713,7 @@ export default function AdminHome() {
         {/* Bloco com filtros + botão, alinhado à direita e com pouco espaço entre eles */}
         <div className="flex-1 flex flex-col sm:flex-row sm:items-center justify-end gap-3 sm:gap-4">
           {/* Campo Data – clique só na seta, estável em mobile */}
-          <div className="relative w-full sm:w-[160px]">
+          <div className="relative w-full sm:w-[190px]">
             {/* input real: mostra o valor, MAS não recebe clique diretamente */}
             <input
               ref={dataInputRef}
@@ -723,7 +723,7 @@ export default function AdminHome() {
               className="
       h-11 w-full rounded-md border border-gray-600 bg-white
       text-sm text-gray-800 outline-none
-      pl-9 pr-12            /* 👈 mais espaço pro texto não ir embaixo da seta */
+      pl-9 pr-10            /* espaço suficiente pro texto antes da seta */
       pointer-events-none   /* não clica no input */
       [appearance:none]
       [&::-webkit-inner-spin-button]:appearance-none
@@ -750,7 +750,6 @@ export default function AdminHome() {
                 try {
                   // @ts-ignore
                   if (typeof el.showPicker === "function") {
-                    // navegadores que suportam showPicker
                     // @ts-ignore
                     el.showPicker();
                   } else {
@@ -762,7 +761,7 @@ export default function AdminHome() {
                 }
               }}
               className="
-      absolute inset-y-[2px] right-1   /* 👈 encosta menos no texto */
+      absolute inset-y-[3px] right-2
       px-2
       flex items-center justify-center
       rounded-md
@@ -772,6 +771,7 @@ export default function AdminHome() {
               <ChevronDown className="w-4 h-4 text-gray-600" />
             </button>
           </div>
+
 
 
 
