@@ -986,7 +986,7 @@ export default function AdminHome() {
                 </div>
 
                 {/* GRID DE CARDS – até 8 por linha em telas grandes, sem scroll */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
+                <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
                   {disponibilidade.quadras[esporte].map((q: DisponQuadra) => {
                     const clickable = !q.bloqueada;
 
@@ -1012,7 +1012,7 @@ export default function AdminHome() {
 
                     const cardBase =
                       "relative flex flex-col justify-between items-stretch " +
-                      "rounded-2xl border shadow-sm px-6 py-3 " + // 👈 mais largo, sem min-height
+                      "rounded-2xl border shadow-sm px-3 py-3 " + // 👈 mais largo, sem min-height
                       "transition-transform hover:-translate-y-0.5 hover:shadow-md " +
                       (clickable ? "cursor-pointer" : "cursor-not-allowed opacity-90");
 
@@ -1114,7 +1114,7 @@ export default function AdminHome() {
                                 {firstAndLastName(q.usuario?.nome)}
                               </p>
                               {q.usuario?.celular && (
-                                <p className="text-[11px] mt-1">
+                                <p className="text-[10px] mt-1 whitespace-nowrap">
                                   {q.usuario.celular}
                                 </p>
                               )}
