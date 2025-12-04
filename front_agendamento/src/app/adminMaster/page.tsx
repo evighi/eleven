@@ -969,35 +969,66 @@ export default function AdminHome() {
             <span>Carregando disponibilidade…</span>
           </div>
         ) : (
-          <div className="space-y-10">
-            {/* QUADRAS */}
+          <div className="space-y-8">
+            {/* ================== QUADRAS ================== */}
             {Object.keys(disponibilidade.quadras).map((esporte) => (
-              <div key={esporte}>
-                <div className="flex items-center mb-4">
-                  <h2 className="text-lg font-semibold text-orange-700">
-                    {esporte}, {horario}
+              <section
+                key={esporte}
+                className="rounded-3xl bg-gray-50/80 border border-gray-100 px-4 sm:px-6 py-5 shadow-sm"
+              >
+                {/* header do esporte */}
+                <div className="flex items-baseline justify-between mb-4">
+                  <h2 className="text-lg sm:text-xl font-semibold text-gray-800">
+                    {esporte}
                   </h2>
-                  <div className="flex-1 border-t border-gray-300 ml-3" />
+                  <p className="hidden sm:block text-xs text-gray-500">
+                    {horario
+                      ? `${horario} · ${formatarDataBR(data)}`
+                      : formatarDataBR(data)}
+                  </p>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4">
+                {/* linha de cards – scroll horizontal em telas menores */}
+                <div className="flex gap-3 sm:gap-4 overflow-x-auto pb-1">
                   {disponibilidade.quadras[esporte].map((q: DisponQuadra) => {
                     const clickable = !q.bloqueada;
-                    const clsBase =
-                      "p-3 rounded-lg text-center shadow-sm flex flex-col justify-center " +
-                      (clickable ? "cursor-pointer" : "cursor-not-allowed");
 
-                    // ✅ Só mostra "Comum/Permanente" quando realmente há agendamento
-                    // - Se for PERMANENTE: mostra mesmo se estiver bloqueada
-                    // - Se for COMUM: só mostra se NÃO estiver bloqueada
                     const hasAgendamento =
                       !q.disponivel &&
                       !!q.tipoReserva &&
                       (q.tipoReserva === "permanente" || !q.bloqueada);
 
+                    const isPermanente = q.tipoReserva === "permanente";
+                    const isComum = q.tipoReserva === "comum";
+
+                    let statusClasses =
+                      "border-gray-300 bg-gray-50 text-gray-800"; // padrão
+
+                    if (q.bloqueada) {
+                      statusClasses =
+                        "border-red-300 bg-red-50 text-red-700";
+                    } else if (q.disponivel) {
+                      statusClasses =
+                        "border-emerald-300 bg-emerald-50 text-emerald-700";
+                    } else if (isComum) {
+                      statusClasses =
+                        "border-amber-300 bg-amber-50 text-amber-800";
+                    } else if (isPermanente) {
+                      statusClasses =
+                        "border-gray-300 bg-gray-50 text-gray-800";
+                    }
+
+                    const cardBase =
+                      "min-w-[150px] sm:min-w-[170px] max-w-[180px] " +
+                      "rounded-2xl border shadow-sm px-3 py-3 " +
+                      "flex flex-col justify-between text-left " +
+                      "transition-transform hover:-translate-y-0.5 hover:shadow-md";
+
                     return (
-                      <div
+                      <button
                         key={q.quadraId}
+                        type="button"
+                        disabled={q.bloqueada}
                         onClick={() => {
                           if (q.bloqueada) return;
                           if (q.disponivel) {
@@ -1013,67 +1044,123 @@ export default function AdminHome() {
                             abrirDetalhes(q, { horario, esporte });
                           }
                         }}
-                        className={`${clsBase
-                          } ${q.bloqueada
-                            ? "border-2 border-red-500 bg-red-50"
-                            : q.disponivel
-                              ? "border-2 border-green-500 bg-green-50"
-                              : "border-2 border-gray-500 bg-gray-50"
+                        className={`${cardBase} ${statusClasses} ${clickable ? "cursor-pointer" : "cursor-not-allowed"
                           }`}
                       >
-                        <p className="font-medium">{q.nome}</p>
-                        <p className="text-xs text-gray-700">Quadra {q.numero}</p>
+                        {/* topo: info da quadra */}
+                        <div>
+                          <p className="text-[11px] font-medium text-gray-500 mb-1">
+                            Quadra {q.numero} • {q.nome}
+                          </p>
 
-                        {q.bloqueada && (
-                          <div className="text-red-600 font-bold">
-                            Bloqueada
-                            {q.motivoBloqueioNome ? ` - ${q.motivoBloqueioNome}` : ""}
-                          </div>
-                        )}
-
-                        {hasAgendamento && (
-                          <div className="mt-1">
-                            <p className="font-bold">
-                              {firstAndLastName(q.usuario?.nome)}
-                            </p>
-                            {q.usuario?.celular && (
-                              <p className="text-[11px] text-gray-700">
-                                {q.usuario.celular}
+                          {/* miolo: usuário ou “Disponível” */}
+                          {q.bloqueada ? (
+                            <div className="mt-2 mb-3">
+                              <p className="text-sm font-extrabold">
+                                {/* espaço p/ ÍCONE BLOQUEADO */}
                               </p>
-                            )}
-                            <span className="inline-block text-[11px] mt-1 px-2 py-0.5 rounded bg-white/70">
-                              {q.tipoReserva === "permanente"
-                                ? "Permanente"
-                                : "Comum"}
+                              <p className="text-xs font-semibold">
+                                Bloqueado
+                              </p>
+                              {q.motivoBloqueioNome && (
+                                <p className="mt-0.5 text-[11px]">
+                                  {q.motivoBloqueioNome}
+                                </p>
+                              )}
+                            </div>
+                          ) : hasAgendamento ? (
+                            <div className="mt-2 mb-3">
+                              <p className="text-sm font-extrabold leading-tight">
+                                {firstAndLastName(q.usuario?.nome)}
+                              </p>
+                              {q.usuario?.celular && (
+                                <p className="text-[11px] text-gray-700">
+                                  {q.usuario.celular}
+                                </p>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="mt-4 mb-4">
+                              <p className="text-sm font-extrabold">
+                                Disponível
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* base do card: tipo + lugar pro ícone */}
+                        <div className="mt-auto pt-1 flex items-center justify-between text-[11px]">
+                          <div className="flex items-center gap-1">
+                            {/* >>> AQUI VOCÊ COLOCA SEU ÍCONE (usuário / check / aviso etc.) <<< */}
+                            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-current text-[9px]">
+                              {/* icon */}
+                            </span>
+                            <span className="font-semibold">
+                              {q.bloqueada
+                                ? "Bloqueado"
+                                : q.disponivel
+                                  ? "Disponível"
+                                  : isPermanente
+                                    ? "Permanente"
+                                    : "Avulsa"}
                             </span>
                           </div>
-                        )}
-                      </div>
+
+                          {!q.disponivel && !q.bloqueada && (
+                            <span className="text-[10px] opacity-80">
+                              {esporte}
+                            </span>
+                          )}
+                        </div>
+                      </button>
                     );
                   })}
                 </div>
-              </div>
+              </section>
             ))}
 
-            {/* CHURRASQUEIRAS */}
-            <div>
-              <div className="flex items-center mb-4">
-                <h2 className="text-lg font-semibold text-orange-700">
+            {/* ================== CHURRASQUEIRAS ================== */}
+            <section className="rounded-3xl bg-gray-50/80 border border-gray-100 px-4 sm:px-6 py-5 shadow-sm">
+              <div className="flex items-baseline justify-between mb-4">
+                <h2 className="text-lg sm:text-xl font-semibold text-gray-800">
                   Churrasqueiras
                 </h2>
-                <div className="flex-1 border-t border-gray-300 ml-3" />
+                <p className="hidden sm:block text-xs text-gray-500">
+                  {formatarDataBR(data)}
+                </p>
               </div>
 
-              {/* Dia */}
-              <h3 className="text-sm font-semibold mb-2 text-gray-800">Dia</h3>
-              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4 mb-6">
+              {/* DIA */}
+              <h3 className="text-sm font-semibold mb-2 text-gray-700">
+                Dia
+              </h3>
+              <div className="flex gap-3 sm:gap-4 overflow-x-auto pb-4">
                 {disponibilidade.churrasqueiras.map((c: ChurrasqueiraDisp) => {
-                  const diaInfo = c.disponibilidade.find((t) => t.turno === "DIA");
+                  const diaInfo = c.disponibilidade.find(
+                    (t) => t.turno === "DIA"
+                  );
                   const disponivel = !!diaInfo?.disponivel;
+                  const isPerm =
+                    diaInfo?.tipoReserva === "permanente";
+                  const isComum = diaInfo?.tipoReserva === "comum";
+
+                  let statusClasses =
+                    "border-gray-300 bg-gray-50 text-gray-800";
+                  if (disponivel) {
+                    statusClasses =
+                      "border-emerald-300 bg-emerald-50 text-emerald-700";
+                  } else if (isComum) {
+                    statusClasses =
+                      "border-amber-300 bg-amber-50 text-amber-800";
+                  } else if (isPerm) {
+                    statusClasses =
+                      "border-gray-300 bg-gray-50 text-gray-800";
+                  }
 
                   return (
-                    <div
+                    <button
                       key={c.churrasqueiraId + "-dia"}
+                      type="button"
                       onClick={() => {
                         if (disponivel) {
                           abrirConfirmacaoChurras({
@@ -1085,24 +1172,29 @@ export default function AdminHome() {
                           });
                         } else {
                           abrirDetalhes(
-                            { ...(diaInfo as DetalheItemMin), tipoLocal: "churrasqueira" },
+                            {
+                              ...(diaInfo as DetalheItemMin),
+                              tipoLocal: "churrasqueira",
+                            },
                             { turno: "DIA" }
                           );
                         }
                       }}
-                      className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${disponivel
-                        ? "border-2 border-green-500 bg-green-50"
-                        : "border-2 border-gray-500 bg-gray-50"
-                        }`}
+                      className={`min-w-[150px] sm:min-w-[170px] max-w-[180px] rounded-2xl border shadow-sm px-3 py-3 flex flex-col justify-between text-left cursor-pointer transition-transform hover:-translate-y-0.5 hover:shadow-md ${statusClasses}`}
                     >
-                      <p className="font-medium">{c.nome}</p>
-                      <p className="text-xs text-gray-700">
-                        Churrasqueira {c.numero}
+                      <p className="text-[11px] font-medium text-gray-500 mb-1">
+                        Churrasqueira {c.numero} • {c.nome}
                       </p>
 
-                      {!disponivel && (
-                        <div className="mt-1">
-                          <p className="font-bold">
+                      {disponivel ? (
+                        <div className="mt-4 mb-4">
+                          <p className="text-sm font-extrabold">
+                            Disponível
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="mt-2 mb-3">
+                          <p className="text-sm font-extrabold leading-tight">
                             {firstAndLastName(diaInfo?.usuario?.nome)}
                           </p>
                           {diaInfo?.usuario?.celular && (
@@ -1110,28 +1202,63 @@ export default function AdminHome() {
                               {diaInfo.usuario.celular}
                             </p>
                           )}
-                          <span className="inline-block text-[11px] px-2 py-0.5 rounded bg-white/70">
-                            {diaInfo?.tipoReserva === "permanente"
-                              ? "Permanente"
-                              : "Comum"}
-                          </span>
                         </div>
                       )}
-                    </div>
+
+                      <div className="mt-auto pt-1 flex items-center justify-between text-[11px]">
+                        <div className="flex items-center gap-1">
+                          {/* ÍCONE D IA AQUI */}
+                          <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-current text-[9px]">
+                            {/* icon */}
+                          </span>
+                          <span className="font-semibold">
+                            {disponivel
+                              ? "Disponível"
+                              : isPerm
+                                ? "Permanente"
+                                : "Avulsa"}
+                          </span>
+                        </div>
+                        <span className="text-[10px] opacity-80">
+                          Dia
+                        </span>
+                      </div>
+                    </button>
                   );
                 })}
               </div>
 
-              {/* Noite */}
-              <h3 className="text-sm font-semibold mb-2 text-gray-800">Noite</h3>
-              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4">
+              {/* NOITE */}
+              <h3 className="text-sm font-semibold mb-2 text-gray-700">
+                Noite
+              </h3>
+              <div className="flex gap-3 sm:gap-4 overflow-x-auto">
                 {disponibilidade.churrasqueiras.map((c: ChurrasqueiraDisp) => {
-                  const noiteInfo = c.disponibilidade.find((t) => t.turno === "NOITE");
+                  const noiteInfo = c.disponibilidade.find(
+                    (t) => t.turno === "NOITE"
+                  );
                   const disponivel = !!noiteInfo?.disponivel;
+                  const isPerm =
+                    noiteInfo?.tipoReserva === "permanente";
+                  const isComum = noiteInfo?.tipoReserva === "comum";
+
+                  let statusClasses =
+                    "border-gray-300 bg-gray-50 text-gray-800";
+                  if (disponivel) {
+                    statusClasses =
+                      "border-emerald-300 bg-emerald-50 text-emerald-700";
+                  } else if (isComum) {
+                    statusClasses =
+                      "border-amber-300 bg-amber-50 text-amber-800";
+                  } else if (isPerm) {
+                    statusClasses =
+                      "border-gray-300 bg-gray-50 text-gray-800";
+                  }
 
                   return (
-                    <div
+                    <button
                       key={c.churrasqueiraId + "-noite"}
+                      type="button"
                       onClick={() => {
                         if (disponivel) {
                           abrirConfirmacaoChurras({
@@ -1143,24 +1270,29 @@ export default function AdminHome() {
                           });
                         } else {
                           abrirDetalhes(
-                            { ...(noiteInfo as DetalheItemMin), tipoLocal: "churrasqueira" },
+                            {
+                              ...(noiteInfo as DetalheItemMin),
+                              tipoLocal: "churrasqueira",
+                            },
                             { turno: "NOITE" }
                           );
                         }
                       }}
-                      className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${disponivel
-                        ? "border-2 border-green-500 bg-green-50"
-                        : "border-2 border-gray-500 bg-gray-50"
-                        }`}
+                      className={`min-w-[150px] sm:min-w-[170px] max-w-[180px] rounded-2xl border shadow-sm px-3 py-3 flex flex-col justify-between text-left cursor-pointer transition-transform hover:-translate-y-0.5 hover:shadow-md ${statusClasses}`}
                     >
-                      <p className="font-medium">{c.nome}</p>
-                      <p className="text-xs text-gray-700">
-                        Churrasqueira {c.numero}
+                      <p className="text-[11px] font-medium text-gray-500 mb-1">
+                        Churrasqueira {c.numero} • {c.nome}
                       </p>
 
-                      {!disponivel && (
-                        <div className="mt-1">
-                          <p className="font-bold">
+                      {disponivel ? (
+                        <div className="mt-4 mb-4">
+                          <p className="text-sm font-extrabold">
+                            Disponível
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="mt-2 mb-3">
+                          <p className="text-sm font-extrabold leading-tight">
                             {firstAndLastName(noiteInfo?.usuario?.nome)}
                           </p>
                           {noiteInfo?.usuario?.celular && (
@@ -1168,20 +1300,35 @@ export default function AdminHome() {
                               {noiteInfo.usuario.celular}
                             </p>
                           )}
-                          <span className="inline-block text-[11px] px-2 py-0.5 rounded bg-white/70">
-                            {noiteInfo?.tipoReserva === "permanente"
-                              ? "Permanente"
-                              : "Comum"}
-                          </span>
                         </div>
                       )}
-                    </div>
+
+                      <div className="mt-auto pt-1 flex items-center justify-between text-[11px]">
+                        <div className="flex items-center gap-1">
+                          {/* ÍCONE NOITE AQUI */}
+                          <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-current text-[9px]">
+                            {/* icon */}
+                          </span>
+                          <span className="font-semibold">
+                            {disponivel
+                              ? "Disponível"
+                              : isPerm
+                                ? "Permanente"
+                                : "Avulsa"}
+                          </span>
+                        </div>
+                        <span className="text-[10px] opacity-80">
+                          Noite
+                        </span>
+                      </div>
+                    </button>
                   );
                 })}
               </div>
-            </div>
+            </section>
           </div>
         ))}
+
 
       {/* OVERLAY: carregando detalhes */}
       {loadingDetalhes && (
