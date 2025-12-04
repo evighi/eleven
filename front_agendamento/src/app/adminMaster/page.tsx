@@ -723,8 +723,8 @@ export default function AdminHome() {
               className="
       h-11 w-full rounded-md border border-gray-600 bg-white
       text-sm text-gray-800 outline-none
-      pl-9 pr-8
-      pointer-events-none      /* 👈 não clica no input */
+      pl-9 pr-12            /* 👈 mais espaço pro texto não ir embaixo da seta */
+      pointer-events-none   /* não clica no input */
       [appearance:none]
       [&::-webkit-inner-spin-button]:appearance-none
       [&::-webkit-calendar-picker-indicator]:opacity-0
@@ -750,11 +750,10 @@ export default function AdminHome() {
                 try {
                   // @ts-ignore
                   if (typeof el.showPicker === "function") {
-                    // navegadores que suportam showPicker (Chrome, Safari mais novo etc.)
+                    // navegadores que suportam showPicker
                     // @ts-ignore
                     el.showPicker();
                   } else {
-                    // fallback para iOS mais antigo, etc.
                     el.focus();
                     el.click();
                   }
@@ -763,7 +762,8 @@ export default function AdminHome() {
                 }
               }}
               className="
-      absolute inset-y-0 right-0 px-3
+      absolute inset-y-[2px] right-1   /* 👈 encosta menos no texto */
+      px-2
       flex items-center justify-center
       rounded-md
       cursor-pointer
@@ -772,6 +772,7 @@ export default function AdminHome() {
               <ChevronDown className="w-4 h-4 text-gray-600" />
             </button>
           </div>
+
 
 
           {/* Campo Horário – card inteiro clicável com dropdown customizado */}
