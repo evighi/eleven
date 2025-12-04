@@ -6,6 +6,8 @@ import Spinner from "@/components/Spinner";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Calendar, Clock, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import Image from "next/image";
+
 
 /** Helpers de data/hora em America/Sao_Paulo */
 const SP_TZ = "America/Sao_Paulo";
@@ -1010,7 +1012,7 @@ export default function AdminHome() {
 
                     const cardBase =
                       "relative flex flex-col justify-between items-stretch " +
-                      "rounded-2xl border shadow-sm px-4 py-4 min-h-[150px] " + // 👈 estiquei um pouco
+                      "rounded-2xl border shadow-sm px-6 py-3 " + // 👈 mais largo, sem min-height
                       "transition-transform hover:-translate-y-0.5 hover:shadow-md " +
                       (clickable ? "cursor-pointer" : "cursor-not-allowed opacity-90");
 
@@ -1052,34 +1054,46 @@ export default function AdminHome() {
 
                         {/* MIolo: ÍCONE GRANDE + NOME / BLOQUEADO / DISPONÍVEL */}
                         <div className="flex-1 flex flex-col items-center justify-center text-center py-1">
-                          {/* >>> ÍCONE GRANDE POR STATUS <<< */}
+                          {/* ÍCONE GRANDE POR STATUS */}
                           <div className="mb-1">
                             {q.bloqueada && (
-                              <>
-                                {/* ÍCONE GRANDE BLOQUEADO */}
-                                {/* ex: <IconeBloqueado className="w-6 h-6" /> */}
-                              </>
+                              <Image
+                                src="/iconescards/iconebloqueada.png"
+                                alt="Quadra bloqueada"
+                                width={32}
+                                height={32}
+                                className="w-8 h-8"
+                              />
                             )}
 
                             {q.disponivel && !q.bloqueada && (
-                              <>
-                                {/* ÍCONE GRANDE DISPONÍVEL */}
-                                {/* ex: <IconeDisponivel className="w-6 h-6" /> */}
-                              </>
+                              <Image
+                                src="/iconescards/iconedisponivel.png"
+                                alt="Quadra disponível"
+                                width={32}
+                                height={32}
+                                className="w-8 h-8"
+                              />
                             )}
 
                             {!q.disponivel && !q.bloqueada && isPermanente && (
-                              <>
-                                {/* ÍCONE GRANDE PERMANENTE */}
-                                {/* ex: <IconePermanente className="w-6 h-6" /> */}
-                              </>
+                              <Image
+                                src="/iconescards/iconeusuario.png"
+                                alt="Reserva permanente"
+                                width={32}
+                                height={32}
+                                className="w-8 h-8"
+                              />
                             )}
 
                             {!q.disponivel && !q.bloqueada && isComum && (
-                              <>
-                                {/* ÍCONE GRANDE AVULSA */}
-                                {/* ex: <IconeAvulsa className="w-6 h-6" /> */}
-                              </>
+                              <Image
+                                src="/iconescards/iconeusuariolaranja.png"
+                                alt="Reserva avulsa"
+                                width={32}
+                                height={32}
+                                className="w-8 h-8"
+                              />
                             )}
                           </div>
 
@@ -1115,41 +1129,53 @@ export default function AdminHome() {
                         {/* BASE DO CARD: tipo + ÍCONE PEQUENO */}
                         <div className="mt-1 pt-1 flex items-center justify-between text-[11px]">
                           <div className="flex items-center gap-1">
-                            {/* >>> ÍCONE PEQUENO POR STATUS <<< */}
-                            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-current text-[9px]">
+                            {/* ÍCONE PEQUENO POR STATUS */}
+                            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-current bg-white/60 overflow-hidden">
                               {q.bloqueada && (
-                                <>
-                                  {/* ÍCONE PEQUENO BLOQUEADO */}
-                                  {/* ex: <IconeBloqueadoMini className="w-3 h-3" /> */}
-                                </>
+                                <Image
+                                  src="/iconescards/iconebloqueada.png"
+                                  alt="Bloqueado"
+                                  width={12}
+                                  height={12}
+                                  className="w-3 h-3"
+                                />
                               )}
 
                               {q.disponivel && !q.bloqueada && (
-                                <>
-                                  {/* ÍCONE PEQUENO DISPONÍVEL */}
-                                  {/* ex: <IconeDisponivelMini className="w-3 h-3" /> */}
-                                </>
+                                <Image
+                                  src="/iconescards/iconedisponivel.png"
+                                  alt="Disponível"
+                                  width={12}
+                                  height={12}
+                                  className="w-3 h-3"
+                                />
                               )}
 
                               {!q.disponivel && !q.bloqueada && isPermanente && (
-                                <>
-                                  {/* ÍCONE PEQUENO PERMANENTE */}
-                                  {/* ex: <IconePermanenteMini className="w-3 h-3" /> */}
-                                </>
+                                <Image
+                                  src="/iconescards/iconepermanente.png"
+                                  alt="Permanente"
+                                  width={12}
+                                  height={12}
+                                  className="w-3 h-3"
+                                />
                               )}
 
                               {!q.disponivel && !q.bloqueada && isComum && (
-                                <>
-                                  {/* ÍCONE PEQUENO AVULSA */}
-                                  {/* ex: <IconeAvulsaMini className="w-3 h-3" /> */}
-                                </>
+                                <Image
+                                  src="/iconescards/iconeavulsa.png"
+                                  alt="Avulsa"
+                                  width={12}
+                                  height={12}
+                                  className="w-3 h-3"
+                                />
                               )}
                             </span>
 
                             <span className="font-semibold">{labelTipo}</span>
                           </div>
 
-                          {/* Direita vazia agora (sem nome do esporte) pra ficar igual ao layout */}
+                          {/* Direita vazia agora pra ficar igual ao layout */}
                           <span className="text-[10px] opacity-0 select-none">.</span>
                         </div>
                       </button>
@@ -1158,6 +1184,7 @@ export default function AdminHome() {
                 </div>
               </section>
             ))}
+
 
 
 
