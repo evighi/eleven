@@ -712,34 +712,39 @@ export default function AdminHome() {
 
         {/* Bloco com filtros + botão, alinhado à direita e com pouco espaço entre eles */}
         <div className="flex-1 flex flex-col sm:flex-row sm:items-center justify-end gap-3 sm:gap-4">
-          {/* Campo Data – card inteiro clicável, compatível com iPhone */}
+          {/* Campo Data – clique só na seta (hitbox da seta), compatível com iPhone */}
           <div className="relative w-full sm:w-[190px]">
             {/* Casca visual: ícone + data formatada + seta */}
-            <div className="pointer-events-none flex items-center justify-between h-11 w-full rounded-md border border-gray-600 bg-white px-3 text-sm">
+            <div className="flex items-center h-11 w-full rounded-md border border-gray-600 bg-white px-3 text-sm">
               <div className="flex items-center">
                 <Calendar className="w-4 h-4 text-gray-600 mr-2" />
                 <span className="text-sm text-gray-800">
-                  {formatarDataBR(data)} {/* exibe sempre DD/MM/AAAA */}
+                  {formatarDataBR(data)}
                 </span>
               </div>
 
-              <ChevronDown className="w-4 h-4 text-gray-600 ml-2" />
+              {/* espaço pra empurrar a seta pra direita */}
+              <div className="ml-auto flex items-center pr-4">
+                <ChevronDown className="w-4 h-4 text-gray-600 pointer-events-none" />
+              </div>
             </div>
 
-            {/* Input real: transparente, por cima, recebe o toque/click */}
+            {/* Input real – transparente, somente na área da seta */}
             <input
               ref={dataInputRef}
               type="date"
               value={data}
               onChange={(e) => setData(e.target.value)}
               className="
-      absolute inset-0 h-11 w-full
+      absolute inset-y-0 right-0
+      w-12              /* largura do hitbox da seta */
       opacity-0
       cursor-pointer
       z-10
     "
             />
           </div>
+
 
 
           {/* Campo Horário – card inteiro clicável com dropdown customizado */}
