@@ -712,41 +712,36 @@ export default function AdminHome() {
 
         {/* Bloco com filtros + botão, alinhado à direita e com pouco espaço entre eles */}
         <div className="flex-1 flex flex-col sm:flex-row sm:items-center justify-end gap-3 sm:gap-4">
-          {/* Campo Data – funciona bem no mobile e desktop */}
+          {/* Campo Data – card inteiro clicável (desktop + mobile) */}
           <div className="relative flex w-full sm:w-[160px]">
-            {/* Ícone calendário à esquerda (decorativo) */}
-            <Calendar
-              className="
-      pointer-events-none
-      absolute left-3 top-1/2 -translate-y-1/2
-      w-4 h-4 text-gray-600
-    "
-            />
+            {/* Casca visual (não recebe clique) */}
+            <div className="pointer-events-none flex items-center justify-between h-11 w-full rounded-md border border-gray-600 bg-white px-3 text-sm">
+              <div className="flex items-center">
+                <Calendar className="w-4 h-4 text-gray-600 mr-2" />
+                <span className="text-sm text-gray-800">
+                  {formatarDataBR(data)}
+                </span>
+              </div>
 
-            {/* Seta à direita (decorativa) */}
-            <ChevronDown
-              className="
-      pointer-events-none
-      absolute right-3 top-1/2 -translate-y-1/2
-      w-4 h-4 text-gray-600
-    "
-            />
+              <ChevronDown className="w-4 h-4 text-gray-600 ml-2" />
+            </div>
 
+            {/* Input real – invisível mas cobrindo todo o card */}
             <input
               type="date"
               value={data}
               onChange={(e) => setData(e.target.value)}
               className="
-      h-11 w-full rounded-md border border-gray-600 bg-white
-      text-sm text-gray-800 outline-none
-      pl-9 pr-8
-      hover:border-gray-900 hover:shadow-sm transition
+      absolute inset-0 h-11 w-full
+      opacity-0 cursor-pointer
       [appearance:none]
-      [&::-webkit-inner-spin-button]:appearance-none
       [&::-webkit-calendar-picker-indicator]:opacity-0
+      [&::-webkit-inner-spin-button]:appearance-none
+      hover:border-gray-900 hover:shadow-sm
     "
             />
           </div>
+
 
 
           {/* Campo Horário – card inteiro clicável com dropdown customizado */}
