@@ -736,7 +736,7 @@ export default function AdminHome() {
         {/* Bloco com filtros + botão, alinhado à direita e com pouco espaço entre eles */}
         <div className="flex-1 flex flex-col sm:flex-row sm:items-center justify-end gap-3 sm:gap-4">
           {/* Campo Data – custom datepicker, sem input nativo */}
-          <div className="relative w-full sm:w-[190px]">
+          <div className="relative w-full sm:w-[250px]">
             {/* Botão visual */}
             <button
               type="button"
