@@ -1130,7 +1130,7 @@ export default function AdminHome() {
                         <div className="mt-1 pt-1 flex items-center justify-between text-[11px]">
                           <div className="flex items-center gap-1">
                             {/* ÍCONE PEQUENO POR STATUS */}
-                            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-current bg-white/60 overflow-hidden">
+                            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-white/60 overflow-hidden">
                               {q.bloqueada && (
                                 <Image
                                   src="/iconescards/iconebloqueada.png"
