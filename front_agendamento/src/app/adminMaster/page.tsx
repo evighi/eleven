@@ -1048,9 +1048,15 @@ export default function AdminHome() {
                         className={`${cardBase} ${statusClasses}`}
                       >
                         {/* TOPO: NOME DA QUADRA / LOCAL */}
-                        <p className="text-[11px] font-medium text-gray-500 mb-1">
+                        <p
+                          className="
+    text-[10px] font-medium text-gray-500 mb-1
+    whitespace-nowrap overflow-hidden text-ellipsis
+  "
+                        >
                           Quadra {q.numero} • {q.nome}
                         </p>
+
 
                         {/* MIolo: ÍCONE GRANDE + NOME / BLOQUEADO / DISPONÍVEL */}
                         <div className="flex-1 flex flex-col items-center justify-center text-center py-1">
@@ -1114,10 +1120,11 @@ export default function AdminHome() {
                                 {firstAndLastName(q.usuario?.nome)}
                               </p>
                               {q.usuario?.celular && (
-                                <p className="text-[10px] mt-1 whitespace-nowrap">
+                                <p className="text-[10px] mt-1 whitespace-nowrap overflow-hidden text-ellipsis">
                                   {q.usuario.celular}
                                 </p>
                               )}
+
                             </>
                           ) : (
                             <p className="text-sm font-extrabold leading-tight">
