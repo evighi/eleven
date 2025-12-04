@@ -1015,11 +1015,9 @@ export default function AdminHome() {
 
                     const cardBase =
                       "relative flex flex-col justify-between items-stretch " +
-                      // 👉 mais largura (px maior) e menos altura (py menor), sem min-h
-                      "rounded-2xl border shadow-sm px-7 py-4 " +
+                      "rounded-2xl border shadow-sm px-4 py-4 min-h-[150px] " + // 👈 estiquei um pouco
                       "transition-transform hover:-translate-y-0.5 hover:shadow-md " +
                       (clickable ? "cursor-pointer" : "cursor-not-allowed opacity-90");
-
 
                     const labelTipo =
                       q.bloqueada
