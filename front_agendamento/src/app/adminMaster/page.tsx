@@ -981,11 +981,6 @@ export default function AdminHome() {
                   <h2 className="text-xl font-semibold text-gray-800">
                     {esporte}
                   </h2>
-                  <p className="hidden sm:block text-xs text-gray-500">
-                    {horario
-                      ? `${horario} · ${formatarDataBR(data)}`
-                      : formatarDataBR(data)}
-                  </p>
                 </div>
 
                 {/* GRID DE CARDS – até 8 por linha em telas grandes, sem scroll */}
