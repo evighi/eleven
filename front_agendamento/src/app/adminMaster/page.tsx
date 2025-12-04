@@ -712,9 +712,11 @@ export default function AdminHome() {
 
         {/* Bloco com filtros + botão, alinhado à direita e com pouco espaço entre eles */}
         <div className="flex-1 flex flex-col sm:flex-row sm:items-center justify-end gap-3 sm:gap-4">
-          {/* Campo Data – card inteiro clicável (desktop + mobile) */}
+          {/* Campo Data – clique só na seta, estável em mobile */}
           <div className="relative w-full sm:w-[160px]">
+            {/* input real: mostra o valor, MAS não recebe clique diretamente */}
             <input
+              ref={dataInputRef}
               type="date"
               value={data}
               onChange={(e) => setData(e.target.value)}
@@ -722,14 +724,14 @@ export default function AdminHome() {
       h-11 w-full rounded-md border border-gray-600 bg-white
       text-sm text-gray-800 outline-none
       pl-9 pr-8
-      hover:border-gray-900 hover:shadow-sm transition
+      pointer-events-none      /* 👈 não clica no input */
       [appearance:none]
       [&::-webkit-inner-spin-button]:appearance-none
       [&::-webkit-calendar-picker-indicator]:opacity-0
     "
             />
 
-            {/* ícone de calendário à esquerda (decorativo) */}
+            {/* ícone calendário à esquerda (decorativo) */}
             <Calendar
               className="
       pointer-events-none
@@ -738,15 +740,39 @@ export default function AdminHome() {
     "
             />
 
-            {/* seta à direita (decorativa) */}
-            <ChevronDown
+            {/* botão/seta – ÚNICO ponto clicável do campo */}
+            <button
+              type="button"
+              onClick={() => {
+                const el = dataInputRef.current;
+                if (!el) return;
+
+                try {
+                  // @ts-ignore
+                  if (typeof el.showPicker === "function") {
+                    // navegadores que suportam showPicker (Chrome, Safari mais novo etc.)
+                    // @ts-ignore
+                    el.showPicker();
+                  } else {
+                    // fallback para iOS mais antigo, etc.
+                    el.focus();
+                    el.click();
+                  }
+                } catch {
+                  el.focus();
+                }
+              }}
               className="
-      pointer-events-none
-      absolute right-3 top-1/2 -translate-y-1/2
-      w-4 h-4 text-gray-600
+      absolute inset-y-0 right-0 px-3
+      flex items-center justify-center
+      rounded-md
+      cursor-pointer
     "
-            />
+            >
+              <ChevronDown className="w-4 h-4 text-gray-600" />
+            </button>
           </div>
+
 
           {/* Campo Horário – card inteiro clicável com dropdown customizado */}
           <div
