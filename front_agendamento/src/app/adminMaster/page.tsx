@@ -5,7 +5,7 @@ import { useAuthStore } from "@/context/AuthStore";
 import Spinner from "@/components/Spinner";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Calendar, Clock, ChevronDown } from "lucide-react";
+import { Calendar, Clock, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 
 /** Helpers de data/hora em America/Sao_Paulo */
 const SP_TZ = "America/Sao_Paulo";
@@ -35,6 +35,13 @@ const formatarDataBR = (iso?: string) => {
   const [ano, mes, dia] = iso.split("-");
   return `${dia}/${mes}/${ano}`;
 };
+
+function isoFromDate(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
 /* ================== TIPAGENS ================== */
 type TipoReserva = "comum" | "permanente";
@@ -218,7 +225,6 @@ export default function AdminHome() {
   // logo antes do return, dentro do componente:
   const dataInputRef = useRef<HTMLInputElement | null>(null);
 
-  const [data, setData] = useState("");
   const [horario, setHorario] = useState("");
   const [mostrarDispon, setMostrarDispon] = useState(true);
 
@@ -272,6 +278,23 @@ export default function AdminHome() {
 
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
   const { usuario } = useAuthStore();
+
+  const [data, setData] = useState(""); // você já tem
+  const [dataPickerAberto, setDataPickerAberto] = useState(false);
+
+  const [mesExibido, setMesExibido] = useState(() => {
+    const base = data ? new Date(data + "T00:00:00") : new Date();
+    return new Date(base.getFullYear(), base.getMonth(), 1);
+  });
+
+  // manter o mês em sincronia se data mudar por outro motivo
+  useEffect(() => {
+    if (!data) return;
+    const base = new Date(data + "T00:00:00");
+    setMesExibido(new Date(base.getFullYear(), base.getMonth(), 1));
+  }, [data]);
+
+
 
   const isAllowed =
     !!usuario &&
@@ -712,29 +735,13 @@ export default function AdminHome() {
 
         {/* Bloco com filtros + botão, alinhado à direita e com pouco espaço entre eles */}
         <div className="flex-1 flex flex-col sm:flex-row sm:items-center justify-end gap-3 sm:gap-4">
-          {/* Campo Data – card inteiro clicável, input escondido */}
-          <div className="relative flex w-full sm:w-[160px]">
-            {/* input real, escondido por baixo, sem capturar clique */}
-            <input
-              ref={dataInputRef}
-              type="date"
-              value={data}
-              onChange={(e) => setData(e.target.value)}
-              tabIndex={-1}
-              className="
-      absolute inset-0 w-full h-full
-      opacity-0 pointer-events-none
-      [appearance:none]
-      [&::-webkit-calendar-picker-indicator]:opacity-0
-      [&::-webkit-inner-spin-button]:appearance-none
-    "
-            />
-
-            {/* Botão visual (agora realmente toda a área é clicável) */}
+          {/* Campo Data – custom datepicker, sem input nativo */}
+          <div className="relative w-full sm:w-[190px]">
+            {/* Botão visual */}
             <button
               type="button"
-              onClick={() => dataInputRef.current?.showPicker()}
-              className="relative z-10 flex items-center justify-between h-11 border border-gray-600 rounded-md px-3 text-sm bg-white w-full hover:border-gray-900 hover:shadow-sm transition"
+              onClick={() => setDataPickerAberto((v) => !v)}
+              className="flex items-center justify-between h-11 w-full rounded-md border border-gray-600 bg-white px-3 text-sm hover:border-gray-900 hover:shadow-sm transition"
             >
               <div className="flex items-center">
                 <Calendar className="w-4 h-4 text-gray-600 mr-2" />
@@ -743,9 +750,109 @@ export default function AdminHome() {
                 </span>
               </div>
 
-              <ChevronDown className="w-4 h-4 text-gray-600 ml-2" />
+              <ChevronDown
+                className={`w-4 h-4 text-gray-600 ml-2 transition-transform ${dataPickerAberto ? "rotate-180" : ""
+                  }`}
+              />
             </button>
+
+            {/* POPUP do calendário */}
+            {dataPickerAberto && (
+              <div className="absolute z-20 mt-1 right-0 w-72 rounded-lg border border-gray-200 bg-white shadow-lg p-3">
+                {/* Cabeçalho: mês/ano + setas */}
+                <div className="flex items-center justify-between mb-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setMesExibido(
+                        (prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1)
+                      )
+                    }
+                    className="p-1 rounded hover:bg-gray-100"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+
+                  <span className="font-semibold text-sm">
+                    {mesExibido.toLocaleDateString("pt-BR", {
+                      month: "long",
+                      year: "numeric",
+                    })}
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setMesExibido(
+                        (prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1)
+                      )
+                    }
+                    className="p-1 rounded hover:bg-gray-100"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Dias da semana */}
+                <div className="grid grid-cols-7 text-[11px] text-gray-500 mb-1">
+                  {["D", "S", "T", "Q", "Q", "S", "S"].map((d) => (
+                    <div key={d} className="text-center">
+                      {d}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Dias do mês (6 linhas) */}
+                <div className="grid grid-cols-7 gap-1 text-sm">
+                  {(() => {
+                    const first = new Date(
+                      mesExibido.getFullYear(),
+                      mesExibido.getMonth(),
+                      1
+                    );
+                    const startWeekday = first.getDay(); // 0=Dom
+                    const startDate = new Date(first);
+                    startDate.setDate(first.getDate() - startWeekday);
+
+                    const todayIso = isoFromDate(new Date());
+
+                    return Array.from({ length: 42 }, (_, i) => {
+                      const d = new Date(startDate);
+                      d.setDate(startDate.getDate() + i);
+
+                      const iso = isoFromDate(d);
+                      const isCurrentMonth = d.getMonth() === mesExibido.getMonth();
+                      const isSelected = data === iso;
+                      const isToday = todayIso === iso;
+
+                      return (
+                        <button
+                          key={iso}
+                          type="button"
+                          onClick={() => {
+                            setData(iso);
+                            setDataPickerAberto(false);
+                          }}
+                          className={[
+                            "h-8 w-8 rounded-full flex items-center justify-center mx-auto",
+                            !isCurrentMonth ? "text-gray-300" : "text-gray-800",
+                            isToday && !isSelected ? "border border-orange-400" : "",
+                            isSelected
+                              ? "bg-orange-600 text-white font-semibold"
+                              : "hover:bg-orange-50",
+                          ].join(" ")}
+                        >
+                          {d.getDate()}
+                        </button>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+            )}
           </div>
+
+
 
           {/* Campo Horário – card inteiro clicável com dropdown customizado */}
           <div
