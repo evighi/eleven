@@ -1015,7 +1015,7 @@ export default function AdminHome() {
 
                     const cardBase =
                       "relative flex flex-col justify-between items-stretch " +
-                      "rounded-2xl border shadow-sm px-3 py-3 min-h-[200px] " + // 👈 estiquei um pouco
+                      "rounded-2xl border shadow-sm px-6 py-3" + // 👈 estiquei um pouco
                       "transition-transform hover:-translate-y-0.5 hover:shadow-md " +
                       (clickable ? "cursor-pointer" : "cursor-not-allowed opacity-90");
 
