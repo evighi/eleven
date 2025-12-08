@@ -1094,7 +1094,7 @@ export default function AdminHome() {
 
                             {!q.disponivel && !q.bloqueada && isComum && (
                               <Image
-                                src="/iconescards/icone_reserva_avulsa.png"
+                                src="/iconescards/icone_reservado.png"
                                 alt="Reserva avulsa"
                                 width={32}
                                 height={32}
@@ -1170,7 +1170,7 @@ export default function AdminHome() {
 
                               {!q.disponivel && !q.bloqueada && isComum && (
                                 <Image
-                                  src="/iconescards/icone_reservado.png"
+                                  src="/iconescards/icone_reserva_avulsa.png"
                                   alt="Avulsa"
                                   width={12}
                                   height={12}
