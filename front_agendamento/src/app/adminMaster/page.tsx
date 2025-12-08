@@ -1116,7 +1116,7 @@ export default function AdminHome() {
                             </>
                           ) : hasAgendamento ? (
                             <>
-                              <p className="text-sm font-extrabold leading-tight">
+                              <p className="text-sm font-bold leading-tight">
                                 {firstAndLastName(q.usuario?.nome)}
                               </p>
                               {q.usuario?.celular && (
