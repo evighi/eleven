@@ -158,7 +158,7 @@ export default function AdminHeader() {
                     className="
                       shrink-0
                       inline-flex items-center 
-                      px-4 py-3
+                      px-3 py-3
                       rounded-md 
                       bg-gray-100 
                       border border-[#AFAFAF]
