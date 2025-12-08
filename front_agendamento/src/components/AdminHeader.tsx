@@ -63,7 +63,7 @@ export default function AdminHeader() {
       <div>
         <div className="max-w-6xl mx-auto bg-white">
           {/* HEADER SUPERIOR */}
-          <header className="text-gray-800 px-4 py-3 flex items-center justify-between border-b-2 border-gray-400">
+          <header className="text-gray-800 px-4 py-3 flex items-center justify-between border-b-2 border-gray-350">
             <Link
               href="/adminMaster"
               aria-label="Ir para o painel Admin Master"
