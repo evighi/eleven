@@ -976,7 +976,7 @@ export default function AdminHome() {
             {Object.keys(disponibilidade.quadras).map((esporte) => (
               <section
                 key={esporte}
-                className="rounded-4xl bg-gray-50/80 border border-gray-100 px-4 sm:px-6 py-5 shadow-sm"
+                className="rounded-3xl bg-gray-50/80 border border-gray-100 px-4 sm:px-6 py-5 shadow-sm"
               >
                 {/* HEADER DO ESPORTE */}
                 <div className="flex items-baseline justify-between mb-4">
@@ -1012,7 +1012,7 @@ export default function AdminHome() {
 
                     const cardBase =
                       "relative flex flex-col justify-between items-stretch " +
-                      "rounded-2xl border shadow-sm px-3 py-3 " +
+                      "rounded-3xl border shadow-sm px-3 py-3 " +
                       "transition-transform hover:-translate-y-0.5 hover:shadow-md " +
                       (clickable ? "cursor-pointer" : "cursor-not-allowed opacity-90");
 
