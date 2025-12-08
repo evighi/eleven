@@ -1140,7 +1140,7 @@ export default function AdminHome() {
                             <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-white/60 overflow-hidden">
                               {q.bloqueada && (
                                 <Image
-                                  src="/iconescards/icone_bloqueada.png"
+                                  src="/iconescards/icone_bloqueado.png"
                                   alt="Bloqueado"
                                   width={12}
                                   height={12}
@@ -1191,8 +1191,6 @@ export default function AdminHome() {
                 </div>
               </section>
             ))}
-
-
 
 
             {/* ================== CHURRASQUEIRAS ================== */}
