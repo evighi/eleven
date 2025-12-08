@@ -976,10 +976,10 @@ export default function AdminHome() {
             {Object.keys(disponibilidade.quadras).map((esporte) => (
               <section
                 key={esporte}
-                className="rounded-3xl bg-gray-50/80 border border-gray-100 px-4 sm:px-6 py-5 shadow-sm"
+                className="rounded-3xl bg-gray-100 border border-gray-100 px-4 sm:px-6 py-5 shadow-sm"
               >
                 {/* HEADER DO ESPORTE */}
-                <div className="flex items-baseline justify-between mb-4 bg-gray-200">
+                <div className="flex items-baseline justify-between mb-4">
                   <h2 className="text-xl font-semibold text-gray-800">
                     {esporte}
                   </h2>
