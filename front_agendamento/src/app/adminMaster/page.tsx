@@ -1012,7 +1012,7 @@ export default function AdminHome() {
 
                     const cardBase =
                       "relative flex flex-col justify-between items-stretch " +
-                      "rounded-2xl border shadow-sm px-3 py-3 " + // 👈 mais largo, sem min-height
+                      "rounded-2xl border shadow-sm px-3 py-3 " +
                       "transition-transform hover:-translate-y-0.5 hover:shadow-md " +
                       (clickable ? "cursor-pointer" : "cursor-not-allowed opacity-90");
 
@@ -1050,13 +1050,12 @@ export default function AdminHome() {
                         {/* TOPO: NOME DA QUADRA / LOCAL */}
                         <p
                           className="
-    text-[10px] font-medium text-gray-500 mb-1
-    whitespace-nowrap overflow-hidden text-ellipsis
-  "
+                text-[10px] font-medium text-gray-500 mb-1
+                whitespace-nowrap overflow-hidden text-ellipsis
+              "
                         >
                           Quadra {q.numero} • {q.nome}
                         </p>
-
 
                         {/* MIolo: ÍCONE GRANDE + NOME / BLOQUEADO / DISPONÍVEL */}
                         <div className="flex-1 flex flex-col items-center justify-center text-center py-1">
@@ -1119,12 +1118,26 @@ export default function AdminHome() {
                               <p className="text-sm font-bold leading-tight">
                                 {firstAndLastName(q.usuario?.nome)}
                               </p>
-                              {q.usuario?.celular && (
-                                <p className="text-[10px] mt-1 whitespace-nowrap overflow-hidden text-ellipsis">
-                                  {q.usuario.celular}
-                                </p>
-                              )}
 
+                              {/* TELEFONE + ÍCONE (preto ou laranja) */}
+                              {q.usuario?.celular && (
+                                <div className="mt-1 flex items-center justify-center gap-1 text-[10px] whitespace-nowrap overflow-hidden text-ellipsis">
+                                  <Image
+                                    src={
+                                      isComum
+                                        ? "/iconescards/iconetelefonelaranja.png"
+                                        : "/iconescards/iconetelefone.png"
+                                    }
+                                    alt="Telefone"
+                                    width={14}
+                                    height={14}
+                                    className="w-3.5 h-3.5 flex-shrink-0"
+                                  />
+                                  <span className="overflow-hidden text-ellipsis">
+                                    {q.usuario.celular}
+                                  </span>
+                                </div>
+                              )}
                             </>
                           ) : (
                             <p className="text-sm font-extrabold leading-tight">
@@ -1133,9 +1146,9 @@ export default function AdminHome() {
                           )}
                         </div>
 
-                        {/* BASE DO CARD: tipo + ÍCONE PEQUENO */}
-                        <div className="mt-1 pt-1 flex items-center justify-between text-[11px]">
-                          <div className="flex items-center gap-1">
+                        {/* BASE DO CARD: tipo + ÍCONE PEQUENO CENTRALIZADO */}
+                        <div className="mt-1 pt-1 flex items-center justify-center text-[11px]">
+                          <div className="inline-flex items-center gap-1">
                             {/* ÍCONE PEQUENO POR STATUS */}
                             <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-white/60 overflow-hidden">
                               {q.bloqueada && (
@@ -1181,9 +1194,6 @@ export default function AdminHome() {
 
                             <span className="font-semibold">{labelTipo}</span>
                           </div>
-
-                          {/* Direita vazia agora pra ficar igual ao layout */}
-                          <span className="text-[10px] opacity-0 select-none">.</span>
                         </div>
                       </button>
                     );
