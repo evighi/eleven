@@ -1129,8 +1129,8 @@ export default function AdminHome() {
                                         : "/iconescards/icone_phone.png"
                                     }
                                     alt="Telefone"
-                                    width={14}
-                                    height={14}
+                                    width={12}
+                                    height={12}
                                     className="w-3.5 h-3.5 flex-shrink-0"
                                   />
                                   <span className="overflow-hidden text-ellipsis">
