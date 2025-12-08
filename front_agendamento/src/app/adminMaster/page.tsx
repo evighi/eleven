@@ -1094,7 +1094,7 @@ export default function AdminHome() {
 
                             {!q.disponivel && !q.bloqueada && isComum && (
                               <Image
-                                src="/iconescards/iconeusuariolaranja.png"
+                                src="/iconescards/icone-reservado.png"
                                 alt="Reserva avulsa"
                                 width={32}
                                 height={32}
