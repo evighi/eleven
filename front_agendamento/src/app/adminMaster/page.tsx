@@ -1064,7 +1064,7 @@ export default function AdminHome() {
                           <div className="mb-1">
                             {q.bloqueada && (
                               <Image
-                                src="/iconescards/iconebloqueada.png"
+                                src="/iconescards/icone_bloqueado.png"
                                 alt="Quadra bloqueada"
                                 width={32}
                                 height={32}
@@ -1074,7 +1074,7 @@ export default function AdminHome() {
 
                             {q.disponivel && !q.bloqueada && (
                               <Image
-                                src="/iconescards/iconedisponivel.png"
+                                src="/iconescards/icone_liberado.png"
                                 alt="Quadra disponível"
                                 width={32}
                                 height={32}
@@ -1084,7 +1084,7 @@ export default function AdminHome() {
 
                             {!q.disponivel && !q.bloqueada && isPermanente && (
                               <Image
-                                src="/iconescards/iconeusuario.png"
+                                src="/iconescards/icone-permanente.png"
                                 alt="Reserva permanente"
                                 width={32}
                                 height={32}
