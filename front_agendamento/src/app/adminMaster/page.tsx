@@ -1084,7 +1084,7 @@ export default function AdminHome() {
 
                             {!q.disponivel && !q.bloqueada && isPermanente && (
                               <Image
-                                src="/iconescards/icone-reservado.png"
+                                src="/iconescards/icone-permanente.png"
                                 alt="Reserva permanente"
                                 width={32}
                                 height={32}
@@ -1140,7 +1140,7 @@ export default function AdminHome() {
                             <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-white/60 overflow-hidden">
                               {q.bloqueada && (
                                 <Image
-                                  src="/iconescards/iconebloqueada.png"
+                                  src="/iconescards/icone_bloqueada.png"
                                   alt="Bloqueado"
                                   width={12}
                                   height={12}
@@ -1150,7 +1150,7 @@ export default function AdminHome() {
 
                               {q.disponivel && !q.bloqueada && (
                                 <Image
-                                  src="/iconescards/iconedisponivel.png"
+                                  src="/iconescards/icone_liberado.png"
                                   alt="Disponível"
                                   width={12}
                                   height={12}
@@ -1170,7 +1170,7 @@ export default function AdminHome() {
 
                               {!q.disponivel && !q.bloqueada && isComum && (
                                 <Image
-                                  src="/iconescards/icone_reserva_avulsa.png"
+                                  src="/iconescards/icone_reservado.png"
                                   alt="Avulsa"
                                   width={12}
                                   height={12}
