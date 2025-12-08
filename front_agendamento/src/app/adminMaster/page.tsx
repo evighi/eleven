@@ -1125,8 +1125,8 @@ export default function AdminHome() {
                                   <Image
                                     src={
                                       isComum
-                                        ? "/iconescards/iconetelefonelaranja.png"
-                                        : "/iconescards/iconetelefone.png"
+                                        ? "/iconescards/icone_phone_orange.png"
+                                        : "/iconescards/icone_phone.png"
                                     }
                                     alt="Telefone"
                                     width={14}
