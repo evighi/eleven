@@ -1077,7 +1077,7 @@ export default function AdminHome() {
                                 alt="Quadra disponível"
                                 width={32}
                                 height={32}
-                                className="w-8 h-8"
+                                className="w-6 h-6"
                               />
                             )}
 
@@ -1087,7 +1087,7 @@ export default function AdminHome() {
                                 alt="Reserva permanente"
                                 width={32}
                                 height={32}
-                                className="w-8 h-8"
+                                className="w-6 h-6"
                               />
                             )}
 
@@ -1097,7 +1097,7 @@ export default function AdminHome() {
                                 alt="Reserva avulsa"
                                 width={32}
                                 height={32}
-                                className="w-8 h-8"
+                                className="w-6 h-6"
                               />
                             )}
                           </div>
