@@ -1104,7 +1104,7 @@ export default function AdminHome() {
 
                           {q.bloqueada ? (
                             <>
-                              <p className="text-sm font-extrabold leading-tight">
+                              <p className="text-sm font-semibold leading-tight">
                                 {q.usuario?.nome
                                   ? firstAndLastName(q.usuario.nome)
                                   : "Bloqueado"}
@@ -1167,7 +1167,7 @@ export default function AdminHome() {
                                   alt="Disponível"
                                   width={12}
                                   height={12}
-                                  className="w-3 h-3"
+                                  className="w-2 h-2"
                                 />
                               )}
 
@@ -1177,7 +1177,7 @@ export default function AdminHome() {
                                   alt="Permanente"
                                   width={12}
                                   height={12}
-                                  className="w-3 h-3"
+                                  className="w-2 h-2"
                                 />
                               )}
 
@@ -1187,7 +1187,7 @@ export default function AdminHome() {
                                   alt="Avulsa"
                                   width={12}
                                   height={12}
-                                  className="w-3 h-3"
+                                  className="w-2 h-2"
                                 />
                               )}
                             </span>
