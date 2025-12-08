@@ -1121,7 +1121,7 @@ export default function AdminHome() {
 
                               {/* TELEFONE + ÍCONE (preto ou laranja) */}
                               {q.usuario?.celular && (
-                                <div className="mt-1 flex items-center justify-center gap-1 text-[8px] whitespace-nowrap overflow-hidden text-ellipsis">
+                                <div className="mt-1 flex items-center justify-center gap-1 text-[10px] whitespace-nowrap overflow-hidden text-ellipsis">
                                   <Image
                                     src={
                                       isComum
@@ -1129,9 +1129,9 @@ export default function AdminHome() {
                                         : "/iconescards/icone_phone.png"
                                     }
                                     alt="Telefone"
-                                    width={10}
-                                    height={10}
-                                    className="w-3.5 h-3.5 flex-shrink-0"
+                                    width={14}
+                                    height={14}
+                                    className="w-2.5 h-2.5 flex-shrink-0"
                                   />
                                   <span className="overflow-hidden text-ellipsis">
                                     {q.usuario.celular}
