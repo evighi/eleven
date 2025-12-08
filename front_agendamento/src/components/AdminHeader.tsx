@@ -63,7 +63,7 @@ export default function AdminHeader() {
       <div>
         <div className="max-w-6xl mx-auto bg-white">
           {/* HEADER SUPERIOR */}
-          <header className="text-gray-800 px-4 py-3 flex items-center justify-between border-b-2 border-gray-500">
+          <header className="text-gray-800 px-4 py-3 flex items-center justify-between border-b-2 border-gray-300">
             <Link
               href="/adminMaster"
               aria-label="Ir para o painel Admin Master"
@@ -79,7 +79,7 @@ export default function AdminHeader() {
               />
             </Link>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-4">
               <button
                 type="button"
                 className="p-2 rounded-full text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition"
