@@ -1680,7 +1680,7 @@ export default function AdminHome() {
                 <div className="mb-1">
                   {/* troque o src pelo ícone desejado */}
                   <Image
-                    src="/iconesmodal/icone_atleta.png"
+                    src="/iconescards/icone-permanente.png"
                     alt="Atleta"
                     width={40}
                     height={40}
@@ -1703,7 +1703,7 @@ export default function AdminHome() {
                     <div className="flex items-center justify-center gap-1 text-xs text-gray-600">
                       {/* ÍCONE TELEFONE */}
                       <Image
-                        src="/iconesmodal/icone_telefone.png"
+                        src="/iconescards/icone_phone.png"
                         alt="Telefone"
                         width={14}
                         height={14}
@@ -1722,7 +1722,7 @@ export default function AdminHome() {
                   <div className="flex items-center gap-2">
                     {/* ÍCONE DIA */}
                     <Image
-                      src="/iconesmodal/icone_dia.png"
+                      src="/iconescards/calendario.png"
                       alt="Dia"
                       width={14}
                       height={14}
@@ -1741,7 +1741,7 @@ export default function AdminHome() {
                     <div className="flex items-center gap-2">
                       {/* ÍCONE ESPORTE */}
                       <Image
-                        src="/iconesmodal/icone_esporte.png"
+                        src="/iconescards/bolaesporte.png"
                         alt="Esporte"
                         width={14}
                         height={14}
@@ -1764,7 +1764,7 @@ export default function AdminHome() {
                     <div className="flex items-center gap-2">
                       {/* ÍCONE HORÁRIO */}
                       <Image
-                        src="/iconesmodal/icone_horario.png"
+                        src="/iconescards/horario.png"
                         alt="Horário"
                         width={14}
                         height={14}
@@ -1781,7 +1781,7 @@ export default function AdminHome() {
                     <div className="flex items-center gap-2">
                       {/* ÍCONE TURNO */}
                       <Image
-                        src="/iconesmodal/icone_turno.png"
+                        src="/iconescards/horario.png"
                         alt="Turno"
                         width={14}
                         height={14}
@@ -1800,7 +1800,7 @@ export default function AdminHome() {
                   <div className="flex items-center gap-2">
                     {/* ÍCONE TIPO (permanente/avulsa) */}
                     <Image
-                      src="/iconesmodal/icone_tipo.png"
+                      src="/iconescards/icone_reserva_avulsa.png"
                       alt="Tipo de reserva"
                       width={14}
                       height={14}
@@ -1846,7 +1846,7 @@ export default function AdminHome() {
                             {celular && (
                               <div className="mt-1 flex items-center gap-1 text-[11px] text-gray-600">
                                 <Image
-                                  src="/iconesmodal/icone_telefone_mini.png"
+                                  src="/iconescards/icone_phone.png"
                                   alt="Telefone"
                                   width={12}
                                   height={12}
@@ -1888,7 +1888,7 @@ export default function AdminHome() {
                     >
                       {/* ÍCONE "+" LARANJA */}
                       <Image
-                        src="/iconesmodal/icone_add_jogador.png"
+                        src="/iconescards/addmais.png"
                         alt="Adicionar jogadores"
                         width={12}
                         height={12}
