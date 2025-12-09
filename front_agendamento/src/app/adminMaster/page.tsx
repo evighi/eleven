@@ -1628,134 +1628,347 @@ export default function AdminHome() {
 
       {/* MODAL DE DETALHES */}
       {agendamentoSelecionado && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg shadow-lg w-80 relative max-h-[90vh] overflow-auto">
-            <h2 className="text-lg font-semibold mb-4">Detalhes do Agendamento</h2>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl mx-4 max-h-[90vh] relative flex flex-col overflow-hidden">
+            {/* BOTÃO X */}
+            <button
+              onClick={() => setAgendamentoSelecionado(null)}
+              className="absolute right-5 top-4 text-gray-400 hover:text-gray-600 text-xl leading-none"
+              aria-label="Fechar"
+            >
+              ×
+            </button>
 
-            <p>
-              <strong>Dia:</strong> {agendamentoSelecionado.dia}
-            </p>
-            {agendamentoSelecionado.horario && (
-              <p>
-                <strong>Horário:</strong> {agendamentoSelecionado.horario}
+            {/* CABEÇALHO */}
+            <div className="px-8 pt-6 pb-3 border-b border-gray-200">
+              <p className="text-sm font-semibold text-orange-600">
+                Informações de reserva
               </p>
-            )}
-            {agendamentoSelecionado.turno && (
-              <p>
-                <strong>Turno:</strong> {agendamentoSelecionado.turno}
-              </p>
-            )}
-            <p>
-              <strong>Usuário:</strong>{" "}
-              {typeof agendamentoSelecionado.usuario === "string"
-                ? agendamentoSelecionado.usuario
-                : [agendamentoSelecionado.usuario?.nome, agendamentoSelecionado.usuario?.celular]
-                  .filter(Boolean)
-                  .join(" — ")}
-            </p>
-            {agendamentoSelecionado.esporte && (
-              <p>
-                <strong>Esporte:</strong> {agendamentoSelecionado.esporte}
-              </p>
-            )}
-            <p>
-              <strong>Tipo:</strong> {agendamentoSelecionado.tipoReserva}
-            </p>
 
-            {/* Jogadores (comum/quadra) — sem o botão "+" */}
-            {agendamentoSelecionado.tipoReserva === "comum" &&
-              agendamentoSelecionado.tipoLocal === "quadra" && (
-                <div className="mt-2">
-                  <strong>Jogadores:</strong>
-                  <ul className="list-disc list-inside text-sm text-gray-700 mt-2">
-                    {agendamentoSelecionado.jogadores.length > 0 ? (
-                      agendamentoSelecionado.jogadores.map((j, idx) => (
-                        <li key={idx}>{j.nome}</li>
-                      ))
-                    ) : (
-                      <li>Nenhum jogador cadastrado</li>
+              {/* QUADRA / CHURRASQUEIRA */}
+              <p className="mt-4 text-xs text-gray-500 text-center">
+                {agendamentoSelecionado.tipoLocal === "churrasqueira"
+                  ? "Churrasqueira"
+                  : "Quadra"}
+                :{" "}
+                <span className="text-gray-900 font-semibold">
+                  {/* usando any pra não dar erro de tipo */}
+                  {(() => {
+                    const sel = agendamentoSelecionado as any;
+
+                    const numero = sel.numero ?? sel.quadraNumero ?? sel.churrasqueiraNumero;
+                    const nome = sel.nome ?? sel.quadraNome ?? sel.churrasqueiraNome;
+
+                    const numeroFmt =
+                      typeof numero === "number" || typeof numero === "string"
+                        ? String(numero).padStart(2, "0")
+                        : "";
+
+                    if (!numeroFmt && !nome) return "-";
+
+                    return `${numeroFmt}${nome ? ` - ${nome}` : ""}`;
+                  })()}
+                </span>
+              </p>
+            </div>
+
+            {/* CONTEÚDO ROLÁVEL */}
+            <div className="px-8 py-6 space-y-6 overflow-y-auto">
+              {/* BLOCO ATLETA */}
+              <div className="flex flex-col items-center text-center gap-2">
+                {/* ÍCONE GRANDE DO ATLETA */}
+                <div className="mb-1">
+                  {/* troque o src pelo ícone desejado */}
+                  <Image
+                    src="/iconesmodal/icone_atleta.png"
+                    alt="Atleta"
+                    width={40}
+                    height={40}
+                    className="w-10 h-10"
+                  />
+                </div>
+
+                <p className="text-sm text-gray-600">
+                  Atleta:{" "}
+                  <span className="font-semibold text-gray-900">
+                    {typeof agendamentoSelecionado.usuario === "string"
+                      ? agendamentoSelecionado.usuario
+                      : agendamentoSelecionado.usuario?.nome || "-"}
+                  </span>
+                </p>
+
+                {/* Sócio + telefone */}
+                <div className="flex flex-col sm:flex-row gap-1 sm:gap-4 items-center justify-center text-xs text-gray-600">
+                  <div className="flex items-center gap-1">
+                    {/* ÍCONE ESTRELA DE SÓCIO */}
+                    <Image
+                      src="/iconesmodal/icone_socio.png"
+                      alt="Sócio"
+                      width={14}
+                      height={14}
+                      className="w-3.5 h-3.5"
+                    />
+                    <span>Sócio</span>
+                  </div>
+
+                  {typeof agendamentoSelecionado.usuario !== "string" &&
+                    agendamentoSelecionado.usuario?.celular && (
+                      <div className="flex items-center gap-1">
+                        {/* ÍCONE TELEFONE */}
+                        <Image
+                          src="/iconesmodal/icone_telefone.png"
+                          alt="Telefone"
+                          width={14}
+                          height={14}
+                          className="w-3.5 h-3.5"
+                        />
+                        <span>{agendamentoSelecionado.usuario.celular}</span>
+                      </div>
                     )}
-                  </ul>
+                </div>
+              </div>
+
+              {/* LINHA DE INFOS (Dia, Horário/Turno, Esporte, Tipo) */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-8 gap-y-4 text-xs sm:text-sm">
+                {/* Dia */}
+                <div className="flex items-start gap-2">
+                  <Image
+                    src="/iconesmodal/icone_dia.png"
+                    alt="Dia"
+                    width={14}
+                    height={14}
+                    className="mt-[2px] w-3.5 h-3.5"
+                  />
+                  <div>
+                    <p className="text-[11px] text-gray-500">Dia</p>
+                    <p className="font-semibold text-gray-800">
+                      {formatarDataBR(agendamentoSelecionado.dia)}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Horário ou Turno */}
+                {agendamentoSelecionado.horario && (
+                  <div className="flex items-start gap-2">
+                    <Image
+                      src="/iconesmodal/icone_horario.png"
+                      alt="Horário"
+                      width={14}
+                      height={14}
+                      className="mt-[2px] w-3.5 h-3.5"
+                    />
+                    <div>
+                      <p className="text-[11px] text-gray-500">Horário</p>
+                      <p className="font-semibold text-gray-800">
+                        {agendamentoSelecionado.horario}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {agendamentoSelecionado.turno && !agendamentoSelecionado.horario && (
+                  <div className="flex items-start gap-2">
+                    <Image
+                      src="/iconesmodal/icone_turno.png"
+                      alt="Turno"
+                      width={14}
+                      height={14}
+                      className="mt-[2px] w-3.5 h-3.5"
+                    />
+                    <div>
+                      <p className="text-[11px] text-gray-500">Turno</p>
+                      <p className="font-semibold text-gray-800">
+                        {agendamentoSelecionado.turno}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Esporte */}
+                {agendamentoSelecionado.esporte && (
+                  <div className="flex items-start gap-2">
+                    <Image
+                      src="/iconesmodal/icone_esporte.png"
+                      alt="Esporte"
+                      width={14}
+                      height={14}
+                      className="mt-[2px] w-3.5 h-3.5"
+                    />
+                    <div>
+                      <p className="text-[11px] text-gray-500">Esporte</p>
+                      <p className="font-semibold text-gray-800">
+                        {agendamentoSelecionado.esporte}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tipo (Permanente / Avulsa / etc) */}
+                <div className="flex items-start gap-2">
+                  <Image
+                    src="/iconesmodal/icone_tipo.png"
+                    alt="Tipo de reserva"
+                    width={14}
+                    height={14}
+                    className="mt-[2px] w-3.5 h-3.5"
+                  />
+                  <div>
+                    <p className="text-[11px] text-gray-500">Tipo</p>
+                    <p className="font-semibold text-gray-800">
+                      {agendamentoSelecionado.tipoReserva === "permanente"
+                        ? "Permanente"
+                        : agendamentoSelecionado.tipoReserva === "comum"
+                          ? "Avulsa"
+                          : agendamentoSelecionado.tipoReserva}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* JOGADORES */}
+              {agendamentoSelecionado.tipoLocal === "quadra" && (
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-gray-800">
+                    Jogadores:
+                  </p>
+
+                  <div className="flex flex-wrap gap-3">
+                    {agendamentoSelecionado.jogadores.length > 0 ? (
+                      agendamentoSelecionado.jogadores.map((jog, idx) => {
+                        const celular = (jog as any).celular as string | undefined; // 👈 aqui
+
+                        return (
+                          <div
+                            key={idx}
+                            className="flex-1 min-w-[140px] max-w-[180px] bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-700"
+                          >
+                            <p className="font-semibold text-[13px] truncate">{jog.nome}</p>
+
+                            {/* ícone de sócio (se quiser condicional, troca depois) */}
+                            <div className="mt-1 flex items-center gap-1 text-[11px] text-gray-600">
+                              <Image
+                                src="/iconesmodal/icone_socio_mini.png"
+                                alt="Sócio"
+                                width={12}
+                                height={12}
+                                className="w-3 h-3"
+                              />
+                              <span> Sócio </span>
+                            </div>
+
+                            {celular && (
+                              <div className="mt-1 flex items-center gap-1 text-[11px] text-gray-600">
+                                <Image
+                                  src="/iconesmodal/icone_telefone_mini.png"
+                                  alt="Telefone"
+                                  width={12}
+                                  height={12}
+                                  className="w-3 h-3"
+                                />
+                                <span className="truncate">{celular}</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <p className="text-xs text-gray-500">
+                        Nenhum jogador cadastrado
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
 
-            {/* BOTÕES DE AÇÃO */}
-            {/* Adicionar Jogadores (somente comum/quadra) */}
-            {agendamentoSelecionado.tipoReserva === "comum" &&
-              agendamentoSelecionado.tipoLocal === "quadra" && (
+              {/* BOTÃO ADICIONAR JOGADORES (quando permitido) */}
+              {agendamentoSelecionado.tipoReserva === "comum" &&
+                agendamentoSelecionado.tipoLocal === "quadra" && (
+                  <div className="pt-2">
+                    <button
+                      onClick={abrirModalAdicionarJogadores}
+                      className="w-full inline-flex items-center justify-center gap-2 rounded-full border border-orange-500 bg-orange-50 text-orange-700 text-sm py-2 cursor-pointer hover:bg-orange-100 transition"
+                    >
+                      {/* ÍCONE "+" LARANJA */}
+                      <Image
+                        src="/iconesmodal/icone_add_jogador.png"
+                        alt="Adicionar jogadores"
+                        width={14}
+                        height={14}
+                        className="w-3.5 h-3.5"
+                      />
+                      <span>Adicionar mais jogadores</span>
+                    </button>
+                  </div>
+                )}
+
+              {/* LINHA DIVISÓRIA */}
+              <div className="border-t border-gray-200 pt-4 mt-2" />
+
+              {/* BOTÕES DE AÇÃO INFERIORES */}
+              <div className="flex flex-col sm:flex-row gap-3">
                 <button
-                  onClick={abrirModalAdicionarJogadores}
-                  className="mt-4 w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 px-4 rounded cursor-pointer"
+                  onClick={abrirFluxoCancelamento}
+                  className="flex-1 border border-red-500 text-red-600 hover:bg-red-50 rounded-full py-2 text-sm font-medium cursor-pointer"
                 >
-                  Adicionar jogadores
+                  Cancelar reserva
                 </button>
-              )}
 
-            {/* Transferir (quadra: comum e permanente) */}
-            {agendamentoSelecionado.tipoLocal === "quadra" && (
-              <button
-                onClick={abrirModalTransferir}
-                disabled={loadingTransferencia}
-                className="mt-3 w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded cursor-pointer disabled:opacity-60"
-              >
-                {loadingTransferencia ? "Transferindo..." : "Transferir Agendamento"}
-              </button>
-            )}
+                {agendamentoSelecionado.tipoLocal === "quadra" && (
+                  <button
+                    onClick={abrirModalTransferir}
+                    disabled={loadingTransferencia}
+                    className="flex-1 border border-gray-400 text-gray-700 hover:bg-gray-50 rounded-full py-2 text-sm font-medium cursor-pointer disabled:opacity-60"
+                  >
+                    {loadingTransferencia
+                      ? "Transferindo..."
+                      : "Transferir reserva"}
+                  </button>
+                )}
+              </div>
+            </div>
 
-            <button
-              onClick={abrirFluxoCancelamento}
-              className="mt-3 w-full bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded cursor-pointer"
-            >
-              Cancelar Agendamento
-            </button>
-
-            <button
-              onClick={() => setAgendamentoSelecionado(null)}
-              className="mt-3 w-full bg-orange-600 hover:bg-orange-700 text-white py-2 px-4 rounded cursor-pointer"
-            >
-              Fechar
-            </button>
-
-            {/* Confirmar cancelamento (somente agendamentos não permanentes) */}
+            {/* OVERLAYS INTERNOS (mantive sua lógica, só mudando o visual para combinar) */}
             {confirmarCancelamento && (
-              <div className="absolute inset-0 bg-black bg-opacity-80 flex flex-col items-center justify-center p-4 rounded-xl border shadow-lg z-50">
-                <p className="text-center text-white mb-4">
-                  Tem certeza que deseja cancelar este agendamento?
-                </p>
-                <div className="flex gap-4">
-                  <button
-                    onClick={cancelarAgendamento}
-                    disabled={loadingCancelamento}
-                    className="bg-red-600 text-white px-4 py-1 rounded hover:bg-red-700 transition cursor-pointer"
-                  >
-                    {loadingCancelamento ? "Cancelando..." : "Sim"}
-                  </button>
-                  <button
-                    onClick={() => setConfirmarCancelamento(false)}
-                    className="bg-gray-300 text-black px-4 py-1 rounded hover:bg-gray-400 transition cursor-pointer"
-                  >
-                    Não
-                  </button>
+              <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center p-4 rounded-3xl z-50">
+                <div className="bg-white rounded-2xl p-5 w-full max-w-sm text-center shadow-xl">
+                  <p className="text-sm text-gray-800 mb-4">
+                    Tem certeza que deseja cancelar esta reserva?
+                  </p>
+                  <div className="flex gap-3 justify-center">
+                    <button
+                      onClick={cancelarAgendamento}
+                      disabled={loadingCancelamento}
+                      className="px-4 py-2 rounded-full bg-red-600 text-white hover:bg-red-700 text-sm cursor-pointer disabled:opacity-70"
+                    >
+                      {loadingCancelamento ? "Cancelando..." : "Sim, cancelar"}
+                    </button>
+                    <button
+                      onClick={() => setConfirmarCancelamento(false)}
+                      className="px-4 py-2 rounded-full bg-gray-200 hover:bg-gray-300 text-sm cursor-pointer"
+                    >
+                      Não
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
 
             {mostrarOpcoesCancelamento && (
-              <div className="absolute inset-0 bg-black bg-opacity-80 flex flex-col items-center justify-center p-4 rounded-xl border shadow-lg z-50">
-                <div className="bg-white rounded-lg p-4 w-full">
-                  <p className="font-semibold mb-3 text-center">
+              <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center p-4 rounded-3xl z-50">
+                <div className="bg-white rounded-2xl p-5 w-full max-w-sm shadow-xl">
+                  <p className="font-semibold mb-3 text-center text-sm">
                     Cancelar apenas 1 dia deste agendamento permanente
                   </p>
                   <div className="grid gap-3">
                     <button
                       onClick={abrirExcecao}
-                      className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded cursor-pointer"
+                      className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-full cursor-pointer text-sm"
                     >
                       Cancelar APENAS 1 dia
                     </button>
                     <button
                       onClick={() => setMostrarOpcoesCancelamento(false)}
-                      className="w-full bg-gray-300 hover:bg-gray-400 text-black py-2 rounded cursor-pointer"
+                      className="w-full bg-gray-200 hover:bg-gray-300 text-black py-2 rounded-full cursor-pointer text-sm"
                     >
                       Voltar
                     </button>
@@ -1764,20 +1977,23 @@ export default function AdminHome() {
               </div>
             )}
 
-            {/* Modal de EXCEÇÃO (cancelar apenas 1 dia) */}
             {mostrarExcecaoModal && (
-              <div className="absolute inset-0 bg-black bg-opacity-80 flex items-center justify-center p-4 rounded-xl z-50">
-                <div className="bg-white rounded-lg p-4 w-full max-w-sm">
-                  <h3 className="text-lg font-semibold mb-2">Cancelar apenas 1 dia</h3>
+              <div className="absolute inset-0 bg-black/70 flex items-center justify-center p-4 rounded-3xl z-50">
+                <div className="bg-white rounded-2xl p-5 w-full max-w-sm shadow-xl">
+                  <h3 className="text-lg font-semibold mb-2">
+                    Cancelar apenas 1 dia
+                  </h3>
                   <p className="text-sm text-gray-600 mb-3">
-                    Selecione uma data (próximas {datasExcecao.length} datas que caem em{" "}
-                    {agendamentoSelecionado?.diaSemana ?? "-"}).
+                    Selecione uma data (próximas {datasExcecao.length} datas que
+                    caem em {agendamentoSelecionado?.diaSemana ?? "-"}).
                   </p>
 
                   {datasExcecao.length === 0 ? (
-                    <div className="text-sm text-gray-600">Não há datas disponíveis.</div>
+                    <div className="text-sm text-gray-600 mb-3">
+                      Não há datas disponíveis.
+                    </div>
                   ) : (
-                    <div className="grid grid-cols-2 gap-2 max-h-64 overflow-auto mb-3">
+                    <div className="grid grid-cols-2 gap-2 max-h-64 overflow-auto mb-4">
                       {datasExcecao.map((d) => {
                         const ativo = dataExcecaoSelecionada === d;
                         return (
@@ -1785,7 +2001,7 @@ export default function AdminHome() {
                             key={d}
                             type="button"
                             onClick={() => setDataExcecaoSelecionada(d)}
-                            className={`px-3 py-2 rounded border text-sm ${ativo
+                            className={`px-3 py-2 rounded-full border text-sm ${ativo
                               ? "border-indigo-600 bg-indigo-50 text-indigo-700"
                               : "border-gray-300 hover:bg-gray-50"
                               }`}
@@ -1802,7 +2018,7 @@ export default function AdminHome() {
                       type="button"
                       onClick={() => setMostrarExcecaoModal(false)}
                       disabled={postandoExcecao}
-                      className="px-3 py-2 rounded bg-gray-300 hover:bg-gray-400"
+                      className="px-4 py-2 rounded-full bg-gray-200 hover:bg-gray-300 text-sm"
                     >
                       Voltar
                     </button>
@@ -1810,7 +2026,7 @@ export default function AdminHome() {
                       type="button"
                       onClick={confirmarExcecao}
                       disabled={!dataExcecaoSelecionada || postandoExcecao}
-                      className="px-3 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:bg-indigo-300"
+                      className="px-4 py-2 rounded-full bg-indigo-600 text-white hover:bg-indigo-700 disabled:bg-indigo-300 text-sm"
                     >
                       {postandoExcecao ? "Salvando..." : "Confirmar exceção"}
                     </button>
@@ -1821,6 +2037,7 @@ export default function AdminHome() {
           </div>
         </div>
       )}
+
 
       {/* MODAL DE TRANSFERÊNCIA */}
       {abrirModalTransferencia && (
