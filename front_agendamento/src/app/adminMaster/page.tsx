@@ -1518,7 +1518,7 @@ export default function AdminHome() {
 
                           {!disponivel && isPerm && (
                             <Image
-                              src="/iconescards/icone-permanente.png"
+                              src="/iconescards/icone_churrasqueira_permanente.png"
                               alt="Reserva permanente"
                               width={32}
                               height={32}
@@ -1528,7 +1528,7 @@ export default function AdminHome() {
 
                           {!disponivel && isComum && (
                             <Image
-                              src="/iconescards/icone-reservado.png"
+                              src="/iconescards/icone_churrasqueira_avulsa.png"
                               alt="Reserva avulsa"
                               width={32}
                               height={32}
