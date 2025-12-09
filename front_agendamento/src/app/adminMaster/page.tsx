@@ -1769,7 +1769,7 @@ export default function AdminHome() {
                 {agendamentoSelecionado.turno && !agendamentoSelecionado.horario && (
                   <div className="flex items-start gap-2">
                     <Image
-                      src="/iconesmodal/icone_turno.png"
+                      src="/iconesmodal/vector.svg"
                       alt="Turno"
                       width={14}
                       height={14}
@@ -1788,7 +1788,7 @@ export default function AdminHome() {
                 {agendamentoSelecionado.esporte && (
                   <div className="flex items-start gap-2">
                     <Image
-                      src="/iconesmodal/icone_esporte.png"
+                      src="/iconescards/vector.svg"
                       alt="Esporte"
                       width={14}
                       height={14}
@@ -1806,7 +1806,7 @@ export default function AdminHome() {
                 {/* Tipo (Permanente / Avulsa / etc) */}
                 <div className="flex items-start gap-2">
                   <Image
-                    src="/iconesmodal/icone_tipo.png"
+                    src="/iconescards/icone_permanente_name.png"
                     alt="Tipo de reserva"
                     width={14}
                     height={14}
@@ -1844,22 +1844,10 @@ export default function AdminHome() {
                           >
                             <p className="font-semibold text-[13px] truncate">{jog.nome}</p>
 
-                            {/* ícone de sócio (se quiser condicional, troca depois) */}
-                            <div className="mt-1 flex items-center gap-1 text-[11px] text-gray-600">
-                              <Image
-                                src="/iconesmodal/icone_socio_mini.png"
-                                alt="Sócio"
-                                width={12}
-                                height={12}
-                                className="w-3 h-3"
-                              />
-                              <span> Sócio </span>
-                            </div>
-
                             {celular && (
                               <div className="mt-1 flex items-center gap-1 text-[11px] text-gray-600">
                                 <Image
-                                  src="/iconesmodal/icone_telefone_mini.png"
+                                  src="/iconescards/icone_phone.png"
                                   alt="Telefone"
                                   width={12}
                                   height={12}
