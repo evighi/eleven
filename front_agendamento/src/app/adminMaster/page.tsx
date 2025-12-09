@@ -1640,7 +1640,7 @@ export default function AdminHome() {
             </button>
 
             {/* CABEÇALHO */}
-            <div className="px-8 pt-6 pb-3 border-b border-gray-200">
+            <div className="px-8 pt-6 pb-3">
               {/* título laranja, alinhado à esquerda */}
               <p className="text-sm font-semibold text-orange-600 text-left">
                 Informações de reserva
