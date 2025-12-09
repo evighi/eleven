@@ -1629,7 +1629,7 @@ export default function AdminHome() {
       {/* MODAL DE DETALHES */}
       {agendamentoSelecionado && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl mx-4 max-h-[90vh] relative flex flex-col overflow-hidden">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] relative flex flex-col overflow-hidden">
             {/* BOTÃO X */}
             <button
               onClick={() => setAgendamentoSelecionado(null)}
@@ -1640,23 +1640,23 @@ export default function AdminHome() {
             </button>
 
             {/* CABEÇALHO */}
-            <div className="px-8 pt-6 pb-3 border-b border-gray-200">
+            <div className="px-8 pt-6 pb-4 border-b border-gray-200 text-center">
               <p className="text-sm font-semibold text-orange-600">
                 Informações de reserva
               </p>
 
               {/* QUADRA / CHURRASQUEIRA */}
-              <p className="mt-4 text-xs text-gray-500 text-center">
+              <p className="mt-4 text-xs text-gray-500">
                 {agendamentoSelecionado.tipoLocal === "churrasqueira"
                   ? "Churrasqueira"
                   : "Quadra"}
                 :{" "}
                 <span className="text-gray-900 font-semibold">
-                  {/* usando any pra não dar erro de tipo */}
                   {(() => {
                     const sel = agendamentoSelecionado as any;
 
-                    const numero = sel.numero ?? sel.quadraNumero ?? sel.churrasqueiraNumero;
+                    const numero =
+                      sel.numero ?? sel.quadraNumero ?? sel.churrasqueiraNumero;
                     const nome = sel.nome ?? sel.quadraNome ?? sel.churrasqueiraNome;
 
                     const numeroFmt =
@@ -1697,130 +1697,125 @@ export default function AdminHome() {
                   </span>
                 </p>
 
-                {/* Sócio + telefone */}
-                <div className="flex flex-col sm:flex-row gap-1 sm:gap-4 items-center justify-center text-xs text-gray-600">
-                  <div className="flex items-center gap-1">
-                    {/* ÍCONE ESTRELA DE SÓCIO */}
+                {/* Telefone */}
+                {typeof agendamentoSelecionado.usuario !== "string" &&
+                  agendamentoSelecionado.usuario?.celular && (
+                    <div className="flex items-center justify-center gap-1 text-xs text-gray-600">
+                      {/* ÍCONE TELEFONE */}
+                      <Image
+                        src="/iconesmodal/icone_telefone.png"
+                        alt="Telefone"
+                        width={14}
+                        height={14}
+                        className="w-3.5 h-3.5"
+                      />
+                      <span>{agendamentoSelecionado.usuario.celular}</span>
+                    </div>
+                  )}
+              </div>
+
+              {/* LINHA DE INFOS (Dia / Esporte / Horário / Tipo) */}
+              <div className="flex flex-col sm:flex-row gap-y-2 gap-x-8 text-xs">
+                {/* COLUNA ESQUERDA (Dia / Esporte) */}
+                <div className="flex-1 space-y-1">
+                  {/* Dia */}
+                  <div className="flex items-center gap-2">
+                    {/* ÍCONE DIA */}
                     <Image
-                      src="/iconesmodal/icone_socio.png"
-                      alt="Sócio"
+                      src="/iconesmodal/icone_dia.png"
+                      alt="Dia"
                       width={14}
                       height={14}
                       className="w-3.5 h-3.5"
                     />
-                    <span>Sócio</span>
+                    <span className="text-gray-600">
+                      Dia:{" "}
+                      <span className="font-semibold text-gray-800">
+                        {formatarDataBR(agendamentoSelecionado.dia)}
+                      </span>
+                    </span>
                   </div>
 
-                  {typeof agendamentoSelecionado.usuario !== "string" &&
-                    agendamentoSelecionado.usuario?.celular && (
-                      <div className="flex items-center gap-1">
-                        {/* ÍCONE TELEFONE */}
-                        <Image
-                          src="/iconesmodal/icone_telefone.png"
-                          alt="Telefone"
-                          width={14}
-                          height={14}
-                          className="w-3.5 h-3.5"
-                        />
-                        <span>{agendamentoSelecionado.usuario.celular}</span>
-                      </div>
-                    )}
-                </div>
-              </div>
-
-              {/* LINHA DE INFOS (Dia, Horário/Turno, Esporte, Tipo) */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-8 gap-y-4 text-xs sm:text-sm">
-                {/* Dia */}
-                <div className="flex items-start gap-2">
-                  <Image
-                    src="/iconesmodal/icone_dia.png"
-                    alt="Dia"
-                    width={14}
-                    height={14}
-                    className="mt-[2px] w-3.5 h-3.5"
-                  />
-                  <div>
-                    <p className="text-[11px] text-gray-500">Dia</p>
-                    <p className="font-semibold text-gray-800">
-                      {formatarDataBR(agendamentoSelecionado.dia)}
-                    </p>
-                  </div>
+                  {/* Esporte */}
+                  {agendamentoSelecionado.esporte && (
+                    <div className="flex items-center gap-2">
+                      {/* ÍCONE ESPORTE */}
+                      <Image
+                        src="/iconesmodal/icone_esporte.png"
+                        alt="Esporte"
+                        width={14}
+                        height={14}
+                        className="w-3.5 h-3.5"
+                      />
+                      <span className="text-gray-600">
+                        Esporte:{" "}
+                        <span className="font-semibold text-gray-800">
+                          {agendamentoSelecionado.esporte}
+                        </span>
+                      </span>
+                    </div>
+                  )}
                 </div>
 
-                {/* Horário ou Turno */}
-                {agendamentoSelecionado.horario && (
-                  <div className="flex items-start gap-2">
+                {/* COLUNA DIREITA (Horário/Turno / Tipo) */}
+                <div className="flex-1 space-y-1">
+                  {/* Horário ou Turno */}
+                  {agendamentoSelecionado.horario ? (
+                    <div className="flex items-center gap-2">
+                      {/* ÍCONE HORÁRIO */}
+                      <Image
+                        src="/iconesmodal/icone_horario.png"
+                        alt="Horário"
+                        width={14}
+                        height={14}
+                        className="w-3.5 h-3.5"
+                      />
+                      <span className="text-gray-600">
+                        Horário:{" "}
+                        <span className="font-semibold text-gray-800">
+                          {agendamentoSelecionado.horario}
+                        </span>
+                      </span>
+                    </div>
+                  ) : agendamentoSelecionado.turno ? (
+                    <div className="flex items-center gap-2">
+                      {/* ÍCONE TURNO */}
+                      <Image
+                        src="/iconesmodal/icone_turno.png"
+                        alt="Turno"
+                        width={14}
+                        height={14}
+                        className="w-3.5 h-3.5"
+                      />
+                      <span className="text-gray-600">
+                        Turno:{" "}
+                        <span className="font-semibold text-gray-800">
+                          {agendamentoSelecionado.turno}
+                        </span>
+                      </span>
+                    </div>
+                  ) : null}
+
+                  {/* Tipo */}
+                  <div className="flex items-center gap-2">
+                    {/* ÍCONE TIPO (permanente/avulsa) */}
                     <Image
-                      src="/iconesmodal/icone_horario.png"
-                      alt="Horário"
+                      src="/iconesmodal/icone_tipo.png"
+                      alt="Tipo de reserva"
                       width={14}
                       height={14}
-                      className="mt-[2px] w-3.5 h-3.5"
+                      className="w-3.5 h-3.5"
                     />
-                    <div>
-                      <p className="text-[11px] text-gray-500">Horário</p>
-                      <p className="font-semibold text-gray-800">
-                        {agendamentoSelecionado.horario}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {agendamentoSelecionado.turno && !agendamentoSelecionado.horario && (
-                  <div className="flex items-start gap-2">
-                    <Image
-                      src="/iconesmodal/vector.svg"
-                      alt="Turno"
-                      width={14}
-                      height={14}
-                      className="mt-[2px] w-3.5 h-3.5"
-                    />
-                    <div>
-                      <p className="text-[11px] text-gray-500">Turno</p>
-                      <p className="font-semibold text-gray-800">
-                        {agendamentoSelecionado.turno}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Esporte */}
-                {agendamentoSelecionado.esporte && (
-                  <div className="flex items-start gap-2">
-                    <Image
-                      src="/iconescards/vector.svg"
-                      alt="Esporte"
-                      width={14}
-                      height={14}
-                      className="mt-[2px] w-3.5 h-3.5"
-                    />
-                    <div>
-                      <p className="text-[11px] text-gray-500">Esporte</p>
-                      <p className="font-semibold text-gray-800">
-                        {agendamentoSelecionado.esporte}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Tipo (Permanente / Avulsa / etc) */}
-                <div className="flex items-start gap-2">
-                  <Image
-                    src="/iconescards/icone_permanente_name.png"
-                    alt="Tipo de reserva"
-                    width={14}
-                    height={14}
-                    className="mt-[2px] w-3.5 h-3.5"
-                  />
-                  <div>
-                    <p className="text-[11px] text-gray-500">Tipo</p>
-                    <p className="font-semibold text-gray-800">
-                      {agendamentoSelecionado.tipoReserva === "permanente"
-                        ? "Permanente"
-                        : agendamentoSelecionado.tipoReserva === "comum"
-                          ? "Avulsa"
-                          : agendamentoSelecionado.tipoReserva}
-                    </p>
+                    <span className="text-gray-600">
+                      Tipo:{" "}
+                      <span className="font-semibold text-gray-800">
+                        {agendamentoSelecionado.tipoReserva === "permanente"
+                          ? "Permanente"
+                          : agendamentoSelecionado.tipoReserva === "comum"
+                            ? "Avulsa"
+                            : agendamentoSelecionado.tipoReserva}
+                      </span>
+                    </span>
                   </div>
                 </div>
               </div>
@@ -1828,26 +1823,30 @@ export default function AdminHome() {
               {/* JOGADORES */}
               {agendamentoSelecionado.tipoLocal === "quadra" && (
                 <div className="space-y-2">
-                  <p className="text-sm font-semibold text-gray-800">
+                  <p className="text-sm font-semibold text-orange-600">
                     Jogadores:
                   </p>
 
                   <div className="flex flex-wrap gap-3">
                     {agendamentoSelecionado.jogadores.length > 0 ? (
                       agendamentoSelecionado.jogadores.map((jog, idx) => {
-                        const celular = (jog as any).celular as string | undefined; // 👈 aqui
+                        const celular = (jog as any).celular as
+                          | string
+                          | undefined;
 
                         return (
                           <div
                             key={idx}
                             className="flex-1 min-w-[140px] max-w-[180px] bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-700"
                           >
-                            <p className="font-semibold text-[13px] truncate">{jog.nome}</p>
+                            <p className="font-semibold text-[13px] truncate">
+                              {jog.nome}
+                            </p>
 
                             {celular && (
                               <div className="mt-1 flex items-center gap-1 text-[11px] text-gray-600">
                                 <Image
-                                  src="/iconescards/icone_phone.png"
+                                  src="/iconesmodal/icone_telefone_mini.png"
                                   alt="Telefone"
                                   width={12}
                                   height={12}
@@ -1915,7 +1914,7 @@ export default function AdminHome() {
               </div>
             </div>
 
-            {/* OVERLAYS INTERNOS (mantive sua lógica, só mudando o visual para combinar) */}
+            {/* --- OVERLAYS INTERNOS (mantidos, só estilos ajustados) --- */}
             {confirmarCancelamento && (
               <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center p-4 rounded-3xl z-50">
                 <div className="bg-white rounded-2xl p-5 w-full max-w-sm text-center shadow-xl">
@@ -1990,8 +1989,8 @@ export default function AdminHome() {
                             type="button"
                             onClick={() => setDataExcecaoSelecionada(d)}
                             className={`px-3 py-2 rounded-full border text-sm ${ativo
-                              ? "border-indigo-600 bg-indigo-50 text-indigo-700"
-                              : "border-gray-300 hover:bg-gray-50"
+                                ? "border-indigo-600 bg-indigo-50 text-indigo-700"
+                                : "border-gray-300 hover:bg-gray-50"
                               }`}
                           >
                             {toDdMm(d)}
