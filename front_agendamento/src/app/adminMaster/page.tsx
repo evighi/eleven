@@ -1219,42 +1219,62 @@ export default function AdminHome() {
 
 
             {/* ================== CHURRASQUEIRAS ================== */}
-            <section className="rounded-3xl bg-gray-50/80 border border-gray-100 px-4 sm:px-6 py-5 shadow-sm">
+            <section className="rounded-3xl bg-gray-100 border border-gray-100 px-4 sm:px-6 py-5 shadow-sm">
+              {/* Header igual ao das quadras */}
               <div className="flex items-baseline justify-between mb-4">
-                <h2 className="text-lg sm:text-xl font-semibold text-gray-800">
+                <h2 className="text-xl font-semibold text-gray-800">
                   Churrasqueiras
                 </h2>
-                <p className="hidden sm:block text-xs text-gray-500">
-                  {formatarDataBR(data)}
-                </p>
               </div>
 
-              {/* DIA */}
+              {/* === DIA === */}
               <h3 className="text-sm font-semibold mb-2 text-gray-700">
                 Dia
               </h3>
-              <div className="flex gap-3 sm:gap-4 overflow-x-auto pb-4">
+              <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 mb-4">
                 {disponibilidade.churrasqueiras.map((c: ChurrasqueiraDisp) => {
-                  const diaInfo = c.disponibilidade.find(
-                    (t) => t.turno === "DIA"
-                  );
+                  const diaInfo = c.disponibilidade.find((t) => t.turno === "DIA");
+
                   const disponivel = !!diaInfo?.disponivel;
-                  const isPerm =
-                    diaInfo?.tipoReserva === "permanente";
+                  const isPerm = diaInfo?.tipoReserva === "permanente";
                   const isComum = diaInfo?.tipoReserva === "comum";
 
+                  // mesmas cores de status dos cards de quadra
                   let statusClasses =
-                    "border-gray-300 bg-gray-50 text-gray-800";
+                    "border-slate-300 bg-slate-50 text-slate-800";
+
                   if (disponivel) {
-                    statusClasses =
-                      "border-emerald-300 bg-emerald-50 text-emerald-700";
+                    statusClasses = "border-emerald-400 bg-emerald-50 text-emerald-800";
                   } else if (isComum) {
-                    statusClasses =
-                      "border-amber-300 bg-amber-50 text-amber-800";
+                    statusClasses = "border-amber-400 bg-amber-50 text-amber-800";
                   } else if (isPerm) {
-                    statusClasses =
-                      "border-gray-300 bg-gray-50 text-gray-800";
+                    statusClasses = "border-slate-300 bg-slate-50 text-slate-800";
                   }
+
+                  // cor da linha "Churrasqueira X • Nome"
+                  const nomeChurrasColor =
+                    disponivel
+                      ? "text-emerald-700"
+                      : isComum
+                        ? "text-amber-700"
+                        : isPerm
+                          ? "text-gray-500"
+                          : "text-gray-500";
+
+                  // só o primeiro nome da churrasqueira
+                  const primeiroNomeChurras =
+                    (c.nome || "").split(" ")[0] || c.nome;
+
+                  const cardBase =
+                    "relative flex flex-col justify-between items-stretch " +
+                    "rounded-2xl border shadow-sm px-3 py-3 " +
+                    "transition-transform hover:-translate-y-0.5 hover:shadow-md cursor-pointer";
+
+                  const labelTipo = disponivel
+                    ? "Disponível"
+                    : isPerm
+                      ? "Permanente"
+                      : "Avulsa";
 
                   return (
                     <button
@@ -1269,7 +1289,7 @@ export default function AdminHome() {
                             churrasqueiraNome: c.nome,
                             churrasqueiraNumero: c.numero,
                           });
-                        } else {
+                        } else if (diaInfo) {
                           abrirDetalhes(
                             {
                               ...(diaInfo as DetalheItemMin),
@@ -1279,80 +1299,175 @@ export default function AdminHome() {
                           );
                         }
                       }}
-                      className={`min-w-[150px] sm:min-w-[170px] max-w-[180px] rounded-2xl border shadow-sm px-3 py-3 flex flex-col justify-between text-left cursor-pointer transition-transform hover:-translate-y-0.5 hover:shadow-md ${statusClasses}`}
+                      className={`${cardBase} ${statusClasses}`}
                     >
-                      <p className="text-[11px] font-medium text-gray-500 mb-1">
-                        Churrasqueira {c.numero} • {c.nome}
+                      {/* TOPO: NOME DA CHURRASQUEIRA / LOCAL */}
+                      <p
+                        className={`
+              text-[10px] font-medium mb-1
+              whitespace-nowrap overflow-hidden text-ellipsis
+              ${nomeChurrasColor}
+            `}
+                      >
+                        Churrasqueira {c.numero} • {primeiroNomeChurras}
                       </p>
 
-                      {disponivel ? (
-                        <div className="mt-4 mb-4">
-                          <p className="text-sm font-extrabold">
-                            Disponível
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="mt-2 mb-3">
-                          <p className="text-sm font-extrabold leading-tight">
-                            {firstAndLastName(diaInfo?.usuario?.nome)}
-                          </p>
-                          {diaInfo?.usuario?.celular && (
-                            <p className="text-[11px] text-gray-700">
-                              {diaInfo.usuario.celular}
-                            </p>
+                      {/* MIolo: ÍCONE GRANDE + NOME / DISPONÍVEL / RESERVA */}
+                      <div className="flex-1 flex flex-col items-center justify-center text-center py-1">
+                        {/* ÍCONE GRANDE POR STATUS */}
+                        <div className="mb-1">
+                          {disponivel && (
+                            <Image
+                              src="/iconescards/icone_liberado.png"
+                              alt="Churrasqueira disponível"
+                              width={32}
+                              height={32}
+                              className="w-4 h-4"
+                            />
+                          )}
+
+                          {!disponivel && isPerm && (
+                            <Image
+                              src="/iconescards/icone-permanente.png"
+                              alt="Reserva permanente"
+                              width={32}
+                              height={32}
+                              className="w-4 h-4"
+                            />
+                          )}
+
+                          {!disponivel && isComum && (
+                            <Image
+                              src="/iconescards/icone-reservado.png"
+                              alt="Reserva avulsa"
+                              width={32}
+                              height={32}
+                              className="w-4 h-4"
+                            />
                           )}
                         </div>
-                      )}
 
-                      <div className="mt-auto pt-1 flex items-center justify-between text-[11px]">
-                        <div className="flex items-center gap-1">
-                          {/* ÍCONE D IA AQUI */}
-                          <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-current text-[9px]">
-                            {/* icon */}
+                        {disponivel ? (
+                          <p className="text-sm font-extrabold leading-tight">
+                            Disponível
+                          </p>
+                        ) : (
+                          <>
+                            <p className="text-sm font-extrabold leading-tight">
+                              {firstAndLastName(diaInfo?.usuario?.nome)}
+                            </p>
+
+                            {/* TELEFONE + ÍCONE (preto/laranja) */}
+                            {diaInfo?.usuario?.celular && (
+                              <div className="mt-1 flex items-center justify-center gap-1 text-[10px] whitespace-nowrap overflow-hidden text-ellipsis">
+                                <Image
+                                  src={
+                                    isComum
+                                      ? "/iconescards/icone_phone_orange.png"
+                                      : "/iconescards/icone_phone.png"
+                                  }
+                                  alt="Telefone"
+                                  width={14}
+                                  height={14}
+                                  className="w-2.5 h-2.5 flex-shrink-0"
+                                />
+                                <span className="overflow-hidden text-ellipsis">
+                                  {diaInfo.usuario.celular}
+                                </span>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+
+                      {/* BASE DO CARD: tipo + ÍCONE PEQUENO CENTRALIZADO */}
+                      <div className="mt-1 pt-1 flex items-center justify-center text-[11px]">
+                        <div className="inline-flex items-center gap-1">
+                          <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-white/60 overflow-hidden">
+                            {disponivel && (
+                              <Image
+                                src="/iconescards/icone_liberado.png"
+                                alt="Disponível"
+                                width={12}
+                                height={12}
+                                className="w-2.5 h-2.5"
+                              />
+                            )}
+
+                            {!disponivel && isPerm && (
+                              <Image
+                                src="/iconescards/icone_permanente_name.png"
+                                alt="Permanente"
+                                width={12}
+                                height={12}
+                                className="w-2.5 h-2.5"
+                              />
+                            )}
+
+                            {!disponivel && isComum && (
+                              <Image
+                                src="/iconescards/icone_reserva_avulsa.png"
+                                alt="Avulsa"
+                                width={12}
+                                height={12}
+                                className="w-2.5 h-2.5"
+                              />
+                            )}
                           </span>
-                          <span className="font-semibold">
-                            {disponivel
-                              ? "Disponível"
-                              : isPerm
-                                ? "Permanente"
-                                : "Avulsa"}
-                          </span>
+
+                          <span className="font-semibold">{labelTipo}</span>
                         </div>
-                        <span className="text-[10px] opacity-80">
-                          Dia
-                        </span>
                       </div>
                     </button>
                   );
                 })}
               </div>
 
-              {/* NOITE */}
+              {/* === NOITE === */}
               <h3 className="text-sm font-semibold mb-2 text-gray-700">
                 Noite
               </h3>
-              <div className="flex gap-3 sm:gap-4 overflow-x-auto">
+              <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
                 {disponibilidade.churrasqueiras.map((c: ChurrasqueiraDisp) => {
-                  const noiteInfo = c.disponibilidade.find(
-                    (t) => t.turno === "NOITE"
-                  );
+                  const noiteInfo = c.disponibilidade.find((t) => t.turno === "NOITE");
+
                   const disponivel = !!noiteInfo?.disponivel;
-                  const isPerm =
-                    noiteInfo?.tipoReserva === "permanente";
+                  const isPerm = noiteInfo?.tipoReserva === "permanente";
                   const isComum = noiteInfo?.tipoReserva === "comum";
 
                   let statusClasses =
-                    "border-gray-300 bg-gray-50 text-gray-800";
+                    "border-slate-300 bg-slate-50 text-slate-800";
+
                   if (disponivel) {
-                    statusClasses =
-                      "border-emerald-300 bg-emerald-50 text-emerald-700";
+                    statusClasses = "border-emerald-400 bg-emerald-50 text-emerald-800";
                   } else if (isComum) {
-                    statusClasses =
-                      "border-amber-300 bg-amber-50 text-amber-800";
+                    statusClasses = "border-amber-400 bg-amber-50 text-amber-800";
                   } else if (isPerm) {
-                    statusClasses =
-                      "border-gray-300 bg-gray-50 text-gray-800";
+                    statusClasses = "border-slate-300 bg-slate-50 text-slate-800";
                   }
+
+                  const nomeChurrasColor =
+                    disponivel
+                      ? "text-emerald-700"
+                      : isComum
+                        ? "text-amber-700"
+                        : isPerm
+                          ? "text-gray-500"
+                          : "text-gray-500";
+
+                  const primeiroNomeChurras =
+                    (c.nome || "").split(" ")[0] || c.nome;
+
+                  const cardBase =
+                    "relative flex flex-col justify-between items-stretch " +
+                    "rounded-2xl border shadow-sm px-3 py-3 " +
+                    "transition-transform hover:-translate-y-0.5 hover:shadow-md cursor-pointer";
+
+                  const labelTipo = disponivel
+                    ? "Disponível"
+                    : isPerm
+                      ? "Permanente"
+                      : "Avulsa";
 
                   return (
                     <button
@@ -1367,7 +1482,7 @@ export default function AdminHome() {
                             churrasqueiraNome: c.nome,
                             churrasqueiraNumero: c.numero,
                           });
-                        } else {
+                        } else if (noiteInfo) {
                           abrirDetalhes(
                             {
                               ...(noiteInfo as DetalheItemMin),
@@ -1377,48 +1492,119 @@ export default function AdminHome() {
                           );
                         }
                       }}
-                      className={`min-w-[150px] sm:min-w-[170px] max-w-[180px] rounded-2xl border shadow-sm px-3 py-3 flex flex-col justify-between text-left cursor-pointer transition-transform hover:-translate-y-0.5 hover:shadow-md ${statusClasses}`}
+                      className={`${cardBase} ${statusClasses}`}
                     >
-                      <p className="text-[11px] font-medium text-gray-500 mb-1">
-                        Churrasqueira {c.numero} • {c.nome}
+                      <p
+                        className={`
+              text-[10px] font-medium mb-1
+              whitespace-nowrap overflow-hidden text-ellipsis
+              ${nomeChurrasColor}
+            `}
+                      >
+                        Churrasqueira {c.numero} • {primeiroNomeChurras}
                       </p>
 
-                      {disponivel ? (
-                        <div className="mt-4 mb-4">
-                          <p className="text-sm font-extrabold">
-                            Disponível
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="mt-2 mb-3">
-                          <p className="text-sm font-extrabold leading-tight">
-                            {firstAndLastName(noiteInfo?.usuario?.nome)}
-                          </p>
-                          {noiteInfo?.usuario?.celular && (
-                            <p className="text-[11px] text-gray-700">
-                              {noiteInfo.usuario.celular}
-                            </p>
+                      <div className="flex-1 flex flex-col items-center justify-center text-center py-1">
+                        <div className="mb-1">
+                          {disponivel && (
+                            <Image
+                              src="/iconescards/icone_liberado.png"
+                              alt="Churrasqueira disponível"
+                              width={32}
+                              height={32}
+                              className="w-4 h-4"
+                            />
+                          )}
+
+                          {!disponivel && isPerm && (
+                            <Image
+                              src="/iconescards/icone-permanente.png"
+                              alt="Reserva permanente"
+                              width={32}
+                              height={32}
+                              className="w-4 h-4"
+                            />
+                          )}
+
+                          {!disponivel && isComum && (
+                            <Image
+                              src="/iconescards/icone-reservado.png"
+                              alt="Reserva avulsa"
+                              width={32}
+                              height={32}
+                              className="w-4 h-4"
+                            />
                           )}
                         </div>
-                      )}
 
-                      <div className="mt-auto pt-1 flex items-center justify-between text-[11px]">
-                        <div className="flex items-center gap-1">
-                          {/* ÍCONE NOITE AQUI */}
-                          <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-current text-[9px]">
-                            {/* icon */}
+                        {disponivel ? (
+                          <p className="text-sm font-extrabold leading-tight">
+                            Disponível
+                          </p>
+                        ) : (
+                          <>
+                            <p className="text-sm font-extrabold leading-tight">
+                              {firstAndLastName(noiteInfo?.usuario?.nome)}
+                            </p>
+
+                            {noiteInfo?.usuario?.celular && (
+                              <div className="mt-1 flex items-center justify-center gap-1 text-[10px] whitespace-nowrap overflow-hidden text-ellipsis">
+                                <Image
+                                  src={
+                                    isComum
+                                      ? "/iconescards/icone_phone_orange.png"
+                                      : "/iconescards/icone_phone.png"
+                                  }
+                                  alt="Telefone"
+                                  width={14}
+                                  height={14}
+                                  className="w-2.5 h-2.5 flex-shrink-0"
+                                />
+                                <span className="overflow-hidden text-ellipsis">
+                                  {noiteInfo.usuario.celular}
+                                </span>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+
+                      <div className="mt-1 pt-1 flex items-center justify-center text-[11px]">
+                        <div className="inline-flex items-center gap-1">
+                          <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-white/60 overflow-hidden">
+                            {disponivel && (
+                              <Image
+                                src="/iconescards/icone_liberado.png"
+                                alt="Disponível"
+                                width={12}
+                                height={12}
+                                className="w-2.5 h-2.5"
+                              />
+                            )}
+
+                            {!disponivel && isPerm && (
+                              <Image
+                                src="/iconescards/icone_permanente_name.png"
+                                alt="Permanente"
+                                width={12}
+                                height={12}
+                                className="w-2.5 h-2.5"
+                              />
+                            )}
+
+                            {!disponivel && isComum && (
+                              <Image
+                                src="/iconescards/icone_reserva_avulsa.png"
+                                alt="Avulsa"
+                                width={12}
+                                height={12}
+                                className="w-2.5 h-2.5"
+                              />
+                            )}
                           </span>
-                          <span className="font-semibold">
-                            {disponivel
-                              ? "Disponível"
-                              : isPerm
-                                ? "Permanente"
-                                : "Avulsa"}
-                          </span>
+
+                          <span className="font-semibold">{labelTipo}</span>
                         </div>
-                        <span className="text-[10px] opacity-80">
-                          Noite
-                        </span>
                       </div>
                     </button>
                   );
