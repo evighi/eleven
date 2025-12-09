@@ -985,7 +985,7 @@ export default function AdminHome() {
                   </h2>
                 </div>
 
-                {/* GRID DE CARDS – até 8 por linha em telas grandes, sem scroll */}
+                {/* GRID DE CARDS */}
                 <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
                   {disponibilidade.quadras[esporte].map((q: DisponQuadra) => {
                     const clickable = !q.bloqueada;
@@ -1009,6 +1009,20 @@ export default function AdminHome() {
                     } else if (isComum) {
                       statusClasses = "border-amber-400 bg-amber-50 text-amber-800";
                     }
+
+                    // cor do texto "Quadra X • Nome" de acordo com o status
+                    const nomeQuadraColor =
+                      q.bloqueada
+                        ? "text-red-700"
+                        : q.disponivel
+                          ? "text-emerald-700"
+                          : isComum
+                            ? "text-amber-700"
+                            : "text-gray-500"; // permanente / padrão
+
+                    // apenas o primeiro nome da quadra
+                    const primeiroNomeQuadra =
+                      (q.nome || "").split(" ")[0] || q.nome;
 
                     const cardBase =
                       "relative flex flex-col justify-between items-stretch " +
@@ -1049,12 +1063,13 @@ export default function AdminHome() {
                       >
                         {/* TOPO: NOME DA QUADRA / LOCAL */}
                         <p
-                          className="
-                text-[10px] font-medium text-gray-500 mb-1
+                          className={`
+                text-[10px] font-medium mb-1
                 whitespace-nowrap overflow-hidden text-ellipsis
-              "
+                ${nomeQuadraColor}
+              `}
                         >
-                          Quadra {q.numero} • {q.nome}
+                          Quadra {q.numero} • {primeiroNomeQuadra}
                         </p>
 
                         {/* MIolo: ÍCONE GRANDE + NOME / BLOQUEADO / DISPONÍVEL */}
