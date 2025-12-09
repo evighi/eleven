@@ -1640,18 +1640,19 @@ export default function AdminHome() {
             </button>
 
             {/* CABEÇALHO */}
-            <div className="px-8 pt-6 pb-4 border-b border-gray-200 text-center">
-              <p className="text-sm font-semibold text-orange-600">
+            <div className="px-8 pt-6 pb-3 border-b border-gray-200">
+              {/* título laranja, alinhado à esquerda */}
+              <p className="text-sm font-semibold text-orange-600 text-left">
                 Informações de reserva
               </p>
 
-              {/* QUADRA / CHURRASQUEIRA */}
-              <p className="mt-4 text-xs text-gray-500">
+              {/* linha "Quadra: 01 - Petry Imóveis" centralizada */}
+              <p className="mt-4 text-xs text-gray-500 text-center">
                 {agendamentoSelecionado.tipoLocal === "churrasqueira"
                   ? "Churrasqueira"
                   : "Quadra"}
                 :{" "}
-                <span className="text-gray-900 font-semibold">
+                <span className="font-semibold text-gray-900">
                   {(() => {
                     const sel = agendamentoSelecionado as any;
 
@@ -1666,11 +1667,13 @@ export default function AdminHome() {
 
                     if (!numeroFmt && !nome) return "-";
 
+                    // "01 - Petry Imóveis"
                     return `${numeroFmt}${nome ? ` - ${nome}` : ""}`;
                   })()}
                 </span>
               </p>
             </div>
+
 
             {/* CONTEÚDO ROLÁVEL */}
             <div className="px-8 py-6 space-y-6 overflow-y-auto">
