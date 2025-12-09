@@ -1870,23 +1870,35 @@ export default function AdminHome() {
               {/* BOTÃO ADICIONAR JOGADORES (quando permitido) */}
               {agendamentoSelecionado.tipoReserva === "comum" &&
                 agendamentoSelecionado.tipoLocal === "quadra" && (
-                  <div className="pt-2">
+                  <div className="pt-2 flex justify-center">
                     <button
                       onClick={abrirModalAdicionarJogadores}
-                      className="w-full inline-flex items-center justify-center gap-2 rounded-full border border-orange-500 bg-orange-50 text-orange-700 text-sm py-2 cursor-pointer hover:bg-orange-100 transition"
+                      className="
+          inline-flex items-center justify-center
+          gap-1
+          rounded-lg
+          border border-orange-500
+          bg-orange-50
+          text-orange-700 text-xs
+          px-3 py-1
+          cursor-pointer
+          hover:bg-orange-100
+          transition
+        "
                     >
                       {/* ÍCONE "+" LARANJA */}
                       <Image
                         src="/iconesmodal/icone_add_jogador.png"
                         alt="Adicionar jogadores"
-                        width={14}
-                        height={14}
-                        className="w-3.5 h-3.5"
+                        width={12}
+                        height={12}
+                        className="w-3 h-3"
                       />
                       <span>Adicionar mais jogadores</span>
                     </button>
                   </div>
                 )}
+
 
               {/* LINHA DIVISÓRIA */}
               <div className="border-t border-gray-200 pt-4 mt-2" />
@@ -1895,7 +1907,7 @@ export default function AdminHome() {
               <div className="flex flex-col sm:flex-row gap-3">
                 <button
                   onClick={abrirFluxoCancelamento}
-                  className="flex-1 border border-red-500 text-red-600 hover:bg-red-50 rounded-full py-2 text-sm font-medium cursor-pointer"
+                  className="flex-1 border border-red-500 text-red-600 hover:bg-red-50 rounded-lg py-2 text-sm font-medium cursor-pointer"
                 >
                   Cancelar reserva
                 </button>
@@ -1904,7 +1916,7 @@ export default function AdminHome() {
                   <button
                     onClick={abrirModalTransferir}
                     disabled={loadingTransferencia}
-                    className="flex-1 border border-gray-400 text-gray-700 hover:bg-gray-50 rounded-full py-2 text-sm font-medium cursor-pointer disabled:opacity-60"
+                    className="flex-1 border border-gray-400 text-gray-700 hover:bg-gray-50 rounded-lg py-2 text-sm font-medium cursor-pointer disabled:opacity-60"
                   >
                     {loadingTransferencia
                       ? "Transferindo..."
@@ -1989,8 +2001,8 @@ export default function AdminHome() {
                             type="button"
                             onClick={() => setDataExcecaoSelecionada(d)}
                             className={`px-3 py-2 rounded-full border text-sm ${ativo
-                                ? "border-indigo-600 bg-indigo-50 text-indigo-700"
-                                : "border-gray-300 hover:bg-gray-50"
+                              ? "border-indigo-600 bg-indigo-50 text-indigo-700"
+                              : "border-gray-300 hover:bg-gray-50"
                               }`}
                           >
                             {toDdMm(d)}
