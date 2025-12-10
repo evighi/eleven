@@ -1822,7 +1822,7 @@ export default function AdminHome() {
                       className="w-3.5 h-3.5"
                     />
                     <span>
-                      Tipo:{" "}
+                      {" "}
                       <span className="font-semibold text-gray-800">
                         {agendamentoSelecionado.tipoReserva === "permanente"
                           ? "Permanente"
