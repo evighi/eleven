@@ -1742,9 +1742,34 @@ export default function AdminHome() {
                   {/* Esporte */}
                   {agendamentoSelecionado.esporte && (
                     <div className="flex items-center gap-2">
-                      {/* ÍCONE ESPORTE */}
+                      {/* ÍCONE ESPORTE CONDICIONAL */}
                       <Image
-                        src="/iconescards/bolaesporte.png"
+                        src={(() => {
+                          const esporteLower = (agendamentoSelecionado.esporte ?? "").toLowerCase();
+
+                          if (esporteLower.includes("beach")) {
+                            // Beach Tennis
+                            return "/iconescards/bolaesporte.png";
+                          }
+                          if (esporteLower.includes("padel")) {
+                            // Padel
+                            return "/iconescards/padel.png";
+                          }
+                          if (esporteLower.includes("vôlei") || esporteLower.includes("volei")) {
+                            // Vôlei
+                            return "/iconescards/volei.png";
+                          }
+                          if (
+                            esporteLower.includes("pickle") ||
+                            esporteLower.includes("picle")
+                          ) {
+                            // Pickleball
+                            return "/iconescards/pickleball.png";
+                          }
+
+                          // Ícone padrão se não bater nenhum dos acima
+                          return "/iconescards/bolaesporte.png";
+                        })()}
                         alt="Esporte"
                         width={14}
                         height={14}
@@ -1801,16 +1826,29 @@ export default function AdminHome() {
 
                   {/* Tipo */}
                   <div className="flex items-center gap-2">
-                    {/* ÍCONE TIPO (permanente/avulsa) */}
+                    {/* ÍCONE TIPO CONDICIONAL (permanente / avulsa / outro) */}
                     <Image
-                      src="/iconescards/avulsacinza.png"
+                      src={(() => {
+                        const tipo = agendamentoSelecionado.tipoReserva;
+
+                        if (tipo === "permanente") {
+                          // Reserva permanente
+                          return "/iconescards/icone_permanente_name.png";
+                        }
+                        if (tipo === "comum") {
+                          // Reserva avulsa
+                          return "/iconescards/avulsacinza.png";
+                        }
+
+                        // Ícone padrão para outros tipos (se existir)
+                        return "/iconescards/avulsacinza.png";
+                      })()}
                       alt="Tipo de reserva"
                       width={14}
                       height={14}
                       className="w-3.5 h-3.5"
                     />
                     <span className="text-gray-600">
-                      {" "}
                       <span className="font-semibold text-gray-800">
                         {agendamentoSelecionado.tipoReserva === "permanente"
                           ? "Permanente"
