@@ -1803,14 +1803,14 @@ export default function AdminHome() {
                   <div className="flex items-center gap-2">
                     {/* ÍCONE TIPO (permanente/avulsa) */}
                     <Image
-                      src="/iconescards/icone_reserva_avulsa.png"
+                      src="/iconescards/avulsacinza.png"
                       alt="Tipo de reserva"
                       width={14}
                       height={14}
                       className="w-3.5 h-3.5"
                     />
                     <span className="text-gray-600">
-                      Tipo:{" "}
+                      {" "}
                       <span className="font-semibold text-gray-800">
                         {agendamentoSelecionado.tipoReserva === "permanente"
                           ? "Permanente"
