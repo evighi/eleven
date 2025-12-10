@@ -1935,7 +1935,7 @@ export default function AdminHome() {
               <div className="border-t border-gray-200 mt-6 pt-4" />
 
               {/* BOTÕES DE AÇÃO INFERIORES */}
-              <div className="flex flex-col sm:flex-row sm:justify-center gap-3 sm:gap-4">
+              <div className="flex flex-col sm:flex-row sm:justify-center gap-4 sm:gap-6">
                 <button
                   onClick={abrirFluxoCancelamento}
                   className="
@@ -1963,7 +1963,7 @@ export default function AdminHome() {
         w-full sm:w-[200px]
         inline-flex items-center justify-center
         rounded-xl
-        border border-gray-300
+        border border-gray-500
         bg-gray-50
         text-gray-700
         px-6 py-2.5
