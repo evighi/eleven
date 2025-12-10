@@ -383,6 +383,7 @@ export default function AdminHome() {
 
     const tipoLocal: TipoLocal = item.tipoLocal || "quadra";
 
+
     let rota = "";
     if (tipoLocal === "churrasqueira") {
       rota =
@@ -400,6 +401,8 @@ export default function AdminHome() {
       setLoadingDetalhes(true);
       const res = await axios.get(`${API_URL}/${rota}`, { withCredentials: true });
       const dataRes = res.data as any;
+      const usuarioFromApi = (dataRes as { usuario?: string | UsuarioRef })?.usuario;
+      const usuarioFromItem = (item as any)?.usuario;
 
       // aceita esporte como string OU { nome }
       // prioriza SEMPRE o esporte vindo do agendamento (API)
@@ -413,7 +416,7 @@ export default function AdminHome() {
         horario: extra?.horario || dataRes.horario || null,
         turno: extra?.turno || dataRes.turno || null,
         // mantém o que vier: string OU objeto { nome, celular }
-        usuario: (dataRes as { usuario?: string | UsuarioRef })?.usuario || "—",
+        usuario: (usuarioFromApi ?? usuarioFromItem ?? "—") as string | UsuarioRef | "—",
         jogadores: (dataRes as { jogadores?: JogadorRef[] })?.jogadores || [],
         esporte: esporteNome,
         tipoReserva: item.tipoReserva,
