@@ -1826,16 +1826,21 @@ export default function AdminHome() {
 
                   {/* Tipo */}
                   <div className="flex items-center gap-2 sm:justify-end">
+                    {/* ÍCONE TIPO CONDICIONAL (permanente / avulsa / outro) */}
                     <Image
                       src={(() => {
                         const tipo = agendamentoSelecionado.tipoReserva;
 
                         if (tipo === "permanente") {
+                          // Reserva permanente
                           return "/iconescards/icone_permanente_name.png";
                         }
                         if (tipo === "comum") {
+                          // Reserva avulsa
                           return "/iconescards/avulsacinza.png";
                         }
+
+                        // Ícone padrão para outros tipos (se existir)
                         return "/iconescards/avulsacinza.png";
                       })()}
                       alt="Tipo de reserva"
@@ -1844,6 +1849,7 @@ export default function AdminHome() {
                       className="w-3.5 h-3.5"
                     />
                     <span className="text-gray-600">
+                      Tipo:{" "}
                       <span className="font-semibold text-gray-800">
                         {agendamentoSelecionado.tipoReserva === "permanente"
                           ? "Permanente"
