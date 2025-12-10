@@ -1786,41 +1786,64 @@ export default function AdminHome() {
                 </div>
 
                 {/* COLUNA DIREITA (Horário/Turno / Tipo) */}
-                <div className="flex-1 flex justify-end">
-                  <div className="grid grid-cols-[auto,1fr] gap-x-2 gap-y-1 text-xs text-gray-600 text-right">
-                    {/* Horário ou Turno (1ª linha do grid) */}
-                    {(agendamentoSelecionado.horario || agendamentoSelecionado.turno) && (
-                      <>
-                        <Image
-                          src="/iconescards/horario.png"
-                          alt={agendamentoSelecionado.horario ? "Horário" : "Turno"}
-                          width={14}
-                          height={14}
-                          className="w-3.5 h-3.5 justify-self-end"
-                        />
-                        <span>
-                          {agendamentoSelecionado.horario ? "Horário: " : "Turno: "}
-                          <span className="font-semibold text-gray-800">
-                            {agendamentoSelecionado.horario ?? agendamentoSelecionado.turno}
-                          </span>
+                <div className="flex-1 space-y-1 sm:flex sm:flex-col sm:items-end sm:text-right">
+                  {/* Horário ou Turno */}
+                  {agendamentoSelecionado.horario ? (
+                    <div className="flex items-center gap-2 sm:justify-end sm:w-[180px]">
+                      {/* ÍCONE HORÁRIO */}
+                      <Image
+                        src="/iconescards/horario.png"
+                        alt="Horário"
+                        width={14}
+                        height={14}
+                        className="w-3.5 h-3.5"
+                      />
+                      <span className="text-gray-600">
+                        Horário:{" "}
+                        <span className="font-semibold text-gray-800">
+                          {agendamentoSelecionado.horario}
                         </span>
-                      </>
-                    )}
+                      </span>
+                    </div>
+                  ) : agendamentoSelecionado.turno ? (
+                    <div className="flex items-center gap-2 sm:justify-end sm:w-[180px]">
+                      {/* ÍCONE TURNO */}
+                      <Image
+                        src="/iconescards/horario.png"
+                        alt="Turno"
+                        width={14}
+                        height={14}
+                        className="w-3.5 h-3.5"
+                      />
+                      <span className="text-gray-600">
+                        Turno:{" "}
+                        <span className="font-semibold text-gray-800">
+                          {agendamentoSelecionado.turno}
+                        </span>
+                      </span>
+                    </div>
+                  ) : null}
 
-                    {/* Tipo (2ª linha do grid, ícone alinhado com o de cima) */}
+                  {/* Tipo */}
+                  <div className="flex items-center gap-2 sm:justify-end sm:w-[180px]">
                     <Image
                       src={(() => {
                         const tipo = agendamentoSelecionado.tipoReserva;
-                        if (tipo === "permanente") return "/iconescards/icone_permanente_name.png";
-                        if (tipo === "comum") return "/iconescards/avulsacinza.png";
+
+                        if (tipo === "permanente") {
+                          return "/iconescards/icone_permanente_name.png";
+                        }
+                        if (tipo === "comum") {
+                          return "/iconescards/avulsacinza.png";
+                        }
                         return "/iconescards/avulsacinza.png";
                       })()}
                       alt="Tipo de reserva"
                       width={14}
                       height={14}
-                      className="w-3.5 h-3.5 justify-self-end"
+                      className="w-3.5 h-3.5"
                     />
-                    <span>
+                    <span className="text-gray-600">
                       Tipo:{" "}
                       <span className="font-semibold text-gray-800">
                         {agendamentoSelecionado.tipoReserva === "permanente"
