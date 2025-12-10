@@ -1718,9 +1718,9 @@ export default function AdminHome() {
               </div>
 
               {/* LINHA DE INFOS (Dia / Esporte / Horário / Tipo) */}
-              <div className="flex flex-col sm:flex-row gap-y-2 gap-x-8 text-xs">
-                {/* COLUNA ESQUERDA (Dia / Esporte) */}
-                <div className="flex-1 space-y-1">
+              <div className="flex flex-col sm:flex-row sm:justify-between gap-y-2 sm:gap-x-12 text-xs">
+                {/* COLUNA DIREITA (Horário/Turno / Tipo) */}
+                <div className="flex-1 sm:max-w-[40%] sm:ml-auto space-y-1">
                   {/* Dia */}
                   <div className="flex items-center gap-2">
                     {/* ÍCONE DIA */}
