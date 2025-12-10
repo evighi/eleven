@@ -1935,7 +1935,7 @@ export default function AdminHome() {
               <div className="border-t border-gray-200 mt-6 pt-4" />
 
               {/* BOTÕES DE AÇÃO INFERIORES */}
-              <div className="flex flex-col sm:flex-row sm:justify-center gap-4 sm:gap-6">
+              <div className="flex flex-col sm:flex-row sm:justify-center gap-4 sm:gap-8">
                 <button
                   onClick={abrirFluxoCancelamento}
                   className="
