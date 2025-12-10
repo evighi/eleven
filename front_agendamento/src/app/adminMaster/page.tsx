@@ -1774,7 +1774,7 @@ export default function AdminHome() {
                 <div className="space-y-1 sm:text-right sm:min-w-[180px]">
                   {/* Horário ou Turno */}
                   {agendamentoSelecionado.horario ? (
-                    <div className="flex items-center gap-2 sm:justify-center">
+                    <div className="flex items-center gap-2 sm:justify-end">
                       <Image
                         src="/iconescards/horario.png"
                         alt="Horário"
@@ -1790,7 +1790,7 @@ export default function AdminHome() {
                       </span>
                     </div>
                   ) : agendamentoSelecionado.turno ? (
-                    <div className="flex items-center gap-2 sm:justify-center">
+                    <div className="flex items-center gap-2 sm:justify-end">
                       <Image
                         src="/iconescards/horario.png"
                         alt="Turno"
@@ -1808,7 +1808,7 @@ export default function AdminHome() {
                   ) : null}
 
                   {/* Tipo – ícone alinhado verticalmente com o de cima */}
-                  <div className="flex items-center gap-2 sm:justify-center">
+                  <div className="flex items-center gap-2 sm:justify-end">
                     <Image
                       src={(() => {
                         const tipo = agendamentoSelecionado.tipoReserva;
