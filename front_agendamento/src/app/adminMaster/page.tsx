@@ -1808,7 +1808,7 @@ export default function AdminHome() {
                   ) : null}
 
                   {/* Tipo – ícone alinhado verticalmente com o de cima */}
-                  <div className="flex items-center gap-2 sm:justify-end">
+                  <div className="flex items-center gap-2 sm:justify-center">
                     <Image
                       src={(() => {
                         const tipo = agendamentoSelecionado.tipoReserva;
