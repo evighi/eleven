@@ -467,27 +467,35 @@ router.get(
         where: { id },
         include: {
           usuario: { select: { id: true, nome: true, email: true, celular: true } },
-          professor: { select: { id: true, nome: true, email: true } }, // 🆕
-          quadra: { select: { nome: true, numero: true } },
+          professor: { select: { id: true, nome: true, email: true } },
+          quadra: { select: { id: true, nome: true, numero: true } }, // 👈 agora com id também
           esporte: { select: { nome: true } },
         },
       });
+
       if (!agendamento) {
-        return res.status(404).json({ erro: "Agendamento permanente não encontrado" });
+        return res
+          .status(404)
+          .json({ erro: "Agendamento permanente não encontrado" });
       }
 
       // próxima data (pula exceções; tudo em linha do tempo local)
       const proximaData = await proximaDataPermanenteSemExcecao({
         id: agendamento.id,
         diaSemana: agendamento.diaSemana as DiaSemana,
-        dataInicio: agendamento.dataInicio ? new Date(agendamento.dataInicio) : null,
+        dataInicio: agendamento.dataInicio
+          ? new Date(agendamento.dataInicio)
+          : null,
       });
 
       // exceções futuras a partir de HOJE LOCAL
       const hojeLocalYMD = localYMD(new Date());
       const { inicio } = storedUtcBoundaryForLocalYMD(hojeLocalYMD);
       const excecoes = await prisma.agendamentoPermanenteCancelamento.findMany({
-        where: { agendamentoPermanenteId: agendamento.id, data: { gte: inicio } },
+        where: {
+          agendamentoPermanenteId: agendamento.id,
+          data: { gte: inicio },
+        },
         orderBy: { data: "asc" },
         select: { id: true, data: true, motivo: true },
       });
@@ -497,23 +505,39 @@ router.get(
         tipoReserva: "PERMANENTE",
         diaSemana: agendamento.diaSemana,
         horario: agendamento.horario,
+
         usuario: agendamento.usuario
           ? {
-              id: agendamento.usuario.id,
-              nome: agendamento.usuario.nome,
-              email: agendamento.usuario.email,
-              celular: agendamento.usuario.celular,
-            }
+            id: agendamento.usuario.id,
+            nome: agendamento.usuario.nome,
+            email: agendamento.usuario.email,
+            celular: agendamento.usuario.celular,
+          }
           : null,
         usuarioId: agendamento.usuario?.id,
-        esporte: agendamento.esporte.nome,
-        quadra: `${agendamento.quadra.nome} (Nº ${agendamento.quadra.numero})`,
 
-        dataInicio: agendamento.dataInicio ? toISODateUTC(new Date(agendamento.dataInicio)) : null,
+        esporte: agendamento.esporte.nome,
+
+        // 👇 quadra separada em campos
+        quadraId: agendamento.quadra?.id ?? null,
+        quadraNome: agendamento.quadra?.nome ?? null,
+        quadraNumero: agendamento.quadra?.numero ?? null,
+        // se ainda quiser manter a string antiga pra compatibilidade:
+        quadra: agendamento.quadra
+          ? `${agendamento.quadra.nome} (Nº ${agendamento.quadra.numero})`
+          : null,
+
+        dataInicio: agendamento.dataInicio
+          ? toISODateUTC(new Date(agendamento.dataInicio))
+          : null,
 
         // extras
         professor: agendamento.professor
-          ? { id: agendamento.professor.id, nome: agendamento.professor.nome, email: agendamento.professor.email }
+          ? {
+            id: agendamento.professor.id,
+            nome: agendamento.professor.nome,
+            email: agendamento.professor.email,
+          }
           : null,
         professorId: agendamento.professorId ?? null,
         tipoSessao: agendamento.tipoSessao ?? null,
@@ -527,10 +551,13 @@ router.get(
       });
     } catch (err) {
       console.error(err);
-      return res.status(500).json({ erro: "Erro ao buscar agendamento permanente" });
+      return res
+        .status(500)
+        .json({ erro: "Erro ao buscar agendamento permanente" });
     }
   }
 );
+
 
 // 📅 Datas elegíveis p/ exceção — dono ou admin
 router.get(

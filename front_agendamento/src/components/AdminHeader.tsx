@@ -63,7 +63,7 @@ export default function AdminHeader() {
       <div>
         <div className="max-w-6xl mx-auto bg-white">
           {/* HEADER SUPERIOR */}
-          <header className="text-gray-800 px-4 py-3 flex items-center justify-between border-b-2 border-gray-500">
+          <header className="text-gray-800 px-4 py-3 flex items-center justify-between border-b-2 border-gray-300">
             <Link
               href="/adminMaster"
               aria-label="Ir para o painel Admin Master"
@@ -100,7 +100,7 @@ export default function AdminHeader() {
           </header>
 
           {/* FAIXA DOS BOTÕES */}
-          <div className="relative py-2">
+          <div className="relative py-3">
             {/* setas fixas nos cantos (desktop) */}
             <button
               onClick={() => scroll("left")}
@@ -158,7 +158,7 @@ export default function AdminHeader() {
                     className="
                       shrink-0
                       inline-flex items-center 
-                      px-4 py-3
+                      px-3 py-2
                       rounded-md 
                       bg-gray-100 
                       border border-[#AFAFAF]

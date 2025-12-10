@@ -6,6 +6,8 @@ import Spinner from "@/components/Spinner";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Calendar, Clock, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import Image from "next/image";
+
 
 /** Helpers de data/hora em America/Sao_Paulo */
 const SP_TZ = "America/Sao_Paulo";
@@ -969,35 +971,79 @@ export default function AdminHome() {
             <span>Carregando disponibilidade…</span>
           </div>
         ) : (
-          <div className="space-y-10">
-            {/* QUADRAS */}
+          <div className="space-y-8">
+            {/* ================== QUADRAS ================== */}
             {Object.keys(disponibilidade.quadras).map((esporte) => (
-              <div key={esporte}>
-                <div className="flex items-center mb-4">
-                  <h2 className="text-lg font-semibold text-orange-700">
-                    {esporte}, {horario}
+              <section
+                key={esporte}
+                className="rounded-3xl bg-gray-100 border border-gray-100 px-4 sm:px-6 py-5 shadow-sm"
+              >
+                {/* HEADER DO ESPORTE */}
+                <div className="flex items-baseline justify-between mb-4">
+                  <h2 className="text-xl font-semibold text-gray-800">
+                    {esporte}
                   </h2>
-                  <div className="flex-1 border-t border-gray-300 ml-3" />
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4">
+                {/* GRID DE CARDS */}
+                <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
                   {disponibilidade.quadras[esporte].map((q: DisponQuadra) => {
                     const clickable = !q.bloqueada;
-                    const clsBase =
-                      "p-3 rounded-lg text-center shadow-sm flex flex-col justify-center " +
-                      (clickable ? "cursor-pointer" : "cursor-not-allowed");
 
-                    // ✅ Só mostra "Comum/Permanente" quando realmente há agendamento
-                    // - Se for PERMANENTE: mostra mesmo se estiver bloqueada
-                    // - Se for COMUM: só mostra se NÃO estiver bloqueada
                     const hasAgendamento =
                       !q.disponivel &&
                       !!q.tipoReserva &&
                       (q.tipoReserva === "permanente" || !q.bloqueada);
 
+                    const isPermanente = q.tipoReserva === "permanente";
+                    const isComum = q.tipoReserva === "comum";
+
+                    // cores do card conforme status
+                    let statusClasses =
+                      "border-slate-300 bg-slate-50 text-slate-800"; // padrão / permanente
+
+                    if (q.bloqueada) {
+                      statusClasses = "border-red-400 bg-red-50 text-red-800";
+                    } else if (q.disponivel) {
+                      statusClasses = "border-emerald-400 bg-emerald-50 text-emerald-800";
+                    } else if (isComum) {
+                      statusClasses = "border-amber-400 bg-amber-50 text-amber-800";
+                    }
+
+                    // cor do texto "Quadra X • Nome" de acordo com o status
+                    const nomeQuadraColor =
+                      q.bloqueada
+                        ? "text-red-700"
+                        : q.disponivel
+                          ? "text-emerald-700"
+                          : isComum
+                            ? "text-amber-700"
+                            : "text-gray-500"; // permanente / padrão
+
+                    // apenas o primeiro nome da quadra
+                    const primeiroNomeQuadra =
+                      (q.nome || "").split(" ")[0] || q.nome;
+
+                    const cardBase =
+                      "relative flex flex-col justify-between items-stretch " +
+                      "rounded-2xl border shadow-sm px-3 py-3 " +
+                      "transition-transform hover:-translate-y-0.5 hover:shadow-md " +
+                      (clickable ? "cursor-pointer" : "cursor-not-allowed opacity-90");
+
+                    const labelTipo =
+                      q.bloqueada
+                        ? "Bloqueado"
+                        : q.disponivel
+                          ? "Disponível"
+                          : isPermanente
+                            ? "Permanente"
+                            : "Avulsa";
+
                     return (
-                      <div
+                      <button
                         key={q.quadraId}
+                        type="button"
+                        disabled={q.bloqueada}
                         onClick={() => {
                           if (q.bloqueada) return;
                           if (q.disponivel) {
@@ -1013,67 +1059,227 @@ export default function AdminHome() {
                             abrirDetalhes(q, { horario, esporte });
                           }
                         }}
-                        className={`${clsBase
-                          } ${q.bloqueada
-                            ? "border-2 border-red-500 bg-red-50"
-                            : q.disponivel
-                              ? "border-2 border-green-500 bg-green-50"
-                              : "border-2 border-gray-500 bg-gray-50"
-                          }`}
+                        className={`${cardBase} ${statusClasses}`}
                       >
-                        <p className="font-medium">{q.nome}</p>
-                        <p className="text-xs text-gray-700">Quadra {q.numero}</p>
+                        {/* TOPO: NOME DA QUADRA / LOCAL */}
+                        <p
+                          className={`
+                text-[10px] font-medium mb-1
+                whitespace-nowrap overflow-hidden text-ellipsis
+                ${nomeQuadraColor}
+              `}
+                        >
+                          Quadra {q.numero} • {primeiroNomeQuadra}
+                        </p>
 
-                        {q.bloqueada && (
-                          <div className="text-red-600 font-bold">
-                            Bloqueada
-                            {q.motivoBloqueioNome ? ` - ${q.motivoBloqueioNome}` : ""}
-                          </div>
-                        )}
-
-                        {hasAgendamento && (
-                          <div className="mt-1">
-                            <p className="font-bold">
-                              {firstAndLastName(q.usuario?.nome)}
-                            </p>
-                            {q.usuario?.celular && (
-                              <p className="text-[11px] text-gray-700">
-                                {q.usuario.celular}
-                              </p>
+                        {/* MIolo: ÍCONE GRANDE + NOME / BLOQUEADO / DISPONÍVEL */}
+                        <div className="flex-1 flex flex-col items-center justify-center text-center py-1">
+                          {/* ÍCONE GRANDE POR STATUS */}
+                          <div className="mb-1">
+                            {q.bloqueada && (
+                              <Image
+                                src="/iconescards/icone_bloqueado.png"
+                                alt="Quadra bloqueada"
+                                width={32}
+                                height={32}
+                                className="w-8 h-8"
+                              />
                             )}
-                            <span className="inline-block text-[11px] mt-1 px-2 py-0.5 rounded bg-white/70">
-                              {q.tipoReserva === "permanente"
-                                ? "Permanente"
-                                : "Comum"}
-                            </span>
+
+                            {q.disponivel && !q.bloqueada && (
+                              <Image
+                                src="/iconescards/icone_liberado.png"
+                                alt="Quadra disponível"
+                                width={32}
+                                height={32}
+                                className="w-4 h-4"
+                              />
+                            )}
+
+                            {!q.disponivel && !q.bloqueada && isPermanente && (
+                              <Image
+                                src="/iconescards/icone-permanente.png"
+                                alt="Reserva permanente"
+                                width={32}
+                                height={32}
+                                className="w-4 h-4"
+                              />
+                            )}
+
+                            {!q.disponivel && !q.bloqueada && isComum && (
+                              <Image
+                                src="/iconescards/icone-reservado.png"
+                                alt="Reserva avulsa"
+                                width={32}
+                                height={32}
+                                className="w-4 h-4"
+                              />
+                            )}
                           </div>
-                        )}
-                      </div>
+
+                          {q.bloqueada ? (
+                            <>
+                              <p className="text-sm font-extrabold leading-tight">
+                                {q.usuario?.nome
+                                  ? firstAndLastName(q.usuario.nome)
+                                  : "Bloqueado"}
+                              </p>
+                              <p className="text-[11px] mt-1 font-semibold">
+                                {q.motivoBloqueioNome || "Manutenção"}
+                              </p>
+                            </>
+                          ) : hasAgendamento ? (
+                            <>
+                              <p className="text-sm font-bold leading-tight">
+                                {firstAndLastName(q.usuario?.nome)}
+                              </p>
+
+                              {/* TELEFONE + ÍCONE (preto ou laranja) */}
+                              {q.usuario?.celular && (
+                                <div className="mt-1 flex items-center justify-center gap-1 text-[10px] whitespace-nowrap overflow-hidden text-ellipsis">
+                                  <Image
+                                    src={
+                                      isComum
+                                        ? "/iconescards/icone_phone_orange.png"
+                                        : "/iconescards/icone_phone.png"
+                                    }
+                                    alt="Telefone"
+                                    width={14}
+                                    height={14}
+                                    className="w-2.5 h-2.5 flex-shrink-0"
+                                  />
+                                  <span className="overflow-hidden text-ellipsis">
+                                    {q.usuario.celular}
+                                  </span>
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <p className="text-sm font-extrabold leading-tight">
+                              Disponível
+                            </p>
+                          )}
+                        </div>
+
+                        {/* BASE DO CARD: tipo + ÍCONE PEQUENO CENTRALIZADO */}
+                        <div className="mt-1 pt-1 flex items-center justify-center text-[11px]">
+                          <div className="inline-flex items-center gap-1">
+                            {/* ÍCONE PEQUENO POR STATUS */}
+                            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-white/60 overflow-hidden">
+                              {q.bloqueada && (
+                                <Image
+                                  src="/iconescards/icone_bloqueado.png"
+                                  alt="Bloqueado"
+                                  width={12}
+                                  height={12}
+                                  className="w-3 h-3"
+                                />
+                              )}
+
+                              {q.disponivel && !q.bloqueada && (
+                                <Image
+                                  src="/iconescards/icone_liberado.png"
+                                  alt="Disponível"
+                                  width={12}
+                                  height={12}
+                                  className="w-2.5 h-2.5"
+                                />
+                              )}
+
+                              {!q.disponivel && !q.bloqueada && isPermanente && (
+                                <Image
+                                  src="/iconescards/icone_permanente_name.png"
+                                  alt="Permanente"
+                                  width={12}
+                                  height={12}
+                                  className="w-2.5 h-2.5"
+                                />
+                              )}
+
+                              {!q.disponivel && !q.bloqueada && isComum && (
+                                <Image
+                                  src="/iconescards/icone_reserva_avulsa.png"
+                                  alt="Avulsa"
+                                  width={12}
+                                  height={12}
+                                  className="w-2.5 h-2.5"
+                                />
+                              )}
+                            </span>
+
+                            <span className="font-semibold">{labelTipo}</span>
+                          </div>
+                        </div>
+                      </button>
                     );
                   })}
                 </div>
-              </div>
+              </section>
             ))}
 
-            {/* CHURRASQUEIRAS */}
-            <div>
-              <div className="flex items-center mb-4">
-                <h2 className="text-lg font-semibold text-orange-700">
+
+            {/* ================== CHURRASQUEIRAS ================== */}
+            <section className="rounded-3xl bg-gray-100 border border-gray-100 px-4 sm:px-6 py-5 shadow-sm">
+              {/* Header igual ao das quadras */}
+              <div className="flex items-baseline justify-between mb-4">
+                <h2 className="text-xl font-semibold text-gray-800">
                   Churrasqueiras
                 </h2>
-                <div className="flex-1 border-t border-gray-300 ml-3" />
               </div>
 
-              {/* Dia */}
-              <h3 className="text-sm font-semibold mb-2 text-gray-800">Dia</h3>
-              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4 mb-6">
+              {/* === DIA === */}
+              <h3 className="text-sm font-semibold mb-2 text-gray-700">
+                Dia
+              </h3>
+              <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 mb-4">
                 {disponibilidade.churrasqueiras.map((c: ChurrasqueiraDisp) => {
                   const diaInfo = c.disponibilidade.find((t) => t.turno === "DIA");
+
                   const disponivel = !!diaInfo?.disponivel;
+                  const isPerm = diaInfo?.tipoReserva === "permanente";
+                  const isComum = diaInfo?.tipoReserva === "comum";
+
+                  // mesmas cores de status dos cards de quadra
+                  let statusClasses =
+                    "border-slate-300 bg-slate-50 text-slate-800";
+
+                  if (disponivel) {
+                    statusClasses = "border-emerald-400 bg-emerald-50 text-emerald-800";
+                  } else if (isComum) {
+                    statusClasses = "border-amber-400 bg-amber-50 text-amber-800";
+                  } else if (isPerm) {
+                    statusClasses = "border-slate-300 bg-slate-50 text-slate-800";
+                  }
+
+                  // cor da linha "Churrasqueira X • Nome"
+                  const nomeChurrasColor =
+                    disponivel
+                      ? "text-emerald-700"
+                      : isComum
+                        ? "text-amber-700"
+                        : isPerm
+                          ? "text-gray-500"
+                          : "text-gray-500";
+
+                  // só o primeiro nome da churrasqueira
+                  const primeiroNomeChurras =
+                    (c.nome || "").split(" ")[0] || c.nome;
+
+                  const cardBase =
+                    "relative flex flex-col justify-between items-stretch " +
+                    "rounded-2xl border shadow-sm px-3 py-3 " +
+                    "transition-transform hover:-translate-y-0.5 hover:shadow-md cursor-pointer";
+
+                  const labelTipo = disponivel
+                    ? "Disponível"
+                    : isPerm
+                      ? "Permanente"
+                      : "Avulsa";
 
                   return (
-                    <div
+                    <button
                       key={c.churrasqueiraId + "-dia"}
+                      type="button"
                       onClick={() => {
                         if (disponivel) {
                           abrirConfirmacaoChurras({
@@ -1083,55 +1289,190 @@ export default function AdminHome() {
                             churrasqueiraNome: c.nome,
                             churrasqueiraNumero: c.numero,
                           });
-                        } else {
+                        } else if (diaInfo) {
                           abrirDetalhes(
-                            { ...(diaInfo as DetalheItemMin), tipoLocal: "churrasqueira" },
+                            {
+                              ...(diaInfo as DetalheItemMin),
+                              tipoLocal: "churrasqueira",
+                            },
                             { turno: "DIA" }
                           );
                         }
                       }}
-                      className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${disponivel
-                        ? "border-2 border-green-500 bg-green-50"
-                        : "border-2 border-gray-500 bg-gray-50"
-                        }`}
+                      className={`${cardBase} ${statusClasses}`}
                     >
-                      <p className="font-medium">{c.nome}</p>
-                      <p className="text-xs text-gray-700">
-                        Churrasqueira {c.numero}
+                      {/* TOPO: NOME DA CHURRASQUEIRA / LOCAL */}
+                      <p
+                        className={`
+              text-[10px] font-medium mb-1
+              whitespace-nowrap overflow-hidden text-ellipsis
+              ${nomeChurrasColor}
+            `}
+                      >
+                        Churrasqueira {c.numero} • {primeiroNomeChurras}
                       </p>
 
-                      {!disponivel && (
-                        <div className="mt-1">
-                          <p className="font-bold">
-                            {firstAndLastName(diaInfo?.usuario?.nome)}
-                          </p>
-                          {diaInfo?.usuario?.celular && (
-                            <p className="text-[11px] text-gray-700">
-                              {diaInfo.usuario.celular}
-                            </p>
+                      {/* MIolo: ÍCONE GRANDE + NOME / DISPONÍVEL / RESERVA */}
+                      <div className="flex-1 flex flex-col items-center justify-center text-center py-1">
+                        {/* ÍCONE GRANDE POR STATUS */}
+                        <div className="mb-1">
+                          {disponivel && (
+                            <Image
+                              src="/iconescards/icone_liberado.png"
+                              alt="Churrasqueira disponível"
+                              width={32}
+                              height={32}
+                              className="w-4 h-4"
+                            />
                           )}
-                          <span className="inline-block text-[11px] px-2 py-0.5 rounded bg-white/70">
-                            {diaInfo?.tipoReserva === "permanente"
-                              ? "Permanente"
-                              : "Comum"}
-                          </span>
+
+                          {!disponivel && isPerm && (
+                            <Image
+                              src="/iconescards/icone-permanente.png"
+                              alt="Reserva permanente"
+                              width={32}
+                              height={32}
+                              className="w-4 h-4"
+                            />
+                          )}
+
+                          {!disponivel && isComum && (
+                            <Image
+                              src="/iconescards/icone-reservado.png"
+                              alt="Reserva avulsa"
+                              width={32}
+                              height={32}
+                              className="w-4 h-4"
+                            />
+                          )}
                         </div>
-                      )}
-                    </div>
+
+                        {disponivel ? (
+                          <p className="text-sm font-extrabold leading-tight">
+                            Disponível
+                          </p>
+                        ) : (
+                          <>
+                            <p className="text-sm font-extrabold leading-tight">
+                              {firstAndLastName(diaInfo?.usuario?.nome)}
+                            </p>
+
+                            {/* TELEFONE + ÍCONE (preto/laranja) */}
+                            {diaInfo?.usuario?.celular && (
+                              <div className="mt-1 flex items-center justify-center gap-1 text-[10px] whitespace-nowrap overflow-hidden text-ellipsis">
+                                <Image
+                                  src={
+                                    isComum
+                                      ? "/iconescards/icone_phone_orange.png"
+                                      : "/iconescards/icone_phone.png"
+                                  }
+                                  alt="Telefone"
+                                  width={14}
+                                  height={14}
+                                  className="w-2.5 h-2.5 flex-shrink-0"
+                                />
+                                <span className="overflow-hidden text-ellipsis">
+                                  {diaInfo.usuario.celular}
+                                </span>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+
+                      {/* BASE DO CARD: tipo + ÍCONE PEQUENO CENTRALIZADO */}
+                      <div className="mt-1 pt-1 flex items-center justify-center text-[11px]">
+                        <div className="inline-flex items-center gap-1">
+                          <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-white/60 overflow-hidden">
+                            {disponivel && (
+                              <Image
+                                src="/iconescards/icone_liberado.png"
+                                alt="Disponível"
+                                width={12}
+                                height={12}
+                                className="w-2.5 h-2.5"
+                              />
+                            )}
+
+                            {!disponivel && isPerm && (
+                              <Image
+                                src="/iconescards/icone_permanente_name.png"
+                                alt="Permanente"
+                                width={12}
+                                height={12}
+                                className="w-2.5 h-2.5"
+                              />
+                            )}
+
+                            {!disponivel && isComum && (
+                              <Image
+                                src="/iconescards/icone_reserva_avulsa.png"
+                                alt="Avulsa"
+                                width={12}
+                                height={12}
+                                className="w-2.5 h-2.5"
+                              />
+                            )}
+                          </span>
+
+                          <span className="font-semibold">{labelTipo}</span>
+                        </div>
+                      </div>
+                    </button>
                   );
                 })}
               </div>
 
-              {/* Noite */}
-              <h3 className="text-sm font-semibold mb-2 text-gray-800">Noite</h3>
-              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4">
+              {/* === NOITE === */}
+              <h3 className="text-sm font-semibold mb-2 text-gray-700">
+                Noite
+              </h3>
+              <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
                 {disponibilidade.churrasqueiras.map((c: ChurrasqueiraDisp) => {
                   const noiteInfo = c.disponibilidade.find((t) => t.turno === "NOITE");
+
                   const disponivel = !!noiteInfo?.disponivel;
+                  const isPerm = noiteInfo?.tipoReserva === "permanente";
+                  const isComum = noiteInfo?.tipoReserva === "comum";
+
+                  let statusClasses =
+                    "border-slate-300 bg-slate-50 text-slate-800";
+
+                  if (disponivel) {
+                    statusClasses = "border-emerald-400 bg-emerald-50 text-emerald-800";
+                  } else if (isComum) {
+                    statusClasses = "border-amber-400 bg-amber-50 text-amber-800";
+                  } else if (isPerm) {
+                    statusClasses = "border-slate-300 bg-slate-50 text-slate-800";
+                  }
+
+                  const nomeChurrasColor =
+                    disponivel
+                      ? "text-emerald-700"
+                      : isComum
+                        ? "text-amber-700"
+                        : isPerm
+                          ? "text-gray-500"
+                          : "text-gray-500";
+
+                  const primeiroNomeChurras =
+                    (c.nome || "").split(" ")[0] || c.nome;
+
+                  const cardBase =
+                    "relative flex flex-col justify-between items-stretch " +
+                    "rounded-2xl border shadow-sm px-3 py-3 " +
+                    "transition-transform hover:-translate-y-0.5 hover:shadow-md cursor-pointer";
+
+                  const labelTipo = disponivel
+                    ? "Disponível"
+                    : isPerm
+                      ? "Permanente"
+                      : "Avulsa";
 
                   return (
-                    <div
+                    <button
                       key={c.churrasqueiraId + "-noite"}
+                      type="button"
                       onClick={() => {
                         if (disponivel) {
                           abrirConfirmacaoChurras({
@@ -1141,47 +1482,138 @@ export default function AdminHome() {
                             churrasqueiraNome: c.nome,
                             churrasqueiraNumero: c.numero,
                           });
-                        } else {
+                        } else if (noiteInfo) {
                           abrirDetalhes(
-                            { ...(noiteInfo as DetalheItemMin), tipoLocal: "churrasqueira" },
+                            {
+                              ...(noiteInfo as DetalheItemMin),
+                              tipoLocal: "churrasqueira",
+                            },
                             { turno: "NOITE" }
                           );
                         }
                       }}
-                      className={`p-3 rounded-lg text-center shadow-sm flex flex-col justify-center cursor-pointer ${disponivel
-                        ? "border-2 border-green-500 bg-green-50"
-                        : "border-2 border-gray-500 bg-gray-50"
-                        }`}
+                      className={`${cardBase} ${statusClasses}`}
                     >
-                      <p className="font-medium">{c.nome}</p>
-                      <p className="text-xs text-gray-700">
-                        Churrasqueira {c.numero}
+                      <p
+                        className={`
+              text-[10px] font-medium mb-1
+              whitespace-nowrap overflow-hidden text-ellipsis
+              ${nomeChurrasColor}
+            `}
+                      >
+                        Churrasqueira {c.numero} • {primeiroNomeChurras}
                       </p>
 
-                      {!disponivel && (
-                        <div className="mt-1">
-                          <p className="font-bold">
-                            {firstAndLastName(noiteInfo?.usuario?.nome)}
-                          </p>
-                          {noiteInfo?.usuario?.celular && (
-                            <p className="text-[11px] text-gray-700">
-                              {noiteInfo.usuario.celular}
-                            </p>
+                      <div className="flex-1 flex flex-col items-center justify-center text-center py-1">
+                        <div className="mb-1">
+                          {disponivel && (
+                            <Image
+                              src="/iconescards/icone_liberado.png"
+                              alt="Churrasqueira disponível"
+                              width={32}
+                              height={32}
+                              className="w-4 h-4"
+                            />
                           )}
-                          <span className="inline-block text-[11px] px-2 py-0.5 rounded bg-white/70">
-                            {noiteInfo?.tipoReserva === "permanente"
-                              ? "Permanente"
-                              : "Comum"}
-                          </span>
+
+                          {!disponivel && isPerm && (
+                            <Image
+                              src="/iconescards/icone_churrasqueira_permanente.png"
+                              alt="Reserva permanente"
+                              width={32}
+                              height={32}
+                              className="w-4 h-4"
+                            />
+                          )}
+
+                          {!disponivel && isComum && (
+                            <Image
+                              src="/iconescards/icone_churrasqueira_avulsa.png"
+                              alt="Reserva avulsa"
+                              width={32}
+                              height={32}
+                              className="w-4 h-4"
+                            />
+                          )}
                         </div>
-                      )}
-                    </div>
+
+                        {disponivel ? (
+                          <p className="text-sm font-extrabold leading-tight">
+                            Disponível
+                          </p>
+                        ) : (
+                          <>
+                            <p className="text-sm font-extrabold leading-tight">
+                              {firstAndLastName(noiteInfo?.usuario?.nome)}
+                            </p>
+
+                            {noiteInfo?.usuario?.celular && (
+                              <div className="mt-1 flex items-center justify-center gap-1 text-[10px] whitespace-nowrap overflow-hidden text-ellipsis">
+                                <Image
+                                  src={
+                                    isComum
+                                      ? "/iconescards/icone_phone_orange.png"
+                                      : "/iconescards/icone_phone.png"
+                                  }
+                                  alt="Telefone"
+                                  width={14}
+                                  height={14}
+                                  className="w-2.5 h-2.5 flex-shrink-0"
+                                />
+                                <span className="overflow-hidden text-ellipsis">
+                                  {noiteInfo.usuario.celular}
+                                </span>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+
+                      <div className="mt-1 pt-1 flex items-center justify-center text-[11px]">
+                        <div className="inline-flex items-center gap-1">
+                          <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-white/60 overflow-hidden">
+                            {disponivel && (
+                              <Image
+                                src="/iconescards/icone_liberado.png"
+                                alt="Disponível"
+                                width={12}
+                                height={12}
+                                className="w-2.5 h-2.5"
+                              />
+                            )}
+
+                            {!disponivel && isPerm && (
+                              <Image
+                                src="/iconescards/icone_permanente_name.png"
+                                alt="Permanente"
+                                width={12}
+                                height={12}
+                                className="w-2.5 h-2.5"
+                              />
+                            )}
+
+                            {!disponivel && isComum && (
+                              <Image
+                                src="/iconescards/icone_reserva_avulsa.png"
+                                alt="Avulsa"
+                                width={12}
+                                height={12}
+                                className="w-2.5 h-2.5"
+                              />
+                            )}
+                          </span>
+
+                          <span className="font-semibold">{labelTipo}</span>
+                        </div>
+                      </div>
+                    </button>
                   );
                 })}
               </div>
-            </div>
+            </section>
           </div>
         ))}
+
 
       {/* OVERLAY: carregando detalhes */}
       {loadingDetalhes && (
@@ -1196,134 +1628,361 @@ export default function AdminHome() {
 
       {/* MODAL DE DETALHES */}
       {agendamentoSelecionado && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg shadow-lg w-80 relative max-h-[90vh] overflow-auto">
-            <h2 className="text-lg font-semibold mb-4">Detalhes do Agendamento</h2>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] relative flex flex-col overflow-hidden">
+            {/* BOTÃO X */}
+            <button
+              onClick={() => setAgendamentoSelecionado(null)}
+              className="absolute right-5 top-4 text-gray-400 hover:text-gray-600 text-xl leading-none"
+              aria-label="Fechar"
+            >
+              ×
+            </button>
 
-            <p>
-              <strong>Dia:</strong> {agendamentoSelecionado.dia}
-            </p>
-            {agendamentoSelecionado.horario && (
-              <p>
-                <strong>Horário:</strong> {agendamentoSelecionado.horario}
+            {/* CABEÇALHO */}
+            <div className="px-8 pt-6 pb-3">
+              {/* título laranja, alinhado à esquerda */}
+              <p className="text-sm font-semibold text-orange-600 text-left">
+                Informações de reserva
               </p>
-            )}
-            {agendamentoSelecionado.turno && (
-              <p>
-                <strong>Turno:</strong> {agendamentoSelecionado.turno}
-              </p>
-            )}
-            <p>
-              <strong>Usuário:</strong>{" "}
-              {typeof agendamentoSelecionado.usuario === "string"
-                ? agendamentoSelecionado.usuario
-                : [agendamentoSelecionado.usuario?.nome, agendamentoSelecionado.usuario?.celular]
-                  .filter(Boolean)
-                  .join(" — ")}
-            </p>
-            {agendamentoSelecionado.esporte && (
-              <p>
-                <strong>Esporte:</strong> {agendamentoSelecionado.esporte}
-              </p>
-            )}
-            <p>
-              <strong>Tipo:</strong> {agendamentoSelecionado.tipoReserva}
-            </p>
 
-            {/* Jogadores (comum/quadra) — sem o botão "+" */}
-            {agendamentoSelecionado.tipoReserva === "comum" &&
-              agendamentoSelecionado.tipoLocal === "quadra" && (
-                <div className="mt-2">
-                  <strong>Jogadores:</strong>
-                  <ul className="list-disc list-inside text-sm text-gray-700 mt-2">
+              {/* linha "Quadra: 01 - Petry Imóveis" centralizada */}
+              <p className="mt-4 text-xs text-gray-500 text-center">
+                {agendamentoSelecionado.tipoLocal === "churrasqueira"
+                  ? "Churrasqueira"
+                  : "Quadra"}
+                :{" "}
+                <span className="font-semibold text-gray-900">
+                  {(() => {
+                    const sel = agendamentoSelecionado as any;
+
+                    const numero =
+                      sel.numero ?? sel.quadraNumero ?? sel.churrasqueiraNumero;
+                    const nome = sel.nome ?? sel.quadraNome ?? sel.churrasqueiraNome;
+
+                    const numeroFmt =
+                      typeof numero === "number" || typeof numero === "string"
+                        ? String(numero).padStart(2, "0")
+                        : "";
+
+                    if (!numeroFmt && !nome) return "-";
+
+                    // "01 - Petry Imóveis"
+                    return `${numeroFmt}${nome ? ` - ${nome}` : ""}`;
+                  })()}
+                </span>
+              </p>
+            </div>
+
+
+            {/* CONTEÚDO ROLÁVEL */}
+            <div className="px-8 py-6 space-y-6 overflow-y-auto">
+              {/* BLOCO ATLETA */}
+              <div className="flex flex-col items-center text-center gap-2">
+                {/* ÍCONE GRANDE DO ATLETA */}
+                <div className="mb-1">
+                  {/* troque o src pelo ícone desejado */}
+                  <Image
+                    src="/iconescards/icone-permanente.png"
+                    alt="Atleta"
+                    width={40}
+                    height={40}
+                    className="w-10 h-10"
+                  />
+                </div>
+
+                <p className="text-sm text-gray-600">
+                  Atleta:{" "}
+                  <span className="font-semibold text-gray-900">
+                    {typeof agendamentoSelecionado.usuario === "string"
+                      ? agendamentoSelecionado.usuario
+                      : agendamentoSelecionado.usuario?.nome || "-"}
+                  </span>
+                </p>
+
+                {/* Telefone */}
+                {typeof agendamentoSelecionado.usuario !== "string" &&
+                  agendamentoSelecionado.usuario?.celular && (
+                    <div className="flex items-center justify-center gap-1 text-xs text-gray-600">
+                      {/* ÍCONE TELEFONE */}
+                      <Image
+                        src="/iconescards/icone_phone.png"
+                        alt="Telefone"
+                        width={14}
+                        height={14}
+                        className="w-3.5 h-3.5"
+                      />
+                      <span>{agendamentoSelecionado.usuario.celular}</span>
+                    </div>
+                  )}
+              </div>
+
+              {/* LINHA DE INFOS (Dia / Esporte / Horário / Tipo) */}
+              <div className="mt-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-y-2 text-xs text-gray-600">
+                {/* COLUNA ESQUERDA (Dia / Esporte) */}
+                <div className="space-y-1">
+                  {/* Dia */}
+                  <div className="flex items-center gap-2">
+                    <Image
+                      src="/iconescards/calendario.png"
+                      alt="Dia"
+                      width={14}
+                      height={14}
+                      className="w-3.5 h-3.5"
+                    />
+                    <span>
+                      Dia:{" "}
+                      <span className="font-semibold text-gray-800">
+                        {formatarDataBR(agendamentoSelecionado.dia)}
+                      </span>
+                    </span>
+                  </div>
+
+                  {/* Esporte */}
+                  {agendamentoSelecionado.esporte && (
+                    <div className="flex items-center gap-2">
+                      {/* ÍCONE ESPORTE CONDICIONAL */}
+                      <Image
+                        src={(() => {
+                          const esporteLower = (agendamentoSelecionado.esporte ?? "").toLowerCase();
+
+                          if (esporteLower.includes("beach")) return "/iconescards/bolaesporte.png"; // Beach Tennis
+                          if (esporteLower.includes("padel")) return "/iconescards/padel.png";       // Padel
+                          if (esporteLower.includes("vôlei") || esporteLower.includes("volei"))
+                            return "/iconescards/volei.png";                                        // Vôlei
+                          if (esporteLower.includes("pickle") || esporteLower.includes("picle"))
+                            return "/iconescards/pickleball.png";                                   // Pickleball
+
+                          return "/iconescards/bolaesporte.png"; // padrão
+                        })()}
+                        alt="Esporte"
+                        width={14}
+                        height={14}
+                        className="w-3.5 h-3.5"
+                      />
+                      <span>
+                        Esporte:{" "}
+                        <span className="font-semibold text-gray-800">
+                          {agendamentoSelecionado.esporte}
+                        </span>
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* COLUNA DIREITA (Horário/Turno / Tipo) */}
+                <div className="space-y-1 sm:text-right sm:min-w-[180px]">
+                  {/* Horário ou Turno */}
+                  {agendamentoSelecionado.horario ? (
+                    <div className="flex items-center gap-2 sm:justify-end">
+                      <Image
+                        src="/iconescards/horario.png"
+                        alt="Horário"
+                        width={14}
+                        height={14}
+                        className="w-3.5 h-3.5"
+                      />
+                      <span>
+                        Horário:{" "}
+                        <span className="font-semibold text-gray-800">
+                          {agendamentoSelecionado.horario}
+                        </span>
+                      </span>
+                    </div>
+                  ) : agendamentoSelecionado.turno ? (
+                    <div className="flex items-center gap-2 sm:justify-end">
+                      <Image
+                        src="/iconescards/horario.png"
+                        alt="Turno"
+                        width={14}
+                        height={14}
+                        className="w-3.5 h-3.5"
+                      />
+                      <span>
+                        Turno:{" "}
+                        <span className="font-semibold text-gray-800">
+                          {agendamentoSelecionado.turno}
+                        </span>
+                      </span>
+                    </div>
+                  ) : null}
+
+                  {/* Tipo – ícone alinhado verticalmente com o de cima */}
+                  <div className="flex items-center gap-2 sm:justify-end">
+                    <Image
+                      src={(() => {
+                        const tipo = agendamentoSelecionado.tipoReserva;
+                        if (tipo === "permanente") return "/iconescards/icone_permanente_name.png";
+                        if (tipo === "comum") return "/iconescards/avulsacinza.png";
+                        return "/iconescards/avulsacinza.png"; // padrão
+                      })()}
+                      alt="Tipo de reserva"
+                      width={14}
+                      height={14}
+                      className="w-3.5 h-3.5"
+                    />
+                    <span>
+                      {" "}
+                      <span className="font-semibold text-gray-800">
+                        {agendamentoSelecionado.tipoReserva === "permanente"
+                          ? "Permanente"
+                          : agendamentoSelecionado.tipoReserva === "comum"
+                            ? "Avulsa"
+                            : agendamentoSelecionado.tipoReserva}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* JOGADORES */}
+              {agendamentoSelecionado.tipoLocal === "quadra" && (
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-orange-600">
+                    Jogadores:
+                  </p>
+
+                  <div className="flex flex-wrap gap-3">
                     {agendamentoSelecionado.jogadores.length > 0 ? (
-                      agendamentoSelecionado.jogadores.map((j, idx) => (
-                        <li key={idx}>{j.nome}</li>
-                      ))
+                      agendamentoSelecionado.jogadores.map((jog, idx) => {
+                        const celular = (jog as any).celular as
+                          | string
+                          | undefined;
+
+                        return (
+                          <div
+                            key={idx}
+                            className="flex-1 min-w-[140px] max-w-[180px] bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-700"
+                          >
+                            <p className="font-semibold text-[13px] truncate">
+                              {jog.nome}
+                            </p>
+
+                            {celular && (
+                              <div className="mt-1 flex items-center gap-1 text-[11px] text-gray-600">
+                                <Image
+                                  src="/iconescards/icone_phone.png"
+                                  alt="Telefone"
+                                  width={12}
+                                  height={12}
+                                  className="w-3 h-3"
+                                />
+                                <span className="truncate">{celular}</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
                     ) : (
-                      <li>Nenhum jogador cadastrado</li>
+                      <p className="text-xs text-gray-500">
+                        Nenhum jogador cadastrado
+                      </p>
                     )}
-                  </ul>
+                  </div>
                 </div>
               )}
 
-            {/* BOTÕES DE AÇÃO */}
-            {/* Adicionar Jogadores (somente comum/quadra) */}
-            {agendamentoSelecionado.tipoReserva === "comum" &&
-              agendamentoSelecionado.tipoLocal === "quadra" && (
+              {/* BOTÃO ADICIONAR JOGADORES (quando permitido) */}
+              {agendamentoSelecionado.tipoReserva === "comum" &&
+                agendamentoSelecionado.tipoLocal === "quadra" && (
+                  <div className="pt-2 flex justify-center">
+                    <button
+                      onClick={abrirModalAdicionarJogadores}
+                      className="
+          inline-flex items-center justify-center
+          gap-1
+          rounded-lg
+          border border-orange-500
+          bg-orange-50
+          text-orange-700 text-xs
+          px-3 py-1
+          cursor-pointer
+          hover:bg-orange-100
+          transition
+        "
+                    >
+                      {/* ÍCONE "+" LARANJA */}
+                      <Image
+                        src="/iconescards/addmais.png"
+                        alt="Adicionar jogadores"
+                        width={12}
+                        height={12}
+                        className="w-3 h-3"
+                      />
+                      <span>Adicionar mais jogadores</span>
+                    </button>
+                  </div>
+                )}
+
+
+              {/* LINHA DIVISÓRIA */}
+              <div className="border-t border-gray-200 pt-4 mt-2" />
+
+              {/* BOTÕES DE AÇÃO INFERIORES */}
+              <div className="flex flex-col sm:flex-row gap-3">
                 <button
-                  onClick={abrirModalAdicionarJogadores}
-                  className="mt-4 w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 px-4 rounded cursor-pointer"
+                  onClick={abrirFluxoCancelamento}
+                  className="flex-1 border border-red-500 text-red-600 hover:bg-red-50 rounded-lg py-2 text-sm font-medium cursor-pointer"
                 >
-                  Adicionar jogadores
+                  Cancelar reserva
                 </button>
-              )}
 
-            {/* Transferir (quadra: comum e permanente) */}
-            {agendamentoSelecionado.tipoLocal === "quadra" && (
-              <button
-                onClick={abrirModalTransferir}
-                disabled={loadingTransferencia}
-                className="mt-3 w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded cursor-pointer disabled:opacity-60"
-              >
-                {loadingTransferencia ? "Transferindo..." : "Transferir Agendamento"}
-              </button>
-            )}
+                {agendamentoSelecionado.tipoLocal === "quadra" && (
+                  <button
+                    onClick={abrirModalTransferir}
+                    disabled={loadingTransferencia}
+                    className="flex-1 border border-gray-400 text-gray-700 hover:bg-gray-50 rounded-lg py-2 text-sm font-medium cursor-pointer disabled:opacity-60"
+                  >
+                    {loadingTransferencia
+                      ? "Transferindo..."
+                      : "Transferir reserva"}
+                  </button>
+                )}
+              </div>
+            </div>
 
-            <button
-              onClick={abrirFluxoCancelamento}
-              className="mt-3 w-full bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded cursor-pointer"
-            >
-              Cancelar Agendamento
-            </button>
-
-            <button
-              onClick={() => setAgendamentoSelecionado(null)}
-              className="mt-3 w-full bg-orange-600 hover:bg-orange-700 text-white py-2 px-4 rounded cursor-pointer"
-            >
-              Fechar
-            </button>
-
-            {/* Confirmar cancelamento (somente agendamentos não permanentes) */}
+            {/* --- OVERLAYS INTERNOS (mantidos, só estilos ajustados) --- */}
             {confirmarCancelamento && (
-              <div className="absolute inset-0 bg-black bg-opacity-80 flex flex-col items-center justify-center p-4 rounded-xl border shadow-lg z-50">
-                <p className="text-center text-white mb-4">
-                  Tem certeza que deseja cancelar este agendamento?
-                </p>
-                <div className="flex gap-4">
-                  <button
-                    onClick={cancelarAgendamento}
-                    disabled={loadingCancelamento}
-                    className="bg-red-600 text-white px-4 py-1 rounded hover:bg-red-700 transition cursor-pointer"
-                  >
-                    {loadingCancelamento ? "Cancelando..." : "Sim"}
-                  </button>
-                  <button
-                    onClick={() => setConfirmarCancelamento(false)}
-                    className="bg-gray-300 text-black px-4 py-1 rounded hover:bg-gray-400 transition cursor-pointer"
-                  >
-                    Não
-                  </button>
+              <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center p-4 rounded-3xl z-50">
+                <div className="bg-white rounded-2xl p-5 w-full max-w-sm text-center shadow-xl">
+                  <p className="text-sm text-gray-800 mb-4">
+                    Tem certeza que deseja cancelar esta reserva?
+                  </p>
+                  <div className="flex gap-3 justify-center">
+                    <button
+                      onClick={cancelarAgendamento}
+                      disabled={loadingCancelamento}
+                      className="px-4 py-2 rounded-full bg-red-600 text-white hover:bg-red-700 text-sm cursor-pointer disabled:opacity-70"
+                    >
+                      {loadingCancelamento ? "Cancelando..." : "Sim, cancelar"}
+                    </button>
+                    <button
+                      onClick={() => setConfirmarCancelamento(false)}
+                      className="px-4 py-2 rounded-full bg-gray-200 hover:bg-gray-300 text-sm cursor-pointer"
+                    >
+                      Não
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
 
             {mostrarOpcoesCancelamento && (
-              <div className="absolute inset-0 bg-black bg-opacity-80 flex flex-col items-center justify-center p-4 rounded-xl border shadow-lg z-50">
-                <div className="bg-white rounded-lg p-4 w-full">
-                  <p className="font-semibold mb-3 text-center">
+              <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center p-4 rounded-3xl z-50">
+                <div className="bg-white rounded-2xl p-5 w-full max-w-sm shadow-xl">
+                  <p className="font-semibold mb-3 text-center text-sm">
                     Cancelar apenas 1 dia deste agendamento permanente
                   </p>
                   <div className="grid gap-3">
                     <button
                       onClick={abrirExcecao}
-                      className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded cursor-pointer"
+                      className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-full cursor-pointer text-sm"
                     >
                       Cancelar APENAS 1 dia
                     </button>
                     <button
                       onClick={() => setMostrarOpcoesCancelamento(false)}
-                      className="w-full bg-gray-300 hover:bg-gray-400 text-black py-2 rounded cursor-pointer"
+                      className="w-full bg-gray-200 hover:bg-gray-300 text-black py-2 rounded-full cursor-pointer text-sm"
                     >
                       Voltar
                     </button>
@@ -1332,20 +1991,23 @@ export default function AdminHome() {
               </div>
             )}
 
-            {/* Modal de EXCEÇÃO (cancelar apenas 1 dia) */}
             {mostrarExcecaoModal && (
-              <div className="absolute inset-0 bg-black bg-opacity-80 flex items-center justify-center p-4 rounded-xl z-50">
-                <div className="bg-white rounded-lg p-4 w-full max-w-sm">
-                  <h3 className="text-lg font-semibold mb-2">Cancelar apenas 1 dia</h3>
+              <div className="absolute inset-0 bg-black/70 flex items-center justify-center p-4 rounded-3xl z-50">
+                <div className="bg-white rounded-2xl p-5 w-full max-w-sm shadow-xl">
+                  <h3 className="text-lg font-semibold mb-2">
+                    Cancelar apenas 1 dia
+                  </h3>
                   <p className="text-sm text-gray-600 mb-3">
-                    Selecione uma data (próximas {datasExcecao.length} datas que caem em{" "}
-                    {agendamentoSelecionado?.diaSemana ?? "-"}).
+                    Selecione uma data (próximas {datasExcecao.length} datas que
+                    caem em {agendamentoSelecionado?.diaSemana ?? "-"}).
                   </p>
 
                   {datasExcecao.length === 0 ? (
-                    <div className="text-sm text-gray-600">Não há datas disponíveis.</div>
+                    <div className="text-sm text-gray-600 mb-3">
+                      Não há datas disponíveis.
+                    </div>
                   ) : (
-                    <div className="grid grid-cols-2 gap-2 max-h-64 overflow-auto mb-3">
+                    <div className="grid grid-cols-2 gap-2 max-h-64 overflow-auto mb-4">
                       {datasExcecao.map((d) => {
                         const ativo = dataExcecaoSelecionada === d;
                         return (
@@ -1353,7 +2015,7 @@ export default function AdminHome() {
                             key={d}
                             type="button"
                             onClick={() => setDataExcecaoSelecionada(d)}
-                            className={`px-3 py-2 rounded border text-sm ${ativo
+                            className={`px-3 py-2 rounded-full border text-sm ${ativo
                               ? "border-indigo-600 bg-indigo-50 text-indigo-700"
                               : "border-gray-300 hover:bg-gray-50"
                               }`}
@@ -1370,7 +2032,7 @@ export default function AdminHome() {
                       type="button"
                       onClick={() => setMostrarExcecaoModal(false)}
                       disabled={postandoExcecao}
-                      className="px-3 py-2 rounded bg-gray-300 hover:bg-gray-400"
+                      className="px-4 py-2 rounded-full bg-gray-200 hover:bg-gray-300 text-sm"
                     >
                       Voltar
                     </button>
@@ -1378,7 +2040,7 @@ export default function AdminHome() {
                       type="button"
                       onClick={confirmarExcecao}
                       disabled={!dataExcecaoSelecionada || postandoExcecao}
-                      className="px-3 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:bg-indigo-300"
+                      className="px-4 py-2 rounded-full bg-indigo-600 text-white hover:bg-indigo-700 disabled:bg-indigo-300 text-sm"
                     >
                       {postandoExcecao ? "Salvando..." : "Confirmar exceção"}
                     </button>
@@ -1389,6 +2051,7 @@ export default function AdminHome() {
           </div>
         </div>
       )}
+
 
       {/* MODAL DE TRANSFERÊNCIA */}
       {abrirModalTransferencia && (
