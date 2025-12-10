@@ -303,34 +303,55 @@ router.get(
       where: { id: req.params.id },
       select: { usuarioId: true },
     });
+
+    // se não encontrar, bloqueia acesso
     return r?.usuarioId ?? null;
   }),
   async (req, res) => {
     try {
-      const a = await prisma.agendamentoChurrasqueira.findUnique({
+      const agendamento = await prisma.agendamentoChurrasqueira.findUnique({
         where: { id: req.params.id },
         include: {
-          usuario: { select: { id: true, nome: true, email: true } },
-          churrasqueira: { select: { nome: true, numero: true } },
+          usuario: {
+            select: { id: true, nome: true, email: true },
+          },
+          churrasqueira: {
+            select: { id: true, nome: true, numero: true },
+          },
         },
       });
-      if (!a) return res.status(404).json({ erro: "Agendamento de churrasqueira não encontrado" });
+
+      if (!agendamento) {
+        return res
+          .status(404)
+          .json({ erro: "Agendamento de churrasqueira não encontrado" });
+      }
+
+      // se quiser manter no padrão das outras rotas:
+      const dataISO = agendamento.data.toISOString().slice(0, 10); // yyyy-mm-dd
 
       return res.json({
-        id: a.id,
-        tipoReserva: "COMUM",
-        data: a.data.toISOString().slice(0, 10),
-        turno: a.turno,
-        usuario: a.usuario?.nome,
-        usuarioId: a.usuario?.id,
-        churrasqueira: `${a.churrasqueira?.nome} (Nº ${a.churrasqueira?.numero})`,
+        id: agendamento.id,
+        tipoReserva: "COMUM", // aqui você pode trocar se tiver enum/tipo no banco
+        data: dataISO,
+        turno: agendamento.turno, // ex: "MANHA" | "TARDE" | "NOITE"
+        usuarioId: agendamento.usuario?.id ?? agendamento.usuarioId,
+        usuarioNome: agendamento.usuario?.nome ?? null,
+        usuarioEmail: agendamento.usuario?.email ?? null,
+        churrasqueiraId: agendamento.churrasqueira?.id ?? null,
+        churrasqueiraNome: agendamento.churrasqueira?.nome ?? null,
+        churrasqueiraNumero: agendamento.churrasqueira?.numero ?? null,
+        // se tiver mais campos no modelo (observacao, status, etc), pode adicionar aqui
       });
     } catch (err) {
       console.error(err);
-      return res.status(500).json({ erro: "Erro ao buscar agendamento de churrasqueira" });
+      return res
+        .status(500)
+        .json({ erro: "Erro ao buscar agendamento de churrasqueira" });
     }
   }
 );
+
 
 // POST /agendamentosChurrasqueiras/cancelar/:id  (dono ou admin)
 router.post(
