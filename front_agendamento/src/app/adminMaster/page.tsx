@@ -1789,7 +1789,7 @@ export default function AdminHome() {
                 <div className="flex-1 space-y-1 sm:flex sm:flex-col sm:items-end sm:text-right">
                   {/* Horário ou Turno */}
                   {agendamentoSelecionado.horario ? (
-                    <div className="flex items-center gap-2 sm:justify-end">
+                    <div className="flex items-center gap-2 sm:justify-end sm:w-[180px]">
                       {/* ÍCONE HORÁRIO */}
                       <Image
                         src="/iconescards/horario.png"
@@ -1806,7 +1806,7 @@ export default function AdminHome() {
                       </span>
                     </div>
                   ) : agendamentoSelecionado.turno ? (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 sm:justify-end sm:w-[180px]">
                       {/* ÍCONE TURNO */}
                       <Image
                         src="/iconescards/horario.png"
@@ -1825,22 +1825,17 @@ export default function AdminHome() {
                   ) : null}
 
                   {/* Tipo */}
-                  <div className="flex items-center gap-2 sm:justify-end">
-                    {/* ÍCONE TIPO CONDICIONAL (permanente / avulsa / outro) */}
+                  <div className="flex items-center gap-2 sm:justify-end sm:w-[180px]">
                     <Image
                       src={(() => {
                         const tipo = agendamentoSelecionado.tipoReserva;
 
                         if (tipo === "permanente") {
-                          // Reserva permanente
                           return "/iconescards/icone_permanente_name.png";
                         }
                         if (tipo === "comum") {
-                          // Reserva avulsa
                           return "/iconescards/avulsacinza.png";
                         }
-
-                        // Ícone padrão para outros tipos (se existir)
                         return "/iconescards/avulsacinza.png";
                       })()}
                       alt="Tipo de reserva"
