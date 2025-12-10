@@ -1932,7 +1932,7 @@ export default function AdminHome() {
 
 
               {/* LINHA DIVISÓRIA */}
-              <div className="border-t border-gray-200 mt-6 pt-4" />
+              <div className="border-t border-gray-200 mt-6 pt-1" />
 
               {/* BOTÕES DE AÇÃO INFERIORES */}
               <div className="flex flex-col sm:flex-row sm:justify-center gap-4 sm:gap-12">
