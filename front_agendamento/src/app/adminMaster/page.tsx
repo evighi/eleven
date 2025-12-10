@@ -1718,9 +1718,9 @@ export default function AdminHome() {
               </div>
 
               {/* LINHA DE INFOS (Dia / Esporte / Horário / Tipo) */}
-              <div className="flex flex-col sm:flex-row gap-y-2 gap-x-8 text-xs">
-                {/* COLUNA DIREITA (Horário/Turno / Tipo) */}
-                <div className="space-y-1 sm:w-[1%] sm:ml-auto sm:text-right">
+              <div className="flex flex-col sm:flex-row sm:justify-between gap-y-2 sm:gap-x-12 text-xs">
+                {/* COLUNA ESQUERDA (Dia / Esporte) */}
+                <div className="flex-1 space-y-1">
                   {/* Dia */}
                   <div className="flex items-center gap-2">
                     {/* ÍCONE DIA */}
@@ -1786,10 +1786,10 @@ export default function AdminHome() {
                 </div>
 
                 {/* COLUNA DIREITA (Horário/Turno / Tipo) */}
-                <div className="flex-1 space-y-1">
+                <div className="flex-1 space-y-1 sm:flex sm:flex-col sm:items-end sm:text-right">
                   {/* Horário ou Turno */}
                   {agendamentoSelecionado.horario ? (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 sm:justify-end">
                       {/* ÍCONE HORÁRIO */}
                       <Image
                         src="/iconescards/horario.png"
@@ -1806,7 +1806,7 @@ export default function AdminHome() {
                       </span>
                     </div>
                   ) : agendamentoSelecionado.turno ? (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 sm:justify-end">
                       {/* ÍCONE TURNO */}
                       <Image
                         src="/iconescards/horario.png"
@@ -1825,22 +1825,17 @@ export default function AdminHome() {
                   ) : null}
 
                   {/* Tipo */}
-                  <div className="flex items-center gap-2">
-                    {/* ÍCONE TIPO CONDICIONAL (permanente / avulsa / outro) */}
+                  <div className="flex items-center gap-2 sm:justify-end">
                     <Image
                       src={(() => {
                         const tipo = agendamentoSelecionado.tipoReserva;
 
                         if (tipo === "permanente") {
-                          // Reserva permanente
                           return "/iconescards/icone_permanente_name.png";
                         }
                         if (tipo === "comum") {
-                          // Reserva avulsa
                           return "/iconescards/avulsacinza.png";
                         }
-
-                        // Ícone padrão para outros tipos (se existir)
                         return "/iconescards/avulsacinza.png";
                       })()}
                       alt="Tipo de reserva"
