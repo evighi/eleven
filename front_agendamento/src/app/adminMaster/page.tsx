@@ -1806,7 +1806,7 @@ export default function AdminHome() {
                       </span>
                     </div>
                   ) : agendamentoSelecionado.turno ? (
-                    <div className="flex items-center gap-2 sm:justify-end">
+                    <div className="flex items-center gap-2">
                       {/* ÍCONE TURNO */}
                       <Image
                         src="/iconescards/horario.png"
