@@ -347,6 +347,23 @@ export default function AdminHome() {
     buscarDisponibilidade();
   }, [buscarDisponibilidade]);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (agendamentoSelecionado) {
+          setAgendamentoSelecionado(null);
+          setConfirmarCancelamento(false);
+          setMostrarOpcoesCancelamento(false);
+          setMostrarExcecaoModal(false);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [agendamentoSelecionado]);
+
+
   // Fecha ao clicar fora
   useEffect(() => {
     if (!horarioAberto) return;
@@ -1644,8 +1661,22 @@ export default function AdminHome() {
 
       {/* MODAL DE DETALHES */}
       {agendamentoSelecionado && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] relative flex flex-col overflow-hidden">
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+          onClick={(e) => {
+            // fecha só se clicar no fundo, não dentro do card
+            if (e.target === e.currentTarget) {
+              setAgendamentoSelecionado(null);
+              setConfirmarCancelamento(false);
+              setMostrarOpcoesCancelamento(false);
+              setMostrarExcecaoModal(false);
+            }
+          }}
+        >
+          <div
+            className="bg-white rounded-3xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] relative flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()} // não deixar o clique “subir”
+          >
             {/* BOTÃO X */}
             <button
               onClick={() => setAgendamentoSelecionado(null)}
