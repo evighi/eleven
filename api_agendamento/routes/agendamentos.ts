@@ -1141,14 +1141,16 @@ router.get("/:id", verificarToken, async (req, res) => {
       horario: agendamento.horario,
       usuario: agendamento.usuario
         ? {
-            id: agendamento.usuario.id,
-            nome: agendamento.usuario.nome,
-            email: sanitizeEmail(agendamento.usuario.email),
-            celular: sanitizePhone(agendamento.usuario.celular),
-          }
+          id: agendamento.usuario.id,
+          nome: agendamento.usuario.nome,
+          email: sanitizeEmail(agendamento.usuario.email),
+          celular: sanitizePhone(agendamento.usuario.celular),
+        }
         : null,
       usuarioId: agendamento.usuario?.id,
       esporte: agendamento.esporte?.nome,
+      quadraNome: agendamento.quadra?.nome ?? null,
+      quadraNumero: agendamento.quadra?.numero ?? null,
       quadra: `${agendamento.quadra?.nome} (Nº ${agendamento.quadra?.numero})`,
       jogadores: agendamento.jogadores.map((j) => ({
         id: j.id,
@@ -1159,10 +1161,10 @@ router.get("/:id", verificarToken, async (req, res) => {
       // 🆕 extras
       professor: agendamento.professor
         ? {
-            id: agendamento.professor.id,
-            nome: agendamento.professor.nome,
-            email: sanitizeEmail(agendamento.professor.email),
-          }
+          id: agendamento.professor.id,
+          nome: agendamento.professor.nome,
+          email: sanitizeEmail(agendamento.professor.email),
+        }
         : null,
       professorId: agendamento.professorId ?? null,
       tipoSessao: agendamento.tipoSessao ?? null,
@@ -1172,11 +1174,11 @@ router.get("/:id", verificarToken, async (req, res) => {
       isencaoApoiado: agendamento.isencaoApoiado ?? false,
       apoiadoUsuario: agendamento.apoiadoUsuario
         ? {
-            id: agendamento.apoiadoUsuario.id,
-            nome: agendamento.apoiadoUsuario.nome,
-            email: sanitizeEmail(agendamento.apoiadoUsuario.email),
-            celular: sanitizePhone(agendamento.apoiadoUsuario.celular),
-          }
+          id: agendamento.apoiadoUsuario.id,
+          nome: agendamento.apoiadoUsuario.nome,
+          email: sanitizeEmail(agendamento.apoiadoUsuario.email),
+          celular: sanitizePhone(agendamento.apoiadoUsuario.celular),
+        }
         : null,
     });
   } catch (err) {
@@ -1793,10 +1795,10 @@ router.patch("/:id/transferir", verificarToken, async (req, res) => {
         horario: novoAgendamento.horario,
         usuario: novoAgendamento.usuario
           ? {
-              id: novoAgendamento.usuario.id,
-              nome: novoAgendamento.usuario.nome,
-              email: isAdmin ? novoAgendamento.usuario.email : undefined,
-            }
+            id: novoAgendamento.usuario.id,
+            nome: novoAgendamento.usuario.nome,
+            email: isAdmin ? novoAgendamento.usuario.email : undefined,
+          }
           : null,
         jogadores: novoAgendamento.jogadores.map((j) => ({
           id: j.id,
@@ -1805,10 +1807,10 @@ router.patch("/:id/transferir", verificarToken, async (req, res) => {
         })),
         quadra: novoAgendamento.quadra
           ? {
-              id: novoAgendamento.quadra.id,
-              nome: novoAgendamento.quadra.nome,
-              numero: novoAgendamento.quadra.numero,
-            }
+            id: novoAgendamento.quadra.id,
+            nome: novoAgendamento.quadra.nome,
+            numero: novoAgendamento.quadra.numero,
+          }
           : null,
       },
     });
@@ -1855,9 +1857,9 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
 
     const usuariosValidos = jogadoresIds.length
       ? await prisma.usuario.findMany({
-          where: { id: { in: jogadoresIds } },
-          select: { id: true },
-        })
+        where: { id: { in: jogadoresIds } },
+        select: { id: true },
+      })
       : [];
 
     if (usuariosValidos.length !== jogadoresIds.length) {
@@ -1921,10 +1923,10 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
       status: atualizado.status,
       usuario: atualizado.usuario
         ? {
-            id: atualizado.usuario.id,
-            nome: atualizado.usuario.nome,
-            email: isAdmin ? atualizado.usuario.email : undefined,
-          }
+          id: atualizado.usuario.id,
+          nome: atualizado.usuario.nome,
+          email: isAdmin ? atualizado.usuario.email : undefined,
+        }
         : null,
       jogadores: atualizado.jogadores.map((j) => ({
         id: j.id,

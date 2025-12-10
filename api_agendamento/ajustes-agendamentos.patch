@@ -1,0 +1,342 @@
+diff --git a/api_agendamento/routes/agendamentos.ts b/api_agendamento/routes/agendamentos.ts
+index 721a6da..051f37f 100644
+--- a/api_agendamento/routes/agendamentos.ts
++++ b/api_agendamento/routes/agendamentos.ts
+@@ -1141,14 +1141,16 @@ router.get("/:id", verificarToken, async (req, res) => {
+       horario: agendamento.horario,
+       usuario: agendamento.usuario
+         ? {
+-            id: agendamento.usuario.id,
+-            nome: agendamento.usuario.nome,
+-            email: sanitizeEmail(agendamento.usuario.email),
+-            celular: sanitizePhone(agendamento.usuario.celular),
+-          }
++          id: agendamento.usuario.id,
++          nome: agendamento.usuario.nome,
++          email: sanitizeEmail(agendamento.usuario.email),
++          celular: sanitizePhone(agendamento.usuario.celular),
++        }
+         : null,
+       usuarioId: agendamento.usuario?.id,
+       esporte: agendamento.esporte?.nome,
++      quadraNome: agendamento.quadra?.nome ?? null,
++      quadraNumero: agendamento.quadra?.numero ?? null,
+       quadra: `${agendamento.quadra?.nome} (Nº ${agendamento.quadra?.numero})`,
+       jogadores: agendamento.jogadores.map((j) => ({
+         id: j.id,
+@@ -1159,10 +1161,10 @@ router.get("/:id", verificarToken, async (req, res) => {
+       // 🆕 extras
+       professor: agendamento.professor
+         ? {
+-            id: agendamento.professor.id,
+-            nome: agendamento.professor.nome,
+-            email: sanitizeEmail(agendamento.professor.email),
+-          }
++          id: agendamento.professor.id,
++          nome: agendamento.professor.nome,
++          email: sanitizeEmail(agendamento.professor.email),
++        }
+         : null,
+       professorId: agendamento.professorId ?? null,
+       tipoSessao: agendamento.tipoSessao ?? null,
+@@ -1172,11 +1174,11 @@ router.get("/:id", verificarToken, async (req, res) => {
+       isencaoApoiado: agendamento.isencaoApoiado ?? false,
+       apoiadoUsuario: agendamento.apoiadoUsuario
+         ? {
+-            id: agendamento.apoiadoUsuario.id,
+-            nome: agendamento.apoiadoUsuario.nome,
+-            email: sanitizeEmail(agendamento.apoiadoUsuario.email),
+-            celular: sanitizePhone(agendamento.apoiadoUsuario.celular),
+-          }
++          id: agendamento.apoiadoUsuario.id,
++          nome: agendamento.apoiadoUsuario.nome,
++          email: sanitizeEmail(agendamento.apoiadoUsuario.email),
++          celular: sanitizePhone(agendamento.apoiadoUsuario.celular),
++        }
+         : null,
+     });
+   } catch (err) {
+@@ -1793,10 +1795,10 @@ router.patch("/:id/transferir", verificarToken, async (req, res) => {
+         horario: novoAgendamento.horario,
+         usuario: novoAgendamento.usuario
+           ? {
+-              id: novoAgendamento.usuario.id,
+-              nome: novoAgendamento.usuario.nome,
+-              email: isAdmin ? novoAgendamento.usuario.email : undefined,
+-            }
++            id: novoAgendamento.usuario.id,
++            nome: novoAgendamento.usuario.nome,
++            email: isAdmin ? novoAgendamento.usuario.email : undefined,
++          }
+           : null,
+         jogadores: novoAgendamento.jogadores.map((j) => ({
+           id: j.id,
+@@ -1805,10 +1807,10 @@ router.patch("/:id/transferir", verificarToken, async (req, res) => {
+         })),
+         quadra: novoAgendamento.quadra
+           ? {
+-              id: novoAgendamento.quadra.id,
+-              nome: novoAgendamento.quadra.nome,
+-              numero: novoAgendamento.quadra.numero,
+-            }
++            id: novoAgendamento.quadra.id,
++            nome: novoAgendamento.quadra.nome,
++            numero: novoAgendamento.quadra.numero,
++          }
+           : null,
+       },
+     });
+@@ -1855,9 +1857,9 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
+ 
+     const usuariosValidos = jogadoresIds.length
+       ? await prisma.usuario.findMany({
+-          where: { id: { in: jogadoresIds } },
+-          select: { id: true },
+-        })
++        where: { id: { in: jogadoresIds } },
++        select: { id: true },
++      })
+       : [];
+ 
+     if (usuariosValidos.length !== jogadoresIds.length) {
+@@ -1921,10 +1923,10 @@ router.patch("/:id/jogadores", verificarToken, async (req, res) => {
+       status: atualizado.status,
+       usuario: atualizado.usuario
+         ? {
+-            id: atualizado.usuario.id,
+-            nome: atualizado.usuario.nome,
+-            email: isAdmin ? atualizado.usuario.email : undefined,
+-          }
++          id: atualizado.usuario.id,
++          nome: atualizado.usuario.nome,
++          email: isAdmin ? atualizado.usuario.email : undefined,
++        }
+         : null,
+       jogadores: atualizado.jogadores.map((j) => ({
+         id: j.id,
+diff --git a/api_agendamento/routes/agendamentosChurrasqueiras.ts b/api_agendamento/routes/agendamentosChurrasqueiras.ts
+index 0819a62..fbf98f1 100644
+--- a/api_agendamento/routes/agendamentosChurrasqueiras.ts
++++ b/api_agendamento/routes/agendamentosChurrasqueiras.ts
+@@ -303,35 +303,56 @@ router.get(
+       where: { id: req.params.id },
+       select: { usuarioId: true },
+     });
++
++    // se não encontrar, bloqueia acesso
+     return r?.usuarioId ?? null;
+   }),
+   async (req, res) => {
+     try {
+-      const a = await prisma.agendamentoChurrasqueira.findUnique({
++      const agendamento = await prisma.agendamentoChurrasqueira.findUnique({
+         where: { id: req.params.id },
+         include: {
+-          usuario: { select: { id: true, nome: true, email: true } },
+-          churrasqueira: { select: { nome: true, numero: true } },
++          usuario: {
++            select: { id: true, nome: true, email: true },
++          },
++          churrasqueira: {
++            select: { id: true, nome: true, numero: true },
++          },
+         },
+       });
+-      if (!a) return res.status(404).json({ erro: "Agendamento de churrasqueira não encontrado" });
++
++      if (!agendamento) {
++        return res
++          .status(404)
++          .json({ erro: "Agendamento de churrasqueira não encontrado" });
++      }
++
++      // se quiser manter no padrão das outras rotas:
++      const dataISO = agendamento.data.toISOString().slice(0, 10); // yyyy-mm-dd
+ 
+       return res.json({
+-        id: a.id,
+-        tipoReserva: "COMUM",
+-        data: a.data.toISOString().slice(0, 10),
+-        turno: a.turno,
+-        usuario: a.usuario?.nome,
+-        usuarioId: a.usuario?.id,
+-        churrasqueira: `${a.churrasqueira?.nome} (Nº ${a.churrasqueira?.numero})`,
++        id: agendamento.id,
++        tipoReserva: "COMUM", // aqui você pode trocar se tiver enum/tipo no banco
++        data: dataISO,
++        turno: agendamento.turno, // ex: "MANHA" | "TARDE" | "NOITE"
++        usuarioId: agendamento.usuario?.id ?? agendamento.usuarioId,
++        usuarioNome: agendamento.usuario?.nome ?? null,
++        usuarioEmail: agendamento.usuario?.email ?? null,
++        churrasqueiraId: agendamento.churrasqueira?.id ?? null,
++        churrasqueiraNome: agendamento.churrasqueira?.nome ?? null,
++        churrasqueiraNumero: agendamento.churrasqueira?.numero ?? null,
++        // se tiver mais campos no modelo (observacao, status, etc), pode adicionar aqui
+       });
+     } catch (err) {
+       console.error(err);
+-      return res.status(500).json({ erro: "Erro ao buscar agendamento de churrasqueira" });
++      return res
++        .status(500)
++        .json({ erro: "Erro ao buscar agendamento de churrasqueira" });
+     }
+   }
+ );
+ 
++
+ // POST /agendamentosChurrasqueiras/cancelar/:id  (dono ou admin)
+ router.post(
+   "/cancelar/:id",
+diff --git a/api_agendamento/routes/agendamentosPermanentes.ts b/api_agendamento/routes/agendamentosPermanentes.ts
+index c131a14..5067a3f 100644
+--- a/api_agendamento/routes/agendamentosPermanentes.ts
++++ b/api_agendamento/routes/agendamentosPermanentes.ts
+@@ -467,27 +467,35 @@ router.get(
+         where: { id },
+         include: {
+           usuario: { select: { id: true, nome: true, email: true, celular: true } },
+-          professor: { select: { id: true, nome: true, email: true } }, // 🆕
+-          quadra: { select: { nome: true, numero: true } },
++          professor: { select: { id: true, nome: true, email: true } },
++          quadra: { select: { id: true, nome: true, numero: true } }, // 👈 agora com id também
+           esporte: { select: { nome: true } },
+         },
+       });
++
+       if (!agendamento) {
+-        return res.status(404).json({ erro: "Agendamento permanente não encontrado" });
++        return res
++          .status(404)
++          .json({ erro: "Agendamento permanente não encontrado" });
+       }
+ 
+       // próxima data (pula exceções; tudo em linha do tempo local)
+       const proximaData = await proximaDataPermanenteSemExcecao({
+         id: agendamento.id,
+         diaSemana: agendamento.diaSemana as DiaSemana,
+-        dataInicio: agendamento.dataInicio ? new Date(agendamento.dataInicio) : null,
++        dataInicio: agendamento.dataInicio
++          ? new Date(agendamento.dataInicio)
++          : null,
+       });
+ 
+       // exceções futuras a partir de HOJE LOCAL
+       const hojeLocalYMD = localYMD(new Date());
+       const { inicio } = storedUtcBoundaryForLocalYMD(hojeLocalYMD);
+       const excecoes = await prisma.agendamentoPermanenteCancelamento.findMany({
+-        where: { agendamentoPermanenteId: agendamento.id, data: { gte: inicio } },
++        where: {
++          agendamentoPermanenteId: agendamento.id,
++          data: { gte: inicio },
++        },
+         orderBy: { data: "asc" },
+         select: { id: true, data: true, motivo: true },
+       });
+@@ -497,23 +505,39 @@ router.get(
+         tipoReserva: "PERMANENTE",
+         diaSemana: agendamento.diaSemana,
+         horario: agendamento.horario,
++
+         usuario: agendamento.usuario
+           ? {
+-              id: agendamento.usuario.id,
+-              nome: agendamento.usuario.nome,
+-              email: agendamento.usuario.email,
+-              celular: agendamento.usuario.celular,
+-            }
++            id: agendamento.usuario.id,
++            nome: agendamento.usuario.nome,
++            email: agendamento.usuario.email,
++            celular: agendamento.usuario.celular,
++          }
+           : null,
+         usuarioId: agendamento.usuario?.id,
++
+         esporte: agendamento.esporte.nome,
+-        quadra: `${agendamento.quadra.nome} (Nº ${agendamento.quadra.numero})`,
+ 
+-        dataInicio: agendamento.dataInicio ? toISODateUTC(new Date(agendamento.dataInicio)) : null,
++        // 👇 quadra separada em campos
++        quadraId: agendamento.quadra?.id ?? null,
++        quadraNome: agendamento.quadra?.nome ?? null,
++        quadraNumero: agendamento.quadra?.numero ?? null,
++        // se ainda quiser manter a string antiga pra compatibilidade:
++        quadra: agendamento.quadra
++          ? `${agendamento.quadra.nome} (Nº ${agendamento.quadra.numero})`
++          : null,
++
++        dataInicio: agendamento.dataInicio
++          ? toISODateUTC(new Date(agendamento.dataInicio))
++          : null,
+ 
+         // extras
+         professor: agendamento.professor
+-          ? { id: agendamento.professor.id, nome: agendamento.professor.nome, email: agendamento.professor.email }
++          ? {
++            id: agendamento.professor.id,
++            nome: agendamento.professor.nome,
++            email: agendamento.professor.email,
++          }
+           : null,
+         professorId: agendamento.professorId ?? null,
+         tipoSessao: agendamento.tipoSessao ?? null,
+@@ -527,11 +551,14 @@ router.get(
+       });
+     } catch (err) {
+       console.error(err);
+-      return res.status(500).json({ erro: "Erro ao buscar agendamento permanente" });
++      return res
++        .status(500)
++        .json({ erro: "Erro ao buscar agendamento permanente" });
+     }
+   }
+ );
+ 
++
+ // 📅 Datas elegíveis p/ exceção — dono ou admin
+ router.get(
+   "/:id/datas-excecao",
+diff --git a/api_agendamento/routes/agendamentosPermanentesChurrasqueiras.ts b/api_agendamento/routes/agendamentosPermanentesChurrasqueiras.ts
+index c8a4c4c..41c70eb 100644
+--- a/api_agendamento/routes/agendamentosPermanentesChurrasqueiras.ts
++++ b/api_agendamento/routes/agendamentosPermanentesChurrasqueiras.ts
+@@ -337,7 +337,7 @@ router.get(
+         where: { id },
+         include: {
+           usuario: { select: { id: true, nome: true, email: true } },
+-          churrasqueira: { select: { nome: true, numero: true } },
++          churrasqueira: { select: { id: true, nome: true, numero: true } }, // 👈 acrescentado id
+         },
+       });
+ 
+@@ -352,9 +352,21 @@ router.get(
+         tipoReserva: "PERMANENTE",
+         diaSemana: agendamento.diaSemana,
+         turno: agendamento.turno,
++
++        // mantém o que já existia
+         usuario: agendamento.usuario.nome,
+         usuarioId: agendamento.usuario.id,
+-        churrasqueira: `${agendamento.churrasqueira.nome} (Nº ${agendamento.churrasqueira.numero})`,
++
++        // 🔥 churrasqueira com campos separados
++        churrasqueiraId: agendamento.churrasqueira?.id ?? null,
++        churrasqueiraNome: agendamento.churrasqueira?.nome ?? null,
++        churrasqueiraNumero: agendamento.churrasqueira?.numero ?? null,
++
++        // mantém a string antiga pra compatibilidade, se o front ainda usar
++        churrasqueira: agendamento.churrasqueira
++          ? `${agendamento.churrasqueira.nome} (Nº ${agendamento.churrasqueira.numero})`
++          : null,
++
+         dataInicio: agendamento.dataInicio ?? null,
+         status: agendamento.status,
+       });
+@@ -367,6 +379,7 @@ router.get(
+   }
+ );
+ 
++
+ /**
+  * ✅ NOVO — GET /churrasqueiras/permanentes/:id/datas-excecao
+  * Lista datas elegíveis para registrar exceção (um dia cancelado).
