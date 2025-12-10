@@ -1718,7 +1718,7 @@ export default function AdminHome() {
               </div>
 
               {/* LINHA DE INFOS (Dia / Esporte / Horário / Tipo) */}
-              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 text-xs text-gray-600">
+              <div className="mt-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-y-2 text-xs text-gray-600">
                 {/* COLUNA ESQUERDA (Dia / Esporte) */}
                 <div className="space-y-1">
                   {/* Dia */}
@@ -1741,16 +1741,19 @@ export default function AdminHome() {
                   {/* Esporte */}
                   {agendamentoSelecionado.esporte && (
                     <div className="flex items-center gap-2">
+                      {/* ÍCONE ESPORTE CONDICIONAL */}
                       <Image
                         src={(() => {
                           const esporteLower = (agendamentoSelecionado.esporte ?? "").toLowerCase();
-                          if (esporteLower.includes("beach")) return "/iconescards/bolaesporte.png";
-                          if (esporteLower.includes("padel")) return "/iconescards/padel.png";
+
+                          if (esporteLower.includes("beach")) return "/iconescards/bolaesporte.png"; // Beach Tennis
+                          if (esporteLower.includes("padel")) return "/iconescards/padel.png";       // Padel
                           if (esporteLower.includes("vôlei") || esporteLower.includes("volei"))
-                            return "/iconescards/volei.png";
+                            return "/iconescards/volei.png";                                        // Vôlei
                           if (esporteLower.includes("pickle") || esporteLower.includes("picle"))
-                            return "/iconescards/pickleball.png";
-                          return "/iconescards/bolaesporte.png";
+                            return "/iconescards/pickleball.png";                                   // Pickleball
+
+                          return "/iconescards/bolaesporte.png"; // padrão
                         })()}
                         alt="Esporte"
                         width={14}
@@ -1767,52 +1770,57 @@ export default function AdminHome() {
                   )}
                 </div>
 
-                {/* COLUNA DIREITA (Horário / Tipo) */}
-                <div className="mt-2 sm:mt-0 flex justify-end">
-                  {/* grid 2x2: col1 = ícones, col2 = textos */}
-                  <div className="grid grid-cols-[16px,auto] gap-x-2 gap-y-1 text-right">
-                    {/* Linha 1 – Horário ou Turno */}
-                    {agendamentoSelecionado.horario || agendamentoSelecionado.turno ? (
-                      <>
-                        <div className="flex items-center justify-center">
-                          <Image
-                            src="/iconescards/horario.png"
-                            alt={agendamentoSelecionado.horario ? "Horário" : "Turno"}
-                            width={14}
-                            height={14}
-                            className="w-3.5 h-3.5"
-                          />
-                        </div>
-                        <span>
-                          {agendamentoSelecionado.horario ? "Horário: " : "Turno: "}
-                          <span className="font-semibold text-gray-800">
-                            {agendamentoSelecionado.horario ?? agendamentoSelecionado.turno}
-                          </span>
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        {/* célula vazia para manter o grid alinhado se não tiver horário/turno */}
-                        <div />
-                        <div />
-                      </>
-                    )}
-
-                    {/* Linha 2 – Tipo */}
-                    <div className="flex items-center justify-center">
+                {/* COLUNA DIREITA (Horário/Turno / Tipo) */}
+                <div className="space-y-1 sm:text-right sm:min-w-[180px]">
+                  {/* Horário ou Turno */}
+                  {agendamentoSelecionado.horario ? (
+                    <div className="flex items-center gap-2 sm:justify-end">
                       <Image
-                        src={(() => {
-                          const tipo = agendamentoSelecionado.tipoReserva;
-                          if (tipo === "permanente") return "/iconescards/icone_permanente_name.png";
-                          if (tipo === "comum") return "/iconescards/avulsacinza.png";
-                          return "/iconescards/avulsacinza.png";
-                        })()}
-                        alt="Tipo de reserva"
+                        src="/iconescards/horario.png"
+                        alt="Horário"
                         width={14}
                         height={14}
                         className="w-3.5 h-3.5"
                       />
+                      <span>
+                        Horário:{" "}
+                        <span className="font-semibold text-gray-800">
+                          {agendamentoSelecionado.horario}
+                        </span>
+                      </span>
                     </div>
+                  ) : agendamentoSelecionado.turno ? (
+                    <div className="flex items-center gap-2 sm:justify-end">
+                      <Image
+                        src="/iconescards/horario.png"
+                        alt="Turno"
+                        width={14}
+                        height={14}
+                        className="w-3.5 h-3.5"
+                      />
+                      <span>
+                        Turno:{" "}
+                        <span className="font-semibold text-gray-800">
+                          {agendamentoSelecionado.turno}
+                        </span>
+                      </span>
+                    </div>
+                  ) : null}
+
+                  {/* Tipo – ícone alinhado verticalmente com o de cima */}
+                  <div className="flex items-center gap-2 sm:justify-end">
+                    <Image
+                      src={(() => {
+                        const tipo = agendamentoSelecionado.tipoReserva;
+                        if (tipo === "permanente") return "/iconescards/icone_permanente_name.png";
+                        if (tipo === "comum") return "/iconescards/avulsacinza.png";
+                        return "/iconescards/avulsacinza.png"; // padrão
+                      })()}
+                      alt="Tipo de reserva"
+                      width={14}
+                      height={14}
+                      className="w-3.5 h-3.5"
+                    />
                     <span>
                       Tipo:{" "}
                       <span className="font-semibold text-gray-800">
