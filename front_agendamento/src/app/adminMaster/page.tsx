@@ -1932,13 +1932,25 @@ export default function AdminHome() {
 
 
               {/* LINHA DIVISÓRIA */}
-              <div className="border-t border-gray-200 pt-4 mt-2" />
+              <div className="border-t border-gray-200 mt-6 pt-4" />
 
               {/* BOTÕES DE AÇÃO INFERIORES */}
-              <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex flex-col sm:flex-row sm:justify-center gap-3 sm:gap-4">
                 <button
                   onClick={abrirFluxoCancelamento}
-                  className="flex-1 border border-red-500 text-red-600 hover:bg-red-50 rounded-lg py-2 text-sm font-medium cursor-pointer"
+                  className="
+      w-full sm:w-[200px]
+      inline-flex items-center justify-center
+      rounded-xl
+      border border-red-500
+      bg-red-50
+      text-red-600
+      px-6 py-2.5
+      text-sm font-semibold
+      cursor-pointer
+      hover:bg-red-100
+      transition-colors
+    "
                 >
                   Cancelar reserva
                 </button>
@@ -1947,11 +1959,22 @@ export default function AdminHome() {
                   <button
                     onClick={abrirModalTransferir}
                     disabled={loadingTransferencia}
-                    className="flex-1 border border-gray-400 text-gray-700 hover:bg-gray-50 rounded-lg py-2 text-sm font-medium cursor-pointer disabled:opacity-60"
+                    className="
+        w-full sm:w-[200px]
+        inline-flex items-center justify-center
+        rounded-xl
+        border border-gray-300
+        bg-gray-50
+        text-gray-700
+        px-6 py-2.5
+        text-sm font-semibold
+        cursor-pointer
+        hover:bg-gray-100
+        disabled:opacity-60
+        transition-colors
+      "
                   >
-                    {loadingTransferencia
-                      ? "Transferindo..."
-                      : "Transferir reserva"}
+                    {loadingTransferencia ? "Transferindo..." : "Transferir reserva"}
                   </button>
                 )}
               </div>
