@@ -1774,7 +1774,7 @@ export default function AdminHome() {
                 <div className="space-y-1 sm:text-right sm:min-w-[180px]">
                   {/* Horário ou Turno */}
                   {agendamentoSelecionado.horario ? (
-                    <div className="flex items-center gap-2 sm:justify-end">
+                    <div className="flex items-center gap-2 sm:justify-center">
                       <Image
                         src="/iconescards/horario.png"
                         alt="Horário"
