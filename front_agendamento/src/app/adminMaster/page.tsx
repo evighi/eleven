@@ -122,6 +122,12 @@ interface AgendamentoSelecionado {
   tipoLocal: TipoLocal;
   diaSemana?: string | null;
   dataInicio?: string | null; // YYYY-MM-DD
+
+  // novos campos vindos da API de detalhes
+  quadraNumero?: number | null;
+  quadraNome?: string | null;
+  churrasqueiraNumero?: number | null;
+  churrasqueiraNome?: string | null;
 }
 
 interface UsuarioLista {
@@ -393,36 +399,43 @@ export default function AdminHome() {
     try {
       setLoadingDetalhes(true);
       const res = await axios.get(`${API_URL}/${rota}`, { withCredentials: true });
+      const dataRes = res.data as any;
 
       // aceita esporte como string OU { nome }
       // prioriza SEMPRE o esporte vindo do agendamento (API)
       const esporteNome =
-        (typeof (res.data as any)?.esporte === "string"
-          ? (res.data as any).esporte
-          : (res.data as any)?.esporte?.nome) ?? (extra?.esporte ?? null);
+        (typeof dataRes?.esporte === "string"
+          ? dataRes.esporte
+          : dataRes?.esporte?.nome) ?? (extra?.esporte ?? null);
 
       setAgendamentoSelecionado({
         dia: data,
-        horario: extra?.horario || null,
-        turno: extra?.turno || null,
+        horario: extra?.horario || dataRes.horario || null,
+        turno: extra?.turno || dataRes.turno || null,
         // mantém o que vier: string OU objeto { nome, celular }
-        usuario: (res.data as { usuario?: string | UsuarioRef })?.usuario || "—",
-        jogadores: (res.data as { jogadores?: JogadorRef[] })?.jogadores || [],
+        usuario: (dataRes as { usuario?: string | UsuarioRef })?.usuario || "—",
+        jogadores: (dataRes as { jogadores?: JogadorRef[] })?.jogadores || [],
         esporte: esporteNome,
         tipoReserva: item.tipoReserva,
         agendamentoId,
         tipoLocal,
-        diaSemana: (res.data as any)?.diaSemana ?? null,
-        dataInicio:
-          (res.data as any)?.dataInicio
-            ? String((res.data as any).dataInicio).slice(0, 10)
-            : null,
+        diaSemana: dataRes?.diaSemana ?? null,
+        dataInicio: dataRes?.dataInicio
+          ? String(dataRes.dataInicio).slice(0, 10)
+          : null,
+
+        // 👇 novos campos (quadra ou churrasqueira)
+        quadraNumero: dataRes.quadraNumero ?? null,
+        quadraNome: dataRes.quadraNome ?? null,
+        churrasqueiraNumero: dataRes.churrasqueiraNumero ?? null,
+        churrasqueiraNome: dataRes.churrasqueiraNome ?? null,
       });
     } catch (error) {
       console.error("Erro ao buscar detalhes:", error);
     } finally {
       setLoadingDetalhes(false);
     }
+
   };
 
   /** Decide qual modal abrir quando clicar em "Cancelar Agendamento" */
