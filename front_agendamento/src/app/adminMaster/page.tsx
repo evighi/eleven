@@ -1818,10 +1818,10 @@ export default function AdminHome() {
                 </div>
 
                 {/* COLUNA DIREITA (Horário/Turno / Tipo) */}
-                <div className="space-y-1 sm:text-right sm:min-w-[180px]">
+                <div className="space-y-1 sm:min-w-[180px]">
                   {/* Horário ou Turno */}
                   {agendamentoSelecionado.horario ? (
-                    <div className="flex items-center gap-2 sm:justify-end">
+                    <div className="ml-auto grid grid-cols-[16px,auto] gap-2 items-center">
                       <Image
                         src="/iconescards/horario.png"
                         alt="Horário"
@@ -1829,7 +1829,7 @@ export default function AdminHome() {
                         height={14}
                         className="w-3.5 h-3.5"
                       />
-                      <span>
+                      <span className="text-right">
                         Horário:{" "}
                         <span className="font-semibold text-gray-800">
                           {agendamentoSelecionado.horario}
@@ -1837,7 +1837,7 @@ export default function AdminHome() {
                       </span>
                     </div>
                   ) : agendamentoSelecionado.turno ? (
-                    <div className="flex items-center gap-2 sm:justify-end">
+                    <div className="ml-auto grid grid-cols-[16px,auto] gap-2 items-center">
                       <Image
                         src="/iconescards/horario.png"
                         alt="Turno"
@@ -1845,7 +1845,7 @@ export default function AdminHome() {
                         height={14}
                         className="w-3.5 h-3.5"
                       />
-                      <span>
+                      <span className="text-right">
                         Turno:{" "}
                         <span className="font-semibold text-gray-800">
                           {agendamentoSelecionado.turno}
@@ -1854,22 +1854,21 @@ export default function AdminHome() {
                     </div>
                   ) : null}
 
-                  {/* Tipo – ícone alinhado verticalmente com o de cima */}
-                  <div className="flex items-center gap-2 sm:justify-end">
+                  {/* Tipo */}
+                  <div className="ml-auto grid grid-cols-[16px,auto] gap-2 items-center">
                     <Image
                       src={(() => {
                         const tipo = agendamentoSelecionado.tipoReserva;
                         if (tipo === "permanente") return "/iconescards/icone_permanente_name.png";
                         if (tipo === "comum") return "/iconescards/avulsacinza.png";
-                        return "/iconescards/avulsacinza.png"; // padrão
+                        return "/iconescards/avulsacinza.png";
                       })()}
                       alt="Tipo de reserva"
                       width={14}
                       height={14}
                       className="w-3.5 h-3.5"
                     />
-                    <span>
-                      {" "}
+                    <span className="text-right">
                       <span className="font-semibold text-gray-800">
                         {agendamentoSelecionado.tipoReserva === "permanente"
                           ? "Permanente"
