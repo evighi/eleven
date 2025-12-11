@@ -1975,7 +1975,7 @@ export default function AdminHome() {
       transition-colors
     "
                 >
-                  Cancelar reserva
+                  Cancelar
                 </button>
 
                 {agendamentoSelecionado.tipoLocal === "quadra" && (
@@ -1997,7 +1997,7 @@ export default function AdminHome() {
         transition-colors
       "
                   >
-                    {loadingTransferencia ? "Transferindo..." : "Transferir reserva"}
+                    {loadingTransferencia ? "Transferindo..." : "Transferir"}
                   </button>
                 )}
               </div>
