@@ -1792,12 +1792,12 @@ export default function AdminHome() {
                         src={(() => {
                           const esporteLower = (agendamentoSelecionado.esporte ?? "").toLowerCase();
 
-                          if (esporteLower.includes("beach")) return "/iconescards/bolaesporte.png"; // Beach Tennis
-                          if (esporteLower.includes("padel")) return "/iconescards/padel.png";       // Padel
+                          if (esporteLower.includes("beach")) return "/iconescards/bolaesporte.png";
+                          if (esporteLower.includes("padel")) return "/iconescards/padel.png";
                           if (esporteLower.includes("vôlei") || esporteLower.includes("volei"))
-                            return "/iconescards/volei.png";                                        // Vôlei
+                            return "/iconescards/volei.png";
                           if (esporteLower.includes("pickle") || esporteLower.includes("picle"))
-                            return "/iconescards/pickleball.png";                                   // Pickleball
+                            return "/iconescards/pickleball.png";
 
                           return "/iconescards/bolaesporte.png"; // padrão
                         })()}
@@ -1817,7 +1817,7 @@ export default function AdminHome() {
                 </div>
 
                 {/* COLUNA DIREITA (Horário/Turno / Tipo) */}
-                <div className="flex flex-col gap-1 items-end text-right sm:min-w-[200px]">
+                <div className="flex flex-col gap-1 ml-auto w-fit">
                   {/* Horário ou Turno */}
                   {(agendamentoSelecionado.horario || agendamentoSelecionado.turno) && (
                     <div className="flex items-center gap-2">
