@@ -2338,7 +2338,7 @@ export default function AdminHome() {
           }}
         >
           <div
-            className="bg-white rounded-lg shadow-2xl w-full max-w-2xl mx-4 p-10 relative"
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-12 relative"
             onClick={(e) => e.stopPropagation()}
           >
             {/* X para fechar */}
@@ -2402,7 +2402,7 @@ export default function AdminHome() {
           }}
         >
           <div
-            className="bg-white rounded-lg shadow-2xl w-full max-w-2xl mx-4 p-10 relative"
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-12 relative"
             onClick={(e) => e.stopPropagation()}
           >
             {/* X para fechar */}
