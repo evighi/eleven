@@ -1765,9 +1765,9 @@ export default function AdminHome() {
               </div>
 
               {/* LINHA DE INFOS (Dia / Esporte / Horário / Tipo) */}
-              <div className="mt-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-y-2 text-xs text-gray-600">
+              <div className="mt-4 flex flex-col sm:flex-row sm:justify-between sm:gap-8 text-xs text-gray-600">
                 {/* COLUNA ESQUERDA (Dia / Esporte) */}
-                <div className="flex flex-col gap-1">
+                <div className="flex flex-col gap-1 sm:min-w-[180px]">
                   {/* Dia */}
                   <div className="flex items-center gap-2">
                     <Image
@@ -1792,12 +1792,12 @@ export default function AdminHome() {
                         src={(() => {
                           const esporteLower = (agendamentoSelecionado.esporte ?? "").toLowerCase();
 
-                          if (esporteLower.includes("beach")) return "/iconescards/bolaesporte.png"; // Beach Tennis
-                          if (esporteLower.includes("padel")) return "/iconescards/padel.png";       // Padel
+                          if (esporteLower.includes("beach")) return "/iconescards/bolaesporte.png";
+                          if (esporteLower.includes("padel")) return "/iconescards/padel.png";
                           if (esporteLower.includes("vôlei") || esporteLower.includes("volei"))
-                            return "/iconescards/volei.png";                                        // Vôlei
+                            return "/iconescards/volei.png";
                           if (esporteLower.includes("pickle") || esporteLower.includes("picle"))
-                            return "/iconescards/pickleball.png";                                   // Pickleball
+                            return "/iconescards/pickleball.png";
 
                           return "/iconescards/bolaesporte.png"; // padrão
                         })()}
@@ -1817,7 +1817,7 @@ export default function AdminHome() {
                 </div>
 
                 {/* COLUNA DIREITA (Horário/Turno / Tipo) */}
-                <div className="flex flex-col gap-1 items-end text-right sm:min-w-[200px]">
+                <div className="flex flex-col gap-1 sm:min-w-[180px] ml-auto">
                   {/* Horário ou Turno */}
                   {(agendamentoSelecionado.horario || agendamentoSelecionado.turno) && (
                     <div className="flex items-center gap-2">
@@ -1828,7 +1828,8 @@ export default function AdminHome() {
                         height={14}
                         className="w-3.5 h-3.5"
                       />
-                      <span>
+                      {/* LARGURA FIXA PRA ALINHAR COM O TEXTO DE BAIXO */}
+                      <span className="w-[110px] text-right">
                         {agendamentoSelecionado.horario ? (
                           <>
                             Horário:{" "}
@@ -1862,7 +1863,8 @@ export default function AdminHome() {
                       height={14}
                       className="w-3.5 h-3.5"
                     />
-                    <span className="font-semibold text-gray-800">
+                    {/* MESMA LARGURA DA LINHA DE CIMA */}
+                    <span className="w-[110px] text-right font-semibold text-gray-800">
                       {agendamentoSelecionado.tipoReserva === "permanente"
                         ? "Permanente"
                         : agendamentoSelecionado.tipoReserva === "comum"
@@ -1872,6 +1874,7 @@ export default function AdminHome() {
                   </div>
                 </div>
               </div>
+
 
               {/* JOGADORES */}
               {agendamentoSelecionado.tipoLocal === "quadra" && (
