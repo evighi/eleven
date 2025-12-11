@@ -1674,7 +1674,7 @@ export default function AdminHome() {
           }}
         >
           <div
-            className="bg-white rounded-3xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] relative flex flex-col overflow-hidden"
+            className="bg-white rounded-3xl shadow-2xl w-full max-w-md mx-4 max-h-[90vh] relative flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()} // não deixar o clique “subir”
           >
             {/* BOTÃO X */}
