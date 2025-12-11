@@ -2319,7 +2319,7 @@ export default function AdminHome() {
       {/* MODAL: Confirmar agendamento (quadra livre) */}
       {mostrarConfirmaAgendar && preReserva && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-[70]">
-          <div className="bg-white rounded-md shadow-2xl w-full max-w-md mx-4 p-6 relative">
+          <div className="bg-white rounded-md shadow-2xl w-full max-w-md mx-4 p-10 relative">
             {/* X para fechar */}
             <button
               onClick={() => setMostrarConfirmaAgendar(false)}
@@ -2330,7 +2330,7 @@ export default function AdminHome() {
             </button>
 
             {/* Título */}
-            <h3 className="text-base sm:text-lg font-semibold text-left mb-4 text-[#E97A1F]">
+            <h3 className="text-base sm:text-lg font-semibold text-left mb-4 text-orange-700">
               Confirmar Agendamento
             </h3>
 
@@ -2372,7 +2372,7 @@ export default function AdminHome() {
       {/* MODAL: Confirmar agendamento (churrasqueira livre) */}
       {mostrarConfirmaChurras && preReservaChurras && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-[70]">
-          <div className="bg-white rounded-md shadow-2xl w-full max-w-md mx-4 p-6 relative">
+          <div className="bg-white rounded-md shadow-2xl w-full max-w-md mx-4 p-10 relative">
             {/* X para fechar */}
             <button
               onClick={() => setMostrarConfirmaChurras(false)}
@@ -2383,7 +2383,7 @@ export default function AdminHome() {
             </button>
 
             {/* Título */}
-            <h3 className="text-base sm:text-lg font-semibold text-left mb-4 text-[#E97A1F]">
+            <h3 className="text-base sm:text-lg font-semibold text-left mb-4 text-orange-700">
               Confirmar Agendamento
             </h3>
 
