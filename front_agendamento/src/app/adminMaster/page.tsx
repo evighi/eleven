@@ -2319,7 +2319,7 @@ export default function AdminHome() {
       {/* MODAL: Confirmar agendamento (quadra livre) */}
       {mostrarConfirmaAgendar && preReserva && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-[70]">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md mx-4 p-6 relative">
+          <div className="bg-white rounded-md shadow-2xl w-full max-w-md mx-4 p-6 relative">
             {/* X para fechar */}
             <button
               onClick={() => setMostrarConfirmaAgendar(false)}
@@ -2351,7 +2351,7 @@ export default function AdminHome() {
               {/* Cancelar - vermelho suave */}
               <button
                 onClick={() => setMostrarConfirmaAgendar(false)}
-                className="min-w-[130px] px-5 py-2.5 rounded-lg border border-[#C73737] bg-[#FFE9E9] text-[#B12A2A] font-semibold hover:bg-[#FFDADA] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
+                className="min-w-[130px] px-5 py-2.5 rounded-md border border-[#C73737] bg-[#FFE9E9] text-[#B12A2A] font-semibold hover:bg-[#FFDADA] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
               >
                 Cancelar
               </button>
@@ -2359,7 +2359,7 @@ export default function AdminHome() {
               {/* Realizar Reserva - laranja suave */}
               <button
                 onClick={irParaAgendarComum}
-                className="min-w-[150px] px-5 py-2.5 rounded-lg border border-[#E97A1F] bg-[#FFF3E0] text-[#D86715] font-semibold hover:bg-[#FFE6C2] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
+                className="min-w-[150px] px-5 py-2.5 rounded-md border border-[#E97A1F] bg-[#FFF3E0] text-[#D86715] font-semibold hover:bg-[#FFE6C2] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
               >
                 Realizar Reserva
               </button>
@@ -2372,7 +2372,7 @@ export default function AdminHome() {
       {/* MODAL: Confirmar agendamento (churrasqueira livre) */}
       {mostrarConfirmaChurras && preReservaChurras && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-[70]">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md mx-4 p-6 relative">
+          <div className="bg-white rounded-md shadow-2xl w-full max-w-md mx-4 p-6 relative">
             {/* X para fechar */}
             <button
               onClick={() => setMostrarConfirmaChurras(false)}
@@ -2403,13 +2403,13 @@ export default function AdminHome() {
             <div className="mt-2 flex gap-4 justify-center">
               <button
                 onClick={() => setMostrarConfirmaChurras(false)}
-                className="min-w-[130px] px-5 py-2.5 rounded-lg border border-[#C73737] bg-[#FFE9E9] text-[#B12A2A] font-semibold hover:bg-[#FFDADA] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
+                className="min-w-[130px] px-5 py-2.5 rounded-md border border-[#C73737] bg-[#FFE9E9] text-[#B12A2A] font-semibold hover:bg-[#FFDADA] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
               >
                 Cancelar
               </button>
               <button
                 onClick={irParaAgendarChurrasqueira}
-                className="min-w-[150px] px-5 py-2.5 rounded-lg border border-[#E97A1F] bg-[#FFF3E0] text-[#D86715] font-semibold hover:bg-[#FFE6C2] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
+                className="min-w-[150px] px-5 py-2.5 rounded-md border border-[#E97A1F] bg-[#FFF3E0] text-[#D86715] font-semibold hover:bg-[#FFE6C2] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
               >
                 Realizar Reserva
               </button>
