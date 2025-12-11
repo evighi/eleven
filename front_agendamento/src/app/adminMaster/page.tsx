@@ -2318,7 +2318,7 @@ export default function AdminHome() {
 
       {/* MODAL: Confirmar agendamento (quadra livre) */}
       {mostrarConfirmaAgendar && preReserva && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[70]">
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-[70]">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md mx-4 p-6 relative">
             {/* X para fechar */}
             <button
@@ -2330,16 +2330,16 @@ export default function AdminHome() {
             </button>
 
             {/* Título */}
-            <h3 className="text-base sm:text-lg font-semibold text-orange-600 text-left mb-3">
+            <h3 className="text-base sm:text-lg font-semibold text-left mb-4 text-[#E97A1F]">
               Confirmar Agendamento
             </h3>
 
             {/* Texto */}
-            <p className="text-sm text-gray-700 mb-6 text-center leading-relaxed">
+            <p className="text-sm text-gray-800 mb-7 text-center leading-relaxed">
               Deseja realizar uma reserva de{" "}
-              <span className="font-semibold">{preReserva.esporte}</span> na quadra{" "}
+              <span className="font-semibold">{preReserva.esporte}</span> na{" "}
               <span className="font-semibold">
-                {String(preReserva.quadraNumero).padStart(2, "0")} - {preReserva.quadraNome}
+                quadra {String(preReserva.quadraNumero).padStart(2, "0")} - {preReserva.quadraNome}
               </span>
               , no dia{" "}
               <span className="font-semibold">{toDdMm(preReserva.data)}</span> às{" "}
@@ -2347,16 +2347,19 @@ export default function AdminHome() {
             </p>
 
             {/* Botões */}
-            <div className="mt-2 flex gap-3 justify-center">
+            <div className="mt-2 flex gap-4 justify-center">
+              {/* Cancelar - vermelho suave */}
               <button
                 onClick={() => setMostrarConfirmaAgendar(false)}
-                className="min-w-[130px] px-4 py-2 rounded-lg border border-orange-400 text-orange-500 font-semibold hover:bg-orange-50 transition-colors"
+                className="min-w-[130px] px-5 py-2.5 rounded-lg border border-[#C73737] bg-[#FFE9E9] text-[#B12A2A] font-semibold hover:bg-[#FFDADA] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
               >
                 Cancelar
               </button>
+
+              {/* Realizar Reserva - laranja suave */}
               <button
                 onClick={irParaAgendarComum}
-                className="min-w-[150px] px-4 py-2 rounded-lg border border-orange-500 bg-orange-50 text-orange-600 font-semibold hover:bg-orange-100 transition-colors"
+                className="min-w-[150px] px-5 py-2.5 rounded-lg border border-[#E97A1F] bg-[#FFF3E0] text-[#D86715] font-semibold hover:bg-[#FFE6C2] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
               >
                 Realizar Reserva
               </button>
@@ -2365,9 +2368,10 @@ export default function AdminHome() {
         </div>
       )}
 
+
       {/* MODAL: Confirmar agendamento (churrasqueira livre) */}
       {mostrarConfirmaChurras && preReservaChurras && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[70]">
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-[70]">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md mx-4 p-6 relative">
             {/* X para fechar */}
             <button
@@ -2379,12 +2383,12 @@ export default function AdminHome() {
             </button>
 
             {/* Título */}
-            <h3 className="text-base sm:text-lg font-semibold text-orange-600 text-left mb-3">
+            <h3 className="text-base sm:text-lg font-semibold text-left mb-4 text-[#E97A1F]">
               Confirmar Agendamento
             </h3>
 
             {/* Texto */}
-            <p className="text-sm text-gray-700 mb-6 text-center leading-relaxed">
+            <p className="text-sm text-gray-800 mb-7 text-center leading-relaxed">
               Deseja realizar uma reserva na{" "}
               <span className="font-semibold">
                 churrasqueira {String(preReservaChurras.churrasqueiraNumero).padStart(2, "0")} -{" "}
@@ -2396,16 +2400,16 @@ export default function AdminHome() {
             </p>
 
             {/* Botões */}
-            <div className="mt-2 flex gap-3 justify-center">
+            <div className="mt-2 flex gap-4 justify-center">
               <button
                 onClick={() => setMostrarConfirmaChurras(false)}
-                className="min-w-[130px] px-4 py-2 rounded-lg border border-orange-400 text-orange-500 font-semibold hover:bg-orange-50 transition-colors"
+                className="min-w-[130px] px-5 py-2.5 rounded-lg border border-[#C73737] bg-[#FFE9E9] text-[#B12A2A] font-semibold hover:bg-[#FFDADA] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
               >
                 Cancelar
               </button>
               <button
                 onClick={irParaAgendarChurrasqueira}
-                className="min-w-[150px] px-4 py-2 rounded-lg border border-orange-500 bg-orange-50 text-orange-600 font-semibold hover:bg-orange-100 transition-colors"
+                className="min-w-[150px] px-5 py-2.5 rounded-lg border border-[#E97A1F] bg-[#FFF3E0] text-[#D86715] font-semibold hover:bg-[#FFE6C2] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
               >
                 Realizar Reserva
               </button>
