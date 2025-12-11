@@ -2319,7 +2319,7 @@ export default function AdminHome() {
       {/* MODAL: Confirmar agendamento (quadra livre) */}
       {mostrarConfirmaAgendar && preReserva && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-[70]">
-          <div className="bg-white rounded-md shadow-2xl w-full max-w-lg mx-4 p-10 relative">
+          <div className="bg-white rounded-lg shadow-2xl w-full max-w-lg mx-4 p-10 relative">
             {/* X para fechar */}
             <button
               onClick={() => setMostrarConfirmaAgendar(false)}
@@ -2347,7 +2347,7 @@ export default function AdminHome() {
             </p>
 
             {/* Botões */}
-            <div className="mt-2 flex gap-10 justify-center">
+            <div className="mt-2 flex gap-14 justify-center">
               {/* Cancelar - vermelho suave */}
               <button
                 onClick={() => setMostrarConfirmaAgendar(false)}
@@ -2372,7 +2372,7 @@ export default function AdminHome() {
       {/* MODAL: Confirmar agendamento (churrasqueira livre) */}
       {mostrarConfirmaChurras && preReservaChurras && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-[70]">
-          <div className="bg-white rounded-md shadow-2xl w-full max-w-lg mx-4 p-10 relative">
+          <div className="bg-white rounded-lg shadow-2xl w-full max-w-lg mx-4 p-10 relative">
             {/* X para fechar */}
             <button
               onClick={() => setMostrarConfirmaChurras(false)}
@@ -2400,7 +2400,7 @@ export default function AdminHome() {
             </p>
 
             {/* Botões */}
-            <div className="mt-2 flex gap-10 justify-center">
+            <div className="mt-2 flex gap-14 justify-center">
               <button
                 onClick={() => setMostrarConfirmaChurras(false)}
                 className="min-w-[130px] px-5 py-2.5 rounded-md border border-[#C73737] bg-[#FFE9E9] text-[#B12A2A] font-semibold hover:bg-[#FFDADA] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
