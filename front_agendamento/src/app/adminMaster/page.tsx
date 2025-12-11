@@ -1930,7 +1930,7 @@ export default function AdminHome() {
                       className="
           inline-flex items-center justify-center
           gap-1
-          rounded-lg
+          rounded-md
           border border-orange-500
           bg-orange-50
           text-orange-700 text-xs
