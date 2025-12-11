@@ -1689,7 +1689,7 @@ export default function AdminHome() {
             {/* CABEÇALHO */}
             <div className="px-8 pt-14 pb-3">
               {/* título laranja, alinhado à esquerda */}
-              <p className="text-sm font-semibold text-orange-600 text-left">
+              <p className="text-sm font-semibold text-orange-700 text-left">
                 Informações de reserva
               </p>
 
@@ -1877,7 +1877,7 @@ export default function AdminHome() {
               {/* JOGADORES */}
               {agendamentoSelecionado.tipoLocal === "quadra" && (
                 <div className="space-y-2">
-                  <p className="text-sm font-semibold text-orange-600">
+                  <p className="text-sm font-semibold text-orange-700">
                     Jogadores:
                   </p>
 
