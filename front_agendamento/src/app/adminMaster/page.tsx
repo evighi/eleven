@@ -2347,7 +2347,7 @@ export default function AdminHome() {
             </p>
 
             {/* Botões */}
-            <div className="mt-2 flex gap-22 justify-center">
+            <div className="mt-2 flex gap-24 justify-center">
               {/* Cancelar - vermelho suave */}
               <button
                 onClick={() => setMostrarConfirmaAgendar(false)}
@@ -2400,7 +2400,7 @@ export default function AdminHome() {
             </p>
 
             {/* Botões */}
-            <div className="mt-2 flex gap-22 justify-center">
+            <div className="mt-2 flex gap-24 justify-center">
               <button
                 onClick={() => setMostrarConfirmaChurras(false)}
                 className="min-w-[150px] px-5 py-2.5 rounded-md border border-[#C73737] bg-[#FFE9E9] text-[#B12A2A] font-semibold hover:bg-[#FFDADA] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
