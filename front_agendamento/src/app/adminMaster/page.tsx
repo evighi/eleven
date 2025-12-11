@@ -1767,7 +1767,7 @@ export default function AdminHome() {
               {/* LINHA DE INFOS (Dia / Esporte / Horário / Tipo) */}
               <div className="mt-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-y-2 text-xs text-gray-600">
                 {/* COLUNA ESQUERDA (Dia / Esporte) */}
-                <div className="space-y-1">
+                <div className="flex flex-col gap-1">
                   {/* Dia */}
                   <div className="flex items-center gap-2">
                     <Image
@@ -1788,7 +1788,6 @@ export default function AdminHome() {
                   {/* Esporte */}
                   {agendamentoSelecionado.esporte && (
                     <div className="flex items-center gap-2">
-                      {/* ÍCONE ESPORTE CONDICIONAL */}
                       <Image
                         src={(() => {
                           const esporteLower = (agendamentoSelecionado.esporte ?? "").toLowerCase();
@@ -1818,39 +1817,39 @@ export default function AdminHome() {
                 </div>
 
                 {/* COLUNA DIREITA (Horário/Turno / Tipo) */}
-                <div className="sm:min-w-[200px] ml-auto text-xs text-gray-600">
-                  <div className="grid grid-cols-[16px,auto] gap-x-2 gap-y-1 items-center justify-items-end">
-                    {/* Horário ou Turno – 1ª linha do grid */}
-                    {(agendamentoSelecionado.horario || agendamentoSelecionado.turno) && (
-                      <>
-                        <Image
-                          src="/iconescards/horario.png"
-                          alt={agendamentoSelecionado.horario ? "Horário" : "Turno"}
-                          width={14}
-                          height={14}
-                          className="w-3.5 h-3.5"
-                        />
-                        <span>
-                          {agendamentoSelecionado.horario ? (
-                            <>
-                              Horário:{" "}
-                              <span className="font-semibold text-gray-800">
-                                {agendamentoSelecionado.horario}
-                              </span>
-                            </>
-                          ) : (
-                            <>
-                              Turno:{" "}
-                              <span className="font-semibold text-gray-800">
-                                {agendamentoSelecionado.turno}
-                              </span>
-                            </>
-                          )}
-                        </span>
-                      </>
-                    )}
+                <div className="flex flex-col gap-1 items-end text-right sm:min-w-[200px]">
+                  {/* Horário ou Turno */}
+                  {(agendamentoSelecionado.horario || agendamentoSelecionado.turno) && (
+                    <div className="flex items-center gap-2">
+                      <Image
+                        src="/iconescards/horario.png"
+                        alt={agendamentoSelecionado.horario ? "Horário" : "Turno"}
+                        width={14}
+                        height={14}
+                        className="w-3.5 h-3.5"
+                      />
+                      <span>
+                        {agendamentoSelecionado.horario ? (
+                          <>
+                            Horário:{" "}
+                            <span className="font-semibold text-gray-800">
+                              {agendamentoSelecionado.horario}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            Turno:{" "}
+                            <span className="font-semibold text-gray-800">
+                              {agendamentoSelecionado.turno}
+                            </span>
+                          </>
+                        )}
+                      </span>
+                    </div>
+                  )}
 
-                    {/* Tipo – 2ª linha do grid, ícone na mesma coluna do horário */}
+                  {/* Tipo */}
+                  <div className="flex items-center gap-2">
                     <Image
                       src={(() => {
                         const tipo = agendamentoSelecionado.tipoReserva;
@@ -1863,14 +1862,12 @@ export default function AdminHome() {
                       height={14}
                       className="w-3.5 h-3.5"
                     />
-                    <span>
-                      <span className="font-semibold text-gray-800">
-                        {agendamentoSelecionado.tipoReserva === "permanente"
-                          ? "Permanente"
-                          : agendamentoSelecionado.tipoReserva === "comum"
-                            ? "Avulsa"
-                            : agendamentoSelecionado.tipoReserva}
-                      </span>
+                    <span className="font-semibold text-gray-800">
+                      {agendamentoSelecionado.tipoReserva === "permanente"
+                        ? "Permanente"
+                        : agendamentoSelecionado.tipoReserva === "comum"
+                          ? "Avulsa"
+                          : agendamentoSelecionado.tipoReserva}
                     </span>
                   </div>
                 </div>
