@@ -1680,14 +1680,14 @@ export default function AdminHome() {
             {/* BOTÃO X */}
             <button
               onClick={() => setAgendamentoSelecionado(null)}
-              className="absolute right-5 top-4 text-gray-400 hover:text-gray-600 text-xl leading-none"
+              className="absolute right-5 top-4 text-gray-400 hover:text-gray-600 text-3xl leading-none"
               aria-label="Fechar"
             >
               ×
             </button>
 
             {/* CABEÇALHO */}
-            <div className="px-8 pt-10 pb-3">
+            <div className="px-8 pt-14 pb-3">
               {/* título laranja, alinhado à esquerda */}
               <p className="text-sm font-semibold text-orange-600 text-left">
                 Informações de reserva
