@@ -1674,7 +1674,7 @@ export default function AdminHome() {
           }}
         >
           <div
-            className="bg-white rounded-3xl shadow-2xl w-full max-w-md mx-4 max-h-[90vh] relative flex flex-col overflow-hidden"
+            className="bg-white rounded-3xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] relative flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()} // não deixar o clique “subir”
           >
             {/* BOTÃO X */}
@@ -1964,7 +1964,7 @@ export default function AdminHome() {
                   className="
       w-full sm:w-[200px]
       inline-flex items-center justify-center
-      rounded-xl
+      rounded-md
       border border-red-500
       bg-red-50
       text-red-600
@@ -1985,7 +1985,7 @@ export default function AdminHome() {
                     className="
         w-full sm:w-[200px]
         inline-flex items-center justify-center
-        rounded-xl
+        rounded-md
         border border-gray-500
         bg-gray-50
         text-gray-700
