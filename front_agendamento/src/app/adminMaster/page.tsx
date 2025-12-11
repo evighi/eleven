@@ -2318,62 +2318,96 @@ export default function AdminHome() {
 
       {/* MODAL: Confirmar agendamento (quadra livre) */}
       {mostrarConfirmaAgendar && preReserva && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[70]">
-          <div className="bg-white p-5 rounded-lg shadow-lg w-[340px]">
-            <h3 className="text-lg font-semibold mb-3">Confirmar agendamento</h3>
-            <p className="text-sm text-gray-700 mb-4">
-              Deseja agendar <b>{preReserva.esporte}</b> na{" "}
-              <b>
-                {preReserva.quadraNome} (nº {preReserva.quadraNumero})
-              </b>
-              <br />
-              em <b>{toDdMm(preReserva.data)}</b> às <b>{preReserva.horario}</b>?
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[70]">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md mx-4 p-6 relative">
+            {/* X para fechar */}
+            <button
+              onClick={() => setMostrarConfirmaAgendar(false)}
+              className="absolute right-5 top-4 text-gray-400 hover:text-gray-600 text-2xl leading-none"
+              aria-label="Fechar"
+            >
+              ×
+            </button>
+
+            {/* Título */}
+            <h3 className="text-base sm:text-lg font-semibold text-orange-600 text-left mb-3">
+              Confirmar Agendamento
+            </h3>
+
+            {/* Texto */}
+            <p className="text-sm text-gray-700 mb-6 text-center leading-relaxed">
+              Deseja realizar uma reserva de{" "}
+              <span className="font-semibold">{preReserva.esporte}</span> na quadra{" "}
+              <span className="font-semibold">
+                {String(preReserva.quadraNumero).padStart(2, "0")} - {preReserva.quadraNome}
+              </span>
+              , no dia{" "}
+              <span className="font-semibold">{toDdMm(preReserva.data)}</span> às{" "}
+              <span className="font-semibold">{preReserva.horario}</span>?
             </p>
-            <div className="flex gap-2 justify-end">
+
+            {/* Botões */}
+            <div className="mt-2 flex gap-3 justify-center">
               <button
                 onClick={() => setMostrarConfirmaAgendar(false)}
-                className="px-3 py-2 rounded bg-gray-300 hover:bg-gray-400"
+                className="min-w-[130px] px-4 py-2 rounded-lg border border-orange-400 text-orange-500 font-semibold hover:bg-orange-50 transition-colors"
               >
-                Não
+                Cancelar
               </button>
               <button
                 onClick={irParaAgendarComum}
-                className="px-3 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700"
+                className="min-w-[150px] px-4 py-2 rounded-lg border border-orange-500 bg-orange-50 text-orange-600 font-semibold hover:bg-orange-100 transition-colors"
               >
-                Sim, agendar
+                Realizar Reserva
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL: Confirmar agendamento (churrasqueira livre) — NOVO */}
+      {/* MODAL: Confirmar agendamento (churrasqueira livre) */}
       {mostrarConfirmaChurras && preReservaChurras && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[70]">
-          <div className="bg-white p-5 rounded-lg shadow-lg w-[360px]">
-            <h3 className="text-lg font-semibold mb-3">Confirmar agendamento</h3>
-            <p className="text-sm text-gray-700 mb-4">
-              Deseja agendar a{" "}
-              <b>
-                {preReservaChurras.churrasqueiraNome} (nº{" "}
-                {preReservaChurras.churrasqueiraNumero})
-              </b>
-              <br />
-              em <b>{toDdMm(preReservaChurras.data)}</b> no turno{" "}
-              <b>{preReservaChurras.turno}</b>?
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[70]">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md mx-4 p-6 relative">
+            {/* X para fechar */}
+            <button
+              onClick={() => setMostrarConfirmaChurras(false)}
+              className="absolute right-5 top-4 text-gray-400 hover:text-gray-600 text-2xl leading-none"
+              aria-label="Fechar"
+            >
+              ×
+            </button>
+
+            {/* Título */}
+            <h3 className="text-base sm:text-lg font-semibold text-orange-600 text-left mb-3">
+              Confirmar Agendamento
+            </h3>
+
+            {/* Texto */}
+            <p className="text-sm text-gray-700 mb-6 text-center leading-relaxed">
+              Deseja realizar uma reserva na{" "}
+              <span className="font-semibold">
+                churrasqueira {String(preReservaChurras.churrasqueiraNumero).padStart(2, "0")} -{" "}
+                {preReservaChurras.churrasqueiraNome}
+              </span>
+              , no dia{" "}
+              <span className="font-semibold">{toDdMm(preReservaChurras.data)}</span> no turno{" "}
+              <span className="font-semibold">{preReservaChurras.turno}</span>?
             </p>
-            <div className="flex gap-2 justify-end">
+
+            {/* Botões */}
+            <div className="mt-2 flex gap-3 justify-center">
               <button
                 onClick={() => setMostrarConfirmaChurras(false)}
-                className="px-3 py-2 rounded bg-gray-300 hover:bg-gray-400"
+                className="min-w-[130px] px-4 py-2 rounded-lg border border-orange-400 text-orange-500 font-semibold hover:bg-orange-50 transition-colors"
               >
-                Não
+                Cancelar
               </button>
               <button
                 onClick={irParaAgendarChurrasqueira}
-                className="px-3 py-2 rounded bg-orange-600 text-white hover:bg-orange-700"
+                className="min-w-[150px] px-4 py-2 rounded-lg border border-orange-500 bg-orange-50 text-orange-600 font-semibold hover:bg-orange-100 transition-colors"
               >
-                Sim, agendar
+                Realizar Reserva
               </button>
             </div>
           </div>
