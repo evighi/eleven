@@ -2338,13 +2338,13 @@ export default function AdminHome() {
           }}
         >
           <div
-            className="bg-white rounded-lg shadow-2xl w-full max-w-lg mx-4 p-10 relative"
+            className="bg-white rounded-lg shadow-2xl w-full max-w-2xl mx-4 p-10 relative"
             onClick={(e) => e.stopPropagation()}
           >
             {/* X para fechar */}
             <button
               onClick={() => setMostrarConfirmaAgendar(false)}
-              className="absolute right-5 top-4 text-gray-400 hover:text-gray-600 text-2xl leading-none"
+              className="absolute right-5 top-4 text-gray-400 hover:text-gray-600 text-3xl leading-none"
               aria-label="Fechar"
             >
               ×
@@ -2382,7 +2382,7 @@ export default function AdminHome() {
                 onClick={irParaAgendarComum}
                 className="min-w-[160px] px-5 py-2.5 rounded-md border border-[#E97A1F] bg-[#FFF3E0] text-[#D86715] font-semibold hover:bg-[#FFE6C2] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
               >
-                Realizar Reserva
+               Reservar
               </button>
             </div>
           </div>
@@ -2402,13 +2402,13 @@ export default function AdminHome() {
           }}
         >
           <div
-            className="bg-white rounded-lg shadow-2xl w-full max-w-lg mx-4 p-10 relative"
+            className="bg-white rounded-lg shadow-2xl w-full max-w-2xl mx-4 p-10 relative"
             onClick={(e) => e.stopPropagation()}
           >
             {/* X para fechar */}
             <button
               onClick={() => setMostrarConfirmaChurras(false)}
-              className="absolute right-5 top-4 text-gray-400 hover:text-gray-600 text-2xl leading-none"
+              className="absolute right-5 top-4 text-gray-400 hover:text-gray-600 text-3xl leading-none"
               aria-label="Fechar"
             >
               ×
@@ -2443,7 +2443,7 @@ export default function AdminHome() {
                 onClick={irParaAgendarChurrasqueira}
                 className="min-w-[160px] px-5 py-2.5 rounded-md border border-[#E97A1F] bg-[#FFF3E0] text-[#D86715] font-semibold hover:bg-[#FFE6C2] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
               >
-                Realizar Reserva
+               Reservar
               </button>
             </div>
           </div>
