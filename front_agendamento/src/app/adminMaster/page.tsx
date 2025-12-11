@@ -2351,7 +2351,7 @@ export default function AdminHome() {
               {/* Cancelar - vermelho suave */}
               <button
                 onClick={() => setMostrarConfirmaAgendar(false)}
-                className="min-w-[150px] px-5 py-2.5 rounded-md border border-[#C73737] bg-[#FFE9E9] text-[#B12A2A] font-semibold hover:bg-[#FFDADA] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
+                className="min-w-[160px] px-5 py-2.5 rounded-md border border-[#C73737] bg-[#FFE9E9] text-[#B12A2A] font-semibold hover:bg-[#FFDADA] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
               >
                 Cancelar
               </button>
@@ -2359,7 +2359,7 @@ export default function AdminHome() {
               {/* Realizar Reserva - laranja suave */}
               <button
                 onClick={irParaAgendarComum}
-                className="min-w-[150px] px-5 py-2.5 rounded-md border border-[#E97A1F] bg-[#FFF3E0] text-[#D86715] font-semibold hover:bg-[#FFE6C2] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
+                className="min-w-[160px] px-5 py-2.5 rounded-md border border-[#E97A1F] bg-[#FFF3E0] text-[#D86715] font-semibold hover:bg-[#FFE6C2] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
               >
                 Realizar Reserva
               </button>
@@ -2403,13 +2403,13 @@ export default function AdminHome() {
             <div className="mt-2 flex gap-24 justify-center">
               <button
                 onClick={() => setMostrarConfirmaChurras(false)}
-                className="min-w-[150px] px-5 py-2.5 rounded-md border border-[#C73737] bg-[#FFE9E9] text-[#B12A2A] font-semibold hover:bg-[#FFDADA] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
+                className="min-w-[160px] px-5 py-2.5 rounded-md border border-[#C73737] bg-[#FFE9E9] text-[#B12A2A] font-semibold hover:bg-[#FFDADA] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
               >
                 Cancelar
               </button>
               <button
                 onClick={irParaAgendarChurrasqueira}
-                className="min-w-[150px] px-5 py-2.5 rounded-md border border-[#E97A1F] bg-[#FFF3E0] text-[#D86715] font-semibold hover:bg-[#FFE6C2] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
+                className="min-w-[160px] px-5 py-2.5 rounded-md border border-[#E97A1F] bg-[#FFF3E0] text-[#D86715] font-semibold hover:bg-[#FFE6C2] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
               >
                 Realizar Reserva
               </button>
