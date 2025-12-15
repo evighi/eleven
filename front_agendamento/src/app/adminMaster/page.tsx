@@ -2393,19 +2393,12 @@ export default function AdminHome() {
                     className="flex-1 h-10 rounded border border-gray-300 px-3 text-sm bg-white
                          focus:outline-none focus:ring-1 focus:ring-orange-400 focus:border-orange-400
                          placeholder:text-gray-400"
-                    placeholder="Digite pelo menos 2 letras do nome do atleta"
+                    placeholder="Insira o nome do atleta cadastrado"
                     value={buscaJogador}
                     onChange={(e) => setBuscaJogador(e.target.value)}
                     autoFocus
                   />
                 </div>
-
-                {/* Texto de orientação quando ainda não começou a digitar */}
-                {!carregandoJogadores && buscaJogador.trim().length < 2 && (
-                  <p className="mt-1 text-[11px] text-gray-500">
-                    Digite pelo menos 2 letras para buscar atletas já cadastrados no sistema.
-                  </p>
-                )}
 
                 {/* Lista de resultados / estados da busca
               (só renderiza quando estiver carregando ou quando tiver busca >= 2 letras) */}
