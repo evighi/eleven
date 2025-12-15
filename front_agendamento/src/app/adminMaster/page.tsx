@@ -2592,12 +2592,12 @@ export default function AdminHome() {
                         <button
                           type="button"
                           onClick={() => alternarSelecionado(u)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-sm
-                       border border-[#C73737] bg-[#FFE9E9] text-[#B12A2A]
-                     hover:bg-[#FFDADA] disabled:opacity-60
-                     transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-[2px] rounded-sm
+ border border-[#C73737] bg-[#FFE9E9] text-[#B12A2A] text-[10px] font-semibold
+ hover:bg-[#FFDADA] disabled:opacity-60
+ transition-colors shadow-[0_1px_0_rgba(0,0,0,0.05)]"
                         >
-                          <X className="w-4.5 h-4.5" strokeWidth={4} />
+                          <X className="w-4 h-4" strokeWidth={4} />
                           Remover
                         </button>
                       </div>
