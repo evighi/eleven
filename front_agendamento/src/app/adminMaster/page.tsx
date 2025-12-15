@@ -2652,7 +2652,7 @@ export default function AdminHome() {
             </div>
 
             {/* RODAPÉ – BOTÕES CANCELAR / INSERIR */}
-            <div className="mt-8 flex justify-center gap-[90px]">
+            <div className="mt-8 flex justify-center gap-[120px]">
               <button
                 onClick={() => !addingPlayers && setAbrirModalJogadores(false)}
                 disabled={addingPlayers}
