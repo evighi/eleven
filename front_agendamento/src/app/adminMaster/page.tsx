@@ -2408,10 +2408,6 @@ export default function AdminHome() {
                   />
                 </div>
 
-                <p className="mt-1 text-[11px] text-gray-500">
-                  Use este campo para buscar clientes já cadastrados no
-                  sistema.
-                </p>
 
                 {/* Lista de resultados / estados da busca */}
                 <div className="mt-3 max-h-48 overflow-y-auto rounded-xl border border-gray-200 bg-white text-sm divide-y">
@@ -2421,13 +2417,6 @@ export default function AdminHome() {
                       <span>Buscando atletas...</span>
                     </div>
                   )}
-
-                  {!carregandoJogadores &&
-                    buscaJogador.trim().length < 2 && (
-                      <div className="px-3 py-2 text-[11px] text-gray-400">
-                        Comece digitando para ver os resultados.
-                      </div>
-                    )}
 
                   {!carregandoJogadores &&
                     buscaJogador.trim().length >= 2 &&
@@ -2558,11 +2547,6 @@ export default function AdminHome() {
                     Adicionar
                   </button>
                 </div>
-
-                <p className="mt-2 text-[11px] text-gray-500">
-                  *O atleta responsável pela reserva será o primeiro
-                  jogador a ser adicionado
-                </p>
               </div>
 
               {/* ===================== JOGADORES ADICIONADOS ===================== */}
