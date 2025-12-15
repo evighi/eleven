@@ -2593,9 +2593,9 @@ export default function AdminHome() {
                           type="button"
                           onClick={() => alternarSelecionado(u)}
                           className="inline-flex items-center gap-1.5 px-3 py-1 rounded-sm
-                       border border-[#C73737] bg-white
-                       text-[11px] text-[#B12A2A] font-semibold leading-none
-                       hover:bg-[#FFE9E9] transition-colors"
+                       border border-[#C73737] bg-[#FFE9E9] text-[#B12A2A] font-semibold
+                     hover:bg-[#FFDADA] disabled:opacity-60
+                     transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
                         >
                           <X className="w-3.5 h-3.5" strokeWidth={3} />
                           Remover
