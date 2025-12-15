@@ -2554,18 +2554,38 @@ export default function AdminHome() {
                       key={u.id}
                       className="flex flex-col items-start gap-1 px-3 py-2 rounded-md bg-white border border-gray-300 min-w-[170px]"
                     >
-                      <p className="text-xs font-semibold truncate">{u.nome}</p>
+                      {/* Nome + ícone de usuário */}
+                      <div className="flex items-center gap-1 text-xs font-semibold text-gray-800 truncate">
+                        <Image
+                          src="/iconescards/icone-permanente.png" // mesmo ícone de usuário dos outros campos
+                          alt="Atleta"
+                          width={14}
+                          height={14}
+                          className="w-3.5 h-3.5 flex-shrink-0 opacity-80"
+                        />
+                        <span className="truncate">{u.nome}</span>
+                      </div>
+
+                      {/* Telefone com ícone, no lugar do "Sócio" */}
                       {u.celular && (
-                        <p className="text-[11px] text-gray-500 truncate">
-                          Sócio {u.celular}
-                        </p>
+                        <div className="flex items-center gap-1 text-[11px] text-gray-500 truncate">
+                          <Image
+                            src="/iconescards/icone_phone.png"
+                            alt="Telefone"
+                            width={12}
+                            height={12}
+                            className="w-3 h-3 flex-shrink-0 opacity-80"
+                          />
+                          <span className="truncate">{u.celular}</span>
+                        </div>
                       )}
+
                       <button
                         type="button"
                         onClick={() => alternarSelecionado(u)}
                         className="mt-1 px-2 py-1 rounded border border-[#C73737]
-                             bg-[#FFE9E9] text-[11px] text-[#B12A2A] font-semibold
-                             hover:bg-[#FFDADA] transition-colors"
+             bg-[#FFE9E9] text-[11px] text-[#B12A2A] font-semibold
+             hover:bg-[#FFDADA] transition-colors"
                       >
                         Remover
                       </button>
