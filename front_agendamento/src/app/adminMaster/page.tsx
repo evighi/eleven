@@ -6,11 +6,15 @@ import Spinner from "@/components/Spinner";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  Calendar, Clock, ChevronDown, ChevronLeft, ChevronRight, Search,
+  Calendar,
+  Clock,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Search,
   Check,
 } from "lucide-react";
 import Image from "next/image";
-
 
 /** Helpers de data/hora em America/Sao_Paulo */
 const SP_TZ = "America/Sao_Paulo";
@@ -239,7 +243,8 @@ export default function AdminHome() {
   const [horario, setHorario] = useState("");
   const [mostrarDispon, setMostrarDispon] = useState(true);
 
-  const [disponibilidade, setDisponibilidade] = useState<DisponibilidadeGeral | null>(null);
+  const [disponibilidade, setDisponibilidade] =
+    useState<DisponibilidadeGeral | null>(null);
   const [loadingDispon, setLoadingDispon] = useState<boolean>(true);
 
   const [agendamentoSelecionado, setAgendamentoSelecionado] =
@@ -251,27 +256,39 @@ export default function AdminHome() {
   const [loadingTransferencia, setLoadingTransferencia] = useState(false);
 
   // Opções p/ permanente
-  const [mostrarOpcoesCancelamento, setMostrarOpcoesCancelamento] = useState(false);
+  const [mostrarOpcoesCancelamento, setMostrarOpcoesCancelamento] =
+    useState(false);
 
   // Exceção (cancelar 1 dia)
   const [mostrarExcecaoModal, setMostrarExcecaoModal] = useState(false);
   const [datasExcecao, setDatasExcecao] = useState<string[]>([]);
-  const [dataExcecaoSelecionada, setDataExcecaoSelecionada] = useState<string | null>(null);
+  const [dataExcecaoSelecionada, setDataExcecaoSelecionada] = useState<
+    string | null
+  >(null);
   const [postandoExcecao, setPostandoExcecao] = useState(false);
 
   // Transferência
   const [abrirModalTransferencia, setAbrirModalTransferencia] = useState(false);
   const [buscaUsuario, setBuscaUsuario] = useState("");
-  const [usuariosFiltrados, setUsuariosFiltrados] = useState<UsuarioLista[]>([]);
-  const [usuarioSelecionado, setUsuarioSelecionado] = useState<UsuarioLista | null>(null);
+  const [usuariosFiltrados, setUsuariosFiltrados] = useState<UsuarioLista[]>(
+    []
+  );
+  const [usuarioSelecionado, setUsuarioSelecionado] =
+    useState<UsuarioLista | null>(null);
   const [carregandoUsuarios, setCarregandoUsuarios] = useState(false);
   const [copiarExcecoes, setCopiarExcecoes] = useState(true); // apenas para permanentes
 
   // ➕ Adicionar jogadores
   const [abrirModalJogadores, setAbrirModalJogadores] = useState(false);
   const [buscaJogador, setBuscaJogador] = useState("");
-  const [usuariosParaJogadores, setUsuariosParaJogadores] = useState<UsuarioLista[]>([]);
-  const [jogadoresSelecionadosIds, setJogadoresSelecionadosIds] = useState<string[]>([]);
+  const [usuariosParaJogadores, setUsuariosParaJogadores] = useState<
+    UsuarioLista[]
+  >([]);
+  const [jogadoresSelecionadosIds, setJogadoresSelecionadosIds] = useState<
+    string[]
+  >([]);
+  const [jogadoresSelecionadosDetalhes, setJogadoresSelecionadosDetalhes] =
+    useState<UsuarioLista[]>([]);
   const [convidadoNome, setConvidadoNome] = useState("");
   const [convidadoTelefone, setConvidadoTelefone] = useState("");
   const [convidadosPendentes, setConvidadosPendentes] = useState<string[]>([]);
@@ -283,8 +300,10 @@ export default function AdminHome() {
   const [preReserva, setPreReserva] = useState<PreReserva | null>(null);
 
   // Confirmação para agendar (churrasqueira livre)
-  const [mostrarConfirmaChurras, setMostrarConfirmaChurras] = useState(false);
-  const [preReservaChurras, setPreReservaChurras] = useState<PreReservaChurras | null>(null);
+  const [mostrarConfirmaChurras, setMostrarConfirmaChurras] =
+    useState(false);
+  const [preReservaChurras, setPreReservaChurras] =
+    useState<PreReservaChurras | null>(null);
 
   const [horarioAberto, setHorarioAberto] = useState(false);
 
@@ -306,15 +325,16 @@ export default function AdminHome() {
     setMesExibido(new Date(base.getFullYear(), base.getMonth(), 1));
   }, [data]);
 
-
-
   const isAllowed =
     !!usuario &&
-    ["ADMIN_MASTER", "ADMIN_PROFESSORES"].includes((usuario as { tipo?: string }).tipo || "");
+    ["ADMIN_MASTER", "ADMIN_PROFESSORES"].includes(
+      (usuario as { tipo?: string }).tipo || ""
+    );
 
   // 👋 Nome para saudação
   const nomeSaudacao =
-    firstAndLastName((usuario as { nome?: string } | null)?.nome || "") || "Admin";
+    firstAndLastName((usuario as { nome?: string } | null)?.nome || "") ||
+    "Admin";
 
   const buscarDisponibilidade = useCallback(async () => {
     if (!isAllowed) return;
@@ -371,12 +391,7 @@ export default function AdminHome() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [
-    agendamentoSelecionado,
-    mostrarConfirmaAgendar,
-    mostrarConfirmaChurras,
-  ]);
-
+  }, [agendamentoSelecionado, mostrarConfirmaAgendar, mostrarConfirmaChurras]);
 
   // Fecha ao clicar fora
   useEffect(() => {
@@ -406,14 +421,12 @@ export default function AdminHome() {
     }
   }, [horarioAberto, horario]);
 
-
   // Detalhes
   const abrirDetalhes = async (item: DetalheItemMin, extra?: DetalheExtra) => {
     const agendamentoId = item.agendamentoId || item.id;
     if (!agendamentoId || !item.tipoReserva) return;
 
     const tipoLocal: TipoLocal = item.tipoLocal || "quadra";
-
 
     let rota = "";
     if (tipoLocal === "churrasqueira") {
@@ -430,9 +443,12 @@ export default function AdminHome() {
 
     try {
       setLoadingDetalhes(true);
-      const res = await axios.get(`${API_URL}/${rota}`, { withCredentials: true });
+      const res = await axios.get(`${API_URL}/${rota}`, {
+        withCredentials: true,
+      });
       const dataRes = res.data as any;
-      const usuarioFromApi = (dataRes as { usuario?: string | UsuarioRef })?.usuario;
+      const usuarioFromApi = (dataRes as { usuario?: string | UsuarioRef })
+        ?.usuario;
       const usuarioFromItem = (item as any)?.usuario;
 
       // aceita esporte como string OU { nome }
@@ -440,14 +456,18 @@ export default function AdminHome() {
       const esporteNome =
         (typeof dataRes?.esporte === "string"
           ? dataRes.esporte
-          : dataRes?.esporte?.nome) ?? (extra?.esporte ?? null);
+          : dataRes?.esporte?.nome) ??
+        (extra?.esporte ?? null);
 
       setAgendamentoSelecionado({
         dia: data,
         horario: extra?.horario || dataRes.horario || null,
         turno: extra?.turno || dataRes.turno || null,
         // mantém o que vier: string OU objeto { nome, celular }
-        usuario: (usuarioFromApi ?? usuarioFromItem ?? "—") as string | UsuarioRef | "—",
+        usuario: (usuarioFromApi ?? usuarioFromItem ?? "—") as
+          | string
+          | UsuarioRef
+          | "—",
         jogadores: (dataRes as { jogadores?: JogadorRef[] })?.jogadores || [],
         esporte: esporteNome,
         tipoReserva: item.tipoReserva,
@@ -469,7 +489,6 @@ export default function AdminHome() {
     } finally {
       setLoadingDetalhes(false);
     }
-
   };
 
   /** Decide qual modal abrir quando clicar em "Cancelar Agendamento" */
@@ -504,7 +523,11 @@ export default function AdminHome() {
     }
 
     try {
-      await axios.post(`${API_URL}/${rota}`, {}, { withCredentials: true });
+      await axios.post(
+        `${API_URL}/${rota}`,
+        {},
+        { withCredentials: true }
+      );
       alert("Agendamento cancelado com sucesso!");
       setAgendamentoSelecionado(null);
       setConfirmarCancelamento(false);
@@ -539,7 +562,8 @@ export default function AdminHome() {
 
   /** Confirma a exceção chamando o endpoint POST correto (quadra/churrasqueira) */
   const confirmarExcecao = async () => {
-    if (!agendamentoSelecionado?.agendamentoId || !dataExcecaoSelecionada) return;
+    if (!agendamentoSelecionado?.agendamentoId || !dataExcecaoSelecionada)
+      return;
     try {
       setPostandoExcecao(true);
       const rota =
@@ -559,7 +583,10 @@ export default function AdminHome() {
       buscarDisponibilidade();
     } catch (e: any) {
       console.error(e);
-      const raw = e?.response?.data?.erro ?? e?.response?.data?.message ?? e?.message;
+      const raw =
+        e?.response?.data?.erro ??
+        e?.response?.data?.message ??
+        e?.message;
       const msg = typeof raw === "string" ? raw : JSON.stringify(raw);
       alert(msg);
     } finally {
@@ -605,8 +632,10 @@ export default function AdminHome() {
   };
 
   const confirmarTransferencia = async () => {
-    if (!agendamentoSelecionado) return alert("Nenhum agendamento selecionado.");
-    if (!usuarioSelecionado) return alert("Selecione um usuário para transferir.");
+    if (!agendamentoSelecionado)
+      return alert("Nenhum agendamento selecionado.");
+    if (!usuarioSelecionado)
+      return alert("Selecione um usuário para transferir.");
 
     // Apenas quadras: comum e permanente (se precisar para churrasqueira, criar rotas no backend)
     if (agendamentoSelecionado.tipoLocal !== "quadra") {
@@ -627,7 +656,9 @@ export default function AdminHome() {
       };
       if (isPerm) body.copiarExcecoes = copiarExcecoes;
 
-      await axios.patch(`${API_URL}/${rota}`, body, { withCredentials: true });
+      await axios.patch(`${API_URL}/${rota}`, body, {
+        withCredentials: true,
+      });
 
       alert("Agendamento transferido com sucesso!");
       setAgendamentoSelecionado(null);
@@ -650,6 +681,7 @@ export default function AdminHome() {
     setBuscaJogador("");
     setUsuariosParaJogadores([]);
     setJogadoresSelecionadosIds([]);
+    setJogadoresSelecionadosDetalhes([]);
     setConvidadoNome("");
     setConvidadoTelefone("");
     setConvidadosPendentes([]);
@@ -684,10 +716,20 @@ export default function AdminHome() {
     return () => clearTimeout(t);
   }, [buscaJogador, buscarUsuariosParaJogadores]);
 
-  const alternarSelecionado = (id: string) => {
+  const alternarSelecionado = (usuario: UsuarioLista) => {
     setJogadoresSelecionadosIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+      prev.includes(usuario.id)
+        ? prev.filter((x) => x !== usuario.id)
+        : [...prev, usuario.id]
     );
+
+    setJogadoresSelecionadosDetalhes((prev) => {
+      const existe = prev.some((j) => j.id === usuario.id);
+      if (existe) {
+        return prev.filter((j) => j.id !== usuario.id);
+      }
+      return [...prev, usuario];
+    });
   };
 
   const adicionarConvidado = () => {
@@ -727,6 +769,7 @@ export default function AdminHome() {
 
       alert("Jogadores adicionados com sucesso!");
       setJogadoresSelecionadosIds([]);
+      setJogadoresSelecionadosDetalhes([]);
       setConvidadosPendentes([]);
       setConvidadoNome("");
       setConvidadoTelefone(""); // 👈 aqui
@@ -770,7 +813,9 @@ export default function AdminHome() {
       turno: preReservaChurras.turno,
       churrasqueiraId: preReservaChurras.churrasqueiraId,
     }).toString();
-    router.push(`/adminMaster/churrasqueiras/agendarChurrasqueira?${qs}`);
+    router.push(
+      `/adminMaster/churrasqueiras/agendarChurrasqueira?${qs}`
+    );
   };
 
   return (
@@ -778,7 +823,8 @@ export default function AdminHome() {
       {/* 👋 SAUDAÇÃO ADMIN – bem próximo do Figma */}
       <div className="mt-4">
         <h1 className="text-[32px] sm:text-[38px] leading-tight font-extrabold text-orange-600 tracking-tight">
-          Olá, {nomeSaudacao}! <span className="inline-block align-middle">👋</span>
+          Olá, {nomeSaudacao}!{" "}
+          <span className="inline-block align-middle">👋</span>
         </h1>
         <p className="mt-1 text-sm sm:text-base font-medium text-gray-500">
           Administrador Master
@@ -810,8 +856,9 @@ export default function AdminHome() {
               </div>
 
               <ChevronDown
-                className={`w-4 h-4 text-gray-600 ml-2 transition-transform ${dataPickerAberto ? "rotate-180" : ""
-                  }`}
+                className={`w-4 h-4 text-gray-600 ml-2 transition-transform ${
+                  dataPickerAberto ? "rotate-180" : ""
+                }`}
               />
             </button>
 
@@ -831,7 +878,12 @@ export default function AdminHome() {
                     type="button"
                     onClick={() =>
                       setMesExibido(
-                        (prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1)
+                        (prev) =>
+                          new Date(
+                            prev.getFullYear(),
+                            prev.getMonth() - 1,
+                            1
+                          )
                       )
                     }
                     className="p-1 rounded hover:bg-gray-100"
@@ -850,7 +902,12 @@ export default function AdminHome() {
                     type="button"
                     onClick={() =>
                       setMesExibido(
-                        (prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1)
+                        (prev) =>
+                          new Date(
+                            prev.getFullYear(),
+                            prev.getMonth() + 1,
+                            1
+                          )
                       )
                     }
                     className="p-1 rounded hover:bg-gray-100"
@@ -887,7 +944,8 @@ export default function AdminHome() {
                       d.setDate(startDate.getDate() + i);
 
                       const iso = isoFromDate(d);
-                      const isCurrentMonth = d.getMonth() === mesExibido.getMonth();
+                      const isCurrentMonth =
+                        d.getMonth() === mesExibido.getMonth();
                       const isSelected = data === iso;
                       const isToday = todayIso === iso;
 
@@ -901,8 +959,12 @@ export default function AdminHome() {
                           }}
                           className={[
                             "h-8 w-8 rounded-full flex items-center justify-center mx-auto",
-                            !isCurrentMonth ? "text-gray-300" : "text-gray-800",
-                            isToday && !isSelected ? "border border-orange-400" : "",
+                            !isCurrentMonth
+                              ? "text-gray-300"
+                              : "text-gray-800",
+                            isToday && !isSelected
+                              ? "border border-orange-400"
+                              : "",
                             isSelected
                               ? "bg-orange-600 text-white font-semibold"
                               : "hover:bg-orange-50",
@@ -917,8 +979,6 @@ export default function AdminHome() {
               </div>
             )}
           </div>
-
-
 
           {/* Campo Horário – card inteiro clicável com dropdown customizado */}
           <div
@@ -938,8 +998,9 @@ export default function AdminHome() {
               </div>
 
               <ChevronDown
-                className={`w-4 h-4 text-gray-600 ml-2 transition-transform ${horarioAberto ? "rotate-180" : ""
-                  }`}
+                className={`w-4 h-4 text-gray-600 ml-2 transition-transform ${
+                  horarioAberto ? "rotate-180" : ""
+                }`}
               />
             </button>
 
@@ -960,10 +1021,11 @@ export default function AdminHome() {
                     setHorario("");
                     setHorarioAberto(false);
                   }}
-                  className={`w-full text-left px-3 py-1.5 ${horario === ""
-                    ? "bg-orange-100 text-orange-700 font-semibold"
-                    : "hover:bg-orange-50 text-gray-800"
-                    }`}
+                  className={`w-full text-left px-3 py-1.5 ${
+                    horario === ""
+                      ? "bg-orange-100 text-orange-700 font-semibold"
+                      : "hover:bg-orange-50 text-gray-800"
+                  }`}
                 >
                   Selecione um horário
                 </button>
@@ -980,10 +1042,11 @@ export default function AdminHome() {
                         setHorario(hora);
                         setHorarioAberto(false);
                       }}
-                      className={`w-full text-left px-3 py-1.5 ${selecionado
-                        ? "bg-orange-100 text-orange-700 font-semibold"
-                        : "hover:bg-orange-50 text-gray-800"
-                        }`}
+                      className={`w-full text-left px-3 py-1.5 ${
+                        selecionado
+                          ? "bg-orange-100 text-orange-700 font-semibold"
+                          : "hover:bg-orange-50 text-gray-800"
+                      }`}
                     >
                       {hora}
                     </button>
@@ -991,9 +1054,7 @@ export default function AdminHome() {
                 })}
               </div>
             )}
-
           </div>
-
 
           {/* Botão principal + seta para recolher */}
           <div className="flex items-center gap-2">
@@ -1009,11 +1070,16 @@ export default function AdminHome() {
               type="button"
               onClick={() => setMostrarDispon((v) => !v)}
               className="inline-flex items-center justify-center h-11 w-11 rounded-full text-gray-700 hover:bg-gray-100 transition"
-              aria-label={mostrarDispon ? "Recolher disponibilidade" : "Mostrar disponibilidade"}
+              aria-label={
+                mostrarDispon
+                  ? "Recolher disponibilidade"
+                  : "Mostrar disponibilidade"
+              }
             >
               <ChevronDown
-                className={`w-10 h-10 transition-transform ${mostrarDispon ? "" : "rotate-180"
-                  }`}
+                className={`w-10 h-10 transition-transform ${
+                  mostrarDispon ? "" : "rotate-180"
+                }`}
               />
             </button>
           </div>
@@ -1060,22 +1126,24 @@ export default function AdminHome() {
                       "border-slate-300 bg-slate-50 text-slate-800"; // padrão / permanente
 
                     if (q.bloqueada) {
-                      statusClasses = "border-red-400 bg-red-50 text-red-800";
+                      statusClasses =
+                        "border-red-400 bg-red-50 text-red-800";
                     } else if (q.disponivel) {
-                      statusClasses = "border-emerald-400 bg-emerald-50 text-emerald-800";
+                      statusClasses =
+                        "border-emerald-400 bg-emerald-50 text-emerald-800";
                     } else if (isComum) {
-                      statusClasses = "border-amber-400 bg-amber-50 text-amber-800";
+                      statusClasses =
+                        "border-amber-400 bg-amber-50 text-amber-800";
                     }
 
                     // cor do texto "Quadra X • Nome" de acordo com o status
-                    const nomeQuadraColor =
-                      q.bloqueada
-                        ? "text-red-700"
-                        : q.disponivel
-                          ? "text-emerald-700"
-                          : isComum
-                            ? "text-amber-700"
-                            : "text-gray-500"; // permanente / padrão
+                    const nomeQuadraColor = q.bloqueada
+                      ? "text-red-700"
+                      : q.disponivel
+                      ? "text-emerald-700"
+                      : isComum
+                      ? "text-amber-700"
+                      : "text-gray-500"; // permanente / padrão
 
                     // apenas o primeiro nome da quadra
                     const primeiroNomeQuadra =
@@ -1085,16 +1153,17 @@ export default function AdminHome() {
                       "relative flex flex-col justify-between items-stretch " +
                       "rounded-2xl border shadow-sm px-3 py-3 " +
                       "transition-transform hover:-translate-y-0.5 hover:shadow-md " +
-                      (clickable ? "cursor-pointer" : "cursor-not-allowed opacity-90");
+                      (clickable
+                        ? "cursor-pointer"
+                        : "cursor-not-allowed opacity-90");
 
-                    const labelTipo =
-                      q.bloqueada
-                        ? "Bloqueado"
-                        : q.disponivel
-                          ? "Disponível"
-                          : isPermanente
-                            ? "Permanente"
-                            : "Avulsa";
+                    const labelTipo = q.bloqueada
+                      ? "Bloqueado"
+                      : q.disponivel
+                      ? "Disponível"
+                      : isPermanente
+                      ? "Permanente"
+                      : "Avulsa";
 
                     return (
                       <button
@@ -1243,15 +1312,17 @@ export default function AdminHome() {
                                 />
                               )}
 
-                              {!q.disponivel && !q.bloqueada && isPermanente && (
-                                <Image
-                                  src="/iconescards/icone_permanente_name.png"
-                                  alt="Permanente"
-                                  width={12}
-                                  height={12}
-                                  className="w-2.5 h-2.5"
-                                />
-                              )}
+                              {!q.disponivel &&
+                                !q.bloqueada &&
+                                isPermanente && (
+                                  <Image
+                                    src="/iconescards/icone_permanente_name.png"
+                                    alt="Permanente"
+                                    width={12}
+                                    height={12}
+                                    className="w-2.5 h-2.5"
+                                  />
+                                )}
 
                               {!q.disponivel && !q.bloqueada && isComum && (
                                 <Image
@@ -1274,7 +1345,6 @@ export default function AdminHome() {
               </section>
             ))}
 
-
             {/* ================== CHURRASQUEIRAS ================== */}
             <section className="rounded-3xl bg-gray-100 border border-gray-100 px-4 sm:px-6 py-5 shadow-sm">
               {/* Header igual ao das quadras */}
@@ -1289,195 +1359,201 @@ export default function AdminHome() {
                 Dia
               </h3>
               <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 mb-4">
-                {disponibilidade.churrasqueiras.map((c: ChurrasqueiraDisp) => {
-                  const diaInfo = c.disponibilidade.find((t) => t.turno === "DIA");
+                {disponibilidade.churrasqueiras.map(
+                  (c: ChurrasqueiraDisp) => {
+                    const diaInfo = c.disponibilidade.find(
+                      (t) => t.turno === "DIA"
+                    );
 
-                  const disponivel = !!diaInfo?.disponivel;
-                  const isPerm = diaInfo?.tipoReserva === "permanente";
-                  const isComum = diaInfo?.tipoReserva === "comum";
+                    const disponivel = !!diaInfo?.disponivel;
+                    const isPerm = diaInfo?.tipoReserva === "permanente";
+                    const isComum = diaInfo?.tipoReserva === "comum";
 
-                  // mesmas cores de status dos cards de quadra
-                  let statusClasses =
-                    "border-slate-300 bg-slate-50 text-slate-800";
+                    // mesmas cores de status dos cards de quadra
+                    let statusClasses =
+                      "border-slate-300 bg-slate-50 text-slate-800";
 
-                  if (disponivel) {
-                    statusClasses = "border-emerald-400 bg-emerald-50 text-emerald-800";
-                  } else if (isComum) {
-                    statusClasses = "border-amber-400 bg-amber-50 text-amber-800";
-                  } else if (isPerm) {
-                    statusClasses = "border-slate-300 bg-slate-50 text-slate-800";
-                  }
+                    if (disponivel) {
+                      statusClasses =
+                        "border-emerald-400 bg-emerald-50 text-emerald-800";
+                    } else if (isComum) {
+                      statusClasses =
+                        "border-amber-400 bg-amber-50 text-amber-800";
+                    } else if (isPerm) {
+                      statusClasses =
+                        "border-slate-300 bg-slate-50 text-slate-800";
+                    }
 
-                  // cor da linha "Churrasqueira X • Nome"
-                  const nomeChurrasColor =
-                    disponivel
+                    // cor da linha "Churrasqueira X • Nome"
+                    const nomeChurrasColor = disponivel
                       ? "text-emerald-700"
                       : isComum
-                        ? "text-amber-700"
-                        : isPerm
-                          ? "text-gray-500"
-                          : "text-gray-500";
+                      ? "text-amber-700"
+                      : isPerm
+                      ? "text-gray-500"
+                      : "text-gray-500";
 
-                  // só o primeiro nome da churrasqueira
-                  const primeiroNomeChurras =
-                    (c.nome || "").split(" ")[0] || c.nome;
+                    // só o primeiro nome da churrasqueira
+                    const primeiroNomeChurras =
+                      (c.nome || "").split(" ")[0] || c.nome;
 
-                  const cardBase =
-                    "relative flex flex-col justify-between items-stretch " +
-                    "rounded-2xl border shadow-sm px-3 py-3 " +
-                    "transition-transform hover:-translate-y-0.5 hover:shadow-md cursor-pointer";
+                    const cardBase =
+                      "relative flex flex-col justify-between items-stretch " +
+                      "rounded-2xl border shadow-sm px-3 py-3 " +
+                      "transition-transform hover:-translate-y-0.5 hover:shadow-md cursor-pointer";
 
-                  const labelTipo = disponivel
-                    ? "Disponível"
-                    : isPerm
+                    const labelTipo = disponivel
+                      ? "Disponível"
+                      : isPerm
                       ? "Permanente"
                       : "Avulsa";
 
-                  return (
-                    <button
-                      key={c.churrasqueiraId + "-dia"}
-                      type="button"
-                      onClick={() => {
-                        if (disponivel) {
-                          abrirConfirmacaoChurras({
-                            data,
-                            turno: "DIA",
-                            churrasqueiraId: c.churrasqueiraId,
-                            churrasqueiraNome: c.nome,
-                            churrasqueiraNumero: c.numero,
-                          });
-                        } else if (diaInfo) {
-                          abrirDetalhes(
-                            {
-                              ...(diaInfo as DetalheItemMin),
-                              tipoLocal: "churrasqueira",
-                            },
-                            { turno: "DIA" }
-                          );
-                        }
-                      }}
-                      className={`${cardBase} ${statusClasses}`}
-                    >
-                      {/* TOPO: NOME DA CHURRASQUEIRA / LOCAL */}
-                      <p
-                        className={`
+                    return (
+                      <button
+                        key={c.churrasqueiraId + "-dia"}
+                        type="button"
+                        onClick={() => {
+                          if (disponivel) {
+                            abrirConfirmacaoChurras({
+                              data,
+                              turno: "DIA",
+                              churrasqueiraId: c.churrasqueiraId,
+                              churrasqueiraNome: c.nome,
+                              churrasqueiraNumero: c.numero,
+                            });
+                          } else if (diaInfo) {
+                            abrirDetalhes(
+                              {
+                                ...(diaInfo as DetalheItemMin),
+                                tipoLocal: "churrasqueira",
+                              },
+                              { turno: "DIA" }
+                            );
+                          }
+                        }}
+                        className={`${cardBase} ${statusClasses}`}
+                      >
+                        {/* TOPO: NOME DA CHURRASQUEIRA / LOCAL */}
+                        <p
+                          className={`
               text-[10px] font-medium mb-1
               whitespace-nowrap overflow-hidden text-ellipsis
               ${nomeChurrasColor}
             `}
-                      >
-                        Churrasqueira {c.numero} • {primeiroNomeChurras}
-                      </p>
+                        >
+                          Churrasqueira {c.numero} • {primeiroNomeChurras}
+                        </p>
 
-                      {/* MIolo: ÍCONE GRANDE + NOME / DISPONÍVEL / RESERVA */}
-                      <div className="flex-1 flex flex-col items-center justify-center text-center py-1">
-                        {/* ÍCONE GRANDE POR STATUS */}
-                        <div className="mb-1">
-                          {disponivel && (
-                            <Image
-                              src="/iconescards/icone_liberado.png"
-                              alt="Churrasqueira disponível"
-                              width={32}
-                              height={32}
-                              className="w-4 h-4"
-                            />
-                          )}
-
-                          {!disponivel && isPerm && (
-                            <Image
-                              src="/iconescards/icone-permanente.png"
-                              alt="Reserva permanente"
-                              width={32}
-                              height={32}
-                              className="w-4 h-4"
-                            />
-                          )}
-
-                          {!disponivel && isComum && (
-                            <Image
-                              src="/iconescards/icone-reservado.png"
-                              alt="Reserva avulsa"
-                              width={32}
-                              height={32}
-                              className="w-4 h-4"
-                            />
-                          )}
-                        </div>
-
-                        {disponivel ? (
-                          <p className="text-sm font-extrabold leading-tight">
-                            Disponível
-                          </p>
-                        ) : (
-                          <>
-                            <p className="text-sm font-extrabold leading-tight">
-                              {firstAndLastName(diaInfo?.usuario?.nome)}
-                            </p>
-
-                            {/* TELEFONE + ÍCONE (preto/laranja) */}
-                            {diaInfo?.usuario?.celular && (
-                              <div className="mt-1 flex items-center justify-center gap-1 text-[10px] whitespace-nowrap overflow-hidden text-ellipsis">
-                                <Image
-                                  src={
-                                    isComum
-                                      ? "/iconescards/icone_phone_orange.png"
-                                      : "/iconescards/icone_phone.png"
-                                  }
-                                  alt="Telefone"
-                                  width={14}
-                                  height={14}
-                                  className="w-2.5 h-2.5 flex-shrink-0"
-                                />
-                                <span className="overflow-hidden text-ellipsis">
-                                  {diaInfo.usuario.celular}
-                                </span>
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </div>
-
-                      {/* BASE DO CARD: tipo + ÍCONE PEQUENO CENTRALIZADO */}
-                      <div className="mt-1 pt-1 flex items-center justify-center text-[11px]">
-                        <div className="inline-flex items-center gap-1">
-                          <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-white/60 overflow-hidden">
+                        {/* MIolo: ÍCONE GRANDE + NOME / DISPONÍVEL / RESERVA */}
+                        <div className="flex-1 flex flex-col items-center justify-center text-center py-1">
+                          {/* ÍCONE GRANDE POR STATUS */}
+                          <div className="mb-1">
                             {disponivel && (
                               <Image
                                 src="/iconescards/icone_liberado.png"
-                                alt="Disponível"
-                                width={12}
-                                height={12}
-                                className="w-2.5 h-2.5"
+                                alt="Churrasqueira disponível"
+                                width={32}
+                                height={32}
+                                className="w-4 h-4"
                               />
                             )}
 
                             {!disponivel && isPerm && (
                               <Image
-                                src="/iconescards/icone_permanente_name.png"
-                                alt="Permanente"
-                                width={12}
-                                height={12}
-                                className="w-2.5 h-2.5"
+                                src="/iconescards/icone-permanente.png"
+                                alt="Reserva permanente"
+                                width={32}
+                                height={32}
+                                className="w-4 h-4"
                               />
                             )}
 
                             {!disponivel && isComum && (
                               <Image
-                                src="/iconescards/icone_reserva_avulsa.png"
-                                alt="Avulsa"
-                                width={12}
-                                height={12}
-                                className="w-2.5 h-2.5"
+                                src="/iconescards/icone-reservado.png"
+                                alt="Reserva avulsa"
+                                width={32}
+                                height={32}
+                                className="w-4 h-4"
                               />
                             )}
-                          </span>
+                          </div>
 
-                          <span className="font-semibold">{labelTipo}</span>
+                          {disponivel ? (
+                            <p className="text-sm font-extrabold leading-tight">
+                              Disponível
+                            </p>
+                          ) : (
+                            <>
+                              <p className="text-sm font-extrabold leading-tight">
+                                {firstAndLastName(diaInfo?.usuario?.nome)}
+                              </p>
+
+                              {/* TELEFONE + ÍCONE (preto/laranja) */}
+                              {diaInfo?.usuario?.celular && (
+                                <div className="mt-1 flex items-center justify-center gap-1 text-[10px] whitespace-nowrap overflow-hidden text-ellipsis">
+                                  <Image
+                                    src={
+                                      isComum
+                                        ? "/iconescards/icone_phone_orange.png"
+                                        : "/iconescards/icone_phone.png"
+                                    }
+                                    alt="Telefone"
+                                    width={14}
+                                    height={14}
+                                    className="w-2.5 h-2.5 flex-shrink-0"
+                                  />
+                                  <span className="overflow-hidden text-ellipsis">
+                                    {diaInfo.usuario.celular}
+                                  </span>
+                                </div>
+                              )}
+                            </>
+                          )}
                         </div>
-                      </div>
-                    </button>
-                  );
-                })}
+
+                        {/* BASE DO CARD: tipo + ÍCONE PEQUENO CENTRALIZADO */}
+                        <div className="mt-1 pt-1 flex items-center justify-center text-[11px]">
+                          <div className="inline-flex items-center gap-1">
+                            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-white/60 overflow-hidden">
+                              {disponivel && (
+                                <Image
+                                  src="/iconescards/icone_liberado.png"
+                                  alt="Disponível"
+                                  width={12}
+                                  height={12}
+                                  className="w-2.5 h-2.5"
+                                />
+                              )}
+
+                              {!disponivel && isPerm && (
+                                <Image
+                                  src="/iconescards/icone_permanente_name.png"
+                                  alt="Permanente"
+                                  width={12}
+                                  height={12}
+                                  className="w-2.5 h-2.5"
+                                />
+                              )}
+
+                              {!disponivel && isComum && (
+                                <Image
+                                  src="/iconescards/icone_reserva_avulsa.png"
+                                  alt="Avulsa"
+                                  width={12}
+                                  height={12}
+                                  className="w-2.5 h-2.5"
+                                />
+                              )}
+                            </span>
+
+                            <span className="font-semibold">{labelTipo}</span>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  }
+                )}
               </div>
 
               {/* === NOITE === */}
@@ -1485,192 +1561,197 @@ export default function AdminHome() {
                 Noite
               </h3>
               <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                {disponibilidade.churrasqueiras.map((c: ChurrasqueiraDisp) => {
-                  const noiteInfo = c.disponibilidade.find((t) => t.turno === "NOITE");
+                {disponibilidade.churrasqueiras.map(
+                  (c: ChurrasqueiraDisp) => {
+                    const noiteInfo = c.disponibilidade.find(
+                      (t) => t.turno === "NOITE"
+                    );
 
-                  const disponivel = !!noiteInfo?.disponivel;
-                  const isPerm = noiteInfo?.tipoReserva === "permanente";
-                  const isComum = noiteInfo?.tipoReserva === "comum";
+                    const disponivel = !!noiteInfo?.disponivel;
+                    const isPerm = noiteInfo?.tipoReserva === "permanente";
+                    const isComum = noiteInfo?.tipoReserva === "comum";
 
-                  let statusClasses =
-                    "border-slate-300 bg-slate-50 text-slate-800";
+                    let statusClasses =
+                      "border-slate-300 bg-slate-50 text-slate-800";
 
-                  if (disponivel) {
-                    statusClasses = "border-emerald-400 bg-emerald-50 text-emerald-800";
-                  } else if (isComum) {
-                    statusClasses = "border-amber-400 bg-amber-50 text-amber-800";
-                  } else if (isPerm) {
-                    statusClasses = "border-slate-300 bg-slate-50 text-slate-800";
-                  }
+                    if (disponivel) {
+                      statusClasses =
+                        "border-emerald-400 bg-emerald-50 text-emerald-800";
+                    } else if (isComum) {
+                      statusClasses =
+                        "border-amber-400 bg-amber-50 text-amber-800";
+                    } else if (isPerm) {
+                      statusClasses =
+                        "border-slate-300 bg-slate-50 text-slate-800";
+                    }
 
-                  const nomeChurrasColor =
-                    disponivel
+                    const nomeChurrasColor = disponivel
                       ? "text-emerald-700"
                       : isComum
-                        ? "text-amber-700"
-                        : isPerm
-                          ? "text-gray-500"
-                          : "text-gray-500";
+                      ? "text-amber-700"
+                      : isPerm
+                      ? "text-gray-500"
+                      : "text-gray-500";
 
-                  const primeiroNomeChurras =
-                    (c.nome || "").split(" ")[0] || c.nome;
+                    const primeiroNomeChurras =
+                      (c.nome || "").split(" ")[0] || c.nome;
 
-                  const cardBase =
-                    "relative flex flex-col justify-between items-stretch " +
-                    "rounded-2xl border shadow-sm px-3 py-3 " +
-                    "transition-transform hover:-translate-y-0.5 hover:shadow-md cursor-pointer";
+                    const cardBase =
+                      "relative flex flex-col justify-between items-stretch " +
+                      "rounded-2xl border shadow-sm px-3 py-3 " +
+                      "transition-transform hover:-translate-y-0.5 hover:shadow-md cursor-pointer";
 
-                  const labelTipo = disponivel
-                    ? "Disponível"
-                    : isPerm
+                    const labelTipo = disponivel
+                      ? "Disponível"
+                      : isPerm
                       ? "Permanente"
                       : "Avulsa";
 
-                  return (
-                    <button
-                      key={c.churrasqueiraId + "-noite"}
-                      type="button"
-                      onClick={() => {
-                        if (disponivel) {
-                          abrirConfirmacaoChurras({
-                            data,
-                            turno: "NOITE",
-                            churrasqueiraId: c.churrasqueiraId,
-                            churrasqueiraNome: c.nome,
-                            churrasqueiraNumero: c.numero,
-                          });
-                        } else if (noiteInfo) {
-                          abrirDetalhes(
-                            {
-                              ...(noiteInfo as DetalheItemMin),
-                              tipoLocal: "churrasqueira",
-                            },
-                            { turno: "NOITE" }
-                          );
-                        }
-                      }}
-                      className={`${cardBase} ${statusClasses}`}
-                    >
-                      <p
-                        className={`
+                    return (
+                      <button
+                        key={c.churrasqueiraId + "-noite"}
+                        type="button"
+                        onClick={() => {
+                          if (disponivel) {
+                            abrirConfirmacaoChurras({
+                              data,
+                              turno: "NOITE",
+                              churrasqueiraId: c.churrasqueiraId,
+                              churrasqueiraNome: c.nome,
+                              churrasqueiraNumero: c.numero,
+                            });
+                          } else if (noiteInfo) {
+                            abrirDetalhes(
+                              {
+                                ...(noiteInfo as DetalheItemMin),
+                                tipoLocal: "churrasqueira",
+                              },
+                              { turno: "NOITE" }
+                            );
+                          }
+                        }}
+                        className={`${cardBase} ${statusClasses}`}
+                      >
+                        <p
+                          className={`
               text-[10px] font-medium mb-1
               whitespace-nowrap overflow-hidden text-ellipsis
               ${nomeChurrasColor}
             `}
-                      >
-                        Churrasqueira {c.numero} • {primeiroNomeChurras}
-                      </p>
+                        >
+                          Churrasqueira {c.numero} • {primeiroNomeChurras}
+                        </p>
 
-                      <div className="flex-1 flex flex-col items-center justify-center text-center py-1">
-                        <div className="mb-1">
-                          {disponivel && (
-                            <Image
-                              src="/iconescards/icone_liberado.png"
-                              alt="Churrasqueira disponível"
-                              width={32}
-                              height={32}
-                              className="w-4 h-4"
-                            />
-                          )}
-
-                          {!disponivel && isPerm && (
-                            <Image
-                              src="/iconescards/icone_churrasqueira_permanente.png"
-                              alt="Reserva permanente"
-                              width={32}
-                              height={32}
-                              className="w-4 h-4"
-                            />
-                          )}
-
-                          {!disponivel && isComum && (
-                            <Image
-                              src="/iconescards/icone_churrasqueira_avulsa.png"
-                              alt="Reserva avulsa"
-                              width={32}
-                              height={32}
-                              className="w-4 h-4"
-                            />
-                          )}
-                        </div>
-
-                        {disponivel ? (
-                          <p className="text-sm font-extrabold leading-tight">
-                            Disponível
-                          </p>
-                        ) : (
-                          <>
-                            <p className="text-sm font-extrabold leading-tight">
-                              {firstAndLastName(noiteInfo?.usuario?.nome)}
-                            </p>
-
-                            {noiteInfo?.usuario?.celular && (
-                              <div className="mt-1 flex items-center justify-center gap-1 text-[10px] whitespace-nowrap overflow-hidden text-ellipsis">
-                                <Image
-                                  src={
-                                    isComum
-                                      ? "/iconescards/icone_phone_orange.png"
-                                      : "/iconescards/icone_phone.png"
-                                  }
-                                  alt="Telefone"
-                                  width={14}
-                                  height={14}
-                                  className="w-2.5 h-2.5 flex-shrink-0"
-                                />
-                                <span className="overflow-hidden text-ellipsis">
-                                  {noiteInfo.usuario.celular}
-                                </span>
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </div>
-
-                      <div className="mt-1 pt-1 flex items-center justify-center text-[11px]">
-                        <div className="inline-flex items-center gap-1">
-                          <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-white/60 overflow-hidden">
+                        <div className="flex-1 flex flex-col items-center justify-center text-center py-1">
+                          <div className="mb-1">
                             {disponivel && (
                               <Image
                                 src="/iconescards/icone_liberado.png"
-                                alt="Disponível"
-                                width={12}
-                                height={12}
-                                className="w-2.5 h-2.5"
+                                alt="Churrasqueira disponível"
+                                width={32}
+                                height={32}
+                                className="w-4 h-4"
                               />
                             )}
 
                             {!disponivel && isPerm && (
                               <Image
-                                src="/iconescards/icone_permanente_name.png"
-                                alt="Permanente"
-                                width={12}
-                                height={12}
-                                className="w-2.5 h-2.5"
+                                src="/iconescards/icone_churrasqueira_permanente.png"
+                                alt="Reserva permanente"
+                                width={32}
+                                height={32}
+                                className="w-4 h-4"
                               />
                             )}
 
                             {!disponivel && isComum && (
                               <Image
-                                src="/iconescards/icone_reserva_avulsa.png"
-                                alt="Avulsa"
-                                width={12}
-                                height={12}
-                                className="w-2.5 h-2.5"
+                                src="/iconescards/icone_churrasqueira_avulsa.png"
+                                alt="Reserva avulsa"
+                                width={32}
+                                height={32}
+                                className="w-4 h-4"
                               />
                             )}
-                          </span>
+                          </div>
 
-                          <span className="font-semibold">{labelTipo}</span>
+                          {disponivel ? (
+                            <p className="text-sm font-extrabold leading-tight">
+                              Disponível
+                            </p>
+                          ) : (
+                            <>
+                              <p className="text-sm font-extrabold leading-tight">
+                                {firstAndLastName(noiteInfo?.usuario?.nome)}
+                              </p>
+
+                              {noiteInfo?.usuario?.celular && (
+                                <div className="mt-1 flex items-center justify-center gap-1 text-[10px] whitespace-nowrap overflow-hidden text-ellipsis">
+                                  <Image
+                                    src={
+                                      isComum
+                                        ? "/iconescards/icone_phone_orange.png"
+                                        : "/iconescards/icone_phone.png"
+                                    }
+                                    alt="Telefone"
+                                    width={14}
+                                    height={14}
+                                    className="w-2.5 h-2.5 flex-shrink-0"
+                                  />
+                                  <span className="overflow-hidden text-ellipsis">
+                                    {noiteInfo.usuario.celular}
+                                  </span>
+                                </div>
+                              )}
+                            </>
+                          )}
                         </div>
-                      </div>
-                    </button>
-                  );
-                })}
+
+                        <div className="mt-1 pt-1 flex items-center justify-center text-[11px]">
+                          <div className="inline-flex items-center gap-1">
+                            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-white/60 overflow-hidden">
+                              {disponivel && (
+                                <Image
+                                  src="/iconescards/icone_liberado.png"
+                                  alt="Disponível"
+                                  width={12}
+                                  height={12}
+                                  className="w-2.5 h-2.5"
+                                />
+                              )}
+
+                              {!disponivel && isPerm && (
+                                <Image
+                                  src="/iconescards/icone_permanente_name.png"
+                                  alt="Permanente"
+                                  width={12}
+                                  height={12}
+                                  className="w-2.5 h-2.5"
+                                />
+                              )}
+
+                              {!disponivel && isComum && (
+                                <Image
+                                  src="/iconescards/icone_reserva_avulsa.png"
+                                  alt="Avulsa"
+                                  width={12}
+                                  height={12}
+                                  className="w-2.5 h-2.5"
+                                />
+                              )}
+                            </span>
+
+                            <span className="font-semibold">{labelTipo}</span>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  }
+                )}
               </div>
             </section>
           </div>
         ))}
-
 
       {/* OVERLAY: carregando detalhes */}
       {loadingDetalhes && (
@@ -1728,11 +1809,15 @@ export default function AdminHome() {
                     const sel = agendamentoSelecionado as any;
 
                     const numero =
-                      sel.numero ?? sel.quadraNumero ?? sel.churrasqueiraNumero;
-                    const nome = sel.nome ?? sel.quadraNome ?? sel.churrasqueiraNome;
+                      sel.numero ??
+                      sel.quadraNumero ??
+                      sel.churrasqueiraNumero;
+                    const nome =
+                      sel.nome ?? sel.quadraNome ?? sel.churrasqueiraNome;
 
                     const numeroFmt =
-                      typeof numero === "number" || typeof numero === "string"
+                      typeof numero === "number" ||
+                      typeof numero === "string"
                         ? String(numero).padStart(2, "0")
                         : "";
 
@@ -1744,7 +1829,6 @@ export default function AdminHome() {
                 </span>
               </p>
             </div>
-
 
             {/* CONTEÚDO ROLÁVEL */}
             <div className="px-8 py-6 space-y-6 overflow-y-auto">
@@ -1814,13 +1898,23 @@ export default function AdminHome() {
                     <div className="flex items-center gap-2">
                       <Image
                         src={(() => {
-                          const esporteLower = (agendamentoSelecionado.esporte ?? "").toLowerCase();
+                          const esporteLower = (
+                            agendamentoSelecionado.esporte ?? ""
+                          ).toLowerCase();
 
-                          if (esporteLower.includes("beach")) return "/iconescards/bolaesporte.png";
-                          if (esporteLower.includes("padel")) return "/iconescards/padel.png";
-                          if (esporteLower.includes("vôlei") || esporteLower.includes("volei"))
+                          if (esporteLower.includes("beach"))
+                            return "/iconescards/bolaesporte.png";
+                          if (esporteLower.includes("padel"))
+                            return "/iconescards/padel.png";
+                          if (
+                            esporteLower.includes("vôlei") ||
+                            esporteLower.includes("volei")
+                          )
                             return "/iconescards/volei.png";
-                          if (esporteLower.includes("pickle") || esporteLower.includes("picle"))
+                          if (
+                            esporteLower.includes("pickle") ||
+                            esporteLower.includes("picle")
+                          )
                             return "/iconescards/pickleball.png";
 
                           return "/iconescards/bolaesporte.png"; // padrão
@@ -1843,11 +1937,16 @@ export default function AdminHome() {
                 {/* COLUNA DIREITA (Horário/Turno / Tipo) */}
                 <div className="flex flex-col gap-1 ml-auto w-fit">
                   {/* Horário ou Turno */}
-                  {(agendamentoSelecionado.horario || agendamentoSelecionado.turno) && (
+                  {(agendamentoSelecionado.horario ||
+                    agendamentoSelecionado.turno) && (
                     <div className="flex items-center gap-2">
                       <Image
                         src="/iconescards/horario.png"
-                        alt={agendamentoSelecionado.horario ? "Horário" : "Turno"}
+                        alt={
+                          agendamentoSelecionado.horario
+                            ? "Horário"
+                            : "Turno"
+                        }
                         width={14}
                         height={14}
                         className="w-3.5 h-3.5"
@@ -1877,8 +1976,10 @@ export default function AdminHome() {
                     <Image
                       src={(() => {
                         const tipo = agendamentoSelecionado.tipoReserva;
-                        if (tipo === "permanente") return "/iconescards/icone_permanente_name.png";
-                        if (tipo === "comum") return "/iconescards/avulsacinza.png";
+                        if (tipo === "permanente")
+                          return "/iconescards/icone_permanente_name.png";
+                        if (tipo === "comum")
+                          return "/iconescards/avulsacinza.png";
                         return "/iconescards/avulsacinza.png"; // padrão
                       })()}
                       alt="Tipo de reserva"
@@ -1890,13 +1991,12 @@ export default function AdminHome() {
                       {agendamentoSelecionado.tipoReserva === "permanente"
                         ? "Permanente"
                         : agendamentoSelecionado.tipoReserva === "comum"
-                          ? "Avulsa"
-                          : agendamentoSelecionado.tipoReserva}
+                        ? "Avulsa"
+                        : agendamentoSelecionado.tipoReserva}
                     </span>
                   </div>
                 </div>
               </div>
-
 
               {/* JOGADORES */}
               {agendamentoSelecionado.tipoLocal === "quadra" && (
@@ -1977,7 +2077,6 @@ export default function AdminHome() {
                   </div>
                 )}
 
-
               {/* LINHA DIVISÓRIA */}
               <div className="border-t border-gray-200 mt-6 pt-1" />
 
@@ -2021,7 +2120,9 @@ export default function AdminHome() {
         transition-colors
       "
                   >
-                    {loadingTransferencia ? "Transferindo..." : "Transferir"}
+                    {loadingTransferencia
+                      ? "Transferindo..."
+                      : "Transferir"}
                   </button>
                 )}
               </div>
@@ -2040,7 +2141,9 @@ export default function AdminHome() {
                       disabled={loadingCancelamento}
                       className="px-4 py-2 rounded-full bg-red-600 text-white hover:bg-red-700 text-sm cursor-pointer disabled:opacity-70"
                     >
-                      {loadingCancelamento ? "Cancelando..." : "Sim, cancelar"}
+                      {loadingCancelamento
+                        ? "Cancelando..."
+                        : "Sim, cancelar"}
                     </button>
                     <button
                       onClick={() => setConfirmarCancelamento(false)}
@@ -2067,7 +2170,9 @@ export default function AdminHome() {
                       Cancelar APENAS 1 dia
                     </button>
                     <button
-                      onClick={() => setMostrarOpcoesCancelamento(false)}
+                      onClick={() =>
+                        setMostrarOpcoesCancelamento(false)
+                      }
                       className="w-full bg-gray-200 hover:bg-gray-300 text-black py-2 rounded-full cursor-pointer text-sm"
                     >
                       Voltar
@@ -2084,8 +2189,9 @@ export default function AdminHome() {
                     Cancelar apenas 1 dia
                   </h3>
                   <p className="text-sm text-gray-600 mb-3">
-                    Selecione uma data (próximas {datasExcecao.length} datas que
-                    caem em {agendamentoSelecionado?.diaSemana ?? "-"}).
+                    Selecione uma data (próximas {datasExcecao.length} datas
+                    que caem em{" "}
+                    {agendamentoSelecionado?.diaSemana ?? "-"}).
                   </p>
 
                   {datasExcecao.length === 0 ? (
@@ -2100,11 +2206,14 @@ export default function AdminHome() {
                           <button
                             key={d}
                             type="button"
-                            onClick={() => setDataExcecaoSelecionada(d)}
-                            className={`px-3 py-2 rounded-full border text-sm ${ativo
-                              ? "border-indigo-600 bg-indigo-50 text-indigo-700"
-                              : "border-gray-300 hover:bg-gray-50"
-                              }`}
+                            onClick={() =>
+                              setDataExcecaoSelecionada(d)
+                            }
+                            className={`px-3 py-2 rounded-full border text-sm ${
+                              ativo
+                                ? "border-indigo-600 bg-indigo-50 text-indigo-700"
+                                : "border-gray-300 hover:bg-gray-50"
+                            }`}
                           >
                             {toDdMm(d)}
                           </button>
@@ -2125,10 +2234,14 @@ export default function AdminHome() {
                     <button
                       type="button"
                       onClick={confirmarExcecao}
-                      disabled={!dataExcecaoSelecionada || postandoExcecao}
+                      disabled={
+                        !dataExcecaoSelecionada || postandoExcecao
+                      }
                       className="px-4 py-2 rounded-full bg-indigo-600 text-white hover:bg-indigo-700 disabled:bg-indigo-300 text-sm"
                     >
-                      {postandoExcecao ? "Salvando..." : "Confirmar exceção"}
+                      {postandoExcecao
+                        ? "Salvando..."
+                        : "Confirmar exceção"}
                     </button>
                   </div>
                 </div>
@@ -2138,7 +2251,6 @@ export default function AdminHome() {
         </div>
       )}
 
-
       {/* MODAL DE TRANSFERÊNCIA */}
       {abrirModalTransferencia && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-60">
@@ -2146,7 +2258,7 @@ export default function AdminHome() {
             <h3 className="text-lg font-semibold mb-4">
               Transferir Agendamento{" "}
               {agendamentoSelecionado?.tipoLocal === "quadra" &&
-                agendamentoSelecionado?.tipoReserva === "permanente"
+              agendamentoSelecionado?.tipoReserva === "permanente"
                 ? "(Permanente)"
                 : "(Comum)"}
             </h3>
@@ -2165,15 +2277,20 @@ export default function AdminHome() {
             {!carregandoUsuarios &&
               usuariosFiltrados.length === 0 &&
               buscaUsuario.trim().length > 0 && (
-                <p className="text-sm text-gray-500">Nenhum usuário encontrado</p>
+                <p className="text-sm text-gray-500">
+                  Nenhum usuário encontrado
+                </p>
               )}
 
             <ul className="max-h-64 overflow-y-auto border rounded mb-4">
               {usuariosFiltrados.map((user) => (
                 <li
                   key={user.id}
-                  className={`p-2 cursor-pointer hover:bg-blue-100 ${usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
-                    }`}
+                  className={`p-2 cursor-pointer hover:bg-blue-100 ${
+                    usuarioSelecionado?.id === user.id
+                      ? "bg-blue-300 font-semibold"
+                      : ""
+                  }`}
                   onClick={() => setUsuarioSelecionado(user)}
                   title={user.celular || ""}
                 >
@@ -2185,12 +2302,15 @@ export default function AdminHome() {
 
             {/* Somente quando o selecionado é permanente (quadra) */}
             {agendamentoSelecionado?.tipoLocal === "quadra" &&
-              agendamentoSelecionado?.tipoReserva === "permanente" && (
+              agendamentoSelecionado?.tipoReserva ===
+                "permanente" && (
                 <label className="flex items-center gap-2 mb-4 text-sm">
                   <input
                     type="checkbox"
                     checked={copiarExcecoes}
-                    onChange={(e) => setCopiarExcecoes(e.target.checked)}
+                    onChange={(e) =>
+                      setCopiarExcecoes(e.target.checked)
+                    }
                   />
                   Copiar exceções (datas já canceladas)
                 </label>
@@ -2206,10 +2326,14 @@ export default function AdminHome() {
               </button>
               <button
                 onClick={confirmarTransferencia}
-                disabled={!usuarioSelecionado || loadingTransferencia}
+                disabled={
+                  !usuarioSelecionado || loadingTransferencia
+                }
                 className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-300"
               >
-                {loadingTransferencia ? "Transferindo..." : "Confirmar Transferência"}
+                {loadingTransferencia
+                  ? "Transferindo..."
+                  : "Confirmar Transferência"}
               </button>
             </div>
           </div>
@@ -2232,7 +2356,9 @@ export default function AdminHome() {
           >
             {/* X para fechar */}
             <button
-              onClick={() => !addingPlayers && setAbrirModalJogadores(false)}
+              onClick={() =>
+                !addingPlayers && setAbrirModalJogadores(false)
+              }
               className="absolute right-6 top-4 text-gray-400 hover:text-gray-600 text-2xl leading-none"
               aria-label="Fechar"
             >
@@ -2283,7 +2409,8 @@ export default function AdminHome() {
                 </div>
 
                 <p className="mt-1 text-[11px] text-gray-500">
-                  Use este campo para buscar clientes já cadastrados no sistema.
+                  Use este campo para buscar clientes já cadastrados no
+                  sistema.
                 </p>
 
                 {/* Lista de resultados / estados da busca */}
@@ -2295,36 +2422,42 @@ export default function AdminHome() {
                     </div>
                   )}
 
-                  {!carregandoJogadores && buscaJogador.trim().length < 2 && (
-                    <div className="px-3 py-2 text-[11px] text-gray-400">
-                      Comece digitando para ver os resultados.
-                    </div>
-                  )}
+                  {!carregandoJogadores &&
+                    buscaJogador.trim().length < 2 && (
+                      <div className="px-3 py-2 text-[11px] text-gray-400">
+                        Comece digitando para ver os resultados.
+                      </div>
+                    )}
 
                   {!carregandoJogadores &&
                     buscaJogador.trim().length >= 2 &&
                     usuariosParaJogadores.length === 0 && (
                       <div className="px-3 py-2 text-xs text-gray-500">
                         Nenhum atleta encontrado para{" "}
-                        <span className="font-semibold">"{buscaJogador.trim()}"</span>.
+                        <span className="font-semibold">
+                          "{buscaJogador.trim()}"
+                        </span>
+                        .
                       </div>
                     )}
 
                   {!carregandoJogadores &&
                     usuariosParaJogadores.map((u) => {
-                      const ativo = jogadoresSelecionadosIds.includes(u.id);
+                      const ativo =
+                        jogadoresSelecionadosIds.includes(u.id);
 
                       return (
                         <button
                           key={u.id}
                           type="button"
-                          onClick={() => alternarSelecionado(u.id)}
+                          onClick={() => alternarSelecionado(u)}
                           title={u.celular || ""}
                           className={`w-full px-3 py-2 flex items-center justify-between gap-3 text-left transition
-              ${ativo
-                              ? "bg-orange-50 border-l-4 border-orange-500"
-                              : "hover:bg-orange-50"
-                            }`}
+              ${
+                ativo
+                  ? "bg-orange-50 border-l-4 border-orange-500"
+                  : "hover:bg-orange-50"
+              }`}
                         >
                           {/* Nome + telefone */}
                           <div className="flex-1 min-w-0">
@@ -2383,7 +2516,9 @@ export default function AdminHome() {
                            focus:outline-none focus:ring-1 focus:ring-orange-400"
                       placeholder="Insira o nome do jogador"
                       value={convidadoNome}
-                      onChange={(e) => setConvidadoNome(e.target.value)}
+                      onChange={(e) =>
+                        setConvidadoNome(e.target.value)
+                      }
                     />
                   </div>
 
@@ -2402,7 +2537,9 @@ export default function AdminHome() {
          focus:outline-none focus:ring-1 focus:ring-orange-200"
                       placeholder="(00) 000000000"
                       value={convidadoTelefone}
-                      onChange={(e) => setConvidadoTelefone(e.target.value)}
+                      onChange={(e) =>
+                        setConvidadoTelefone(e.target.value)
+                      }
                     />
                   </div>
 
@@ -2410,7 +2547,10 @@ export default function AdminHome() {
                   <button
                     type="button"
                     onClick={adicionarConvidado}
-                    disabled={!convidadoNome.trim() || !convidadoTelefone.trim()} // 👈 exige nome + telefone
+                    disabled={
+                      !convidadoNome.trim() ||
+                      !convidadoTelefone.trim()
+                    } // 👈 exige nome + telefone
                     className="h-10 px-4 rounded-md border border-[#E97A1F] bg-[#FFF3E0]
        text-[#D86715] text-sm font-semibold
        disabled:opacity-60 hover:bg-[#FFE6C2] transition-colors"
@@ -2420,7 +2560,8 @@ export default function AdminHome() {
                 </div>
 
                 <p className="mt-2 text-[11px] text-gray-500">
-                  *O atleta responsável pela reserva será o primeiro jogador a ser adicionado
+                  *O atleta responsável pela reserva será o primeiro
+                  jogador a ser adicionado
                 </p>
               </div>
 
@@ -2432,32 +2573,30 @@ export default function AdminHome() {
 
                 <div className="flex flex-wrap gap-3">
                   {/* Jogadores cadastrados selecionados */}
-                  {usuariosParaJogadores
-                    .filter((u) => jogadoresSelecionadosIds.includes(u.id))
-                    .map((u) => (
-                      <div
-                        key={u.id}
-                        className="flex flex-col items-start gap-1 px-3 py-2 rounded-md bg-white border border-gray-300 min-w-[170px]"
-                      >
-                        <p className="text-xs font-semibold truncate">
-                          {u.nome}
+                  {jogadoresSelecionadosDetalhes.map((u) => (
+                    <div
+                      key={u.id}
+                      className="flex flex-col items-start gap-1 px-3 py-2 rounded-md bg-white border border-gray-300 min-w-[170px]"
+                    >
+                      <p className="text-xs font-semibold truncate">
+                        {u.nome}
+                      </p>
+                      {u.celular && (
+                        <p className="text-[11px] text-gray-500 truncate">
+                          Sócio {u.celular}
                         </p>
-                        {u.celular && (
-                          <p className="text-[11px] text-gray-500 truncate">
-                            Sócio {u.celular}
-                          </p>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => alternarSelecionado(u.id)}
-                          className="mt-1 px-2 py-1 rounded border border-[#C73737]
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => alternarSelecionado(u)}
+                        className="mt-1 px-2 py-1 rounded border border-[#C73737]
                                bg-[#FFE9E9] text-[11px] text-[#B12A2A] font-semibold
                                hover:bg-[#FFDADA] transition-colors"
-                        >
-                          Remover
-                        </button>
-                      </div>
-                    ))}
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  ))}
 
                   {/* Convidados */}
                   {convidadosPendentes.map((nome) => (
@@ -2468,7 +2607,9 @@ export default function AdminHome() {
                       <p className="text-xs font-semibold truncate">
                         {nome}
                       </p>
-                      <p className="text-[11px] text-gray-500">Convidado</p>
+                      <p className="text-[11px] text-gray-500">
+                        Convidado
+                      </p>
                       <button
                         type="button"
                         onClick={() => removerConvidado(nome)}
@@ -2494,7 +2635,9 @@ export default function AdminHome() {
             {/* RODAPÉ – BOTÕES CANCELAR / INSERIR */}
             <div className="mt-8 flex justify-center gap-10">
               <button
-                onClick={() => !addingPlayers && setAbrirModalJogadores(false)}
+                onClick={() =>
+                  !addingPlayers && setAbrirModalJogadores(false)
+                }
                 disabled={addingPlayers}
                 className="min-w-[160px] px-5 py-2.5 rounded-md border border-[#C73737]
                      bg-[#FFE9E9] text-[#B12A2A] font-semibold
@@ -2521,7 +2664,6 @@ export default function AdminHome() {
           </div>
         </div>
       )}
-
 
       {/* MODAL: Confirmar agendamento (quadra livre) */}
       {mostrarConfirmaAgendar && preReserva && (
@@ -2555,13 +2697,23 @@ export default function AdminHome() {
             {/* Texto */}
             <p className="text-sm text-gray-800 mb-7 text-center leading-relaxed">
               Deseja realizar uma reserva de{" "}
-              <span className="font-semibold">{preReserva.esporte}</span> na{" "}
               <span className="font-semibold">
-                quadra {String(preReserva.quadraNumero).padStart(2, "0")} - {preReserva.quadraNome}
+                {preReserva.esporte}
+              </span>{" "}
+              na{" "}
+              <span className="font-semibold">
+                quadra {String(preReserva.quadraNumero).padStart(2, "0")} -{" "}
+                {preReserva.quadraNome}
               </span>
               , no dia{" "}
-              <span className="font-semibold">{toDdMm(preReserva.data)}</span> às{" "}
-              <span className="font-semibold">{preReserva.horario}</span>?
+              <span className="font-semibold">
+                {toDdMm(preReserva.data)}
+              </span>{" "}
+              às{" "}
+              <span className="font-semibold">
+                {preReserva.horario}
+              </span>
+              ?
             </p>
 
             {/* Botões */}
@@ -2585,7 +2737,6 @@ export default function AdminHome() {
           </div>
         </div>
       )}
-
 
       {/* MODAL: Confirmar agendamento (churrasqueira livre) */}
       {mostrarConfirmaChurras && preReservaChurras && (
@@ -2620,12 +2771,21 @@ export default function AdminHome() {
             <p className="text-sm text-gray-800 mb-7 text-center leading-relaxed">
               Deseja realizar uma reserva na{" "}
               <span className="font-semibold">
-                churrasqueira {String(preReservaChurras.churrasqueiraNumero).padStart(2, "0")} -{" "}
-                {preReservaChurras.churrasqueiraNome}
+                churrasqueira{" "}
+                {String(
+                  preReservaChurras.churrasqueiraNumero
+                ).padStart(2, "0")}{" "}
+                - {preReservaChurras.churrasqueiraNome}
               </span>
               , no dia{" "}
-              <span className="font-semibold">{toDdMm(preReservaChurras.data)}</span> no turno{" "}
-              <span className="font-semibold">{preReservaChurras.turno}</span>?
+              <span className="font-semibold">
+                {toDdMm(preReservaChurras.data)}
+              </span>{" "}
+              no turno{" "}
+              <span className="font-semibold">
+                {preReservaChurras.turno}
+              </span>
+              ?
             </p>
 
             {/* Botões */}
