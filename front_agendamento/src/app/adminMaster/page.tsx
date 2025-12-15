@@ -5,7 +5,10 @@ import { useAuthStore } from "@/context/AuthStore";
 import Spinner from "@/components/Spinner";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Calendar, Clock, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  Calendar, Clock, ChevronDown, ChevronLeft, ChevronRight, Search,
+  Check,
+} from "lucide-react";
 import Image from "next/image";
 
 
@@ -2245,67 +2248,114 @@ export default function AdminHome() {
             <div className="bg-[#F6F6F6] border border-gray-200 rounded-2xl p-5 sm:p-6 space-y-6">
               {/* ===================== ATLETAS CADASTRADOS ===================== */}
               <div>
-                <p className="text-sm font-semibold text-gray-700 mb-2">
-                  Adicionar atletas cadastrados
-                </p>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-sm font-semibold text-gray-700">
+                    Adicionar atletas cadastrados
+                  </p>
 
-                {/* Campo de busca com ícone */}
-                <div className="flex items-center gap-3">
-                  <Image
-                    src="/iconescards/icone-permanente.png" // troque se tiver um ícone de usuário
-                    alt="Atleta"
-                    width={20}
-                    height={20}
-                    className="w-5 h-5 opacity-70"
-                  />
+                  {jogadoresSelecionadosIds.length > 0 && (
+                    <span className="text-[11px] text-gray-500">
+                      Selecionados:{" "}
+                      <span className="font-semibold text-orange-600">
+                        {jogadoresSelecionadosIds.length}
+                      </span>
+                    </span>
+                  )}
+                </div>
+
+                {/* Campo de busca com ícone de lupa dentro do input */}
+                <div className="relative">
+                  {/* ícone da esquerda */}
+                  <span className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-gray-400">
+                    <Search className="w-4 h-4" />
+                  </span>
+
                   <input
                     type="text"
-                    className="flex-1 h-10 rounded border border-gray-300 px-3 text-sm bg-white
-                         focus:outline-none focus:ring-1 focus:ring-orange-400"
-                    placeholder="Insira o nome do atleta cadastrado"
+                    className="w-full h-10 rounded-md border border-gray-300 pl-9 pr-3 text-sm bg-white
+                 focus:outline-none focus:ring-1 focus:ring-orange-400 focus:border-orange-400
+                 placeholder:text-gray-400"
+                    placeholder="Digite pelo menos 2 letras do nome do atleta"
                     value={buscaJogador}
                     onChange={(e) => setBuscaJogador(e.target.value)}
                     autoFocus
                   />
                 </div>
 
-                {/* Lista de resultados */}
-                <ul className="mt-3 max-h-40 overflow-y-auto rounded border border-gray-200 bg-white text-sm">
+                <p className="mt-1 text-[11px] text-gray-500">
+                  Use este campo para buscar clientes já cadastrados no sistema.
+                </p>
+
+                {/* Lista de resultados / estados da busca */}
+                <div className="mt-3 max-h-48 overflow-y-auto rounded-xl border border-gray-200 bg-white text-sm divide-y">
                   {carregandoJogadores && (
-                    <li className="px-3 py-2 text-gray-500">Carregando...</li>
+                    <div className="flex items-center gap-2 px-3 py-2 text-xs text-gray-500">
+                      <Spinner size="w-4 h-4" />
+                      <span>Buscando atletas...</span>
+                    </div>
                   )}
+
+                  {!carregandoJogadores && buscaJogador.trim().length < 2 && (
+                    <div className="px-3 py-2 text-[11px] text-gray-400">
+                      Comece digitando para ver os resultados.
+                    </div>
+                  )}
+
+                  {!carregandoJogadores &&
+                    buscaJogador.trim().length >= 2 &&
+                    usuariosParaJogadores.length === 0 && (
+                      <div className="px-3 py-2 text-xs text-gray-500">
+                        Nenhum atleta encontrado para{" "}
+                        <span className="font-semibold">"{buscaJogador.trim()}"</span>.
+                      </div>
+                    )}
 
                   {!carregandoJogadores &&
                     usuariosParaJogadores.map((u) => {
                       const ativo = jogadoresSelecionadosIds.includes(u.id);
+
                       return (
-                        <li
+                        <button
                           key={u.id}
-                          className={`
-                      px-3 py-2 cursor-pointer flex items-center justify-between
-                      text-sm
-                      ${ativo ? "bg-orange-100" : "hover:bg-orange-50"}
-                    `}
+                          type="button"
                           onClick={() => alternarSelecionado(u.id)}
                           title={u.celular || ""}
+                          className={`w-full px-3 py-2 flex items-center justify-between gap-3 text-left transition
+              ${ativo
+                              ? "bg-orange-50 border-l-4 border-orange-500"
+                              : "hover:bg-orange-50"
+                            }`}
                         >
-                          <span className="truncate">
-                            {u.nome}
-                            {u.celular ? ` (${u.celular})` : ""}
-                          </span>
-                          <input type="checkbox" readOnly checked={ativo} />
-                        </li>
+                          {/* Nome + telefone */}
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-gray-800 truncate">
+                              {u.nome}
+                            </p>
+                            {u.celular && (
+                              <p className="text-[11px] text-gray-500 truncate">
+                                Tel. {u.celular}
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Estado de seleção */}
+                          <div className="ml-2 flex items-center gap-2">
+                            {ativo && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-medium text-orange-700">
+                                <Check className="w-3 h-3" />
+                                Selecionado
+                              </span>
+                            )}
+                            {!ativo && (
+                              <span className="text-[11px] text-gray-500">
+                                Clique para selecionar
+                              </span>
+                            )}
+                          </div>
+                        </button>
                       );
                     })}
-
-                  {!carregandoJogadores &&
-                    usuariosParaJogadores.length === 0 &&
-                    buscaJogador.trim().length >= 2 && (
-                      <li className="px-3 py-2 text-xs text-gray-500">
-                        Nenhum usuário encontrado
-                      </li>
-                    )}
-                </ul>
+                </div>
               </div>
 
               {/* ===================== CONVIDADOS ===================== */}
