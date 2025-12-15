@@ -270,6 +270,7 @@ export default function AdminHome() {
   const [usuariosParaJogadores, setUsuariosParaJogadores] = useState<UsuarioLista[]>([]);
   const [jogadoresSelecionadosIds, setJogadoresSelecionadosIds] = useState<string[]>([]);
   const [convidadoNome, setConvidadoNome] = useState("");
+  const [convidadoTelefone, setConvidadoTelefone] = useState("");
   const [convidadosPendentes, setConvidadosPendentes] = useState<string[]>([]);
   const [carregandoJogadores, setCarregandoJogadores] = useState(false);
   const [addingPlayers, setAddingPlayers] = useState(false);
@@ -647,6 +648,7 @@ export default function AdminHome() {
     setUsuariosParaJogadores([]);
     setJogadoresSelecionadosIds([]);
     setConvidadoNome("");
+    setConvidadoTelefone("");
     setConvidadosPendentes([]);
     setAbrirModalJogadores(true);
   };
@@ -687,11 +689,19 @@ export default function AdminHome() {
 
   const adicionarConvidado = () => {
     const nome = convidadoNome.trim();
+    const telefone = convidadoTelefone.trim();
+
     if (!nome) return;
-    if (!convidadosPendentes.includes(nome)) {
-      setConvidadosPendentes((prev) => [...prev, nome]);
+
+    // monta "Nome Telefone" igual ao agendarComum
+    const combinado = telefone ? `${nome} ${telefone}`.trim() : nome;
+
+    if (!convidadosPendentes.includes(combinado)) {
+      setConvidadosPendentes((prev) => [...prev, combinado]);
     }
+
     setConvidadoNome("");
+    setConvidadoTelefone("");
   };
 
   const removerConvidado = (nome: string) => {
@@ -707,7 +717,7 @@ export default function AdminHome() {
         `${API_URL}/agendamentos/${agendamentoSelecionado.agendamentoId}/jogadores`,
         {
           jogadoresIds: jogadoresSelecionadosIds,
-          convidadosNomes: convidadosPendentes,
+          convidadosNomes: convidadosPendentes, // já vem "Nome Telefone"
         },
         { withCredentials: true }
       );
@@ -716,6 +726,7 @@ export default function AdminHome() {
       setJogadoresSelecionadosIds([]);
       setConvidadosPendentes([]);
       setConvidadoNome("");
+      setConvidadoTelefone(""); // 👈 aqui
       setAbrirModalJogadores(false);
       buscarDisponibilidade();
     } catch (e) {
@@ -2326,7 +2337,7 @@ export default function AdminHome() {
                     />
                   </div>
 
-                  {/* Telefone “fake visual” (opcional – não mexe na lógica) */}
+                  {/* Telefone (agora de verdade) */}
                   <div className="flex-1 flex items-center gap-3">
                     <Image
                       src="/iconescards/icone_phone.png"
@@ -2338,9 +2349,10 @@ export default function AdminHome() {
                     <input
                       type="text"
                       className="flex-1 h-10 rounded border border-gray-300 px-3 text-sm bg-white
-                           focus:outline-none focus:ring-1 focus:ring-orange-200"
+         focus:outline-none focus:ring-1 focus:ring-orange-200"
                       placeholder="(00) 000000000"
-                    // se quiser salvar telefone depois, cria um estado próprio
+                      value={convidadoTelefone}
+                      onChange={(e) => setConvidadoTelefone(e.target.value)}
                     />
                   </div>
 
@@ -2348,10 +2360,10 @@ export default function AdminHome() {
                   <button
                     type="button"
                     onClick={adicionarConvidado}
-                    disabled={!convidadoNome.trim()}
+                    disabled={!convidadoNome.trim() || !convidadoTelefone.trim()} // 👈 exige nome + telefone
                     className="h-10 px-4 rounded-md border border-[#E97A1F] bg-[#FFF3E0]
-                         text-[#D86715] text-sm font-semibold
-                         disabled:opacity-60 hover:bg-[#FFE6C2] transition-colors"
+       text-[#D86715] text-sm font-semibold
+       disabled:opacity-60 hover:bg-[#FFE6C2] transition-colors"
                   >
                     Adicionar
                   </button>
