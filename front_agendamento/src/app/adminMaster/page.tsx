@@ -2204,109 +2204,240 @@ export default function AdminHome() {
 
       {/* MODAL ➕ ADICIONAR JOGADORES */}
       {abrirModalJogadores && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-60">
-          <div className="bg-white p-6 rounded-lg shadow-lg w-96 max-h-[80vh] overflow-auto relative">
-            <h3 className="text-lg font-semibold mb-4">Adicionar Jogadores</h3>
+        <div
+          className="fixed inset-0 bg-black/30 flex items-center justify-center z-[70]"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !addingPlayers) {
+              setAbrirModalJogadores(false);
+            }
+          }}
+        >
+          <div
+            className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl mx-4 p-8 sm:p-10 relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* X para fechar */}
+            <button
+              onClick={() => !addingPlayers && setAbrirModalJogadores(false)}
+              className="absolute right-6 top-4 text-gray-400 hover:text-gray-600 text-2xl leading-none"
+              aria-label="Fechar"
+            >
+              ×
+            </button>
 
-            {/* Busca usuários existentes */}
-            <input
-              type="text"
-              className="border p-2 rounded w-full mb-3"
-              placeholder="Buscar por nome"
-              value={buscaJogador}
-              onChange={(e) => setBuscaJogador(e.target.value)}
-              autoFocus
-            />
+            {/* Título */}
+            <h3 className="text-lg sm:text-xl font-semibold text-orange-700 mb-6">
+              Inserir Jogadores
+            </h3>
 
-            {carregandoJogadores && <p>Carregando...</p>}
+            {/* CARTÃO CINZA INTERNO */}
+            <div className="bg-[#F6F6F6] border border-gray-200 rounded-2xl p-5 sm:p-6 space-y-6">
+              {/* ===================== ATLETAS CADASTRADOS ===================== */}
+              <div>
+                <p className="text-sm font-semibold text-gray-700 mb-2">
+                  Adicionar atletas cadastrados
+                </p>
 
-            <ul className="max-h-64 overflow-y-auto border rounded mb-3">
-              {usuariosParaJogadores.map((u) => {
-                const ativo = jogadoresSelecionadosIds.includes(u.id);
-                return (
-                  <li
-                    key={u.id}
-                    className={`p-2 cursor-pointer flex items-center justify-between hover:bg-orange-50 ${ativo ? "bg-orange-100" : ""
-                      }`}
-                    onClick={() => alternarSelecionado(u.id)}
-                    title={u.celular || ""}
-                  >
-                    <span>
-                      {u.nome}
-                      {u.celular ? ` (${u.celular})` : ""}
-                    </span>
-                    <input type="checkbox" readOnly checked={ativo} />
-                  </li>
-                );
-              })}
-              {!carregandoJogadores &&
-                usuariosParaJogadores.length === 0 &&
-                buscaJogador.trim().length >= 2 && (
-                  <li className="p-2 text-sm text-gray-500">
-                    Nenhum usuário encontrado
-                  </li>
-                )}
-            </ul>
+                {/* Campo de busca com ícone */}
+                <div className="flex items-center gap-3">
+                  <Image
+                    src="/iconescards/icone-permanente.png" // troque se tiver um ícone de usuário
+                    alt="Atleta"
+                    width={20}
+                    height={20}
+                    className="w-5 h-5 opacity-70"
+                  />
+                  <input
+                    type="text"
+                    className="flex-1 h-10 rounded border border-gray-300 px-3 text-sm bg-white
+                         focus:outline-none focus:ring-1 focus:ring-orange-400"
+                    placeholder="Insira o nome do atleta cadastrado"
+                    value={buscaJogador}
+                    onChange={(e) => setBuscaJogador(e.target.value)}
+                    autoFocus
+                  />
+                </div>
 
-            {/* ---- CONVIDADO (apenas nome) ---- */}
-            <div className="mb-2">
-              <label className="block text-sm font-medium mb-1">
-                Adicionar convidado (só nome)
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  className="border p-2 rounded flex-1"
-                  placeholder="Ex.: João Convidado"
-                  value={convidadoNome}
-                  onChange={(e) => setConvidadoNome(e.target.value)}
-                />
-                <button
-                  type="button"
-                  onClick={adicionarConvidado}
-                  disabled={!convidadoNome.trim()}
-                  className="px-3 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:bg-emerald-300"
-                >
-                  + Adicionar
-                </button>
+                {/* Lista de resultados */}
+                <ul className="mt-3 max-h-40 overflow-y-auto rounded border border-gray-200 bg-white text-sm">
+                  {carregandoJogadores && (
+                    <li className="px-3 py-2 text-gray-500">Carregando...</li>
+                  )}
+
+                  {!carregandoJogadores &&
+                    usuariosParaJogadores.map((u) => {
+                      const ativo = jogadoresSelecionadosIds.includes(u.id);
+                      return (
+                        <li
+                          key={u.id}
+                          className={`
+                      px-3 py-2 cursor-pointer flex items-center justify-between
+                      text-sm
+                      ${ativo ? "bg-orange-100" : "hover:bg-orange-50"}
+                    `}
+                          onClick={() => alternarSelecionado(u.id)}
+                          title={u.celular || ""}
+                        >
+                          <span className="truncate">
+                            {u.nome}
+                            {u.celular ? ` (${u.celular})` : ""}
+                          </span>
+                          <input type="checkbox" readOnly checked={ativo} />
+                        </li>
+                      );
+                    })}
+
+                  {!carregandoJogadores &&
+                    usuariosParaJogadores.length === 0 &&
+                    buscaJogador.trim().length >= 2 && (
+                      <li className="px-3 py-2 text-xs text-gray-500">
+                        Nenhum usuário encontrado
+                      </li>
+                    )}
+                </ul>
               </div>
 
-              {/* Chips de convidados pendentes */}
-              {convidadosPendentes.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-2">
+              {/* ===================== CONVIDADOS ===================== */}
+              <div>
+                <p className="text-sm font-semibold text-gray-700 mb-2">
+                  Adicionar atletas convidados{" "}
+                  <span className="text-xs font-normal text-gray-500">
+                    *jogadores sem cadastro no sistema
+                  </span>
+                </p>
+
+                <div className="flex flex-col sm:flex-row gap-3">
+                  {/* Nome do convidado com ícone */}
+                  <div className="flex-1 flex items-center gap-3">
+                    <Image
+                      src="/iconescards/icone-permanente.png"
+                      alt="Convidado"
+                      width={20}
+                      height={20}
+                      className="w-5 h-5 opacity-70"
+                    />
+                    <input
+                      type="text"
+                      className="flex-1 h-10 rounded border border-gray-300 px-3 text-sm bg-white
+                           focus:outline-none focus:ring-1 focus:ring-orange-400"
+                      placeholder="Insira o nome do jogador"
+                      value={convidadoNome}
+                      onChange={(e) => setConvidadoNome(e.target.value)}
+                    />
+                  </div>
+
+                  {/* Telefone “fake visual” (opcional – não mexe na lógica) */}
+                  <div className="flex-1 flex items-center gap-3">
+                    <Image
+                      src="/iconescards/icone_phone.png"
+                      alt="Telefone"
+                      width={20}
+                      height={20}
+                      className="w-5 h-5 opacity-70"
+                    />
+                    <input
+                      type="text"
+                      className="flex-1 h-10 rounded border border-gray-300 px-3 text-sm bg-white
+                           focus:outline-none focus:ring-1 focus:ring-orange-200"
+                      placeholder="(00) 000000000"
+                    // se quiser salvar telefone depois, cria um estado próprio
+                    />
+                  </div>
+
+                  {/* Botão adicionar convidado */}
+                  <button
+                    type="button"
+                    onClick={adicionarConvidado}
+                    disabled={!convidadoNome.trim()}
+                    className="h-10 px-4 rounded-md border border-[#E97A1F] bg-[#FFF3E0]
+                         text-[#D86715] text-sm font-semibold
+                         disabled:opacity-60 hover:bg-[#FFE6C2] transition-colors"
+                  >
+                    Adicionar
+                  </button>
+                </div>
+
+                <p className="mt-2 text-[11px] text-gray-500">
+                  *O atleta responsável pela reserva será o primeiro jogador a ser adicionado
+                </p>
+              </div>
+
+              {/* ===================== JOGADORES ADICIONADOS ===================== */}
+              <div>
+                <p className="text-sm font-semibold text-gray-700 mb-2">
+                  Jogadores adicionados:
+                </p>
+
+                <div className="flex flex-wrap gap-3">
+                  {/* Jogadores cadastrados selecionados */}
+                  {usuariosParaJogadores
+                    .filter((u) => jogadoresSelecionadosIds.includes(u.id))
+                    .map((u) => (
+                      <div
+                        key={u.id}
+                        className="flex flex-col items-start gap-1 px-3 py-2 rounded-md bg-white border border-gray-300 min-w-[170px]"
+                      >
+                        <p className="text-xs font-semibold truncate">
+                          {u.nome}
+                        </p>
+                        {u.celular && (
+                          <p className="text-[11px] text-gray-500 truncate">
+                            Sócio {u.celular}
+                          </p>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => alternarSelecionado(u.id)}
+                          className="mt-1 px-2 py-1 rounded border border-[#C73737]
+                               bg-[#FFE9E9] text-[11px] text-[#B12A2A] font-semibold
+                               hover:bg-[#FFDADA] transition-colors"
+                        >
+                          Remover
+                        </button>
+                      </div>
+                    ))}
+
+                  {/* Convidados */}
                   {convidadosPendentes.map((nome) => (
-                    <span
+                    <div
                       key={nome}
-                      className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs"
+                      className="flex flex-col items-start gap-1 px-3 py-2 rounded-md bg-white border border-gray-300 min-w-[170px]"
                     >
-                      {nome}
+                      <p className="text-xs font-semibold truncate">
+                        {nome}
+                      </p>
+                      <p className="text-[11px] text-gray-500">Convidado</p>
                       <button
                         type="button"
                         onClick={() => removerConvidado(nome)}
-                        className="text-emerald-700 hover:text-emerald-900"
-                        title="Remover"
+                        className="mt-1 px-2 py-1 rounded border border-[#C73737]
+                             bg-[#FFE9E9] text-[11px] text-[#B12A2A] font-semibold
+                             hover:bg-[#FFDADA] transition-colors"
                       >
-                        ×
+                        Remover
                       </button>
-                    </span>
+                    </div>
                   ))}
+
+                  {jogadoresSelecionadosIds.length === 0 &&
+                    convidadosPendentes.length === 0 && (
+                      <p className="text-xs text-gray-500">
+                        Nenhum jogador adicionado até o momento.
+                      </p>
+                    )}
                 </div>
-              )}
+              </div>
             </div>
 
-            {(jogadoresSelecionadosIds.length > 0 ||
-              convidadosPendentes.length > 0) && (
-                <div className="text-xs text-gray-600 mb-2">
-                  Selecionados: {jogadoresSelecionadosIds.length} · Convidados:{" "}
-                  {convidadosPendentes.length}
-                </div>
-              )}
-
-            <div className="flex justify-end gap-3">
+            {/* RODAPÉ – BOTÕES CANCELAR / INSERIR */}
+            <div className="mt-8 flex justify-center gap-10">
               <button
-                onClick={() => setAbrirModalJogadores(false)}
+                onClick={() => !addingPlayers && setAbrirModalJogadores(false)}
                 disabled={addingPlayers}
-                className="px-4 py-2 rounded bg-gray-300 hover:bg-gray-400"
+                className="min-w-[160px] px-5 py-2.5 rounded-md border border-[#C73737]
+                     bg-[#FFE9E9] text-[#B12A2A] font-semibold
+                     hover:bg-[#FFDADA] disabled:opacity-60
+                     transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
               >
                 Cancelar
               </button>
@@ -2317,14 +2448,18 @@ export default function AdminHome() {
                   (jogadoresSelecionadosIds.length === 0 &&
                     convidadosPendentes.length === 0)
                 }
-                className="px-4 py-2 rounded bg-orange-600 text-white hover:bg-orange-700 disabled:bg-orange-300"
+                className="min-w-[160px] px-5 py-2.5 rounded-md border border-[#E97A1F]
+                     bg-[#FFF3E0] text-[#D86715] font-semibold
+                     hover:bg-[#FFE6C2] disabled:opacity-60
+                     transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
               >
-                {addingPlayers ? "Adicionando..." : "Adicionar"}
+                {addingPlayers ? "Inserindo..." : "Inserir"}
               </button>
             </div>
           </div>
         </div>
       )}
+
 
       {/* MODAL: Confirmar agendamento (quadra livre) */}
       {mostrarConfirmaAgendar && preReserva && (
@@ -2382,7 +2517,7 @@ export default function AdminHome() {
                 onClick={irParaAgendarComum}
                 className="min-w-[160px] px-5 py-2.5 rounded-md border border-[#E97A1F] bg-[#FFF3E0] text-[#D86715] font-semibold hover:bg-[#FFE6C2] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
               >
-               Reservar
+                Reservar
               </button>
             </div>
           </div>
@@ -2443,7 +2578,7 @@ export default function AdminHome() {
                 onClick={irParaAgendarChurrasqueira}
                 className="min-w-[160px] px-5 py-2.5 rounded-md border border-[#E97A1F] bg-[#FFF3E0] text-[#D86715] font-semibold hover:bg-[#FFE6C2] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
               >
-               Reservar
+                Reservar
               </button>
             </div>
           </div>
