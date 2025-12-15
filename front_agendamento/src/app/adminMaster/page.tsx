@@ -1020,8 +1020,8 @@ export default function AdminHome() {
                     setHorarioAberto(false);
                   }}
                   className={`w-full text-left px-3 py-1.5 ${horario === ""
-                      ? "bg-orange-100 text-orange-700 font-semibold"
-                      : "hover:bg-orange-50 text-gray-800"
+                    ? "bg-orange-100 text-orange-700 font-semibold"
+                    : "hover:bg-orange-50 text-gray-800"
                     }`}
                 >
                   Selecione um horário
@@ -1040,8 +1040,8 @@ export default function AdminHome() {
                         setHorarioAberto(false);
                       }}
                       className={`w-full text-left px-3 py-1.5 ${selecionado
-                          ? "bg-orange-100 text-orange-700 font-semibold"
-                          : "hover:bg-orange-50 text-gray-800"
+                        ? "bg-orange-100 text-orange-700 font-semibold"
+                        : "hover:bg-orange-50 text-gray-800"
                         }`}
                     >
                       {hora}
@@ -2205,8 +2205,8 @@ export default function AdminHome() {
                               setDataExcecaoSelecionada(d)
                             }
                             className={`px-3 py-2 rounded-full border text-sm ${ativo
-                                ? "border-indigo-600 bg-indigo-50 text-indigo-700"
-                                : "border-gray-300 hover:bg-gray-50"
+                              ? "border-indigo-600 bg-indigo-50 text-indigo-700"
+                              : "border-gray-300 hover:bg-gray-50"
                               }`}
                           >
                             {toDdMm(d)}
@@ -2281,8 +2281,8 @@ export default function AdminHome() {
                 <li
                   key={user.id}
                   className={`p-2 cursor-pointer hover:bg-blue-100 ${usuarioSelecionado?.id === user.id
-                      ? "bg-blue-300 font-semibold"
-                      : ""
+                    ? "bg-blue-300 font-semibold"
+                    : ""
                     }`}
                   onClick={() => setUsuarioSelecionado(user)}
                   title={user.celular || ""}
@@ -2444,10 +2444,18 @@ export default function AdminHome() {
                               <p className="font-medium text-gray-800 truncate">
                                 {u.nome}
                               </p>
+
                               {u.celular && (
-                                <p className="text-[11px] text-gray-500 truncate">
-                                  Tel. {u.celular}
-                                </p>
+                                <div className="mt-0.5 flex items-center gap-1 text-[11px] text-gray-500 truncate">
+                                  <Image
+                                    src="/iconescards/icone_phone.png"
+                                    alt="Telefone"
+                                    width={12}
+                                    height={12}
+                                    className="w-3 h-3 flex-shrink-0 opacity-80"
+                                  />
+                                  <span className="truncate">{u.celular}</span>
+                                </div>
                               )}
                             </div>
 
@@ -2493,7 +2501,7 @@ export default function AdminHome() {
                     <input
                       type="text"
                       className="flex-1 h-10 rounded border border-gray-300 px-3 text-sm bg-white
-                           focus:outline-none focus:ring-1 focus:ring-orange-400"
+                           focus:outline-none focus:ring-1 focus:ring-orange-400 focus:border-orange-400"
                       placeholder="Insira o nome do jogador"
                       value={convidadoNome}
                       onChange={(e) => setConvidadoNome(e.target.value)}
@@ -2512,7 +2520,7 @@ export default function AdminHome() {
                     <input
                       type="text"
                       className="flex-1 h-10 rounded border border-gray-300 px-3 text-sm bg-white
-                           focus:outline-none focus:ring-1 focus:ring-orange-200"
+                           focus:outline-none focus:ring-1 focus:ring-orange-400 focus:border-orange-400"
                       placeholder="(00) 000000000"
                       value={convidadoTelefone}
                       onChange={(e) => setConvidadoTelefone(e.target.value)}
