@@ -2548,102 +2548,100 @@ export default function AdminHome() {
                   Jogadores adicionados:
                 </p>
 
-                <div className="flex flex-wrap gap-3">
-                  {/* Jogadores cadastrados selecionados */}
-                  {jogadoresSelecionadosDetalhes.length > 0 || convidadosPendentes.length > 0 ? (
-                    <div className="grid grid-cols-2 gap-3">
-                      {/* Jogadores cadastrados selecionados */}
-                      {jogadoresSelecionadosDetalhes.map((u) => (
-                        <div
-                          key={u.id}
-                          className="flex items-center gap-2"
-                        >
-                          {/* Card cinza do jogador */}
-                          <div className="flex-1 flex flex-col gap-0.5 px-3 py-2 rounded-md bg-[#F3F3F3] border border-gray-300 shadow-sm">
-                            {/* Nome + ícone de usuário */}
-                            <div className="flex items-center gap-1 text-[11px] text-gray-700 truncate">
-                              <Image
-                                src="/iconescards/icone-permanente.png"
-                                alt="Atleta"
-                                width={14}
-                                height={14}
-                                className="w-3.5 h-3.5 flex-shrink-0 opacity-80"
-                              />
-                              <span className="font-semibold truncate">{u.nome}</span>
-                            </div>
-
-                            {/* Telefone com ícone */}
-                            {u.celular && (
-                              <div className="flex items-center gap-1 text-[11px] text-gray-500 truncate">
-                                <Image
-                                  src="/iconescards/icone_phone.png"
-                                  alt="Telefone"
-                                  width={12}
-                                  height={12}
-                                  className="w-3 h-3 flex-shrink-0 opacity-80"
-                                />
-                                <span className="truncate">{u.celular}</span>
-                              </div>
-                            )}
+                {jogadoresSelecionadosDetalhes.length > 0 ||
+                  convidadosPendentes.length > 0 ? (
+                  <div className="mt-2 grid grid-cols-2 gap-x-10 gap-y-4 justify-items-center">
+                    {/* Jogadores cadastrados selecionados */}
+                    {jogadoresSelecionadosDetalhes.map((u) => (
+                      <div
+                        key={u.id}
+                        className="flex items-center gap-3"
+                      >
+                        {/* Card cinza do jogador (mais largo/centralizado) */}
+                        <div className="flex-1 flex flex-col gap-0.5 px-4 py-3 rounded-md bg-[#F3F3F3] border border-gray-300 shadow-sm min-w-[220px] max-w-[240px]">
+                          {/* Nome + ícone de usuário */}
+                          <div className="flex items-center gap-1 text-[11px] text-gray-700 truncate">
+                            <Image
+                              src="/iconescards/icone-permanente.png"
+                              alt="Atleta"
+                              width={14}
+                              height={14}
+                              className="w-3.5 h-3.5 flex-shrink-0 opacity-80"
+                            />
+                            <span className="font-semibold truncate">{u.nome}</span>
                           </div>
 
-                          {/* Botão remover ao lado, com ícone X */}
-                          <button
-                            type="button"
-                            onClick={() => alternarSelecionado(u)}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded border border-[#B12A2A]
-                     bg-white text-[11px] text-[#B12A2A] font-semibold
-                     hover:bg-[#FFE9E9] transition-colors"
-                          >
-                            <X className="w-3 h-3" />
-                            Remover
-                          </button>
-                        </div>
-                      ))}
-
-                      {/* Convidados */}
-                      {convidadosPendentes.map((nome) => (
-                        <div
-                          key={nome}
-                          className="flex items-center gap-2"
-                        >
-                          {/* Card cinza do convidado */}
-                          <div className="flex-1 flex flex-col gap-0.5 px-3 py-2 rounded-md bg-[#F3F3F3] border border-gray-300 shadow-sm">
-                            <div className="flex items-center gap-1 text-[11px] text-gray-700 truncate">
+                          {/* Telefone com ícone */}
+                          {u.celular && (
+                            <div className="flex items-center gap-1 text-[11px] text-gray-500 truncate">
                               <Image
-                                src="/iconescards/icone-permanente.png"
-                                alt="Jogador convidado"
-                                width={14}
-                                height={14}
-                                className="w-3.5 h-3.5 flex-shrink-0 opacity-80"
+                                src="/iconescards/icone_phone.png"
+                                alt="Telefone"
+                                width={12}
+                                height={12}
+                                className="w-3 h-3 flex-shrink-0 opacity-80"
                               />
-                              <span className="font-semibold truncate">{nome}</span>
+                              <span className="truncate">{u.celular}</span>
                             </div>
+                          )}
+                        </div>
 
-                            <div className="text-[11px] text-gray-500">
-                              Convidado
-                            </div>
+                        {/* Botão remover ao lado – achatado e com X “gordinho” */}
+                        <button
+                          type="button"
+                          onClick={() => alternarSelecionado(u)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-sm border border-[#B12A2A]
+                       bg-white text-[11px] text-[#B12A2A] font-semibold
+                       hover:bg-[#FFE9E9] transition-colors leading-none"
+                        >
+                          <X className="w-3.5 h-3.5" strokeWidth={3} />
+                          Remover
+                        </button>
+                      </div>
+                    ))}
+
+                    {/* Convidados */}
+                    {convidadosPendentes.map((nome) => (
+                      <div
+                        key={nome}
+                        className="flex items-center gap-3"
+                      >
+                        {/* Card cinza do convidado */}
+                        <div className="flex-1 flex flex-col gap-0.5 px-4 py-3 rounded-md bg-[#F3F3F3] border border-gray-300 shadow-sm min-w-[220px] max-w-[240px]">
+                          <div className="flex items-center gap-1 text-[11px] text-gray-700 truncate">
+                            <Image
+                              src="/iconescards/icone-permanente.png"
+                              alt="Jogador convidado"
+                              width={14}
+                              height={14}
+                              className="w-3.5 h-3.5 flex-shrink-0 opacity-80"
+                            />
+                            <span className="font-semibold truncate">{nome}</span>
                           </div>
 
-                          <button
-                            type="button"
-                            onClick={() => removerConvidado(nome)}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded border border-[#B12A2A]
-                     bg-white text-[11px] text-[#B12A2A] font-semibold
-                     hover:bg-[#FFE9E9] transition-colors"
-                          >
-                            <X className="w-3 h-3" />
-                            Remover
-                          </button>
+                          <div className="text-[11px] text-gray-500">
+                            Convidado
+                          </div>
                         </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-gray-500">
-                      Nenhum jogador adicionado até o momento.
-                    </p>
-                  )}
-                </div>
+
+                        <button
+                          type="button"
+                          onClick={() => removerConvidado(nome)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-sm border border-[#B12A2A]
+                       bg-white text-[11px] text-[#B12A2A] font-semibold
+                       hover:bg-[#FFE9E9] transition-colors leading-none"
+                        >
+                          <X className="w-3.5 h-3.5" strokeWidth={3} />
+                          Remover
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-500">
+                    Nenhum jogador adicionado até o momento.
+                  </p>
+                )}
               </div>
             </div>
 
