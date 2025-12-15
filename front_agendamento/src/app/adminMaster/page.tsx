@@ -2350,7 +2350,7 @@ export default function AdminHome() {
             {/* X para fechar */}
             <button
               onClick={() => !addingPlayers && setAbrirModalJogadores(false)}
-              className="absolute right-6 top-4 text-gray-400 hover:text-gray-600 text-2xl leading-none"
+              className="absolute right-6 top-4 text-gray-400 hover:text-gray-600 text-3xl leading-none"
               aria-label="Fechar"
             >
               ×
