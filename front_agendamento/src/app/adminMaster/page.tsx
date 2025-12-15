@@ -13,6 +13,7 @@ import {
   ChevronRight,
   Search,
   Check,
+  X,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -2515,7 +2516,7 @@ export default function AdminHome() {
                       alt="Telefone"
                       width={20}
                       height={20}
-                      className="w-5 h-5 opacity-70"
+                      className="w-5 h-5"
                     />
                     <input
                       type="text"
@@ -2549,75 +2550,99 @@ export default function AdminHome() {
 
                 <div className="flex flex-wrap gap-3">
                   {/* Jogadores cadastrados selecionados */}
-                  {jogadoresSelecionadosDetalhes.map((u) => (
-                    <div
-                      key={u.id}
-                      className="flex flex-col items-start gap-1 px-3 py-2 rounded-md bg-white border border-gray-300 min-w-[170px]"
-                    >
-                      {/* Nome + ícone de usuário */}
-                      <div className="flex items-center gap-1 text-xs font-semibold text-gray-800 truncate">
-                        <Image
-                          src="/iconescards/icone-permanente.png" // mesmo ícone de usuário dos outros campos
-                          alt="Atleta"
-                          width={14}
-                          height={14}
-                          className="w-3.5 h-3.5 flex-shrink-0 opacity-80"
-                        />
-                        <span className="truncate">{u.nome}</span>
-                      </div>
+                  {jogadoresSelecionadosDetalhes.length > 0 || convidadosPendentes.length > 0 ? (
+                    <div className="grid grid-cols-2 gap-3">
+                      {/* Jogadores cadastrados selecionados */}
+                      {jogadoresSelecionadosDetalhes.map((u) => (
+                        <div
+                          key={u.id}
+                          className="flex items-center gap-2"
+                        >
+                          {/* Card cinza do jogador */}
+                          <div className="flex-1 flex flex-col gap-0.5 px-3 py-2 rounded-md bg-[#F3F3F3] border border-gray-300 shadow-sm">
+                            {/* Nome + ícone de usuário */}
+                            <div className="flex items-center gap-1 text-[11px] text-gray-700 truncate">
+                              <Image
+                                src="/iconescards/icone-permanente.png"
+                                alt="Atleta"
+                                width={14}
+                                height={14}
+                                className="w-3.5 h-3.5 flex-shrink-0 opacity-80"
+                              />
+                              <span className="font-semibold truncate">{u.nome}</span>
+                            </div>
 
-                      {/* Telefone com ícone, no lugar do "Sócio" */}
-                      {u.celular && (
-                        <div className="flex items-center gap-1 text-[11px] text-gray-500 truncate">
-                          <Image
-                            src="/iconescards/icone_phone.png"
-                            alt="Telefone"
-                            width={12}
-                            height={12}
-                            className="w-3 h-3 flex-shrink-0 opacity-80"
-                          />
-                          <span className="truncate">{u.celular}</span>
+                            {/* Telefone com ícone */}
+                            {u.celular && (
+                              <div className="flex items-center gap-1 text-[11px] text-gray-500 truncate">
+                                <Image
+                                  src="/iconescards/icone_phone.png"
+                                  alt="Telefone"
+                                  width={12}
+                                  height={12}
+                                  className="w-3 h-3 flex-shrink-0 opacity-80"
+                                />
+                                <span className="truncate">{u.celular}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Botão remover ao lado, com ícone X */}
+                          <button
+                            type="button"
+                            onClick={() => alternarSelecionado(u)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded border border-[#B12A2A]
+                     bg-white text-[11px] text-[#B12A2A] font-semibold
+                     hover:bg-[#FFE9E9] transition-colors"
+                          >
+                            <X className="w-3 h-3" />
+                            Remover
+                          </button>
                         </div>
-                      )}
+                      ))}
 
-                      <button
-                        type="button"
-                        onClick={() => alternarSelecionado(u)}
-                        className="mt-1 px-2 py-1 rounded border border-[#C73737]
-             bg-[#FFE9E9] text-[11px] text-[#B12A2A] font-semibold
-             hover:bg-[#FFDADA] transition-colors"
-                      >
-                        Remover
-                      </button>
+                      {/* Convidados */}
+                      {convidadosPendentes.map((nome) => (
+                        <div
+                          key={nome}
+                          className="flex items-center gap-2"
+                        >
+                          {/* Card cinza do convidado */}
+                          <div className="flex-1 flex flex-col gap-0.5 px-3 py-2 rounded-md bg-[#F3F3F3] border border-gray-300 shadow-sm">
+                            <div className="flex items-center gap-1 text-[11px] text-gray-700 truncate">
+                              <Image
+                                src="/iconescards/icone-permanente.png"
+                                alt="Jogador convidado"
+                                width={14}
+                                height={14}
+                                className="w-3.5 h-3.5 flex-shrink-0 opacity-80"
+                              />
+                              <span className="font-semibold truncate">{nome}</span>
+                            </div>
+
+                            <div className="text-[11px] text-gray-500">
+                              Convidado
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => removerConvidado(nome)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded border border-[#B12A2A]
+                     bg-white text-[11px] text-[#B12A2A] font-semibold
+                     hover:bg-[#FFE9E9] transition-colors"
+                          >
+                            <X className="w-3 h-3" />
+                            Remover
+                          </button>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-
-                  {/* Convidados */}
-                  {convidadosPendentes.map((nome) => (
-                    <div
-                      key={nome}
-                      className="flex flex-col items-start gap-1 px-3 py-2 rounded-md bg-white border border-gray-300 min-w-[170px]"
-                    >
-                      <p className="text-xs font-semibold truncate">{nome}</p>
-                      <p className="text-[11px] text-gray-500">Convidado</p>
-                      <button
-                        type="button"
-                        onClick={() => removerConvidado(nome)}
-                        className="mt-1 px-2 py-1 rounded border border-[#C73737]
-                             bg-[#FFE9E9] text-[11px] text-[#B12A2A] font-semibold
-                             hover:bg-[#FFDADA] transition-colors"
-                      >
-                        Remover
-                      </button>
-                    </div>
-                  ))}
-
-                  {jogadoresSelecionadosIds.length === 0 &&
-                    convidadosPendentes.length === 0 && (
-                      <p className="text-xs text-gray-500">
-                        Nenhum jogador adicionado até o momento.
-                      </p>
-                    )}
+                  ) : (
+                    <p className="text-xs text-gray-500">
+                      Nenhum jogador adicionado até o momento.
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
