@@ -2558,9 +2558,11 @@ export default function AdminHome() {
                         className="flex items-center gap-3"
                       >
                         {/* Card cinza do jogador (mais largo/centralizado) */}
-                        <div className="flex-1 flex flex-col gap-0.5 px-4 py-3 rounded-md bg-[#F3F3F3] border border-gray-300 shadow-sm min-w-[220px] max-w-[240px]">
+                        <div className="flex-1 flex flex-col gap-0.5 px-4 py-3 rounded-md
+                          bg-[#F4F4F4] border border-[#D3D3D3] shadow-sm
+                          min-w-[220px] max-w-[240px]">
                           {/* Nome + ícone de usuário */}
-                          <div className="flex items-center gap-1 text-[11px] text-gray-700 truncate">
+                          <div className="flex items-center gap-1 text-[11px] text-[#555555] truncate">
                             <Image
                               src="/iconescards/icone-permanente.png"
                               alt="Atleta"
@@ -2573,7 +2575,7 @@ export default function AdminHome() {
 
                           {/* Telefone com ícone */}
                           {u.celular && (
-                            <div className="flex items-center gap-1 text-[11px] text-gray-500 truncate">
+                            <div className="flex items-center gap-1 text-[11px] text-[#777777] truncate">
                               <Image
                                 src="/iconescards/icone_phone.png"
                                 alt="Telefone"
@@ -2586,13 +2588,14 @@ export default function AdminHome() {
                           )}
                         </div>
 
-                        {/* Botão remover ao lado – achatado e com X “gordinho” */}
+                        {/* Botão remover – mesma paleta do “Cancelar” */}
                         <button
                           type="button"
                           onClick={() => alternarSelecionado(u)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-sm border border-[#B12A2A]
-                       bg-white text-[11px] text-[#B12A2A] font-semibold
-                       hover:bg-[#FFE9E9] transition-colors leading-none"
+                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-sm
+                       border border-[#C73737] bg-white
+                       text-[11px] text-[#B12A2A] font-semibold leading-none
+                       hover:bg-[#FFE9E9] transition-colors"
                         >
                           <X className="w-3.5 h-3.5" strokeWidth={3} />
                           Remover
@@ -2607,8 +2610,10 @@ export default function AdminHome() {
                         className="flex items-center gap-3"
                       >
                         {/* Card cinza do convidado */}
-                        <div className="flex-1 flex flex-col gap-0.5 px-4 py-3 rounded-md bg-[#F3F3F3] border border-gray-300 shadow-sm min-w-[220px] max-w-[240px]">
-                          <div className="flex items-center gap-1 text-[11px] text-gray-700 truncate">
+                        <div className="flex-1 flex flex-col gap-0.5 px-4 py-3 rounded-md
+                          bg-[#F4F4F4] border border-[#D3D3D3] shadow-sm
+                          min-w-[220px] max-w-[240px]">
+                          <div className="flex items-center gap-1 text-[11px] text-[#555555] truncate">
                             <Image
                               src="/iconescards/icone-permanente.png"
                               alt="Jogador convidado"
@@ -2619,7 +2624,7 @@ export default function AdminHome() {
                             <span className="font-semibold truncate">{nome}</span>
                           </div>
 
-                          <div className="text-[11px] text-gray-500">
+                          <div className="text-[11px] text-[#777777]">
                             Convidado
                           </div>
                         </div>
@@ -2627,9 +2632,10 @@ export default function AdminHome() {
                         <button
                           type="button"
                           onClick={() => removerConvidado(nome)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-sm border border-[#B12A2A]
-                       bg-white text-[11px] text-[#B12A2A] font-semibold
-                       hover:bg-[#FFE9E9] transition-colors leading-none"
+                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-sm
+                       border border-[#C73737] bg-white
+                       text-[11px] text-[#B12A2A] font-semibold leading-none
+                       hover:bg-[#FFE9E9] transition-colors"
                         >
                           <X className="w-3.5 h-3.5" strokeWidth={3} />
                           Remover
