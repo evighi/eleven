@@ -856,9 +856,8 @@ export default function AdminHome() {
               </div>
 
               <ChevronDown
-                className={`w-4 h-4 text-gray-600 ml-2 transition-transform ${
-                  dataPickerAberto ? "rotate-180" : ""
-                }`}
+                className={`w-4 h-4 text-gray-600 ml-2 transition-transform ${dataPickerAberto ? "rotate-180" : ""
+                  }`}
               />
             </button>
 
@@ -998,9 +997,8 @@ export default function AdminHome() {
               </div>
 
               <ChevronDown
-                className={`w-4 h-4 text-gray-600 ml-2 transition-transform ${
-                  horarioAberto ? "rotate-180" : ""
-                }`}
+                className={`w-4 h-4 text-gray-600 ml-2 transition-transform ${horarioAberto ? "rotate-180" : ""
+                  }`}
               />
             </button>
 
@@ -1021,11 +1019,10 @@ export default function AdminHome() {
                     setHorario("");
                     setHorarioAberto(false);
                   }}
-                  className={`w-full text-left px-3 py-1.5 ${
-                    horario === ""
+                  className={`w-full text-left px-3 py-1.5 ${horario === ""
                       ? "bg-orange-100 text-orange-700 font-semibold"
                       : "hover:bg-orange-50 text-gray-800"
-                  }`}
+                    }`}
                 >
                   Selecione um horário
                 </button>
@@ -1042,11 +1039,10 @@ export default function AdminHome() {
                         setHorario(hora);
                         setHorarioAberto(false);
                       }}
-                      className={`w-full text-left px-3 py-1.5 ${
-                        selecionado
+                      className={`w-full text-left px-3 py-1.5 ${selecionado
                           ? "bg-orange-100 text-orange-700 font-semibold"
                           : "hover:bg-orange-50 text-gray-800"
-                      }`}
+                        }`}
                     >
                       {hora}
                     </button>
@@ -1077,9 +1073,8 @@ export default function AdminHome() {
               }
             >
               <ChevronDown
-                className={`w-10 h-10 transition-transform ${
-                  mostrarDispon ? "" : "rotate-180"
-                }`}
+                className={`w-10 h-10 transition-transform ${mostrarDispon ? "" : "rotate-180"
+                  }`}
               />
             </button>
           </div>
@@ -1140,10 +1135,10 @@ export default function AdminHome() {
                     const nomeQuadraColor = q.bloqueada
                       ? "text-red-700"
                       : q.disponivel
-                      ? "text-emerald-700"
-                      : isComum
-                      ? "text-amber-700"
-                      : "text-gray-500"; // permanente / padrão
+                        ? "text-emerald-700"
+                        : isComum
+                          ? "text-amber-700"
+                          : "text-gray-500"; // permanente / padrão
 
                     // apenas o primeiro nome da quadra
                     const primeiroNomeQuadra =
@@ -1160,10 +1155,10 @@ export default function AdminHome() {
                     const labelTipo = q.bloqueada
                       ? "Bloqueado"
                       : q.disponivel
-                      ? "Disponível"
-                      : isPermanente
-                      ? "Permanente"
-                      : "Avulsa";
+                        ? "Disponível"
+                        : isPermanente
+                          ? "Permanente"
+                          : "Avulsa";
 
                     return (
                       <button
@@ -1388,10 +1383,10 @@ export default function AdminHome() {
                     const nomeChurrasColor = disponivel
                       ? "text-emerald-700"
                       : isComum
-                      ? "text-amber-700"
-                      : isPerm
-                      ? "text-gray-500"
-                      : "text-gray-500";
+                        ? "text-amber-700"
+                        : isPerm
+                          ? "text-gray-500"
+                          : "text-gray-500";
 
                     // só o primeiro nome da churrasqueira
                     const primeiroNomeChurras =
@@ -1405,8 +1400,8 @@ export default function AdminHome() {
                     const labelTipo = disponivel
                       ? "Disponível"
                       : isPerm
-                      ? "Permanente"
-                      : "Avulsa";
+                        ? "Permanente"
+                        : "Avulsa";
 
                     return (
                       <button
@@ -1588,10 +1583,10 @@ export default function AdminHome() {
                     const nomeChurrasColor = disponivel
                       ? "text-emerald-700"
                       : isComum
-                      ? "text-amber-700"
-                      : isPerm
-                      ? "text-gray-500"
-                      : "text-gray-500";
+                        ? "text-amber-700"
+                        : isPerm
+                          ? "text-gray-500"
+                          : "text-gray-500";
 
                     const primeiroNomeChurras =
                       (c.nome || "").split(" ")[0] || c.nome;
@@ -1604,8 +1599,8 @@ export default function AdminHome() {
                     const labelTipo = disponivel
                       ? "Disponível"
                       : isPerm
-                      ? "Permanente"
-                      : "Avulsa";
+                        ? "Permanente"
+                        : "Avulsa";
 
                     return (
                       <button
@@ -1817,7 +1812,7 @@ export default function AdminHome() {
 
                     const numeroFmt =
                       typeof numero === "number" ||
-                      typeof numero === "string"
+                        typeof numero === "string"
                         ? String(numero).padStart(2, "0")
                         : "";
 
@@ -1939,37 +1934,37 @@ export default function AdminHome() {
                   {/* Horário ou Turno */}
                   {(agendamentoSelecionado.horario ||
                     agendamentoSelecionado.turno) && (
-                    <div className="flex items-center gap-2">
-                      <Image
-                        src="/iconescards/horario.png"
-                        alt={
-                          agendamentoSelecionado.horario
-                            ? "Horário"
-                            : "Turno"
-                        }
-                        width={14}
-                        height={14}
-                        className="w-3.5 h-3.5"
-                      />
-                      <span>
-                        {agendamentoSelecionado.horario ? (
-                          <>
-                            Horário:{" "}
-                            <span className="font-semibold text-gray-800">
-                              {agendamentoSelecionado.horario}
-                            </span>
-                          </>
-                        ) : (
-                          <>
-                            Turno:{" "}
-                            <span className="font-semibold text-gray-800">
-                              {agendamentoSelecionado.turno}
-                            </span>
-                          </>
-                        )}
-                      </span>
-                    </div>
-                  )}
+                      <div className="flex items-center gap-2">
+                        <Image
+                          src="/iconescards/horario.png"
+                          alt={
+                            agendamentoSelecionado.horario
+                              ? "Horário"
+                              : "Turno"
+                          }
+                          width={14}
+                          height={14}
+                          className="w-3.5 h-3.5"
+                        />
+                        <span>
+                          {agendamentoSelecionado.horario ? (
+                            <>
+                              Horário:{" "}
+                              <span className="font-semibold text-gray-800">
+                                {agendamentoSelecionado.horario}
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              Turno:{" "}
+                              <span className="font-semibold text-gray-800">
+                                {agendamentoSelecionado.turno}
+                              </span>
+                            </>
+                          )}
+                        </span>
+                      </div>
+                    )}
 
                   {/* Tipo */}
                   <div className="flex items-center gap-2">
@@ -1991,8 +1986,8 @@ export default function AdminHome() {
                       {agendamentoSelecionado.tipoReserva === "permanente"
                         ? "Permanente"
                         : agendamentoSelecionado.tipoReserva === "comum"
-                        ? "Avulsa"
-                        : agendamentoSelecionado.tipoReserva}
+                          ? "Avulsa"
+                          : agendamentoSelecionado.tipoReserva}
                     </span>
                   </div>
                 </div>
@@ -2209,11 +2204,10 @@ export default function AdminHome() {
                             onClick={() =>
                               setDataExcecaoSelecionada(d)
                             }
-                            className={`px-3 py-2 rounded-full border text-sm ${
-                              ativo
+                            className={`px-3 py-2 rounded-full border text-sm ${ativo
                                 ? "border-indigo-600 bg-indigo-50 text-indigo-700"
                                 : "border-gray-300 hover:bg-gray-50"
-                            }`}
+                              }`}
                           >
                             {toDdMm(d)}
                           </button>
@@ -2258,7 +2252,7 @@ export default function AdminHome() {
             <h3 className="text-lg font-semibold mb-4">
               Transferir Agendamento{" "}
               {agendamentoSelecionado?.tipoLocal === "quadra" &&
-              agendamentoSelecionado?.tipoReserva === "permanente"
+                agendamentoSelecionado?.tipoReserva === "permanente"
                 ? "(Permanente)"
                 : "(Comum)"}
             </h3>
@@ -2286,11 +2280,10 @@ export default function AdminHome() {
               {usuariosFiltrados.map((user) => (
                 <li
                   key={user.id}
-                  className={`p-2 cursor-pointer hover:bg-blue-100 ${
-                    usuarioSelecionado?.id === user.id
+                  className={`p-2 cursor-pointer hover:bg-blue-100 ${usuarioSelecionado?.id === user.id
                       ? "bg-blue-300 font-semibold"
                       : ""
-                  }`}
+                    }`}
                   onClick={() => setUsuarioSelecionado(user)}
                   title={user.celular || ""}
                 >
@@ -2303,7 +2296,7 @@ export default function AdminHome() {
             {/* Somente quando o selecionado é permanente (quadra) */}
             {agendamentoSelecionado?.tipoLocal === "quadra" &&
               agendamentoSelecionado?.tipoReserva ===
-                "permanente" && (
+              "permanente" && (
                 <label className="flex items-center gap-2 mb-4 text-sm">
                   <input
                     type="checkbox"
@@ -2339,7 +2332,6 @@ export default function AdminHome() {
           </div>
         </div>
       )}
-
       {/* MODAL ➕ ADICIONAR JOGADORES */}
       {abrirModalJogadores && (
         <div
@@ -2356,9 +2348,7 @@ export default function AdminHome() {
           >
             {/* X para fechar */}
             <button
-              onClick={() =>
-                !addingPlayers && setAbrirModalJogadores(false)
-              }
+              onClick={() => !addingPlayers && setAbrirModalJogadores(false)}
               className="absolute right-6 top-4 text-gray-400 hover:text-gray-600 text-2xl leading-none"
               aria-label="Fechar"
             >
@@ -2389,18 +2379,20 @@ export default function AdminHome() {
                   )}
                 </div>
 
-                {/* Campo de busca com ícone de lupa dentro do input */}
-                <div className="relative">
-                  {/* ícone da esquerda */}
-                  <span className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-gray-400">
-                    <Search className="w-4 h-4" />
-                  </span>
-
+                {/* Campo de busca – mesmo padrão do convidado (ícone + input) */}
+                <div className="flex items-center gap-3">
+                  <Image
+                    src="/iconescards/icone-permanente.png"
+                    alt="Atleta cadastrado"
+                    width={20}
+                    height={20}
+                    className="w-5 h-5 opacity-70"
+                  />
                   <input
                     type="text"
-                    className="w-full h-10 rounded-md border border-gray-300 pl-9 pr-3 text-sm bg-white
-                 focus:outline-none focus:ring-1 focus:ring-orange-400 focus:border-orange-400
-                 placeholder:text-gray-400"
+                    className="flex-1 h-10 rounded border border-gray-300 px-3 text-sm bg-white
+                         focus:outline-none focus:ring-1 focus:ring-orange-400 focus:border-orange-400
+                         placeholder:text-gray-400"
                     placeholder="Digite pelo menos 2 letras do nome do atleta"
                     value={buscaJogador}
                     onChange={(e) => setBuscaJogador(e.target.value)}
@@ -2408,76 +2400,82 @@ export default function AdminHome() {
                   />
                 </div>
 
+                {/* Texto de orientação quando ainda não começou a digitar */}
+                {!carregandoJogadores && buscaJogador.trim().length < 2 && (
+                  <p className="mt-1 text-[11px] text-gray-500">
+                    Digite pelo menos 2 letras para buscar atletas já cadastrados no sistema.
+                  </p>
+                )}
 
-                {/* Lista de resultados / estados da busca */}
-                <div className="mt-3 max-h-48 overflow-y-auto rounded-xl border border-gray-200 bg-white text-sm divide-y">
-                  {carregandoJogadores && (
-                    <div className="flex items-center gap-2 px-3 py-2 text-xs text-gray-500">
-                      <Spinner size="w-4 h-4" />
-                      <span>Buscando atletas...</span>
-                    </div>
-                  )}
-
-                  {!carregandoJogadores &&
-                    buscaJogador.trim().length >= 2 &&
-                    usuariosParaJogadores.length === 0 && (
-                      <div className="px-3 py-2 text-xs text-gray-500">
-                        Nenhum atleta encontrado para{" "}
-                        <span className="font-semibold">
-                          "{buscaJogador.trim()}"
-                        </span>
-                        .
+                {/* Lista de resultados / estados da busca
+              (só renderiza quando estiver carregando ou quando tiver busca >= 2 letras) */}
+                {(carregandoJogadores || buscaJogador.trim().length >= 2) && (
+                  <div className="mt-3 max-h-48 overflow-y-auto rounded-xl border border-gray-200 bg-white text-sm divide-y">
+                    {carregandoJogadores && (
+                      <div className="flex items-center gap-2 px-3 py-2 text-xs text-gray-500">
+                        <Spinner size="w-4 h-4" />
+                        <span>Buscando atletas...</span>
                       </div>
                     )}
 
-                  {!carregandoJogadores &&
-                    usuariosParaJogadores.map((u) => {
-                      const ativo =
-                        jogadoresSelecionadosIds.includes(u.id);
+                    {!carregandoJogadores &&
+                      buscaJogador.trim().length >= 2 &&
+                      usuariosParaJogadores.length === 0 && (
+                        <div className="px-3 py-2 text-xs text-gray-500">
+                          Nenhum atleta encontrado para{" "}
+                          <span className="font-semibold">
+                            "{buscaJogador.trim()}"
+                          </span>
+                          .
+                        </div>
+                      )}
 
-                      return (
-                        <button
-                          key={u.id}
-                          type="button"
-                          onClick={() => alternarSelecionado(u)}
-                          title={u.celular || ""}
-                          className={`w-full px-3 py-2 flex items-center justify-between gap-3 text-left transition
-              ${
-                ativo
-                  ? "bg-orange-50 border-l-4 border-orange-500"
-                  : "hover:bg-orange-50"
-              }`}
-                        >
-                          {/* Nome + telefone */}
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-gray-800 truncate">
-                              {u.nome}
-                            </p>
-                            {u.celular && (
-                              <p className="text-[11px] text-gray-500 truncate">
-                                Tel. {u.celular}
+                    {!carregandoJogadores &&
+                      usuariosParaJogadores.map((u) => {
+                        const ativo = jogadoresSelecionadosIds.includes(u.id);
+
+                        return (
+                          <button
+                            key={u.id}
+                            type="button"
+                            onClick={() => alternarSelecionado(u)}
+                            title={u.celular || ""}
+                            className={`w-full px-3 py-2 flex items-center justify-between gap-3 text-left transition
+                      ${ativo
+                                ? "bg-orange-50 border-l-4 border-orange-500"
+                                : "hover:bg-orange-50"
+                              }`}
+                          >
+                            {/* Nome + telefone */}
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-gray-800 truncate">
+                                {u.nome}
                               </p>
-                            )}
-                          </div>
+                              {u.celular && (
+                                <p className="text-[11px] text-gray-500 truncate">
+                                  Tel. {u.celular}
+                                </p>
+                              )}
+                            </div>
 
-                          {/* Estado de seleção */}
-                          <div className="ml-2 flex items-center gap-2">
-                            {ativo && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-medium text-orange-700">
-                                <Check className="w-3 h-3" />
-                                Selecionado
-                              </span>
-                            )}
-                            {!ativo && (
-                              <span className="text-[11px] text-gray-500">
-                                Clique para selecionar
-                              </span>
-                            )}
-                          </div>
-                        </button>
-                      );
-                    })}
-                </div>
+                            {/* Estado de seleção */}
+                            <div className="ml-2 flex items-center gap-2">
+                              {ativo ? (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-medium text-orange-700">
+                                  <Check className="w-3 h-3" />
+                                  Selecionado
+                                </span>
+                              ) : (
+                                <span className="text-[11px] text-gray-500">
+                                  Clique para selecionar
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                  </div>
+                )}
               </div>
 
               {/* ===================== CONVIDADOS ===================== */}
@@ -2505,13 +2503,11 @@ export default function AdminHome() {
                            focus:outline-none focus:ring-1 focus:ring-orange-400"
                       placeholder="Insira o nome do jogador"
                       value={convidadoNome}
-                      onChange={(e) =>
-                        setConvidadoNome(e.target.value)
-                      }
+                      onChange={(e) => setConvidadoNome(e.target.value)}
                     />
                   </div>
 
-                  {/* Telefone (agora de verdade) */}
+                  {/* Telefone */}
                   <div className="flex-1 flex items-center gap-3">
                     <Image
                       src="/iconescards/icone_phone.png"
@@ -2523,12 +2519,10 @@ export default function AdminHome() {
                     <input
                       type="text"
                       className="flex-1 h-10 rounded border border-gray-300 px-3 text-sm bg-white
-         focus:outline-none focus:ring-1 focus:ring-orange-200"
+                           focus:outline-none focus:ring-1 focus:ring-orange-200"
                       placeholder="(00) 000000000"
                       value={convidadoTelefone}
-                      onChange={(e) =>
-                        setConvidadoTelefone(e.target.value)
-                      }
+                      onChange={(e) => setConvidadoTelefone(e.target.value)}
                     />
                   </div>
 
@@ -2536,13 +2530,10 @@ export default function AdminHome() {
                   <button
                     type="button"
                     onClick={adicionarConvidado}
-                    disabled={
-                      !convidadoNome.trim() ||
-                      !convidadoTelefone.trim()
-                    } // 👈 exige nome + telefone
+                    disabled={!convidadoNome.trim() || !convidadoTelefone.trim()}
                     className="h-10 px-4 rounded-md border border-[#E97A1F] bg-[#FFF3E0]
-       text-[#D86715] text-sm font-semibold
-       disabled:opacity-60 hover:bg-[#FFE6C2] transition-colors"
+                         text-[#D86715] text-sm font-semibold
+                         disabled:opacity-60 hover:bg-[#FFE6C2] transition-colors"
                   >
                     Adicionar
                   </button>
@@ -2562,9 +2553,7 @@ export default function AdminHome() {
                       key={u.id}
                       className="flex flex-col items-start gap-1 px-3 py-2 rounded-md bg-white border border-gray-300 min-w-[170px]"
                     >
-                      <p className="text-xs font-semibold truncate">
-                        {u.nome}
-                      </p>
+                      <p className="text-xs font-semibold truncate">{u.nome}</p>
                       {u.celular && (
                         <p className="text-[11px] text-gray-500 truncate">
                           Sócio {u.celular}
@@ -2574,8 +2563,8 @@ export default function AdminHome() {
                         type="button"
                         onClick={() => alternarSelecionado(u)}
                         className="mt-1 px-2 py-1 rounded border border-[#C73737]
-                               bg-[#FFE9E9] text-[11px] text-[#B12A2A] font-semibold
-                               hover:bg-[#FFDADA] transition-colors"
+                             bg-[#FFE9E9] text-[11px] text-[#B12A2A] font-semibold
+                             hover:bg-[#FFDADA] transition-colors"
                       >
                         Remover
                       </button>
@@ -2588,12 +2577,8 @@ export default function AdminHome() {
                       key={nome}
                       className="flex flex-col items-start gap-1 px-3 py-2 rounded-md bg-white border border-gray-300 min-w-[170px]"
                     >
-                      <p className="text-xs font-semibold truncate">
-                        {nome}
-                      </p>
-                      <p className="text-[11px] text-gray-500">
-                        Convidado
-                      </p>
+                      <p className="text-xs font-semibold truncate">{nome}</p>
+                      <p className="text-[11px] text-gray-500">Convidado</p>
                       <button
                         type="button"
                         onClick={() => removerConvidado(nome)}
@@ -2619,9 +2604,7 @@ export default function AdminHome() {
             {/* RODAPÉ – BOTÕES CANCELAR / INSERIR */}
             <div className="mt-8 flex justify-center gap-10">
               <button
-                onClick={() =>
-                  !addingPlayers && setAbrirModalJogadores(false)
-                }
+                onClick={() => !addingPlayers && setAbrirModalJogadores(false)}
                 disabled={addingPlayers}
                 className="min-w-[160px] px-5 py-2.5 rounded-md border border-[#C73737]
                      bg-[#FFE9E9] text-[#B12A2A] font-semibold
