@@ -2223,91 +2223,204 @@ export default function AdminHome() {
               </div>
             )}
 
-            {mostrarOpcoesCancelamento && (
-              <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center p-4 rounded-3xl z-50">
-                <div className="bg-white rounded-2xl p-5 w-full max-w-sm shadow-xl">
-                  <p className="font-semibold mb-3 text-center text-sm">
-                    Cancelar apenas 1 dia deste agendamento permanente
-                  </p>
-                  <div className="grid gap-3">
+            {/* CONFIRMAR CANCELAMENTO PERMANENTE */}
+            {mostrarOpcoesCancelamento && agendamentoSelecionado && (
+              <div className="absolute inset-0 bg-black/40 flex items-center justify-center rounded-3xl z-50">
+                <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-md mx-4 px-8 py-10">
+                  {/* X para fechar */}
+                  <button
+                    onClick={() => setMostrarOpcoesCancelamento(false)}
+                    className="absolute right-6 top-4 text-gray-400 hover:text-gray-600 text-2xl leading-none"
+                    aria-label="Fechar"
+                  >
+                    ×
+                  </button>
+
+                  {/* TÍTULO */}
+                  <h3 className="text-lg font-semibold text-orange-700 text-left">
+                    Cancelar Agendamento Permanente
+                  </h3>
+
+                  {/* TEXTO DESCRITIVO (igual ao de avulso, só mudando o título) */}
+                  {(() => {
+                    const usuarioNome =
+                      typeof agendamentoSelecionado.usuario === "string"
+                        ? agendamentoSelecionado.usuario
+                        : agendamentoSelecionado.usuario?.nome || "—";
+
+                    const isQuadra = agendamentoSelecionado.tipoLocal === "quadra";
+
+                    const numero =
+                      agendamentoSelecionado.quadraNumero ??
+                      agendamentoSelecionado.churrasqueiraNumero ??
+                      "";
+
+                    const nomeLocal =
+                      agendamentoSelecionado.quadraNome ??
+                      agendamentoSelecionado.churrasqueiraNome ??
+                      "";
+
+                    const numeroFmt =
+                      numero !== "" ? String(numero).padStart(2, "0") : "";
+
+                    let descricaoLocal = "";
+                    if (isQuadra) {
+                      const esporte = agendamentoSelecionado.esporte || "Quadra";
+                      descricaoLocal = `quadra de ${esporte} ${numeroFmt} - ${nomeLocal}`;
+                    } else {
+                      descricaoLocal = `churrasqueira ${numeroFmt} - ${nomeLocal}`;
+                    }
+
+                    const dataFmt = formatarDataBR(agendamentoSelecionado.dia);
+                    const horarioFmt = agendamentoSelecionado.horario || "";
+
+                    return (
+                      <>
+                        <p className="mt-4 text-sm text-gray-800 text-center leading-relaxed">
+                          Você tem certeza que deseja cancelar a reserva de{" "}
+                          <span className="font-semibold">{usuarioNome}</span> na{" "}
+                          <span className="font-semibold">{descricaoLocal}</span>, no dia{" "}
+                          <span className="font-semibold">{dataFmt}</span>
+                          {horarioFmt && (
+                            <>
+                              {" "}
+                              às{" "}
+                              <span className="font-semibold">{horarioFmt}</span>
+                            </>
+                          )}{" "}
+                          ?
+                        </p>
+
+                        <p className="mt-3 text-[11px] text-gray-500 text-center">
+                          Este cancelamento será aplicado para todos os dias deste
+                          agendamento permanente.
+                        </p>
+                      </>
+                    );
+                  })()}
+
+                  {/* BOTÕES (Cancelar / Voltar) */}
+                  <div className="mt-8 flex justify-center gap-[72px]">
+                    {/* Cancelar permanente (série inteira) */}
                     <button
-                      onClick={abrirExcecao}
-                      className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-full cursor-pointer text-sm"
+                      onClick={cancelarAgendamento}
+                      disabled={loadingCancelamento}
+                      className="min-w-[150px] px-5 py-2.5 rounded-md border border-[#C73737]
+                     bg-[#FFE9E9] text-[#B12A2A] text-sm font-semibold
+                     hover:bg-[#FFDADA] disabled:opacity-60
+                     transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
                     >
-                      Cancelar APENAS 1 dia
+                      {loadingCancelamento ? "Cancelando..." : "Cancelar"}
                     </button>
+
+                    {/* Voltar */}
                     <button
-                      onClick={() =>
-                        setMostrarOpcoesCancelamento(false)
-                      }
-                      className="w-full bg-gray-200 hover:bg-gray-300 text-black py-2 rounded-full cursor-pointer text-sm"
+                      onClick={() => setMostrarOpcoesCancelamento(false)}
+                      disabled={loadingCancelamento}
+                      className="min-w-[150px] px-5 py-2.5 rounded-md border border-[#E97A1F]
+                     bg-[#FFF3E0] text-[#D86715] text-sm font-semibold
+                     hover:bg-[#FFE6C2] disabled:opacity-60
+                     transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
                     >
                       Voltar
+                    </button>
+                  </div>
+
+                  {/* LINK OPCIONAL PARA "CANCELAR APENAS 1 DIA" */}
+                  <div className="mt-4 text-center">
+                    <button
+                      type="button"
+                      onClick={abrirExcecao}
+                      className="text-[11px] text-orange-600 underline hover:text-orange-700"
+                    >
+                      Cancelar apenas um dia específico
                     </button>
                   </div>
                 </div>
               </div>
             )}
 
-            {mostrarExcecaoModal && (
-              <div className="absolute inset-0 bg-black/70 flex items-center justify-center p-4 rounded-3xl z-50">
-                <div className="bg-white rounded-2xl p-5 w-full max-w-sm shadow-xl">
-                  <h3 className="text-lg font-semibold mb-2">
-                    Cancelar apenas 1 dia
+            {/* ESCOLHA DO DIA DO CANCELAMENTO (EXCEÇÃO DO PERMANENTE) */}
+            {mostrarExcecaoModal && agendamentoSelecionado && (
+              <div className="absolute inset-0 bg-black/40 flex items-center justify-center rounded-3xl z-50">
+                <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-md mx-4 px-8 py-10">
+                  {/* X para fechar */}
+                  <button
+                    onClick={() => setMostrarExcecaoModal(false)}
+                    className="absolute right-6 top-4 text-gray-400 hover:text-gray-600 text-2xl leading-none"
+                    aria-label="Fechar"
+                  >
+                    ×
+                  </button>
+
+                  {/* TÍTULO */}
+                  <h3 className="text-lg font-semibold text-orange-700 text-left">
+                    Escolha o dia do cancelamento
                   </h3>
-                  <p className="text-sm text-gray-600 mb-3">
-                    Selecione uma data (próximas {datasExcecao.length} datas
-                    que caem em{" "}
-                    {agendamentoSelecionado?.diaSemana ?? "-"}).
+
+                  {/* TEXTO DESCRITIVO */}
+                  <p className="mt-4 text-sm text-gray-800 text-center leading-relaxed">
+                    Você pode cancelar até 6 semanas à frente.{" "}
+                    <br className="hidden sm:block" />
+                    Escolha o dia:
                   </p>
 
-                  {datasExcecao.length === 0 ? (
-                    <div className="text-sm text-gray-600 mb-3">
-                      Não há datas disponíveis.
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 gap-2 max-h-64 overflow-auto mb-4">
-                      {datasExcecao.map((d) => {
+                  {/* GRID DE DATAS (botões 17/12 etc) */}
+                  <div className="mt-6 grid grid-cols-3 gap-3 justify-items-center">
+                    {datasExcecao.length === 0 ? (
+                      <p className="col-span-3 text-xs text-gray-500 text-center">
+                        Não há datas disponíveis para exceção.
+                      </p>
+                    ) : (
+                      datasExcecao.map((d) => {
                         const ativo = dataExcecaoSelecionada === d;
+                        const [ano, mes, dia] = d.split("-");
+                        const label = `${dia}/${mes}`;
+
                         return (
                           <button
                             key={d}
                             type="button"
-                            onClick={() =>
-                              setDataExcecaoSelecionada(d)
-                            }
-                            className={`px-3 py-2 rounded-full border text-sm ${ativo
-                              ? "border-indigo-600 bg-indigo-50 text-indigo-700"
-                              : "border-gray-300 hover:bg-gray-50"
+                            onClick={() => setDataExcecaoSelecionada(d)}
+                            className={`min-w-[80px] h-10 px-3 rounded-md border text-sm font-medium
+                  ${ativo
+                                ? "border-[#E97A1F] bg-[#FFF3E0] text-[#D86715]"
+                                : "border-[#D7D7D7] bg-white text-gray-800 hover:bg-gray-50"
                               }`}
                           >
-                            {toDdMm(d)}
+                            {label}
                           </button>
                         );
-                      })}
-                    </div>
-                  )}
+                      })
+                    )}
+                  </div>
 
-                  <div className="flex justify-end gap-2">
+                  {/* BOTÕES (Cancelar exceção / Voltar) */}
+                  <div className="mt-8 flex justify-center gap-[72px]">
+                    {/* Cancelar (executa exceção) */}
+                    <button
+                      type="button"
+                      onClick={confirmarExcecao}
+                      disabled={!dataExcecaoSelecionada || postandoExcecao}
+                      className="min-w-[150px] px-5 py-2.5 rounded-md border border-[#C73737]
+                     bg-[#FFE9E9] text-[#B12A2A] text-sm font-semibold
+                     hover:bg-[#FFDADA] disabled:opacity-60
+                     transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
+                    >
+                      {postandoExcecao ? "Cancelando..." : "Cancelar"}
+                    </button>
+
+                    {/* Voltar */}
                     <button
                       type="button"
                       onClick={() => setMostrarExcecaoModal(false)}
                       disabled={postandoExcecao}
-                      className="px-4 py-2 rounded-full bg-gray-200 hover:bg-gray-300 text-sm"
+                      className="min-w-[150px] px-5 py-2.5 rounded-md border border-[#E97A1F]
+                     bg-[#FFF3E0] text-[#D86715] text-sm font-semibold
+                     hover:bg-[#FFE6C2] disabled:opacity-60
+                     transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
                     >
                       Voltar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={confirmarExcecao}
-                      disabled={
-                        !dataExcecaoSelecionada || postandoExcecao
-                      }
-                      className="px-4 py-2 rounded-full bg-indigo-600 text-white hover:bg-indigo-700 disabled:bg-indigo-300 text-sm"
-                    >
-                      {postandoExcecao
-                        ? "Salvando..."
-                        : "Confirmar exceção"}
                     </button>
                   </div>
                 </div>
