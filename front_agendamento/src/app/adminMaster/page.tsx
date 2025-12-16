@@ -2125,27 +2125,98 @@ export default function AdminHome() {
             </div>
 
             {/* --- OVERLAYS INTERNOS (mantidos, só estilos ajustados) --- */}
-            {confirmarCancelamento && (
-              <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center p-4 rounded-3xl z-50">
-                <div className="bg-white rounded-2xl p-5 w-full max-w-sm text-center shadow-xl">
-                  <p className="text-sm text-gray-800 mb-4">
-                    Tem certeza que deseja cancelar esta reserva?
-                  </p>
-                  <div className="flex gap-3 justify-center">
+            {confirmarCancelamento && agendamentoSelecionado && (
+              <div className="absolute inset-0 bg-black/40 flex items-center justify-center rounded-3xl z-50">
+                <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-md mx-4 px-8 py-10">
+                  {/* X para fechar */}
+                  <button
+                    onClick={() => setConfirmarCancelamento(false)}
+                    className="absolute right-6 top-4 text-gray-400 hover:text-gray-600 text-2xl leading-none"
+                    aria-label="Fechar"
+                  >
+                    ×
+                  </button>
+
+                  {/* TÍTULO */}
+                  <h3 className="text-lg font-semibold text-orange-700 text-left">
+                    Cancelar Agendamento Avulso
+                  </h3>
+
+                  {/* TEXTO DESCRITIVO */}
+                  {(() => {
+                    const usuarioNome =
+                      typeof agendamentoSelecionado.usuario === "string"
+                        ? agendamentoSelecionado.usuario
+                        : agendamentoSelecionado.usuario?.nome || "—";
+
+                    const isQuadra = agendamentoSelecionado.tipoLocal === "quadra";
+
+                    const numero =
+                      agendamentoSelecionado.quadraNumero ??
+                      agendamentoSelecionado.churrasqueiraNumero ??
+                      "";
+
+                    const nomeLocal =
+                      agendamentoSelecionado.quadraNome ??
+                      agendamentoSelecionado.churrasqueiraNome ??
+                      "";
+
+                    const numeroFmt =
+                      numero !== "" ? String(numero).padStart(2, "0") : "";
+
+                    let descricaoLocal = "";
+                    if (isQuadra) {
+                      const esporte = agendamentoSelecionado.esporte || "Quadra";
+                      descricaoLocal = `quadra de ${esporte} ${numeroFmt} - ${nomeLocal}`;
+                    } else {
+                      descricaoLocal = `churrasqueira ${numeroFmt} - ${nomeLocal}`;
+                    }
+
+                    const dataFmt = formatarDataBR(agendamentoSelecionado.dia);
+                    const horarioFmt = agendamentoSelecionado.horario || "";
+
+                    return (
+                      <p className="mt-4 text-sm text-gray-800 text-center leading-relaxed">
+                        Você tem certeza que deseja cancelar a reserva de{" "}
+                        <span className="font-semibold">{usuarioNome}</span> na{" "}
+                        <span className="font-semibold">{descricaoLocal}</span>, no dia{" "}
+                        <span className="font-semibold">{dataFmt}</span>
+                        {horarioFmt && (
+                          <>
+                            {" "}
+                            às{" "}
+                            <span className="font-semibold">{horarioFmt}</span>
+                          </>
+                        )}{" "}
+                        ?
+                      </p>
+                    );
+                  })()}
+
+                  {/* BOTÕES */}
+                  <div className="mt-8 flex justify-center gap-[72px]">
+                    {/* Cancelar (vermelho) */}
                     <button
                       onClick={cancelarAgendamento}
                       disabled={loadingCancelamento}
-                      className="px-4 py-2 rounded-full bg-red-600 text-white hover:bg-red-700 text-sm cursor-pointer disabled:opacity-70"
+                      className="min-w-[150px] px-5 py-2.5 rounded-md border border-[#C73737]
+                     bg-[#FFE9E9] text-[#B12A2A] text-sm font-semibold
+                     hover:bg-[#FFDADA] disabled:opacity-60
+                     transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
                     >
-                      {loadingCancelamento
-                        ? "Cancelando..."
-                        : "Sim, cancelar"}
+                      {loadingCancelamento ? "Cancelando..." : "Cancelar"}
                     </button>
+
+                    {/* Voltar (laranja claro) */}
                     <button
                       onClick={() => setConfirmarCancelamento(false)}
-                      className="px-4 py-2 rounded-full bg-gray-200 hover:bg-gray-300 text-sm cursor-pointer"
+                      disabled={loadingCancelamento}
+                      className="min-w-[150px] px-5 py-2.5 rounded-md border border-[#E97A1F]
+                     bg-[#FFF3E0] text-[#D86715] text-sm font-semibold
+                     hover:bg-[#FFE6C2] disabled:opacity-60
+                     transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
                     >
-                      Não
+                      Voltar
                     </button>
                   </div>
                 </div>
