@@ -2471,17 +2471,6 @@ export default function AdminHome() {
                       autoFocus
                     />
                   </div>
-
-                  {/* Botão Adicionar – apenas visual, lógica continua pelo clique na lista */}
-                  <button
-                    type="button"
-                    disabled
-                    className="h-10 px-5 rounded-md border border-[#E97A1F]
-                             bg-[#FFF3E0] text-[#D86715] text-sm font-semibold
-                             opacity-60 cursor-not-allowed"
-                  >
-                    Adicionar
-                  </button>
                 </div>
 
                 {/* Lista de resultados */}
