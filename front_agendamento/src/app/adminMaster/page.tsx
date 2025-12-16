@@ -2368,7 +2368,7 @@ export default function AdminHome() {
                             key={d}
                             type="button"
                             onClick={() => setDataExcecaoSelecionada(d)}
-                            className={`min-w-[80px] h-10 px-3 rounded-md border text-sm font-medium
+                            className={`min-w-[60px] h-8 px-3 rounded-md border text-sm font-medium
                   ${ativo
                                 ? "border-[#E97A1F] bg-[#FFF3E0] text-[#D86715]"
                                 : "border-gray-800 bg-white text-gray-800 hover:bg-gray-50"
