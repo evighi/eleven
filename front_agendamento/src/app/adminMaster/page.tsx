@@ -2579,6 +2579,31 @@ export default function AdminHome() {
                     Nenhum atleta selecionado ainda.
                   </p>
                 )}
+
+                {/* ✅ Checkbox "Copiar exceções" – só para quadra permanente */}
+                {agendamentoSelecionado?.tipoLocal === "quadra" &&
+                  agendamentoSelecionado?.tipoReserva === "permanente" && (
+                    <button
+                      type="button"
+                      onClick={() => setCopiarExcecoes((v) => !v)}
+                      className="mt-4 inline-flex items-center gap-2 text-[12px] text-gray-700"
+                    >
+                      <span
+                        className={`w-4 h-4 rounded-[4px] border flex items-center justify-center transition-colors
+                        ${copiarExcecoes
+                            ? "border-[#E97A1F] bg-[#E97A1F]"
+                            : "border-gray-400 bg-white"
+                          }`}
+                      >
+                        {copiarExcecoes && (
+                          <Check className="w-3 h-3 text-white" strokeWidth={3} />
+                        )}
+                      </span>
+                      <span>
+                        Copiar exceções (datas já canceladas)
+                      </span>
+                    </button>
+                  )}
               </div>
 
               {/* ====== TRANSFERIR PARA CONVIDADO (APENAS VISUAL) ====== */}
@@ -2592,7 +2617,7 @@ export default function AdminHome() {
 
                 <div className="flex flex-col md:flex-row gap-3">
                   {/* Nome do convidado */}
-                  <div className="flex-1 flex items-center gap-3">
+                  <div className="flex-1 flex items-center gap-3 opacity-70">
                     <Image
                       src="/iconescards/icone-permanente.png"
                       alt="Convidado"
@@ -2610,7 +2635,7 @@ export default function AdminHome() {
                   </div>
 
                   {/* Telefone do convidado */}
-                  <div className="flex-1 flex items-center gap-3">
+                  <div className="flex-1 flex items-center gap-3 opacity-70">
                     <Image
                       src="/iconescards/icone_phone.png"
                       alt="Telefone"
@@ -2667,6 +2692,7 @@ export default function AdminHome() {
           </div>
         </div>
       )}
+
 
       {/* MODAL ➕ ADICIONAR JOGADORES */}
       {abrirModalJogadores && (
