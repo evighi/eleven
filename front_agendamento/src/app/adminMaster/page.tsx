@@ -2417,7 +2417,7 @@ export default function AdminHome() {
       {/* MODAL DE TRANSFERÊNCIA */}
       {abrirModalTransferencia && (
         <div
-          className="fixed inset-0 bg-black/30 flex items-center justify-center z-[70]"
+          className="fixed inset-0 bg-transparent flex items-center justify-center z-[70]"
           onClick={(e) => {
             if (e.target === e.currentTarget && !loadingTransferencia) {
               setAbrirModalTransferencia(false);
@@ -2698,7 +2698,7 @@ export default function AdminHome() {
       {/* MODAL ➕ ADICIONAR JOGADORES */}
       {abrirModalJogadores && (
         <div
-          className="fixed inset-0 bg-black/30 flex items-center justify-center z-[70]"
+          className="fixed inset-0 bg-transparent flex items-center justify-center z-[70]"
           onClick={(e) => {
             if (e.target === e.currentTarget && !addingPlayers) {
               setAbrirModalJogadores(false);
