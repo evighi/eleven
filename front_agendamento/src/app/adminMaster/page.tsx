@@ -2416,91 +2416,274 @@ export default function AdminHome() {
 
       {/* MODAL DE TRANSFERÊNCIA */}
       {abrirModalTransferencia && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-60">
-          <div className="bg-white p-6 rounded-lg shadow-lg w-96 max-h-[80vh] overflow-auto relative">
-            <h3 className="text-lg font-semibold mb-4">
-              Transferir Agendamento{" "}
-              {agendamentoSelecionado?.tipoLocal === "quadra" &&
-                agendamentoSelecionado?.tipoReserva === "permanente"
-                ? "(Permanente)"
-                : "(Comum)"}
+        <div
+          className="fixed inset-0 bg-black/30 flex items-center justify-center z-[70]"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !loadingTransferencia) {
+              setAbrirModalTransferencia(false);
+            }
+          }}
+        >
+          <div
+            className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl mx-4 p-8 sm:p-10 relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* X para fechar */}
+            <button
+              onClick={() => !loadingTransferencia && setAbrirModalTransferencia(false)}
+              className="absolute right-6 top-4 text-gray-400 hover:text-gray-600 text-3xl leading-none"
+              aria-label="Fechar"
+            >
+              ×
+            </button>
+
+            {/* TÍTULO */}
+            <h3 className="text-xl sm:text-2xl font-semibold text-orange-700 mb-6">
+              Transferir agendamento
             </h3>
 
-            <input
-              type="text"
-              className="border p-2 rounded w-full mb-3"
-              placeholder="Digite o nome do usuário"
-              value={buscaUsuario}
-              onChange={(e) => setBuscaUsuario(e.target.value)}
-              autoFocus
-            />
-
-            {carregandoUsuarios && <p>Carregando usuários...</p>}
-
-            {!carregandoUsuarios &&
-              usuariosFiltrados.length === 0 &&
-              buscaUsuario.trim().length > 0 && (
-                <p className="text-sm text-gray-500">
-                  Nenhum usuário encontrado
+            {/* CARTÃO INTERNO CINZA */}
+            <div className="bg-[#F6F6F6] border border-gray-200 rounded-2xl p-5 sm:p-6 space-y-6">
+              {/* ====== ESCOLHA O JOGADOR (CADASTRADO) ====== */}
+              <div>
+                <p className="text-sm font-semibold text-gray-700 mb-2">
+                  Escolha o jogador para transferir a reserva
                 </p>
-              )}
 
-            <ul className="max-h-64 overflow-y-auto border rounded mb-4">
-              {usuariosFiltrados.map((user) => (
-                <li
-                  key={user.id}
-                  className={`p-2 cursor-pointer hover:bg-blue-100 ${usuarioSelecionado?.id === user.id
-                    ? "bg-blue-300 font-semibold"
-                    : ""
-                    }`}
-                  onClick={() => setUsuarioSelecionado(user)}
-                  title={user.celular || ""}
-                >
-                  {user.nome}
-                  {user.celular ? ` (${user.celular})` : ""}
-                </li>
-              ))}
-            </ul>
+                <div className="flex flex-col md:flex-row gap-3">
+                  {/* Ícone + input de busca */}
+                  <div className="flex-1 flex items-center gap-3">
+                    <Image
+                      src="/iconescards/icone-permanente.png"
+                      alt="Atleta cadastrado"
+                      width={20}
+                      height={20}
+                      className="w-5 h-5 opacity-70"
+                    />
+                    <input
+                      type="text"
+                      className="flex-1 h-10 rounded border border-gray-300 px-3 text-sm bg-white
+                               focus:outline-none focus:ring-1 focus:ring-orange-400 focus:border-orange-400
+                               placeholder:text-gray-400"
+                      placeholder="Insira o nome do atleta cadastrado"
+                      value={buscaUsuario}
+                      onChange={(e) => setBuscaUsuario(e.target.value)}
+                      autoFocus
+                    />
+                  </div>
 
-            {/* Somente quando o selecionado é permanente (quadra) */}
-            {agendamentoSelecionado?.tipoLocal === "quadra" &&
-              agendamentoSelecionado?.tipoReserva ===
-              "permanente" && (
-                <label className="flex items-center gap-2 mb-4 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={copiarExcecoes}
-                    onChange={(e) =>
-                      setCopiarExcecoes(e.target.checked)
-                    }
-                  />
-                  Copiar exceções (datas já canceladas)
-                </label>
-              )}
+                  {/* Botão Adicionar – apenas visual, lógica continua pelo clique na lista */}
+                  <button
+                    type="button"
+                    disabled
+                    className="h-10 px-5 rounded-md border border-[#E97A1F]
+                             bg-[#FFF3E0] text-[#D86715] text-sm font-semibold
+                             opacity-60 cursor-not-allowed"
+                  >
+                    Adicionar
+                  </button>
+                </div>
 
-            <div className="flex justify-end gap-3">
+                {/* Lista de resultados */}
+                {(carregandoUsuarios || buscaUsuario.trim().length > 0) && (
+                  <div className="mt-3 max-h-48 overflow-y-auto rounded-xl border border-gray-200 bg-white text-sm divide-y">
+                    {carregandoUsuarios && (
+                      <div className="flex items-center gap-2 px-3 py-2 text-xs text-gray-500">
+                        <Spinner size="w-4 h-4" />
+                        <span>Carregando usuários...</span>
+                      </div>
+                    )}
+
+                    {!carregandoUsuarios &&
+                      buscaUsuario.trim().length > 0 &&
+                      usuariosFiltrados.length === 0 && (
+                        <div className="px-3 py-2 text-xs text-gray-500">
+                          Nenhum usuário encontrado para{" "}
+                          <span className="font-semibold">
+                            "{buscaUsuario.trim()}"
+                          </span>
+                          .
+                        </div>
+                      )}
+
+                    {!carregandoUsuarios &&
+                      usuariosFiltrados.map((user) => {
+                        const ativo = usuarioSelecionado?.id === user.id;
+                        return (
+                          <button
+                            key={user.id}
+                            type="button"
+                            onClick={() => setUsuarioSelecionado(user)}
+                            title={user.celular || ""}
+                            className={`w-full px-3 py-2 flex items-center justify-between gap-3 text-left transition
+                          ${ativo
+                                ? "bg-orange-50 border-l-4 border-orange-500 font-medium"
+                                : "hover:bg-orange-50"
+                              }`}
+                          >
+                            <div className="flex-1 min-w-0">
+                              <p className="truncate text-gray-800">
+                                {user.nome}
+                              </p>
+                              {user.celular && (
+                                <p className="text-[11px] text-gray-500 truncate">
+                                  {user.celular}
+                                </p>
+                              )}
+                            </div>
+                            {ativo && (
+                              <span className="text-[11px] text-orange-600 font-semibold">
+                                Selecionado
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                  </div>
+                )}
+              </div>
+
+              {/* ATLETA SELECIONADO */}
+              <div>
+                <p className="text-sm font-semibold text-gray-700 mb-2">
+                  Atleta selecionado:
+                </p>
+
+                {usuarioSelecionado ? (
+                  <div className="inline-flex items-center gap-3 px-4 py-3 rounded-lg bg-white border border-gray-200 shadow-sm">
+                    {/* Card do atleta */}
+                    <div className="flex items-center gap-2 text-xs text-gray-700">
+                      <Image
+                        src="/iconescards/icone-permanente.png"
+                        alt="Atleta selecionado"
+                        width={18}
+                        height={18}
+                        className="w-4 h-4 opacity-80"
+                      />
+                      <div className="flex flex-col">
+                        <span className="font-semibold text-[13px]">
+                          {usuarioSelecionado.nome}
+                        </span>
+                        {usuarioSelecionado.celular && (
+                          <span className="text-[11px] text-gray-600">
+                            {usuarioSelecionado.celular}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Botão Remover */}
+                    <button
+                      type="button"
+                      onClick={() => setUsuarioSelecionado(null)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-sm
+                                 border border-[#C73737] bg-[#FFE9E9]
+                                 text-[11px] text-[#B12A2A] font-semibold leading-none
+                                 hover:bg-[#FFDADA] transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" strokeWidth={3} />
+                      Remover
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-500">
+                    Nenhum atleta selecionado ainda.
+                  </p>
+                )}
+              </div>
+
+              {/* ====== TRANSFERIR PARA CONVIDADO (APENAS VISUAL) ====== */}
+              <div>
+                <p className="text-sm font-semibold text-gray-700 mb-2">
+                  Transferir para convidado{" "}
+                  <span className="text-xs font-normal text-gray-500">
+                    *jogadores sem cadastro no sistema
+                  </span>
+                </p>
+
+                <div className="flex flex-col md:flex-row gap-3">
+                  {/* Nome do convidado */}
+                  <div className="flex-1 flex items-center gap-3 opacity-70">
+                    <Image
+                      src="/iconescards/icone-permanente.png"
+                      alt="Convidado"
+                      width={20}
+                      height={20}
+                      className="w-5 h-5"
+                    />
+                    <input
+                      type="text"
+                      className="flex-1 h-10 rounded border border-gray-300 px-3 text-sm bg-white
+                               placeholder:text-gray-400"
+                      placeholder="Insira o nome do convidado"
+                      disabled
+                    />
+                  </div>
+
+                  {/* Telefone do convidado */}
+                  <div className="flex-1 flex items-center gap-3 opacity-70">
+                    <Image
+                      src="/iconescards/icone_phone.png"
+                      alt="Telefone"
+                      width={20}
+                      height={20}
+                      className="w-5 h-5"
+                    />
+                    <input
+                      type="text"
+                      className="flex-1 h-10 rounded border border-gray-300 px-3 text-sm bg-white
+                               placeholder:text-gray-400"
+                      placeholder="(00) 000000000"
+                      disabled
+                    />
+                  </div>
+
+                  {/* Botão Adicionar – desabilitado */}
+                  <button
+                    type="button"
+                    disabled
+                    className="h-10 px-5 rounded-md border border-[#E97A1F]
+                               bg-[#FFF3E0] text-[#D86715] text-sm font-semibold
+                               opacity-40 cursor-not-allowed"
+                  >
+                    Adicionar
+                  </button>
+                </div>
+
+                <p className="mt-1 text-[11px] text-gray-500">
+                  Em breve você poderá transferir diretamente para convidados.
+                  No momento essa opção está desabilitada.
+                </p>
+              </div>
+            </div>
+
+            {/* RODAPÉ – BOTÕES CANCELAR / CONFIRMAR ALTERAÇÃO */}
+            <div className="mt-8 flex justify-center gap-[120px] max-sm:gap-6">
               <button
-                onClick={() => setAbrirModalTransferencia(false)}
+                onClick={() => !loadingTransferencia && setAbrirModalTransferencia(false)}
                 disabled={loadingTransferencia}
-                className="px-4 py-2 rounded bg-gray-300 hover:bg-gray-400"
+                className="min-w-[160px] px-5 py-2.5 rounded-md border border-[#C73737]
+                           bg-[#FFE9E9] text-[#B12A2A] font-semibold
+                           hover:bg-[#FFDADA] disabled:opacity-60
+                           transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
               >
                 Cancelar
               </button>
               <button
                 onClick={confirmarTransferencia}
-                disabled={
-                  !usuarioSelecionado || loadingTransferencia
-                }
-                className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-300"
+                disabled={!usuarioSelecionado || loadingTransferencia}
+                className="min-w-[190px] px-5 py-2.5 rounded-md border border-[#E97A1F]
+                           bg-[#FFF3E0] text-[#D86715] font-semibold
+                           hover:bg-[#FFE6C2] disabled:opacity-60
+                           transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
               >
-                {loadingTransferencia
-                  ? "Transferindo..."
-                  : "Confirmar Transferência"}
+                {loadingTransferencia ? "Transferindo..." : "Confirmar alteração"}
               </button>
             </div>
           </div>
         </div>
       )}
+
       {/* MODAL ➕ ADICIONAR JOGADORES */}
       {abrirModalJogadores && (
         <div
