@@ -2579,6 +2579,8 @@ export default function AdminHome() {
                     Nenhum atleta selecionado ainda.
                   </p>
                 )}
+
+
               </div>
 
               {/* ====== TRANSFERIR PARA CONVIDADO (APENAS VISUAL) ====== */}
@@ -2637,32 +2639,31 @@ export default function AdminHome() {
                   >
                     Adicionar
                   </button>
-                  
-                  {/* ✅ Checkbox "Copiar exceções" – só para quadra permanente */}
-                  {agendamentoSelecionado?.tipoLocal === "quadra" &&
-                    agendamentoSelecionado?.tipoReserva === "permanente" && (
-                      <button
-                        type="button"
-                        onClick={() => setCopiarExcecoes((v) => !v)}
-                        className="mt-4 inline-flex items-center gap-2 text-[12px] text-gray-700"
-                      >
-                        <span
-                          className={`w-4 h-4 rounded-[4px] border flex items-center justify-center transition-colors
-                        ${copiarExcecoes
-                              ? "border-[#E97A1F] bg-[#E97A1F]"
-                              : "border-gray-400 bg-white"
-                            }`}
-                        >
-                          {copiarExcecoes && (
-                            <Check className="w-3 h-3 text-white" strokeWidth={3} />
-                          )}
-                        </span>
-                        <span>
-                          Copiar exceções (datas já canceladas)
-                        </span>
-                      </button>
-                    )}
                 </div>
+                {/* ✅ Checkbox "Copiar exceções" – só para quadra permanente */}
+                {agendamentoSelecionado?.tipoLocal === "quadra" &&
+                  agendamentoSelecionado?.tipoReserva === "permanente" && (
+                    <button
+                      type="button"
+                      onClick={() => setCopiarExcecoes((v) => !v)}
+                      className="mt-4 inline-flex items-center gap-2 text-[12px] text-gray-700"
+                    >
+                      <span
+                        className={`w-4 h-4 rounded-[4px] border flex items-center justify-center transition-colors
+                        ${copiarExcecoes
+                            ? "border-[#E97A1F] bg-[#E97A1F]"
+                            : "border-gray-400 bg-white"
+                          }`}
+                      >
+                        {copiarExcecoes && (
+                          <Check className="w-3 h-3 text-white" strokeWidth={3} />
+                        )}
+                      </span>
+                      <span>
+                        Copiar exceções (datas já canceladas)
+                      </span>
+                    </button>
+                  )}
               </div>
             </div>
 
