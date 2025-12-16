@@ -1763,9 +1763,11 @@ export default function AdminHome() {
       {/* MODAL DE DETALHES */}
       {agendamentoSelecionado && (
         <div
-          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+          className={`fixed inset-0 flex items-center justify-center z-50 ${abrirModalTransferencia || abrirModalJogadores
+              ? "bg-transparent"      // quando existe modal interno, não escurece aqui
+              : "bg-black/40"         // só escurece quando é só o modal de detalhes
+            }`}
           onClick={(e) => {
-            // fecha só se clicar no fundo, não dentro do card
             if (e.target === e.currentTarget) {
               setAgendamentoSelecionado(null);
               setConfirmarCancelamento(false);
@@ -2417,7 +2419,7 @@ export default function AdminHome() {
       {/* MODAL DE TRANSFERÊNCIA */}
       {abrirModalTransferencia && (
         <div
-          className="fixed inset-0 bg-transparent flex items-center justify-center z-[70]"
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-[70]"
           onClick={(e) => {
             if (e.target === e.currentTarget && !loadingTransferencia) {
               setAbrirModalTransferencia(false);
@@ -2698,7 +2700,7 @@ export default function AdminHome() {
       {/* MODAL ➕ ADICIONAR JOGADORES */}
       {abrirModalJogadores && (
         <div
-          className="fixed inset-0 bg-transparent flex items-center justify-center z-[70]"
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-[70]"
           onClick={(e) => {
             if (e.target === e.currentTarget && !addingPlayers) {
               setAbrirModalJogadores(false);
