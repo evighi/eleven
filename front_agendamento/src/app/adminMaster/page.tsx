@@ -2290,12 +2290,6 @@ export default function AdminHome() {
                           )}{" "}
                           ?
                         </p>
-
-                        <p className="mt-3 text-[11px] text-gray-500 text-center">
-                          Este cancelamento será aplicado apenas em um dia específico
-                          deste agendamento permanente. Você escolherá o dia na etapa
-                          seguinte.
-                        </p>
                       </>
                     );
                   })()}
@@ -2324,17 +2318,6 @@ export default function AdminHome() {
                      transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
                     >
                       Voltar
-                    </button>
-                  </div>
-
-                  {/* LINK OPCIONAL PARA "CANCELAR APENAS 1 DIA" (pode manter ou remover) */}
-                  <div className="mt-4 text-center">
-                    <button
-                      type="button"
-                      onClick={abrirExcecao}
-                      className="text-[11px] text-orange-600 underline hover:text-orange-700"
-                    >
-                      Cancelar apenas um dia específico
                     </button>
                   </div>
                 </div>
