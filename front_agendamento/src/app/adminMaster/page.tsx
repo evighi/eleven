@@ -2458,7 +2458,7 @@ export default function AdminHome() {
                       alt="Atleta cadastrado"
                       width={20}
                       height={20}
-                      className="w-5 h-5 opacity-70"
+                      className="w-5 h-5"
                     />
                     <input
                       type="text"
@@ -2547,7 +2547,7 @@ export default function AdminHome() {
                         alt="Atleta selecionado"
                         width={18}
                         height={18}
-                        className="w-4 h-4 opacity-80"
+                        className="w-4 h-4"
                       />
                       <div className="flex flex-col">
                         <span className="font-semibold text-[13px]">
@@ -2592,7 +2592,7 @@ export default function AdminHome() {
 
                 <div className="flex flex-col md:flex-row gap-3">
                   {/* Nome do convidado */}
-                  <div className="flex-1 flex items-center gap-3 opacity-70">
+                  <div className="flex-1 flex items-center gap-3">
                     <Image
                       src="/iconescards/icone-permanente.png"
                       alt="Convidado"
@@ -2610,7 +2610,7 @@ export default function AdminHome() {
                   </div>
 
                   {/* Telefone do convidado */}
-                  <div className="flex-1 flex items-center gap-3 opacity-70">
+                  <div className="flex-1 flex items-center gap-3">
                     <Image
                       src="/iconescards/icone_phone.png"
                       alt="Telefone"
@@ -2638,11 +2638,6 @@ export default function AdminHome() {
                     Adicionar
                   </button>
                 </div>
-
-                <p className="mt-1 text-[11px] text-gray-500">
-                  Em breve você poderá transferir diretamente para convidados.
-                  No momento essa opção está desabilitada.
-                </p>
               </div>
             </div>
 
