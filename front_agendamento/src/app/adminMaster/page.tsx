@@ -2371,7 +2371,7 @@ export default function AdminHome() {
                             className={`min-w-[80px] h-10 px-3 rounded-md border text-sm font-medium
                   ${ativo
                                 ? "border-[#E97A1F] bg-[#FFF3E0] text-[#D86715]"
-                                : "border-[#D7D7D7] bg-white text-gray-800 hover:bg-gray-50"
+                                : "border-gray-800 bg-white text-gray-800 hover:bg-gray-50"
                               }`}
                           >
                             {label}
