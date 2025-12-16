@@ -2241,7 +2241,7 @@ export default function AdminHome() {
                     Cancelar Agendamento Permanente
                   </h3>
 
-                  {/* TEXTO DESCRITIVO (igual ao de avulso, só mudando o título) */}
+                  {/* TEXTO DESCRITIVO */}
                   {(() => {
                     const usuarioNome =
                       typeof agendamentoSelecionado.usuario === "string"
@@ -2292,25 +2292,26 @@ export default function AdminHome() {
                         </p>
 
                         <p className="mt-3 text-[11px] text-gray-500 text-center">
-                          Este cancelamento será aplicado para todos os dias deste
-                          agendamento permanente.
+                          Este cancelamento será aplicado apenas em um dia específico
+                          deste agendamento permanente. Você escolherá o dia na etapa
+                          seguinte.
                         </p>
                       </>
                     );
                   })()}
 
-                  {/* BOTÕES (Cancelar / Voltar) */}
+                  {/* BOTÕES (Cancelar -> abrir seleção de dia / Voltar) */}
                   <div className="mt-8 flex justify-center gap-[72px]">
-                    {/* Cancelar permanente (série inteira) */}
+                    {/* Cancelar -> leva direto para escolha do dia */}
                     <button
-                      onClick={cancelarAgendamento}
+                      onClick={abrirExcecao}
                       disabled={loadingCancelamento}
                       className="min-w-[150px] px-5 py-2.5 rounded-md border border-[#C73737]
                      bg-[#FFE9E9] text-[#B12A2A] text-sm font-semibold
                      hover:bg-[#FFDADA] disabled:opacity-60
                      transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
                     >
-                      {loadingCancelamento ? "Cancelando..." : "Cancelar"}
+                      Cancelar
                     </button>
 
                     {/* Voltar */}
@@ -2326,7 +2327,7 @@ export default function AdminHome() {
                     </button>
                   </div>
 
-                  {/* LINK OPCIONAL PARA "CANCELAR APENAS 1 DIA" */}
+                  {/* LINK OPCIONAL PARA "CANCELAR APENAS 1 DIA" (pode manter ou remover) */}
                   <div className="mt-4 text-center">
                     <button
                       type="button"
