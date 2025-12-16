@@ -2532,57 +2532,6 @@ export default function AdminHome() {
                 )}
               </div>
 
-              {/* ATLETA SELECIONADO */}
-              <div>
-                <p className="text-sm font-semibold text-gray-700 mb-2">
-                  Atleta selecionado:
-                </p>
-
-                {usuarioSelecionado ? (
-                  <div className="inline-flex items-center gap-3 px-4 py-3 rounded-lg bg-white border border-gray-200 shadow-sm">
-                    {/* Card do atleta */}
-                    <div className="flex items-center gap-2 text-xs text-gray-700">
-                      <Image
-                        src="/iconescards/icone-permanente.png"
-                        alt="Atleta selecionado"
-                        width={18}
-                        height={18}
-                        className="w-4 h-4"
-                      />
-                      <div className="flex flex-col">
-                        <span className="font-semibold text-[13px]">
-                          {usuarioSelecionado.nome}
-                        </span>
-                        {usuarioSelecionado.celular && (
-                          <span className="text-[11px] text-gray-600">
-                            {usuarioSelecionado.celular}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Botão Remover */}
-                    <button
-                      type="button"
-                      onClick={() => setUsuarioSelecionado(null)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-sm
-                                 border border-[#C73737] bg-[#FFE9E9]
-                                 text-[11px] text-[#B12A2A] font-semibold leading-none
-                                 hover:bg-[#FFDADA] transition-colors"
-                    >
-                      <X className="w-3.5 h-3.5" strokeWidth={3} />
-                      Remover
-                    </button>
-                  </div>
-                ) : (
-                  <p className="text-xs text-gray-500">
-                    Nenhum atleta selecionado ainda.
-                  </p>
-                )}
-
-
-              </div>
-
               {/* ====== TRANSFERIR PARA CONVIDADO (APENAS VISUAL) ====== */}
               <div>
                 <p className="text-sm font-semibold text-gray-700 mb-2">
@@ -2664,6 +2613,57 @@ export default function AdminHome() {
                       </span>
                     </button>
                   )}
+              </div>
+
+              {/* ATLETA SELECIONADO */}
+              <div>
+                <p className="text-sm font-semibold text-gray-700 mb-2">
+                  Atleta selecionado:
+                </p>
+
+                {usuarioSelecionado ? (
+                  <div className="inline-flex items-center gap-3 px-4 py-3 rounded-lg bg-white border border-gray-200 shadow-sm">
+                    {/* Card do atleta */}
+                    <div className="flex items-center gap-2 text-xs text-gray-700">
+                      <Image
+                        src="/iconescards/icone-permanente.png"
+                        alt="Atleta selecionado"
+                        width={18}
+                        height={18}
+                        className="w-4 h-4"
+                      />
+                      <div className="flex flex-col">
+                        <span className="font-semibold text-[13px]">
+                          {usuarioSelecionado.nome}
+                        </span>
+                        {usuarioSelecionado.celular && (
+                          <span className="text-[11px] text-gray-600">
+                            {usuarioSelecionado.celular}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Botão Remover */}
+                    <button
+                      type="button"
+                      onClick={() => setUsuarioSelecionado(null)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-sm
+                                 border border-[#C73737] bg-[#FFE9E9]
+                                 text-[11px] text-[#B12A2A] font-semibold leading-none
+                                 hover:bg-[#FFDADA] transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" strokeWidth={3} />
+                      Remover
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-500">
+                    Nenhum atleta selecionado ainda.
+                  </p>
+                )}
+
+
               </div>
             </div>
 
