@@ -92,7 +92,7 @@ const APOIADO_TIPOS_PERMITIDOS = [
   'CLIENTE_APOIADO',
   'ADMIN_MASTER',
   'ADMIN_ATENDENTE',
-  'ADMIN_PROFESSORES',
+  'ADMIN_PROFESSORES'
 ]
 
 // elegível para isenção de apoio
@@ -196,9 +196,9 @@ export default function AgendamentoComum() {
       const candidate = q.logoUrl || q.imagem || q.arquivo || ''
       const normalized =
         candidate &&
-        !/^(https?:|data:|blob:)/i.test(String(candidate)) &&
-        !String(candidate).startsWith('/') &&
-        !String(candidate).includes('/')
+          !/^(https?:|data:|blob:)/i.test(String(candidate)) &&
+          !String(candidate).startsWith('/') &&
+          !String(candidate).includes('/')
           ? `/uploads/quadras/${candidate}`
           : String(candidate)
 
@@ -206,6 +206,16 @@ export default function AgendamentoComum() {
     },
     [toAbs]
   )
+
+  // ✅ controle de imagem carregada por quadra
+  const [quadraImgLoaded, setQuadraImgLoaded] = useState<Record<string, boolean>>({})
+
+  const marcarQuadraCarregada = (id: string) => {
+    setQuadraImgLoaded(prev => ({
+      ...prev,
+      [id]: true
+    }))
+  }
 
   // carregar /quadras para mapear as imagens (logoUrl/imagem/arquivo)
   useEffect(() => {
@@ -215,12 +225,12 @@ export default function AgendamentoComum() {
           withCredentials: true
         })
         const map: Record<string, string> = {}
-        ;(data || []).forEach((q) => {
-          const id = String(q.id ?? q.quadraId ?? '')
-          if (!id) return
-          const logo = buildQuadraLogo(q)
-          if (logo) map[id] = logo
-        })
+          ; (data || []).forEach(q => {
+            const id = String(q.id ?? q.quadraId ?? '')
+            if (!id) return
+            const logo = buildQuadraLogo(q)
+            if (logo) map[id] = logo
+          })
         setQuadraLogos(map)
       } catch (err) {
         console.warn('Não foi possível carregar /quadras para logos.', err)
@@ -291,8 +301,8 @@ export default function AgendamentoComum() {
   useEffect(() => {
     axios
       .get<Esporte[]>(`${API_URL}/esportes`, { withCredentials: true })
-      .then((res) => setEsportes(res.data || []))
-      .catch((err) => {
+      .then(res => setEsportes(res.data || []))
+      .catch(err => {
         console.error(err)
         setFeedback({ kind: 'error', text: 'Falha ao carregar esportes.' })
       })
@@ -303,14 +313,14 @@ export default function AgendamentoComum() {
     if (!esportes.length || !esporteParam) return
 
     // tenta por ID
-    const byId = esportes.find((e) => String(e.id) === String(esporteParam))
+    const byId = esportes.find(e => String(e.id) === String(esporteParam))
     if (byId) {
       setEsporteSelecionado(String(byId.id))
       return
     }
     // tenta por NOME (case-insensitive)
     const byName = esportes.find(
-      (e) => e.nome?.trim().toLowerCase() === esporteParam.trim().toLowerCase()
+      e => e.nome?.trim().toLowerCase() === esporteParam.trim().toLowerCase()
     )
     if (byName) setEsporteSelecionado(String(byName.id))
   }, [esportes, esporteParam])
@@ -331,25 +341,28 @@ export default function AgendamentoComum() {
           `${API_URL}/disponibilidade`,
           {
             params: { data, horario, esporteId: esporteSelecionado },
-            withCredentials: true,
+            withCredentials: true
           }
         )
 
         const filtradas = (disp || [])
-          .filter((q) => q.disponivel !== false)
+          .filter(q => q.disponivel !== false)
           .map(({ quadraId, nome, numero }) => {
             const id = String(quadraId)
             return {
               quadraId,
               nome,
               numero,
-              logoUrl: quadraLogos[id] || '',
+              logoUrl: quadraLogos[id] || ''
             }
           })
 
         setQuadrasDisponiveis(filtradas)
         if (filtradas.length === 0) {
-          setFeedback({ kind: 'info', text: 'Nenhuma quadra disponível para este horário.' })
+          setFeedback({
+            kind: 'info',
+            text: 'Nenhuma quadra disponível para este horário.'
+          })
         } else {
           setFeedback(null)
         }
@@ -375,7 +388,7 @@ export default function AgendamentoComum() {
           `${API_URL}/agendamentos/_sessoes-permitidas`,
           {
             params: { esporteId: esporteSelecionado, data, horario },
-            withCredentials: true,
+            withCredentials: true
           }
         )
         const allow = Array.isArray(resp?.allow) ? (resp.allow as TipoSessao[]) : []
@@ -414,7 +427,7 @@ export default function AgendamentoComum() {
       try {
         const { data } = await axios.get<Usuario[]>(`${API_URL}/clientes`, {
           params: { nome: buscaUsuario },
-          withCredentials: true,
+          withCredentials: true
         })
         // Ideal: backend devolver também "tipo" (quando usuário for professor/apoiado)
         setUsuariosEncontrados(data || [])
@@ -437,7 +450,7 @@ export default function AgendamentoComum() {
       try {
         const { data } = await axios.get<Usuario[]>(`${API_URL}/clientes`, {
           params: { nome: apoiadoBusca },
-          withCredentials: true,
+          withCredentials: true
         })
         setApoiadoResultados(data || [])
       } catch (err) {
@@ -449,8 +462,8 @@ export default function AgendamentoComum() {
   }, [API_URL, isApoiado, apoiadoBusca])
 
   const adicionarJogador = (usuario: Usuario) => {
-    setJogadores((prev) =>
-      prev.find((j) => String(j.id) === String(usuario.id)) ? prev : [...prev, usuario]
+    setJogadores(prev =>
+      prev.find(j => String(j.id) === String(usuario.id)) ? prev : [...prev, usuario]
     )
     setBuscaUsuario('')
     setUsuariosEncontrados([])
@@ -458,7 +471,7 @@ export default function AgendamentoComum() {
   }
 
   const removerJogador = (id: number | string) => {
-    setJogadores((prev) => prev.filter((j) => String(j.id) !== String(id)))
+    setJogadores(prev => prev.filter(j => String(j.id) !== String(id)))
   }
 
   // ✅ adicionar convidado manual à lista de jogadores
@@ -478,12 +491,12 @@ export default function AgendamentoComum() {
       id: `guest-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       nome,
       celular: telefone || undefined,
-      tipo: 'CONVIDADO',
+      tipo: 'CONVIDADO'
     }
 
-    setJogadores((prev) => {
+    setJogadores(prev => {
       const jaExiste = prev.some(
-        (j) =>
+        j =>
           norm(j.nome) === norm(novoConvidado.nome) &&
           (j.celular || '') === (novoConvidado.celular || '')
       )
@@ -533,7 +546,10 @@ export default function AgendamentoComum() {
     // Se o dono for professor e existir restrição de sessão, valida no front também
     if (selectedOwnerIsProfessor) {
       if (permitidos.length === 0) {
-        setFeedback({ kind: 'error', text: 'Neste horário não há sessão permitida para este esporte.' })
+        setFeedback({
+          kind: 'error',
+          text: 'Neste horário não há sessão permitida para este esporte.'
+        })
         return
       }
       if (!permitidos.includes(tipoSessao)) {
@@ -564,8 +580,8 @@ export default function AgendamentoComum() {
     // separa cadastrados x convidados
     const soCadastrados = jogadoresCadastrados
     const convidadosDaLista = jogadores
-      .filter((j) => String(j.id).startsWith('guest-'))
-      .map((j) => `${j.nome}${j.celular ? ` ${j.celular}` : ''}`.trim())
+      .filter(j => String(j.id).startsWith('guest-'))
+      .map(j => `${j.nome}${j.celular ? ` ${j.celular}` : ''}`.trim())
 
     const convidadoDono =
       ownerGuestNome.trim()
@@ -584,7 +600,7 @@ export default function AgendamentoComum() {
       horario,
       esporteId: String(esporteSelecionado),
       quadraId: String(quadraSelecionada),
-      jogadoresIds: soCadastrados.map((j) => String(j.id)),
+      jogadoresIds: soCadastrados.map(j => String(j.id))
     }
 
     if (todosConvidados.length > 0) {
@@ -613,14 +629,19 @@ export default function AgendamentoComum() {
     try {
       // 1) cria o agendamento
       const { data: novo } = await axios.post(`${API_URL}/agendamentos`, payload, {
-        withCredentials: true,
+        withCredentials: true
       })
 
       // 🔔 AVISO DE MULTA (somente se o backend aplicou multa automática)
       const multaValor = Number(novo?.multa || 0)
       if (multaValor > 0) {
-        const valorFmt = multaValor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-        toast.warning(`Multa aplicada de ${valorFmt} por agendar em horário que já passou.`)
+        const valorFmt = multaValor.toLocaleString('pt-BR', {
+          style: 'currency',
+          currency: 'BRL'
+        })
+        toast.warning(
+          `Multa aplicada de ${valorFmt} por agendar em horário que já passou.`
+        )
       }
 
       // 2) se tiver “convidado dono”, transfere titularidade
@@ -674,9 +695,23 @@ export default function AgendamentoComum() {
   }
 
   const horas = [
-    '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00',
-    '14:00', '15:00', '16:00', '17:00', '18:00', '19:00',
-    '20:00', '21:00', '22:00', '23:00'
+    '07:00',
+    '08:00',
+    '09:00',
+    '10:00',
+    '11:00',
+    '12:00',
+    '13:00',
+    '14:00',
+    '15:00',
+    '16:00',
+    '17:00',
+    '18:00',
+    '19:00',
+    '20:00',
+    '21:00',
+    '22:00',
+    '23:00'
   ]
 
   const alertClasses =
@@ -701,7 +736,6 @@ export default function AgendamentoComum() {
   return (
     <div className="min-h-screen flex items-start justify-center py-10 px-4">
       <div className="w-full max-w-3xl bg-white rounded-3xl shadow-[0_12px_40px_rgba(0,0,0,0.08)] px-5 sm:px-10 py-7 sm:py-9 relative">
-
         {/* BOTÃO X (fechar) */}
         <button
           type="button"
@@ -732,11 +766,12 @@ export default function AgendamentoComum() {
 
         {/* DIA E HORÁRIO – em card cinza com ícones fora do botão */}
         <section className="mb-6">
-          <p className="text-sm font-semibold text-orange-600 mb-3">Dia e horário:</p>
+          <p className="text-sm font-semibold text-orange-600 mb-3">
+            Dia e horário:
+          </p>
 
           <div className="rounded-xl bg-[#F6F6F6] border-gray-200 px-4 py-4 sm:px-5 sm:py-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
               {/* DATA – ícone fora + botão */}
               <div>
                 <p className="text-xs text-gray-500 mb-1">Escolha o dia:</p>
@@ -753,7 +788,7 @@ export default function AgendamentoComum() {
                   <div className="relative w-full">
                     <button
                       type="button"
-                      onClick={() => setDataPickerAberto((v) => !v)}
+                      onClick={() => setDataPickerAberto(v => !v)}
                       className="flex items-center justify-between h-9 w-full rounded-md border border-gray-300 bg-white px-3 text-sm hover:border-gray-900 hover:shadow-sm transition"
                     >
                       <span className="text-sm text-gray-800">
@@ -774,7 +809,7 @@ export default function AgendamentoComum() {
                             type="button"
                             onClick={() =>
                               setMesExibido(
-                                (prev) =>
+                                prev =>
                                   new Date(
                                     prev.getFullYear(),
                                     prev.getMonth() - 1,
@@ -790,7 +825,7 @@ export default function AgendamentoComum() {
                           <span className="font-semibold text-sm">
                             {mesExibido.toLocaleDateString('pt-BR', {
                               month: 'long',
-                              year: 'numeric',
+                              year: 'numeric'
                             })}
                           </span>
 
@@ -798,7 +833,7 @@ export default function AgendamentoComum() {
                             type="button"
                             onClick={() =>
                               setMesExibido(
-                                (prev) =>
+                                prev =>
                                   new Date(
                                     prev.getFullYear(),
                                     prev.getMonth() + 1,
@@ -814,7 +849,7 @@ export default function AgendamentoComum() {
 
                         {/* Dias da semana */}
                         <div className="grid grid-cols-7 text-[11px] text-gray-500 mb-1">
-                          {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((d) => (
+                          {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map(d => (
                             <div key={d} className="text-center">
                               {d}
                             </div>
@@ -864,7 +899,7 @@ export default function AgendamentoComum() {
                                       : '',
                                     isSelected
                                       ? 'bg-orange-600 text-white font-semibold'
-                                      : 'hover:bg-orange-50',
+                                      : 'hover:bg-orange-50'
                                   ].join(' ')}
                                 >
                                   {d.getDate()}
@@ -898,7 +933,7 @@ export default function AgendamentoComum() {
                   <div className="relative w-full">
                     <button
                       type="button"
-                      onClick={() => setHorarioAberto((v) => !v)}
+                      onClick={() => setHorarioAberto(v => !v)}
                       className="flex items-center justify-between h-9 border border-gray-300 rounded-md px-3 text-sm bg-white w-full hover:border-gray-900 hover:shadow-sm transition"
                     >
                       <span className="text-sm text-gray-800">
@@ -923,14 +958,14 @@ export default function AgendamentoComum() {
                             setFeedback(null)
                           }}
                           className={`w-full text-left px-3 py-1.5 ${horario === ''
-                            ? 'bg-orange-100 text-orange-700 font-semibold'
-                            : 'hover:bg-orange-50 text-gray-800'
+                              ? 'bg-orange-100 text-orange-700 font-semibold'
+                              : 'hover:bg-orange-50 text-gray-800'
                             }`}
                         >
                           Selecione um horário
                         </button>
 
-                        {horas.map((h) => {
+                        {horas.map(h => {
                           const selecionado = horario === h
                           return (
                             <button
@@ -943,8 +978,8 @@ export default function AgendamentoComum() {
                                 setFeedback(null)
                               }}
                               className={`w-full text-left px-3 py-1.5 ${selecionado
-                                ? 'bg-orange-100 text-orange-700 font-semibold'
-                                : 'hover:bg-orange-50 text-gray-800'
+                                  ? 'bg-orange-100 text-orange-700 font-semibold'
+                                  : 'hover:bg-orange-50 text-gray-800'
                                 }`}
                             >
                               {h}
@@ -975,7 +1010,8 @@ export default function AgendamentoComum() {
             ) : noneAllowed ? (
               <div className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-xs bg-red-50 border border-red-200 text-red-700">
                 <span>
-                  Nenhuma sessão permitida neste horário para o esporte selecionado.
+                  Nenhuma sessão permitida neste horário para o esporte
+                  selecionado.
                 </span>
               </div>
             ) : onlyOne ? (
@@ -994,8 +1030,8 @@ export default function AgendamentoComum() {
                   onClick={() => setTipoSessao('AULA')}
                   disabled={!permitidos.includes('AULA')}
                   className={`px-4 py-1.5 rounded-full border text-xs font-medium transition ${tipoSessao === 'AULA'
-                    ? 'bg-orange-100 border-orange-500 text-orange-700'
-                    : 'bg-gray-100 border-gray-300 text-gray-700'
+                      ? 'bg-orange-100 border-orange-500 text-orange-700'
+                      : 'bg-gray-100 border-gray-300 text-gray-700'
                     } ${!permitidos.includes('AULA')
                       ? 'opacity-50 cursor-not-allowed'
                       : 'hover:bg-orange-50'
@@ -1008,8 +1044,8 @@ export default function AgendamentoComum() {
                   onClick={() => setTipoSessao('JOGO')}
                   disabled={!permitidos.includes('JOGO')}
                   className={`px-4 py-1.5 rounded-full border text-xs font-medium transition ${tipoSessao === 'JOGO'
-                    ? 'bg-orange-100 border-orange-500 text-orange-700'
-                    : 'bg-gray-100 border-gray-300 text-gray-700'
+                      ? 'bg-orange-100 border-orange-500 text-orange-700'
+                      : 'bg-gray-100 border-gray-300 text-gray-700'
                     } ${!permitidos.includes('JOGO')
                       ? 'opacity-50 cursor-not-allowed'
                       : 'hover:bg-orange-50'
@@ -1021,7 +1057,8 @@ export default function AgendamentoComum() {
             )}
 
             <p className="text-[11px] text-gray-500 mt-1">
-              As opções seguem as janelas configuradas para o esporte no dia/horário escolhido.
+              As opções seguem as janelas configuradas para o esporte no
+              dia/horário escolhido.
             </p>
           </section>
         )}
@@ -1049,13 +1086,13 @@ export default function AgendamentoComum() {
                      focus:outline-none focus:ring-1 focus:ring-orange-400 focus:border-orange-400
                      appearance-none"
                   value={esporteSelecionado}
-                  onChange={(e) => {
+                  onChange={e => {
                     setEsporteSelecionado(e.target.value)
                     setFeedback(null)
                   }}
                 >
                   <option value="">Selecione o esporte</option>
-                  {esportes.map((e) => (
+                  {esportes.map(e => (
                     <option key={String(e.id)} value={String(e.id)}>
                       {e.nome}
                     </option>
@@ -1063,9 +1100,7 @@ export default function AgendamentoComum() {
                 </select>
 
                 {/* setinha usando o mesmo ícone do dia/horário */}
-                <ChevronDown
-                  className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600"
-                />
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
               </div>
             </div>
           </div>
@@ -1076,15 +1111,13 @@ export default function AgendamentoComum() {
           <section className="mb-6">
             <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                <p className="text-sm font-semibold text-gray-800">
-                  Apoiado
-                </p>
+                <p className="text-sm font-semibold text-gray-800">Apoiado</p>
                 <label className="inline-flex items-center gap-2 text-xs text-gray-700">
                   <input
                     type="checkbox"
                     className="h-4 w-4 rounded border-gray-300"
                     checked={isApoiado}
-                    onChange={(e) => setIsApoiado(e.target.checked)}
+                    onChange={e => setIsApoiado(e.target.checked)}
                   />
                   <span>Este agendamento é de aluno apoiado?</span>
                 </label>
@@ -1101,7 +1134,7 @@ export default function AgendamentoComum() {
                                focus:outline-none focus:ring-1 focus:ring-orange-400 focus:border-orange-400"
                     placeholder="Buscar por nome do usuário apoiado"
                     value={apoiadoBusca}
-                    onChange={(e) => {
+                    onChange={e => {
                       setApoiadoBusca(e.target.value)
                       setApoiadoSelecionado(null)
                     }}
@@ -1109,7 +1142,7 @@ export default function AgendamentoComum() {
 
                   {apoiadoResultados.length > 0 && !apoiadoSelecionado && (
                     <ul className="border border-gray-200 rounded-md bg-white max-h-60 overflow-y-auto divide-y text-sm">
-                      {apoiadoResultados.map((u) => {
+                      {apoiadoResultados.map(u => {
                         const tag = norm(u.tipo)
                         const ehElegivel = isUsuarioElegivelApoio(u)
                         return (
@@ -1128,7 +1161,9 @@ export default function AgendamentoComum() {
                             </div>
                             <div className="text-[11px] text-gray-600">
                               {tag || 'SEM TIPO'}
-                              {ehElegivel ? ' • elegível para apoio' : ' • não elegível'}
+                              {ehElegivel
+                                ? ' • elegível para apoio'
+                                : ' • não elegível'}
                             </div>
                             {u.celular && (
                               <div className="text-[11px] text-gray-500">
@@ -1144,8 +1179,8 @@ export default function AgendamentoComum() {
                   {apoiadoSelecionado && (
                     <div
                       className={`mt-2 text-xs rounded-md px-3 py-2 border ${isUsuarioElegivelApoio(apoiadoSelecionado)
-                        ? 'text-green-700 bg-green-50 border-green-200'
-                        : 'text-amber-800 bg-amber-50 border-amber-200'
+                          ? 'text-green-700 bg-green-50 border-green-200'
+                          : 'text-amber-800 bg-amber-50 border-amber-200'
                         }`}
                     >
                       Usuário apoiado selecionado:{' '}
@@ -1153,7 +1188,12 @@ export default function AgendamentoComum() {
                       {!isUsuarioElegivelApoio(apoiadoSelecionado) && (
                         <span className="block text-[11px] mt-1">
                           Atenção: este usuário não é elegível para apoio
-                          (permitido: <b>CLIENTE_APOIADO, ADMIN_MASTER, ADMIN_ATENDENTE, ADMIN_PROFESSORES</b>).
+                          (permitido:{' '}
+                          <b>
+                            CLIENTE_APOIADO, ADMIN_MASTER, ADMIN_ATENDENTE,
+                            ADMIN_PROFESSORES
+                          </b>
+                          ).
                         </span>
                       )}
                     </div>
@@ -1166,7 +1206,9 @@ export default function AgendamentoComum() {
 
         {/* JOGADORES */}
         <section className="mb-8">
-          <p className="text-sm font-semibold text-orange-600 mb-3">Jogadores:</p>
+          <p className="text-sm font-semibold text-orange-600 mb-3">
+            Jogadores:
+          </p>
 
           <div className="rounded-xl bg-[#F6F6F6] border-gray-200 px-4 py-4 sm:px-5 sm:py-5 space-y-5">
             {/* Jogadores cadastrados */}
@@ -1188,22 +1230,20 @@ export default function AgendamentoComum() {
                              focus:outline-none focus:ring-1 focus:ring-orange-400 focus:border-orange-400"
                   placeholder="Insira o nome do atleta cadastrado"
                   value={buscaUsuario}
-                  onChange={(e) => setBuscaUsuario(e.target.value)}
+                  onChange={e => setBuscaUsuario(e.target.value)}
                 />
               </div>
 
               {usuariosEncontrados.length > 0 && (
                 <ul className="mt-2 border border-gray-200 rounded-md bg-white max-h-60 overflow-y-auto divide-y text-sm">
-                  {usuariosEncontrados.map((u) => (
+                  {usuariosEncontrados.map(u => (
                     <li
                       key={String(u.id)}
                       className="px-3 py-2 hover:bg-orange-50 cursor-pointer"
                       onClick={() => adicionarJogador(u)}
                       title={u.celular || ''}
                     >
-                      <div className="font-medium text-gray-800">
-                        {u.nome}
-                      </div>
+                      <div className="font-medium text-gray-800">{u.nome}</div>
                       {u.tipo && (
                         <div className="text-[11px] text-gray-500">
                           {norm(u.tipo)}
@@ -1244,7 +1284,7 @@ export default function AgendamentoComum() {
                                focus:outline-none focus:ring-1 focus:ring-orange-400 focus:border-orange-400"
                     placeholder="Insira o nome do convidado (dono)"
                     value={ownerGuestNome}
-                    onChange={(e) => setOwnerGuestNome(e.target.value)}
+                    onChange={e => setOwnerGuestNome(e.target.value)}
                   />
                 </div>
 
@@ -1262,7 +1302,7 @@ export default function AgendamentoComum() {
                                focus:outline-none focus:ring-1 focus:ring-orange-400 focus:border-orange-400"
                     placeholder="(00) 000000000"
                     value={ownerGuestTelefone}
-                    onChange={(e) => setOwnerGuestTelefone(e.target.value)}
+                    onChange={e => setOwnerGuestTelefone(e.target.value)}
                   />
                 </div>
 
@@ -1296,11 +1336,8 @@ export default function AgendamentoComum() {
                 </p>
 
                 <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-4 justify-items-center">
-                  {jogadores.map((j) => (
-                    <div
-                      key={j.id ?? j.nome}
-                      className="flex items-center gap-3"
-                    >
+                  {jogadores.map(j => (
+                    <div key={j.id ?? j.nome} className="flex items-center gap-3">
                       {/* Card cinza do jogador */}
                       <div
                         className="flex-1 flex flex-col gap-0.5 px-4 py-1 rounded-md
@@ -1316,7 +1353,9 @@ export default function AgendamentoComum() {
                             height={14}
                             className="w-3.5 h-3.5 flex-shrink-0 opacity-80"
                           />
-                          <span className="font-semibold truncate">{j.nome}</span>
+                          <span className="font-semibold truncate">
+                            {j.nome}
+                          </span>
                         </div>
 
                         {/* Telefone com ícone */}
@@ -1379,37 +1418,49 @@ export default function AgendamentoComum() {
           ) : (
             <>
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-                {quadrasDisponiveis.map((q) => {
+                {quadrasDisponiveis.map(q => {
                   const selected = quadraSelecionada === String(q.quadraId)
                   const numeroFmt =
                     typeof q.numero === 'number' || typeof q.numero === 'string'
                       ? String(q.numero).padStart(2, '0')
                       : ''
                   const src = q.logoUrl || '/quadra.png'
+                  const idStr = String(q.quadraId)
+
                   return (
                     <button
-                      key={String(q.quadraId)}
+                      key={idStr}
                       type="button"
                       onClick={() => {
-                        setQuadraSelecionada(String(q.quadraId))
+                        setQuadraSelecionada(idStr)
                         setFeedback(null)
                       }}
-                      className={`flex flex-col overflow-hidden rounded-xl border shadow-sm transition
-                        ${selected
+                      className={`flex flex-col overflow-hidden rounded-xl border shadow-sm transition ${selected
                           ? 'border-orange-500 shadow-[0_0_0_2px_rgba(233,122,31,0.35)]'
                           : 'border-gray-200 hover:border-orange-400 hover:shadow-md'
                         }`}
                     >
                       {/* imagem da quadra */}
                       <div className="relative w-full h-40 flex items-center justify-center">
+                        {/* imagem (fica por baixo) */}
                         <AppImage
                           src={src}
                           alt={q.nome}
                           fill
-                          className="object-contain pointer-events-none select-none"
+                          className={`object-contain pointer-events-none select-none transition-opacity duration-150 ${quadraImgLoaded[idStr] ? "opacity-100" : "opacity-0"
+                            }`}
                           fallbackSrc="/quadra.png"
+                          onLoadingComplete={() => marcarQuadraCarregada(idStr)}
                         />
+
+                        {/* overlay com spinner enquanto NÃO carregou */}
+                        {!quadraImgLoaded[idStr] && (
+                          <div className="absolute inset-0 z-10 flex items-center justify-center bg-white">
+                            <Spinner size="w-5 h-5" />
+                          </div>
+                        )}
                       </div>
+
 
                       {/* texto */}
                       <div className="px-3 py-3 bg-white text-center">
@@ -1432,8 +1483,7 @@ export default function AgendamentoComum() {
                   onClick={agendar}
                   disabled={salvando || selecionadoInvalido}
                   aria-busy={salvando}
-                  className={`min-w-[340px] h-11 rounded-md border text-sm font-semibold
-                    ${salvando || selecionadoInvalido
+                  className={`min-w-[340px] h-11 rounded-md border text-sm font-semibold ${salvando || selecionadoInvalido
                       ? 'border-orange-200 text-orange-200 bg-white cursor-not-allowed'
                       : 'border-orange-500 text-orange-700 bg-orange-100 hover-orange-200'
                     }`}
@@ -1456,9 +1506,13 @@ export default function AgendamentoComum() {
 
               {selecionadoInvalido && (
                 <p className="mt-2 text-[12px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
-                  O apoiado selecionado não é elegível para apoio.
-                  Tipos permitidos:{' '}
-                  <b>CLIENTE_APOIADO, ADMIN_MASTER, ADMIN_ATENDENTE, ADMIN_PROFESSORES</b>.
+                  O apoiado selecionado não é elegível para apoio. Tipos
+                  permitidos:{' '}
+                  <b>
+                    CLIENTE_APOIADO, ADMIN_MASTER, ADMIN_ATENDENTE,
+                    ADMIN_PROFESSORES
+                  </b>
+                  .
                 </p>
               )}
             </>
