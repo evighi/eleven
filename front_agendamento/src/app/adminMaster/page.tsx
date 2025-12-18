@@ -1334,8 +1334,8 @@ export default function AdminHome() {
               >
                 {/* HEADER DO ESPORTE */}
                 <div className="flex items-baseline justify-between mb-4">
-                  <h2 className="text-xl font-semibold text-gray-800">
-                    {esporte}
+                  <h2 className="text-xl font-semibold text-gray-500">
+                    {esporte} - {horario}
                   </h2>
                 </div>
 
@@ -1754,8 +1754,13 @@ export default function AdminHome() {
         ) : (
           <section className="rounded-3xl bg-gray-100 border border-gray-100 px-4 sm:px-6 py-5 shadow-sm">
             <div className="flex items-baseline justify-between mb-4">
-              <h2 className="text-xl font-semibold text-gray-800">
+              <h2 className="text-xl font-semibold text-gray-500">
                 Churrasqueiras
+                {dataChurras && (
+                  <span className="ml-2 text-xl font-semibold text-gray-500">
+                    - {formatarDataBR(dataChurras)}
+                  </span>
+                )}
               </h2>
             </div>
 
