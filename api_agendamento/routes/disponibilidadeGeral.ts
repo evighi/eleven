@@ -1373,7 +1373,6 @@ router.get("/geral-admin-churrasqueiras", async (req, res) => {
 });
 
 
-
 /**
  * /disponibilidadeGeral/dia
  * Parâmetros: ?data=YYYY-MM-DD  (obrigatório)
