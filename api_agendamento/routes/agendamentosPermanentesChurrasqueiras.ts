@@ -337,7 +337,7 @@ router.get(
         where: { id },
         include: {
           usuario: { select: { id: true, nome: true, email: true } },
-          churrasqueira: { select: { nome: true, numero: true } },
+          churrasqueira: { select: { id: true, nome: true, numero: true } }, // 👈 acrescentado id
         },
       });
 
@@ -352,9 +352,21 @@ router.get(
         tipoReserva: "PERMANENTE",
         diaSemana: agendamento.diaSemana,
         turno: agendamento.turno,
+
+        // mantém o que já existia
         usuario: agendamento.usuario.nome,
         usuarioId: agendamento.usuario.id,
-        churrasqueira: `${agendamento.churrasqueira.nome} (Nº ${agendamento.churrasqueira.numero})`,
+
+        // 🔥 churrasqueira com campos separados
+        churrasqueiraId: agendamento.churrasqueira?.id ?? null,
+        churrasqueiraNome: agendamento.churrasqueira?.nome ?? null,
+        churrasqueiraNumero: agendamento.churrasqueira?.numero ?? null,
+
+        // mantém a string antiga pra compatibilidade, se o front ainda usar
+        churrasqueira: agendamento.churrasqueira
+          ? `${agendamento.churrasqueira.nome} (Nº ${agendamento.churrasqueira.numero})`
+          : null,
+
         dataInicio: agendamento.dataInicio ?? null,
         status: agendamento.status,
       });
@@ -366,6 +378,7 @@ router.get(
     }
   }
 );
+
 
 /**
  * ✅ NOVO — GET /churrasqueiras/permanentes/:id/datas-excecao
