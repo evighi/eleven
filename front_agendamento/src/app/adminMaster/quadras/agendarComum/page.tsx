@@ -14,6 +14,8 @@ import { toast } from 'sonner'
 import Image from 'next/image'
 import { ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import AppImage from '@/components/AppImage'
+import SystemAlert, { AlertVariant } from "@/components/SystemAlert";
+
 
 type Esporte = { id: number | string; nome: string }
 
@@ -44,7 +46,7 @@ type Quadra = {
 
 type DisponibilidadeQuadra = Quadra & { disponivel?: boolean }
 
-type Feedback = { kind: 'success' | 'error' | 'info'; text: string }
+type Feedback = { kind: AlertVariant; text: string }
 
 type TipoSessao = 'AULA' | 'JOGO'
 
@@ -567,7 +569,6 @@ export default function AgendamentoComum() {
         setFeedback({ kind: 'error', text: 'Selecione o usuário que receberá o apoio.' })
         return
       }
-      // 🚦 NOVO: só permite tipos elegíveis (CLIENTE_APOIADO + admins/professor)
       if (!isUsuarioElegivelApoio(apoiadoSelecionado)) {
         const msg =
           'O usuário selecionado não é elegível para apoio (permitido: CLIENTE_APOIADO, ADMIN_MASTER, ADMIN_ATENDENTE ou ADMIN_PROFESSORES).'
@@ -577,7 +578,6 @@ export default function AgendamentoComum() {
       }
     }
 
-    // separa cadastrados x convidados
     const soCadastrados = jogadoresCadastrados
     const convidadosDaLista = jogadores
       .filter(j => String(j.id).startsWith('guest-'))
@@ -607,14 +607,12 @@ export default function AgendamentoComum() {
       payload.convidadosNomes = todosConvidados
     }
 
-    // ✅ Envie tipoSessao somente quando o dono for professor (o backend valida/auto-define)
     if (selectedOwnerIsProfessor) {
       payload.tipoSessao = tipoSessao
     }
 
     if (usuarioIdTemp) payload.usuarioId = String(usuarioIdTemp)
 
-    // Campos Apoiado (apenas se aplicável)
     if (showApoiadoUI) {
       payload.isApoiado = Boolean(isApoiado)
       if (isApoiado && apoiadoSelecionado?.id) {
@@ -627,46 +625,23 @@ export default function AgendamentoComum() {
 
     setSalvando(true)
     try {
-      // 1) cria o agendamento
       const { data: novo } = await axios.post(`${API_URL}/agendamentos`, payload, {
         withCredentials: true
       })
 
-      // 🔔 AVISO DE MULTA (somente se o backend aplicou multa automática)
       const multaValor = Number(novo?.multa || 0)
+
+      const msgSucesso = 'Agendamento realizado com sucesso!'
+      let msgMulta = ''
+
       if (multaValor > 0) {
         const valorFmt = multaValor.toLocaleString('pt-BR', {
           style: 'currency',
           currency: 'BRL'
         })
-        toast.warning(
-          `Multa aplicada de ${valorFmt} por agendar em horário que já passou.`
-        )
+        msgMulta = `Atenção: multa aplicada de ${valorFmt} por agendar em horário que já passou.`
       }
 
-      // 2) se tiver “convidado dono”, transfere titularidade
-      if (ownerGuestNome.trim()) {
-        const alvoNome = ownerGuestNome.trim().toLowerCase()
-        const convidado = Array.isArray(novo?.jogadores)
-          ? novo.jogadores.find((j: any) => {
-            const nome = String(j?.nome || '').trim().toLowerCase()
-            // cobre ambos os casos: nome exato OU nome + telefone concatenado
-            return nome === alvoNome || nome.startsWith(alvoNome + ' ')
-          })
-          : null
-
-        if (convidado?.id) {
-          await axios.patch(
-            `${API_URL}/agendamentos/${novo.id}/transferir`,
-            { novoUsuarioId: String(convidado.id) },
-            { withCredentials: true }
-          )
-        }
-      }
-
-      // sucesso: feedback visual + toast + redirecionar para todosHorarios no mesmo dia
-      setFeedback({ kind: 'success', text: 'Agendamento realizado com sucesso!' })
-      toast.success('Agendamento realizado com sucesso!')
 
       // limpa seleções
       setQuadraSelecionada('')
@@ -680,19 +655,21 @@ export default function AgendamentoComum() {
       setIsApoiado(false)
       setObs('')
 
-      // redirect (mantém o toast visível)
+      // 👉 manda dois alerts separados pra tela de todosHorarios
       const params = new URLSearchParams({ data })
-      setTimeout(() => {
-        router.push(`/adminMaster/todosHorarios?${params.toString()}`)
-      }, 350)
+      params.set('alertSuccess', msgSucesso)
+      if (msgMulta) params.set('alertInfo', msgMulta)
+
+      router.push(`/adminMaster/todosHorarios?${params.toString()}`)
     } catch (error) {
       console.error(error)
-      setFeedback({ kind: 'error', text: mensagemErroAxios(error) })
-      toast.error(mensagemErroAxios(error))
+      const msg = mensagemErroAxios(error)
+      setFeedback({ kind: 'error', text: msg })
     } finally {
       setSalvando(false)
     }
   }
+
 
   const horas = [
     '07:00',
@@ -714,12 +691,6 @@ export default function AgendamentoComum() {
     '23:00'
   ]
 
-  const alertClasses =
-    feedback?.kind === 'success'
-      ? 'border-green-200 bg-green-50 text-green-800'
-      : feedback?.kind === 'error'
-        ? 'border-red-200 bg-red-50 text-red-800'
-        : 'border-sky-200 bg-sky-50 text-sky-800'
 
   // 🔧 garante boolean (evita 'boolean | Usuario | null')
   const selecionadoInvalido: boolean = !!(
@@ -736,6 +707,15 @@ export default function AgendamentoComum() {
   return (
     <div className="min-h-screen flex items-start justify-center py-10 px-4">
       <div className="w-full max-w-3xl bg-white rounded-3xl shadow-[0_12px_40px_rgba(0,0,0,0.08)] px-5 sm:px-10 py-7 sm:py-9 relative">
+        {/* ALERTA GLOBAL */}
+        <SystemAlert
+          open={!!feedback}
+          message={feedback?.text ?? ""}
+          variant={feedback?.kind ?? "info"}
+          autoHideMs={feedback?.kind === "error" ? 4000 : 4000}
+          onClose={() => setFeedback(null)}
+        />
+
         {/* BOTÃO X (fechar) */}
         <button
           type="button"
@@ -752,17 +732,6 @@ export default function AgendamentoComum() {
             Agendar Quadra Avulsa
           </h1>
         </header>
-
-        {/* ALERTA */}
-        {feedback && (
-          <div
-            className={`mb-6 rounded-md border px-3 py-2 text-sm ${alertClasses}`}
-            role={feedback.kind === 'error' ? 'alert' : 'status'}
-            aria-live={feedback.kind === 'error' ? 'assertive' : 'polite'}
-          >
-            {feedback.text}
-          </div>
-        )}
 
         {/* DIA E HORÁRIO – em card cinza com ícones fora do botão */}
         <section className="mb-6">
@@ -958,8 +927,8 @@ export default function AgendamentoComum() {
                             setFeedback(null)
                           }}
                           className={`w-full text-left px-3 py-1.5 ${horario === ''
-                              ? 'bg-orange-100 text-orange-700 font-semibold'
-                              : 'hover:bg-orange-50 text-gray-800'
+                            ? 'bg-orange-100 text-orange-700 font-semibold'
+                            : 'hover:bg-orange-50 text-gray-800'
                             }`}
                         >
                           Selecione um horário
@@ -978,8 +947,8 @@ export default function AgendamentoComum() {
                                 setFeedback(null)
                               }}
                               className={`w-full text-left px-3 py-1.5 ${selecionado
-                                  ? 'bg-orange-100 text-orange-700 font-semibold'
-                                  : 'hover:bg-orange-50 text-gray-800'
+                                ? 'bg-orange-100 text-orange-700 font-semibold'
+                                : 'hover:bg-orange-50 text-gray-800'
                                 }`}
                             >
                               {h}
@@ -1030,8 +999,8 @@ export default function AgendamentoComum() {
                   onClick={() => setTipoSessao('AULA')}
                   disabled={!permitidos.includes('AULA')}
                   className={`px-4 py-1.5 rounded-full border text-xs font-medium transition ${tipoSessao === 'AULA'
-                      ? 'bg-orange-100 border-orange-500 text-orange-700'
-                      : 'bg-gray-100 border-gray-300 text-gray-700'
+                    ? 'bg-orange-100 border-orange-500 text-orange-700'
+                    : 'bg-gray-100 border-gray-300 text-gray-700'
                     } ${!permitidos.includes('AULA')
                       ? 'opacity-50 cursor-not-allowed'
                       : 'hover:bg-orange-50'
@@ -1044,8 +1013,8 @@ export default function AgendamentoComum() {
                   onClick={() => setTipoSessao('JOGO')}
                   disabled={!permitidos.includes('JOGO')}
                   className={`px-4 py-1.5 rounded-full border text-xs font-medium transition ${tipoSessao === 'JOGO'
-                      ? 'bg-orange-100 border-orange-500 text-orange-700'
-                      : 'bg-gray-100 border-gray-300 text-gray-700'
+                    ? 'bg-orange-100 border-orange-500 text-orange-700'
+                    : 'bg-gray-100 border-gray-300 text-gray-700'
                     } ${!permitidos.includes('JOGO')
                       ? 'opacity-50 cursor-not-allowed'
                       : 'hover:bg-orange-50'
@@ -1179,8 +1148,8 @@ export default function AgendamentoComum() {
                   {apoiadoSelecionado && (
                     <div
                       className={`mt-2 text-xs rounded-md px-3 py-2 border ${isUsuarioElegivelApoio(apoiadoSelecionado)
-                          ? 'text-green-700 bg-green-50 border-green-200'
-                          : 'text-amber-800 bg-amber-50 border-amber-200'
+                        ? 'text-green-700 bg-green-50 border-green-200'
+                        : 'text-amber-800 bg-amber-50 border-amber-200'
                         }`}
                     >
                       Usuário apoiado selecionado:{' '}
@@ -1436,8 +1405,8 @@ export default function AgendamentoComum() {
                         setFeedback(null)
                       }}
                       className={`flex flex-col overflow-hidden rounded-xl border shadow-sm transition ${selected
-                          ? 'border-orange-500 shadow-[0_0_0_2px_rgba(233,122,31,0.35)]'
-                          : 'border-gray-200 hover:border-orange-400 hover:shadow-md'
+                        ? 'border-orange-500 shadow-[0_0_0_2px_rgba(233,122,31,0.35)]'
+                        : 'border-gray-200 hover:border-orange-400 hover:shadow-md'
                         }`}
                     >
                       {/* imagem da quadra */}
@@ -1484,8 +1453,8 @@ export default function AgendamentoComum() {
                   disabled={salvando || selecionadoInvalido}
                   aria-busy={salvando}
                   className={`min-w-[340px] h-11 rounded-md border text-sm font-semibold ${salvando || selecionadoInvalido
-                      ? 'border-orange-200 text-orange-200 bg-white cursor-not-allowed'
-                      : 'border-orange-500 text-orange-700 bg-orange-100 hover-orange-200'
+                    ? 'border-orange-200 text-orange-200 bg-white cursor-not-allowed'
+                    : 'border-orange-500 text-orange-700 bg-orange-100 hover-orange-200'
                     }`}
                   title={
                     selecionadoInvalido

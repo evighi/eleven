@@ -5,6 +5,7 @@ import axios from "axios";
 import Spinner from "@/components/Spinner";
 import { useAuthStore } from "@/context/AuthStore";
 import { useRouter, useSearchParams } from "next/navigation";
+import SystemAlert, { AlertVariant } from "@/components/SystemAlert";
 
 /* =========================
    Tipos da rota /disponibilidadeGeral/dia
@@ -54,6 +55,8 @@ type AgendamentoSelecionado = {
 };
 
 type UsuarioLista = { id: string; nome: string; email?: string; celular?: string | null };
+
+type Feedback = { kind: AlertVariant; text: string };
 
 /* ===== Helpers comuns (iguais à Home) ===== */
 const SP_TZ = "America/Sao_Paulo";
@@ -150,6 +153,11 @@ export default function TodosHorariosPage() {
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(true);
 
+  // 🔔 dois alerts independentes: sucesso (verde) e info/multa (azul)
+  const [successAlert, setSuccessAlert] = useState<Feedback | null>(null);
+  const [infoAlert, setInfoAlert] = useState<Feedback | null>(null);
+
+
   // Modal de detalhes
   const [loadingDetalhes, setLoadingDetalhes] = useState(false);
   const [agendamentoSelecionado, setAgendamentoSelecionado] =
@@ -201,6 +209,39 @@ export default function TodosHorariosPage() {
     const isISO = q && /^\d{4}-\d{2}-\d{2}$/.test(q);
     setData(isISO ? q! : todayStrSP());
   }, [searchParams]);
+
+  // 🔹 NOVO: consumir alertMsg / alertKind da URL e mostrar no SystemAlert
+  // 🔹 NOVO: consumir alertSuccess / alertInfo da URL e mostrar dois alerts
+  useEffect(() => {
+    const msgSuccess = searchParams.get("alertSuccess");
+    const msgInfo = searchParams.get("alertInfo");
+
+    if (msgSuccess || msgInfo) {
+      if (msgSuccess) {
+        setSuccessAlert({
+          text: msgSuccess,
+          kind: "success",
+        });
+      }
+      if (msgInfo) {
+        setInfoAlert({
+          text: msgInfo,
+          kind: "info",
+        });
+      }
+
+      // limpar os params da URL para não reaparecerem no F5
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("alertSuccess");
+      params.delete("alertInfo");
+
+      const qs = params.toString();
+      const basePath = "/adminMaster/todosHorarios";
+
+      router.replace(qs ? `${basePath}?${qs}` : basePath, { scroll: false });
+    }
+  }, [searchParams, router]);
+
 
   const carregar = useCallback(
     async (d: string) => {
@@ -690,6 +731,25 @@ export default function TodosHorariosPage() {
 
   return (
     <div className="px-2 sm:px-3 md:px-4 py-4">
+      {/* ALERTA DE SUCESSO (verde) */}
+      <SystemAlert
+        open={!!successAlert}
+        message={successAlert?.text ?? ""}
+        variant={successAlert?.kind ?? "success"}
+        autoHideMs={8000}
+        onClose={() => setSuccessAlert(null)}
+      />
+
+      {/* ALERTA DE INFORMAÇÃO / MULTA (azul) */}
+      <SystemAlert
+        open={!!infoAlert}
+        message={infoAlert?.text ?? ""}
+        variant={infoAlert?.kind ?? "info"}
+        autoHideMs={4000}
+        onClose={() => setInfoAlert(null)}
+      />
+
+
       {/* Filtro: Data */}
       <div className="bg-white p-3 sm:p-4 shadow rounded-lg max-w-md mb-4">
         <label className="text-sm text-gray-600">Data</label>
