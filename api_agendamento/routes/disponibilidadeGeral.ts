@@ -922,6 +922,457 @@ router.get("/geral-admin", async (req, res) => {
   }
 });
 
+/**
+ * 🔹 /disponibilidadeGeral/geral-admin-quadras
+ * Mesmos parâmetros do /geral-admin:
+ *   - data (ou diaSemana) + horario  [opcional: esporteId]
+ * Retorna APENAS a parte de QUADRAS da resposta do geral-admin.
+ */
+router.get("/geral-admin-quadras", async (req, res) => {
+  const { data, diaSemana, horario, esporteId } = req.query;
+
+  if ((!data && !diaSemana) || !horario) {
+    return res.status(400).json({
+      erro: "Parâmetros obrigatórios: data (ou diaSemana) e horario",
+    });
+  }
+
+  let diaSemanaFinal: DiaSemana;
+  if (diaSemana) {
+    if (!diasEnum.includes(diaSemana as DiaSemana)) {
+      return res.status(400).json({ erro: "Dia da semana inválido" });
+    }
+    diaSemanaFinal = diaSemana as DiaSemana;
+  } else if (data) {
+    const [y, m, d] = (data as string).split("-").map(Number);
+    const dataObj = new Date(y, m - 1, d);
+    if (isNaN(dataObj.getTime())) {
+      return res.status(400).json({ erro: "Data inválida" });
+    }
+    diaSemanaFinal = diasEnum[getDay(dataObj)];
+  } else {
+    return res.status(400).json({ erro: "Forneça data ou diaSemana" });
+  }
+
+  const range = typeof data === "string" ? getUtcDayRange(String(data)) : null;
+
+  try {
+    // -------------------- QUADRAS --------------------
+    const quadras = await prisma.quadra.findMany({
+      where: esporteId
+        ? { quadraEsportes: { some: { esporteId: esporteId as string } } }
+        : {},
+      include: { quadraEsportes: { include: { esporte: true } } },
+    });
+
+    const quadraIds = quadras.map((q) => q.id);
+    const horarioStr = horario as string;
+
+    // ===== Permanentes (batch) =====
+    let permanentes:
+      | {
+        id: string;
+        quadraId: string;
+        usuario: UsuarioAdminHome;
+      }[] = [];
+
+    if (quadraIds.length > 0) {
+      if (range) {
+        // Com data: só permanentes que já começaram E sem exceção nesse dia
+        permanentes = await prisma.agendamentoPermanente.findMany({
+          where: {
+            quadraId: { in: quadraIds },
+            horario: horarioStr,
+            diaSemana: diaSemanaFinal,
+            status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+            OR: [{ dataInicio: null }, { dataInicio: { lte: range.inicio } }],
+            cancelamentos: { none: { data: { gte: range.inicio, lt: range.fim } } },
+          },
+          select: {
+            id: true,
+            quadraId: true,
+            usuario: { select: { nome: true, celular: true } }, // enxuto
+          },
+        });
+      } else {
+        // Sem data: qualquer permanente ativo nesse dia/horário/quadra
+        permanentes = await prisma.agendamentoPermanente.findMany({
+          where: {
+            quadraId: { in: quadraIds },
+            horario: horarioStr,
+            diaSemana: diaSemanaFinal,
+            status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+          },
+          select: {
+            id: true,
+            quadraId: true,
+            usuario: { select: { nome: true, celular: true } },
+          },
+        });
+      }
+    }
+
+    const permByQuadra = new Map<string, { id: string; usuario: UsuarioAdminHome }>();
+    permanentes.forEach((p) => {
+      if (!permByQuadra.has(p.quadraId)) {
+        permByQuadra.set(p.quadraId, {
+          id: p.id,
+          usuario: p.usuario as UsuarioAdminHome,
+        });
+      }
+    });
+
+    // ===== Comuns (batch, só com data) =====
+    let comuns:
+      | {
+        id: string;
+        quadraId: string;
+        usuario: UsuarioAdminHome;
+      }[] = [];
+
+    if (range && quadraIds.length > 0) {
+      comuns = await prisma.agendamento.findMany({
+        where: {
+          quadraId: { in: quadraIds },
+          horario: horarioStr,
+          data: { gte: range.inicio, lt: range.fim },
+          status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+        },
+        select: {
+          id: true,
+          quadraId: true,
+          usuario: { select: { nome: true, celular: true } },
+        },
+      });
+    }
+
+    const comumByQuadra = new Map<string, { id: string; usuario: UsuarioAdminHome }>();
+    comuns.forEach((c) => {
+      if (!comumByQuadra.has(c.quadraId)) {
+        comumByQuadra.set(c.quadraId, {
+          id: c.id,
+          usuario: c.usuario as UsuarioAdminHome,
+        });
+      }
+    });
+
+    // ===== Bloqueios (batch, só com data) =====
+    let bloqueiosPorQuadra = new Map<
+      string,
+      { inicio: string; fim: string; motivoNome: string | null }[]
+    >();
+    if (range && quadraIds.length > 0) {
+      const bloqueios = await prisma.bloqueioQuadra.findMany({
+        where: {
+          dataBloqueio: { gte: range.inicio, lt: range.fim },
+          quadras: { some: { id: { in: quadraIds } } },
+        },
+        include: {
+          quadras: { select: { id: true } },
+          motivo: { select: { nome: true } },
+        },
+      });
+
+      bloqueiosPorQuadra = new Map();
+      bloqueios.forEach((b) => {
+        b.quadras.forEach((q) => {
+          const list = bloqueiosPorQuadra.get(q.id) || [];
+          list.push({
+            inicio: b.inicioBloqueio,
+            fim: b.fimBloqueio,
+            motivoNome: b.motivo?.nome ?? null,
+          });
+          bloqueiosPorQuadra.set(q.id, list);
+        });
+      });
+    }
+
+    // ===== Monta resposta das QUADRAS =====
+    const quadrasDisponibilidade = quadras.map((quadra) => {
+      let conflitoPermanente: { id: string; usuario: UsuarioAdminHome } | null = null;
+      let conflitoComum: { id: string; usuario: UsuarioAdminHome } | null = null;
+      let conflitoBloqueio:
+        | { inicio: string; fim: string; motivoNome: string | null }
+        | null = null;
+
+      const per = permByQuadra.get(quadra.id);
+      if (per) {
+        conflitoPermanente = {
+          id: per.id,
+          usuario: per.usuario,
+        };
+      }
+
+      if (range) {
+        const com = comumByQuadra.get(quadra.id);
+        if (com) {
+          conflitoComum = {
+            id: com.id,
+            usuario: com.usuario,
+          };
+        }
+
+        const bloqueiosQuadra = bloqueiosPorQuadra.get(quadra.id) || [];
+        conflitoBloqueio =
+          bloqueiosQuadra.find((b) =>
+            horarioDentroDoBloqueio(horarioStr, b.inicio, b.fim)
+          ) ?? null;
+      }
+
+      let tipoReserva: "permanente" | "comum" | null = null;
+      let usuario: UsuarioAdminHome | null = null;
+      let agendamentoId: string | null = null;
+
+      if (conflitoPermanente) {
+        tipoReserva = "permanente";
+        usuario = conflitoPermanente.usuario;
+        agendamentoId = conflitoPermanente.id;
+      } else if (conflitoComum) {
+        tipoReserva = "comum";
+        usuario = conflitoComum.usuario;
+        agendamentoId = conflitoComum.id;
+      }
+
+      const disponivel = !tipoReserva && !conflitoBloqueio;
+
+      return {
+        quadraId: quadra.id,
+        nome: quadra.nome,
+        numero: quadra.numero,
+        esporte: quadra.quadraEsportes.map((qe) => qe.esporte.nome).join(", "),
+        disponivel,
+        tipoReserva,
+        usuario,
+        agendamentoId,
+        bloqueada: !!conflitoBloqueio,
+        motivoBloqueioNome: conflitoBloqueio?.motivoNome ?? null,
+      };
+    });
+
+    // Agrupa por esporte (mesma estrutura esperada na home)
+    const quadrasAgrupadasPorEsporte = quadrasDisponibilidade.reduce(
+      (acc, quadra) => {
+        const esportes = quadra.esporte.split(",").map((e) => e.trim());
+        esportes.forEach((esporteNome) => {
+          if (!acc[esporteNome]) acc[esporteNome] = [];
+          acc[esporteNome].push(quadra);
+        });
+        return acc;
+      },
+      {} as Record<
+        string,
+        {
+          quadraId: string;
+          nome: string;
+          numero: number;
+          esporte: string;
+          disponivel: boolean;
+          tipoReserva: "permanente" | "comum" | null;
+          usuario: UsuarioAdminHome | null;
+          agendamentoId: string | null;
+          bloqueada: boolean;
+          motivoBloqueioNome: string | null;
+        }[]
+      >
+    );
+
+    return res.json({
+      quadras: quadrasAgrupadasPorEsporte,
+    });
+  } catch (err) {
+    console.error("Erro /disponibilidadeGeral/geral-admin-quadras:", err);
+    return res
+      .status(500)
+      .json({ erro: "Erro ao verificar disponibilidade de quadras (home admin)" });
+  }
+});
+
+/**
+ * 🔸 /disponibilidadeGeral/geral-admin-churrasqueiras
+ * Mesmos parâmetros do /geral-admin:
+ *   - data (ou diaSemana) + horario  [opcional: esporteId]
+ * Retorna APENAS a parte de CHURRASQUEIRAS da resposta do geral-admin.
+ */
+router.get("/geral-admin-churrasqueiras", async (req, res) => {
+  const { data, diaSemana, horario } = req.query;
+
+  if (!data && !diaSemana) {
+    return res.status(400).json({
+      erro: "Parâmetros obrigatórios: data (ou diaSemana)",
+    });
+  }
+
+  let diaSemanaFinal: DiaSemana;
+  if (diaSemana) {
+    if (!diasEnum.includes(diaSemana as DiaSemana)) {
+      return res.status(400).json({ erro: "Dia da semana inválido" });
+    }
+    diaSemanaFinal = diaSemana as DiaSemana;
+  } else if (data) {
+    const [y, m, d] = (data as string).split("-").map(Number);
+    const dataObj = new Date(y, m - 1, d);
+    if (isNaN(dataObj.getTime())) {
+      return res.status(400).json({ erro: "Data inválida" });
+    }
+    diaSemanaFinal = diasEnum[getDay(dataObj)];
+  } else {
+    return res.status(400).json({ erro: "Forneça data ou diaSemana" });
+  }
+
+  const range = typeof data === "string" ? getUtcDayRange(String(data)) : null;
+
+  try {
+    // -------------------- CHURRASQUEIRAS --------------------
+    const churrasqueiras = await prisma.churrasqueira.findMany();
+    const turnos: Turno[] = ["DIA", "NOITE"];
+    const churrasIds = churrasqueiras.map((c) => c.id);
+
+    // permanentes de churrasqueiras (batch)
+    let perChurras:
+      | {
+        id: string;
+        churrasqueiraId: string;
+        turno: Turno;
+        usuario: UsuarioAdminHome;
+      }[] = [];
+
+    if (churrasIds.length > 0) {
+      if (range) {
+        perChurras = await prisma.agendamentoPermanenteChurrasqueira.findMany({
+          where: {
+            diaSemana: diaSemanaFinal,
+            churrasqueiraId: { in: churrasIds },
+            turno: { in: turnos },
+            status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+            OR: [{ dataInicio: null }, { dataInicio: { lte: range.inicio } }],
+            cancelamentos: { none: { data: { gte: range.inicio, lt: range.fim } } },
+          },
+          select: {
+            id: true,
+            churrasqueiraId: true,
+            turno: true,
+            usuario: { select: { nome: true, celular: true } },
+          },
+        });
+      } else {
+        perChurras = await prisma.agendamentoPermanenteChurrasqueira.findMany({
+          where: {
+            diaSemana: diaSemanaFinal,
+            churrasqueiraId: { in: churrasIds },
+            turno: { in: turnos },
+            status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+          },
+          select: {
+            id: true,
+            churrasqueiraId: true,
+            turno: true,
+            usuario: { select: { nome: true, celular: true } },
+          },
+        });
+      }
+    }
+
+    const perChByKey = new Map<string, { id: string; usuario: UsuarioAdminHome }>();
+    perChurras.forEach((p) => {
+      const key = `${p.churrasqueiraId}|${p.turno}`;
+      if (!perChByKey.has(key)) {
+        perChByKey.set(key, {
+          id: p.id,
+          usuario: p.usuario as UsuarioAdminHome,
+        });
+      }
+    });
+
+    // comuns de churrasqueiras (batch, só com data)
+    let comChurras:
+      | {
+        id: string;
+        churrasqueiraId: string;
+        turno: Turno;
+        usuario: UsuarioAdminHome;
+      }[] = [];
+
+    if (range && churrasIds.length > 0) {
+      comChurras = await prisma.agendamentoChurrasqueira.findMany({
+        where: {
+          churrasqueiraId: { in: churrasIds },
+          turno: { in: turnos },
+          data: { gte: range.inicio, lt: range.fim },
+          status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+        },
+        select: {
+          id: true,
+          churrasqueiraId: true,
+          turno: true,
+          usuario: { select: { nome: true, celular: true } },
+        },
+      });
+    }
+
+    const comChByKey = new Map<string, { id: string; usuario: UsuarioAdminHome }>();
+    comChurras.forEach((c) => {
+      const key = `${c.churrasqueiraId}|${c.turno}`;
+      if (!comChByKey.has(key)) {
+        comChByKey.set(key, {
+          id: c.id,
+          usuario: c.usuario as UsuarioAdminHome,
+        });
+      }
+    });
+
+    const churrasqueirasDisponibilidade = await Promise.all(
+      churrasqueiras.map(async (churrasqueira) => {
+        const disponibilidadesPorTurno = await Promise.all(
+          turnos.map(async (turno) => {
+            const key = `${churrasqueira.id}|${turno}`;
+            const per = perChByKey.get(key) || null;
+            const com = range ? comChByKey.get(key) || null : null;
+
+            let tipoReserva: "permanente" | "comum" | null = null;
+            let usuario: UsuarioAdminHome | null = null;
+            let agendamentoId: string | null = null;
+
+            if (per) {
+              tipoReserva = "permanente";
+              usuario = per.usuario;
+              agendamentoId = per.id;
+            } else if (com) {
+              tipoReserva = "comum";
+              usuario = com.usuario;
+              agendamentoId = com.id;
+            }
+
+            return {
+              turno,
+              disponivel: !tipoReserva,
+              tipoReserva,
+              usuario,
+              agendamentoId,
+            };
+          })
+        );
+
+        return {
+          churrasqueiraId: churrasqueira.id,
+          nome: churrasqueira.nome,
+          numero: churrasqueira.numero,
+          disponibilidade: disponibilidadesPorTurno,
+        };
+      })
+    );
+
+    return res.json({
+      churrasqueiras: churrasqueirasDisponibilidade,
+    });
+  } catch (err) {
+    console.error("Erro /disponibilidadeGeral/geral-admin-churrasqueiras:", err);
+    return res.status(500).json({
+      erro: "Erro ao verificar disponibilidade de churrasqueiras (home admin)",
+    });
+  }
+});
+
+
 
 /**
  * /disponibilidadeGeral/dia
