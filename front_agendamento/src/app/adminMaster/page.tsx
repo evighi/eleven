@@ -847,7 +847,7 @@ export default function AdminHome() {
             <button
               type="button"
               onClick={() => setDataPickerAberto((v) => !v)}
-              className="flex items-center justify-between h-11 w-full rounded-md border border-gray-600 bg-white px-3 text-sm hover:border-gray-900 hover:shadow-sm transition"
+              className="flex items-center justify-between h-9 w-full rounded-md border border-gray-600 bg-white px-3 text-sm hover:border-gray-900 hover:shadow-sm transition"
             >
               <div className="flex items-center">
                 <Calendar className="w-4 h-4 text-gray-600 mr-2" />
@@ -983,12 +983,12 @@ export default function AdminHome() {
           {/* Campo Horário – card inteiro clicável com dropdown customizado */}
           <div
             ref={horarioWrapperRef}
-            className="relative flex w-full sm:w-[140px]"
+            className="relative flex w-full sm:w-[200px]"
           >
             <button
               type="button"
               onClick={() => setHorarioAberto((v) => !v)}
-              className="flex items-center justify-between h-11 border border-gray-600 rounded-md px-3 text-sm bg-white w-full hover:border-gray-900 hover:shadow-sm transition"
+              className="flex items-center justify-between h-9 border border-gray-600 rounded-md px-3 text-sm bg-white w-full hover:border-gray-900 hover:shadow-sm transition"
             >
               <div className="flex items-center">
                 <Clock className="w-4 h-4 text-gray-600 mr-2" />
@@ -1057,7 +1057,7 @@ export default function AdminHome() {
           <div className="flex items-center gap-2">
             <Link
               href={`/adminMaster/todosHorarios?data=${data || todayStrSP()}`}
-              className="inline-flex items-center justify-center h-11 px-6 rounded-md font-semibold bg-orange-600 hover:bg-orange-700 text-white text-sm cursor-pointer transition shadow-sm whitespace-nowrap"
+              className="inline-flex items-center justify-center h-9 px-6 rounded-md font-semibold bg-orange-600 hover:bg-orange-700 text-white text-sm cursor-pointer transition shadow-sm whitespace-nowrap"
             >
               Ver todas as reservas
             </Link>
