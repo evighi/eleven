@@ -2265,127 +2265,107 @@ export default function AdminHome() {
               </div>
 
               {/* LINHA DE INFOS (Dia / Esporte / Horário / Tipo) */}
-              <div className="mt-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-y-2 text-xs text-gray-600">
-                {/* COLUNA ESQUERDA (Dia / Esporte) */}
-                <div className="flex flex-col gap-1">
-                  {/* Dia */}
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-y-2 sm:gap-y-3 gap-x-8 text-xs text-gray-600">
+                {/* Dia */}
+                <div className="flex items-center gap-2">
+                  <Image
+                    src="/iconescards/calendario.png"
+                    alt="Dia"
+                    width={14}
+                    height={14}
+                    className="w-3.5 h-3.5"
+                  />
+                  <span>
+                    Dia:{" "}
+                    <span className="font-semibold text-gray-800">
+                      {formatarDataBR(agendamentoSelecionado.dia)}
+                    </span>
+                  </span>
+                </div>
+
+                {/* Horário / Turno */}
+                {(agendamentoSelecionado.horario || agendamentoSelecionado.turno) ? (
                   <div className="flex items-center gap-2">
                     <Image
-                      src="/iconescards/calendario.png"
-                      alt="Dia"
+                      src="/iconescards/horario.png"
+                      alt={agendamentoSelecionado.horario ? "Horário" : "Turno"}
                       width={14}
                       height={14}
                       className="w-3.5 h-3.5"
                     />
                     <span>
-                      Dia:{" "}
-                      <span className="font-semibold text-gray-800">
-                        {formatarDataBR(agendamentoSelecionado.dia)}
-                      </span>
+                      {agendamentoSelecionado.horario ? (
+                        <>
+                          Horário:{" "}
+                          <span className="font-semibold text-gray-800">
+                            {agendamentoSelecionado.horario}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          Turno:{" "}
+                          <span className="font-semibold text-gray-800">
+                            {agendamentoSelecionado.turno}
+                          </span>
+                        </>
+                      )}
                     </span>
                   </div>
+                ) : (
+                  <div className="hidden sm:block" />
+                )}
 
-                  {/* Esporte */}
-                  {agendamentoSelecionado.esporte && (
-                    <div className="flex items-center gap-2">
-                      <Image
-                        src={(() => {
-                          const esporteLower = (
-                            agendamentoSelecionado.esporte ?? ""
-                          ).toLowerCase();
-
-                          if (esporteLower.includes("beach"))
-                            return "/iconescards/bolaesporte.png";
-                          if (esporteLower.includes("padel"))
-                            return "/iconescards/padel.png";
-                          if (
-                            esporteLower.includes("vôlei") ||
-                            esporteLower.includes("volei")
-                          )
-                            return "/iconescards/volei.png";
-                          if (
-                            esporteLower.includes("pickle") ||
-                            esporteLower.includes("picle")
-                          )
-                            return "/iconescards/pickleball.png";
-
-                          return "/iconescards/bolaesporte.png";
-                        })()}
-                        alt="Esporte"
-                        width={14}
-                        height={14}
-                        className="w-3.5 h-3.5"
-                      />
-                      <span>
-                        Esporte:{" "}
-                        <span className="font-semibold text-gray-800">
-                          {agendamentoSelecionado.esporte}
-                        </span>
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* COLUNA DIREITA (Horário/Turno / Tipo) */}
-                <div className="flex flex-col gap-1 ml-auto w-fit">
-                  {(agendamentoSelecionado.horario ||
-                    agendamentoSelecionado.turno) && (
-                      <div className="flex items-center gap-2">
-                        <Image
-                          src="/iconescards/horario.png"
-                          alt={
-                            agendamentoSelecionado.horario
-                              ? "Horário"
-                              : "Turno"
-                          }
-                          width={14}
-                          height={14}
-                          className="w-3.5 h-3.5"
-                        />
-                        <span>
-                          {agendamentoSelecionado.horario ? (
-                            <>
-                              Horário:{" "}
-                              <span className="font-semibold text-gray-800">
-                                {agendamentoSelecionado.horario}
-                              </span>
-                            </>
-                          ) : (
-                            <>
-                              Turno:{" "}
-                              <span className="font-semibold text-gray-800">
-                                {agendamentoSelecionado.turno}
-                              </span>
-                            </>
-                          )}
-                        </span>
-                      </div>
-                    )}
-
-                  {/* Tipo */}
+                {/* Esporte */}
+                {agendamentoSelecionado.esporte ? (
                   <div className="flex items-center gap-2">
                     <Image
                       src={(() => {
-                        const tipo = agendamentoSelecionado.tipoReserva;
-                        if (tipo === "permanente")
-                          return "/iconescards/icone_permanente_name.png";
-                        if (tipo === "comum")
-                          return "/iconescards/avulsacinza.png";
-                        return "/iconescards/avulsacinza.png";
+                        const esporteLower = (agendamentoSelecionado.esporte ?? "").toLowerCase();
+                        if (esporteLower.includes("beach")) return "/iconescards/bolaesporte.png";
+                        if (esporteLower.includes("padel")) return "/iconescards/padel.png";
+                        if (esporteLower.includes("vôlei") || esporteLower.includes("volei"))
+                          return "/iconescards/volei.png";
+                        if (esporteLower.includes("pickle") || esporteLower.includes("picle"))
+                          return "/iconescards/pickleball.png";
+                        return "/iconescards/bolaesporte.png";
                       })()}
-                      alt="Tipo de reserva"
+                      alt="Esporte"
                       width={14}
                       height={14}
                       className="w-3.5 h-3.5"
                     />
-                    <span className="font-semibold text-gray-800">
-                      {agendamentoSelecionado.tipoReserva === "permanente"
-                        ? "Permanente"
-                        : agendamentoSelecionado.tipoReserva === "comum"
-                          ? "Avulsa"
-                          : agendamentoSelecionado.tipoReserva}
+                    <span>
+                      Esporte:{" "}
+                      <span className="font-semibold text-gray-800">
+                        {agendamentoSelecionado.esporte}
+                      </span>
                     </span>
                   </div>
+                ) : (
+                  <div className="hidden sm:block" />
+                )}
+
+                {/* Tipo */}
+                <div className="flex items-center gap-2">
+                  <Image
+                    src={(() => {
+                      const tipo = agendamentoSelecionado.tipoReserva;
+                      if (tipo === "permanente") return "/iconescards/icone_permanente_name.png";
+                      if (tipo === "comum") return "/iconescards/avulsacinza.png";
+                      return "/iconescards/avulsacinza.png";
+                    })()}
+                    alt="Tipo de reserva"
+                    width={14}
+                    height={14}
+                    className="w-3.5 h-3.5"
+                  />
+                  <span className="font-semibold text-gray-800">
+                    {agendamentoSelecionado.tipoReserva === "permanente"
+                      ? "Permanente"
+                      : agendamentoSelecionado.tipoReserva === "comum"
+                        ? "Avulsa"
+                        : agendamentoSelecionado.tipoReserva}
+                  </span>
                 </div>
               </div>
 
@@ -2471,7 +2451,7 @@ export default function AdminHome() {
               <div className="border-t border-gray-200 mt-4 pt-1" />
 
               {/* BOTÕES DE AÇÃO INFERIORES */}
-              <div className="flex flex-col sm:flex-row sm:justify-center gap-4 sm:gap-16">
+              <div className="flex flex-col sm:flex-row sm:justify-center gap-3 sm:gap-6">
                 <button
                   onClick={abrirFluxoCancelamento}
                   className="
@@ -2510,9 +2490,7 @@ export default function AdminHome() {
         transition-colors
       "
                   >
-                    {loadingTransferencia
-                      ? "Transferindo..."
-                      : "Transferir"}
+                    {loadingTransferencia ? "Transferindo..." : "Transferir"}
                   </button>
                 )}
               </div>
@@ -2598,14 +2576,14 @@ export default function AdminHome() {
                   })()}
 
                   {/* BOTÕES */}
-                  <div className="mt-8 flex justify-center gap-[72px]">
+                  <div className="mt-8 flex flex-col sm:flex-row justify-center gap-3 sm:gap-8">
                     <button
                       onClick={cancelarAgendamento}
                       disabled={loadingCancelamento}
-                      className="min-w-[150px] px-5 py-2.5 rounded-md border border-[#C73737]
-                     bg-[#FFE9E9] text-[#B12A2A] text-sm font-semibold
-                     hover:bg-[#FFDADA] disabled:opacity-60
-                     transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
+                      className="w-full sm:min-w-[150px] px-5 py-2.5 rounded-md border border-[#C73737]
+      bg-[#FFE9E9] text-[#B12A2A] text-sm font-semibold
+      hover:bg-[#FFDADA] disabled:opacity-60
+      transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
                     >
                       {loadingCancelamento ? "Cancelando..." : "Cancelar"}
                     </button>
@@ -2613,10 +2591,10 @@ export default function AdminHome() {
                     <button
                       onClick={() => setConfirmarCancelamento(false)}
                       disabled={loadingCancelamento}
-                      className="min-w-[150px] px-5 py-2.5 rounded-md border border-[#E97A1F]
-                     bg-[#FFF3E0] text-[#D86715] text-sm font-semibold
-                     hover:bg-[#FFE6C2] disabled:opacity-60
-                     transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
+                      className="w-full sm:min-w-[150px] px-5 py-2.5 rounded-md border border-[#E97A1F]
+      bg-[#FFF3E0] text-[#D86715] text-sm font-semibold
+      hover:bg-[#FFE6C2] disabled:opacity-60
+      transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
                     >
                       Voltar
                     </button>
@@ -2708,14 +2686,14 @@ export default function AdminHome() {
                   })()}
 
                   {/* BOTÕES (Cancelar -> abrir seleção de dia / Voltar) */}
-                  <div className="mt-8 flex justify-center gap-[72px]">
+                  <div className="mt-8 flex flex-col sm:flex-row justify-center gap-3 sm:gap-8">
                     <button
                       onClick={abrirExcecao}
                       disabled={loadingCancelamento}
-                      className="min-w-[150px] px-5 py-2.5 rounded-md border border-[#C73737]
-                     bg-[#FFE9E9] text-[#B12A2A] text-sm font-semibold
-                     hover:bg-[#FFDADA] disabled:opacity-60
-                     transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
+                      className="w-full sm:min-w-[150px] px-5 py-2.5 rounded-md border border-[#C73737]
+      bg-[#FFE9E9] text-[#B12A2A] text-sm font-semibold
+      hover:bg-[#FFDADA] disabled:opacity-60
+      transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
                     >
                       Cancelar
                     </button>
@@ -2723,10 +2701,10 @@ export default function AdminHome() {
                     <button
                       onClick={() => setMostrarOpcoesCancelamento(false)}
                       disabled={loadingCancelamento}
-                      className="min-w-[150px] px-5 py-2.5 rounded-md border border-[#E97A1F]
-                     bg-[#FFF3E0] text-[#D86715] text-sm font-semibold
-                     hover:bg-[#FFE6C2] disabled:opacity-60
-                     transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
+                      className="w-full sm:min-w-[150px] px-5 py-2.5 rounded-md border border-[#E97A1F]
+      bg-[#FFF3E0] text-[#D86715] text-sm font-semibold
+      hover:bg-[#FFE6C2] disabled:opacity-60
+      transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
                     >
                       Voltar
                     </button>
@@ -2791,15 +2769,15 @@ export default function AdminHome() {
                   </div>
 
                   {/* BOTÕES (Cancelar exceção / Voltar) */}
-                  <div className="mt-8 flex justify-center gap-[72px]">
+                  <div className="mt-8 flex flex-col sm:flex-row justify-center gap-3 sm:gap-8">
                     <button
                       type="button"
                       onClick={confirmarExcecao}
                       disabled={!dataExcecaoSelecionada || postandoExcecao}
-                      className="min-w-[150px] px-5 py-2.5 rounded-md border border-[#C73737]
-                     bg-[#FFE9E9] text-[#B12A2A] text-sm font-semibold
-                     hover:bg-[#FFDADA] disabled:opacity-60
-                     transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
+                      className="w-full sm:min-w-[150px] px-5 py-2.5 rounded-md border border-[#C73737]
+      bg-[#FFE9E9] text-[#B12A2A] text-sm font-semibold
+      hover:bg-[#FFDADA] disabled:opacity-60
+      transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
                     >
                       {postandoExcecao ? "Cancelando..." : "Cancelar"}
                     </button>
@@ -2808,10 +2786,10 @@ export default function AdminHome() {
                       type="button"
                       onClick={() => setMostrarExcecaoModal(false)}
                       disabled={postandoExcecao}
-                      className="min-w-[150px] px-5 py-2.5 rounded-md border border-[#E97A1F]
-                     bg-[#FFF3E0] text-[#D86715] text-sm font-semibold
-                     hover:bg-[#FFE6C2] disabled:opacity-60
-                     transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
+                      className="w-full sm:min-w-[150px] px-5 py-2.5 rounded-md border border-[#E97A1F]
+      bg-[#FFF3E0] text-[#D86715] text-sm font-semibold
+      hover:bg-[#FFE6C2] disabled:opacity-60
+      transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
                     >
                       Voltar
                     </button>
@@ -3068,13 +3046,13 @@ export default function AdminHome() {
             </div>
 
             {/* RODAPÉ – BOTÕES CANCELAR / CONFIRMAR ALTERAÇÃO */}
-            <div className="mt-8 flex justify-center gap-[120px] max-sm:gap-6">
+            <div className="mt-8 flex flex-col sm:flex-row justify-center gap-3 sm:gap-[120px]">
               <button
                 onClick={() =>
                   !loadingTransferencia && setAbrirModalTransferencia(false)
                 }
                 disabled={loadingTransferencia}
-                className="min-w-[160px] px-5 py-2.5 rounded-md border border-[#C73737]
+                className="w-full sm:min-w-[160px] px-5 py-2.5 rounded-md border border-[#C73737]
                            bg-[#FFE9E9] text-[#B12A2A] font-semibold
                            hover:bg-[#FFDADA] disabled:opacity-60
                            transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
@@ -3084,7 +3062,7 @@ export default function AdminHome() {
               <button
                 onClick={confirmarTransferencia}
                 disabled={!usuarioSelecionado || loadingTransferencia}
-                className="min-w-[190px] px-5 py-2.5 rounded-md border border-[#E97A1F]
+                className="w-full sm:min-w-[190px] px-5 py-2.5 rounded-md border border-[#E97A1F]
                            bg-[#FFF3E0] text-[#D86715] font-semibold
                            hover:bg-[#FFE6C2] disabled:opacity-60
                            transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
@@ -3314,13 +3292,13 @@ export default function AdminHome() {
 
                 {jogadoresSelecionadosDetalhes.length > 0 ||
                   convidadosPendentes.length > 0 ? (
-                  <div className="mt-2 grid grid-cols-2 gap-x-10 gap-y-4 justify-items-center">
+                  <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-4 justify-items-stretch">
                     {jogadoresSelecionadosDetalhes.map((u) => (
                       <div key={u.id} className="flex items-center gap-3">
                         <div
                           className="flex-1 flex flex-col gap-0.5 px-4 py-3 rounded-md
                           bg-[#F4F4F4] border border-[#D3D3D3] shadow-sm
-                          min-w-[220px] max-w-[240px]"
+                          w-full sm:min-w-[220px] sm:max-w-[240px]"
                         >
                           <div className="flex items-center gap-1 text-[11px] text-[#555555] truncate">
                             <Image
@@ -3370,7 +3348,7 @@ export default function AdminHome() {
                         <div
                           className="flex-1 flex flex-col gap-0.5 px-4 py-3 rounded-md
                           bg-[#F4F4F4] border border-[#D3D3D3] shadow-sm
-                          min-w-[220px] max-w-[240px]"
+                          w-full sm:min-w-[220px] sm:max-w-[240px]"
                         >
                           <div className="flex items-center gap-1 text-[11px] text-[#555555] truncate">
                             <Image
@@ -3413,7 +3391,7 @@ export default function AdminHome() {
             </div>
 
             {/* RODAPÉ – BOTÕES CANCELAR / INSERIR */}
-            <div className="mt-8 flex justify-center gap-[120px]">
+            <div className="mt-8 flex flex-col sm:flex-row justify-center gap-3 sm:gap-[120px]">
               <button
                 onClick={() => !addingPlayers && setAbrirModalJogadores(false)}
                 disabled={addingPlayers}
@@ -3455,7 +3433,7 @@ export default function AdminHome() {
           }}
         >
           <div
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-12 relative"
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-6 sm:p-12 relative"
             onClick={(e) => e.stopPropagation()}
           >
             {/* X para fechar */}
@@ -3495,17 +3473,17 @@ export default function AdminHome() {
             </p>
 
             {/* Botões */}
-            <div className="mt-2 flex gap-24 justify-center">
+            <div className="mt-2 flex flex-col sm:flex-row gap-3 sm:gap-8 justify-center">
               <button
                 onClick={() => setMostrarConfirmaAgendar(false)}
-                className="min-w-[160px] px-5 py-2.5 rounded-md border border-[#C73737] bg-[#FFE9E9] text-[#B12A2A] font-semibold hover:bg-[#FFDADA] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
+                className="w-full sm:min-w-[160px] px-5 py-2.5 rounded-md border border-[#C73737] bg-[#FFE9E9] text-[#B12A2A] font-semibold hover:bg-[#FFDADA] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
               >
                 Cancelar
               </button>
 
               <button
                 onClick={irParaAgendarComum}
-                className="min-w-[160px] px-5 py-2.5 rounded-md border border-[#E97A1F] bg-[#FFF3E0] text-[#D86715] font-semibold hover:bg-[#FFE6C2] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
+                className="w-full sm:min-w-[160px] px-5 py-2.5 rounded-md border border-[#E97A1F] bg-[#FFF3E0] text-[#D86715] font-semibold hover:bg-[#FFE6C2] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
               >
                 Reservar
               </button>
@@ -3526,7 +3504,7 @@ export default function AdminHome() {
           }}
         >
           <div
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-12 relative"
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-6 sm:p-12 relative"
             onClick={(e) => e.stopPropagation()}
           >
             {/* X para fechar */}
@@ -3548,33 +3526,27 @@ export default function AdminHome() {
               Deseja realizar uma reserva na{" "}
               <span className="font-semibold">
                 churrasqueira{" "}
-                {String(
-                  preReservaChurras.churrasqueiraNumero
-                ).padStart(2, "0")}{" "}
-                - {preReservaChurras.churrasqueiraNome}
+                {String(preReservaChurras.churrasqueiraNumero).padStart(2, "0")} -{" "}
+                {preReservaChurras.churrasqueiraNome}
               </span>
               , no dia{" "}
-              <span className="font-semibold">
-                {toDdMm(preReservaChurras.data)}
-              </span>{" "}
+              <span className="font-semibold">{toDdMm(preReservaChurras.data)}</span>{" "}
               no turno{" "}
-              <span className="font-semibold">
-                {preReservaChurras.turno}
-              </span>
-              ?
+              <span className="font-semibold">{preReservaChurras.turno}</span>?
             </p>
 
-            {/* Botões */}
-            <div className="mt-2 flex gap-24 justify-center">
+            {/* Botões (igual ao de quadras, mas responsivo no mobile) */}
+            <div className="mt-2 flex flex-col sm:flex-row gap-4 sm:gap-24 justify-center">
               <button
                 onClick={() => setMostrarConfirmaChurras(false)}
-                className="min-w-[160px] px-5 py-2.5 rounded-md border border-[#C73737] bg-[#FFE9E9] text-[#B12A2A] font-semibold hover:bg-[#FFDADA] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
+                className="w-full sm:min-w-[160px] px-5 py-2.5 rounded-md border border-[#C73737] bg-[#FFE9E9] text-[#B12A2A] font-semibold hover:bg-[#FFDADA] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
               >
                 Cancelar
               </button>
+
               <button
                 onClick={irParaAgendarChurrasqueira}
-                className="min-w-[160px] px-5 py-2.5 rounded-md border border-[#E97A1F] bg-[#FFF3E0] text-[#D86715] font-semibold hover:bg-[#FFE6C2] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
+                className="w-full sm:min-w-[160px] px-5 py-2.5 rounded-md border border-[#E97A1F] bg-[#FFF3E0] text-[#D86715] font-semibold hover:bg-[#FFE6C2] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
               >
                 Reservar
               </button>
