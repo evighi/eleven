@@ -441,7 +441,9 @@ router.post("/", verificarToken, async (req, res) => {
     obs: obsBody,
   } = parsed.data;
 
-  const usuarioIdDono =
+  // 🔧 começa assumindo o comportamento padrão:
+  // admin com usuarioIdBody -> esse é o dono; caso contrário, dono = usuário logado
+  let usuarioIdDono =
     isAdmin && usuarioIdBody ? usuarioIdBody : reqCustom.usuario.usuarioLogadoId;
 
   try {
@@ -529,7 +531,6 @@ router.post("/", verificarToken, async (req, res) => {
     let professorIdFinal: string | null = professorIdBody ?? null;
 
     if (!professorIdFinal) {
-      // Se o dono for professor, inferimos professorId = dono
       const dono = await prisma.usuario.findUnique({
         where: { id: usuarioIdDono },
         select: { id: true, tipo: true },
@@ -642,6 +643,18 @@ router.post("/", verificarToken, async (req, res) => {
     for (const nome of convidadosNomes) {
       const convidado = await criarConvidadoComoUsuario(nome);
       convidadosCriadosIds.push(convidado.id);
+    }
+
+    // 🔁 AJUSTE: quando um ADMIN cria um agendamento usando apenas um convidado
+    // (sem usuarioId no corpo e sem jogadoresIds explícitos),
+    // o dono passa a ser esse convidado ao invés do usuário logado.
+    if (
+      isAdmin &&
+      !usuarioIdBody &&
+      convidadosCriadosIds.length === 1 &&
+      jogadoresIds.length === 0
+    ) {
+      usuarioIdDono = convidadosCriadosIds[0];
     }
 
     // garante connect do apoiado como jogador quando aplicável
@@ -1149,8 +1162,6 @@ router.get("/:id", verificarToken, async (req, res) => {
         : null,
       usuarioId: agendamento.usuario?.id,
       esporte: agendamento.esporte?.nome,
-      quadraNome: agendamento.quadra?.nome ?? null,
-      quadraNumero: agendamento.quadra?.numero ?? null,
       quadra: `${agendamento.quadra?.nome} (Nº ${agendamento.quadra?.numero})`,
       jogadores: agendamento.jogadores.map((j) => ({
         id: j.id,

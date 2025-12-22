@@ -1371,7 +1371,7 @@ export default function AgendamentoComum() {
 
         {/* QUADRAS */}
         <section>
-          <p className="text-sm font-semibold text-gray-800 mb-3 text-orange-600">
+          <p className="text-sm font-semibold mb-3 text-orange-600">
             Quadras:
           </p>
 
