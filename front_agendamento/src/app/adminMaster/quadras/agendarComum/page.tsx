@@ -1,12 +1,6 @@
 'use client'
 
-import {
-  useEffect,
-  useMemo,
-  useState,
-  useRef,
-  useCallback
-} from 'react'
+import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import axios from 'axios'
 import Spinner from '@/components/Spinner'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -14,8 +8,7 @@ import { toast } from 'sonner'
 import Image from 'next/image'
 import { ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import AppImage from '@/components/AppImage'
-import SystemAlert, { AlertVariant } from "@/components/SystemAlert";
-
+import SystemAlert, { AlertVariant } from '@/components/SystemAlert'
 
 type Esporte = { id: number | string; nome: string }
 
@@ -130,15 +123,26 @@ export default function AgendamentoComum() {
   const [usuariosEncontrados, setUsuariosEncontrados] = useState<Usuario[]>([])
   const [jogadores, setJogadores] = useState<Usuario[]>([])
 
-  // convidados "manuais" terão id começando com "guest-"
-  const jogadoresCadastrados = useMemo(
-    () => jogadores.filter((j) => !String(j.id).startsWith('guest-')),
+  // 🔁 sempre deduplicar jogadores por ID (evita duplicação na lista)
+  const jogadoresDeduplicados = useMemo(
+    () =>
+      jogadores.filter(
+        (jogador, index, arr) =>
+          arr.findIndex((j) => String(j.id) === String(jogador.id)) === index
+      ),
     [jogadores]
   )
 
+  // convidados "manuais" terão id começando com "guest-"
+  const jogadoresCadastrados = useMemo(
+    () =>
+      jogadoresDeduplicados.filter((j) => !String(j.id).startsWith('guest-')),
+    [jogadoresDeduplicados]
+  )
+
   // ✅ Quem é o DONO atual?
-  // preferimos o primeiro jogador cadastrado; se não tiver, usamos o primeiro da lista
-  const ownerSelecionado = jogadoresCadastrados[0] || jogadores[0]
+  // preferimos o primeiro jogador cadastrado; se não tiver, usamos o primeiro da lista deduplicada
+  const ownerSelecionado = jogadoresCadastrados[0] || jogadoresDeduplicados[0]
 
   const selectedOwnerIsProfessor = useMemo(() => {
     const t = norm(ownerSelecionado?.tipo)
@@ -171,7 +175,8 @@ export default function AgendamentoComum() {
   // busca/seleção de usuário apoiado
   const [apoiadoBusca, setApoiadoBusca] = useState<string>('')
   const [apoiadoResultados, setApoiadoResultados] = useState<Usuario[]>([])
-  const [apoiadoSelecionado, setApoiadoSelecionado] = useState<Usuario | null>(null)
+  const [apoiadoSelecionado, setApoiadoSelecionado] =
+    useState<Usuario | null>(null)
 
   // observação (vai para campo obs no backend)
   const [obs, setObs] = useState<string>('')
@@ -210,10 +215,12 @@ export default function AgendamentoComum() {
   )
 
   // ✅ controle de imagem carregada por quadra
-  const [quadraImgLoaded, setQuadraImgLoaded] = useState<Record<string, boolean>>({})
+  const [quadraImgLoaded, setQuadraImgLoaded] = useState<
+    Record<string, boolean>
+  >({})
 
   const marcarQuadraCarregada = (id: string) => {
-    setQuadraImgLoaded(prev => ({
+    setQuadraImgLoaded((prev) => ({
       ...prev,
       [id]: true
     }))
@@ -227,7 +234,7 @@ export default function AgendamentoComum() {
           withCredentials: true
         })
         const map: Record<string, string> = {}
-          ; (data || []).forEach(q => {
+          ; (data || []).forEach((q) => {
             const id = String(q.id ?? q.quadraId ?? '')
             if (!id) return
             const logo = buildQuadraLogo(q)
@@ -303,8 +310,8 @@ export default function AgendamentoComum() {
   useEffect(() => {
     axios
       .get<Esporte[]>(`${API_URL}/esportes`, { withCredentials: true })
-      .then(res => setEsportes(res.data || []))
-      .catch(err => {
+      .then((res) => setEsportes(res.data || []))
+      .catch((err) => {
         console.error(err)
         setFeedback({ kind: 'error', text: 'Falha ao carregar esportes.' })
       })
@@ -315,14 +322,14 @@ export default function AgendamentoComum() {
     if (!esportes.length || !esporteParam) return
 
     // tenta por ID
-    const byId = esportes.find(e => String(e.id) === String(esporteParam))
+    const byId = esportes.find((e) => String(e.id) === String(esporteParam))
     if (byId) {
       setEsporteSelecionado(String(byId.id))
       return
     }
     // tenta por NOME (case-insensitive)
     const byName = esportes.find(
-      e => e.nome?.trim().toLowerCase() === esporteParam.trim().toLowerCase()
+      (e) => e.nome?.trim().toLowerCase() === esporteParam.trim().toLowerCase()
     )
     if (byName) setEsporteSelecionado(String(byName.id))
   }, [esportes, esporteParam])
@@ -348,7 +355,7 @@ export default function AgendamentoComum() {
         )
 
         const filtradas = (disp || [])
-          .filter(q => q.disponivel !== false)
+          .filter((q) => q.disponivel !== false)
           .map(({ quadraId, nome, numero }) => {
             const id = String(quadraId)
             return {
@@ -393,7 +400,9 @@ export default function AgendamentoComum() {
             withCredentials: true
           }
         )
-        const allow = Array.isArray(resp?.allow) ? (resp.allow as TipoSessao[]) : []
+        const allow = Array.isArray(resp?.allow)
+          ? (resp.allow as TipoSessao[])
+          : []
         setPermitidos(allow)
 
         // Ajuste automático do tipo quando dono for professor:
@@ -464,8 +473,10 @@ export default function AgendamentoComum() {
   }, [API_URL, isApoiado, apoiadoBusca])
 
   const adicionarJogador = (usuario: Usuario) => {
-    setJogadores(prev =>
-      prev.find(j => String(j.id) === String(usuario.id)) ? prev : [...prev, usuario]
+    setJogadores((prev) =>
+      prev.find((j) => String(j.id) === String(usuario.id))
+        ? prev
+        : [...prev, usuario]
     )
     setBuscaUsuario('')
     setUsuariosEncontrados([])
@@ -473,7 +484,7 @@ export default function AgendamentoComum() {
   }
 
   const removerJogador = (id: number | string) => {
-    setJogadores(prev => prev.filter(j => String(j.id) !== String(id)))
+    setJogadores((prev) => prev.filter((j) => String(j.id) !== String(id)))
   }
 
   // ✅ adicionar convidado manual à lista de jogadores
@@ -496,14 +507,21 @@ export default function AgendamentoComum() {
       tipo: 'CONVIDADO'
     }
 
-    setJogadores(prev => {
+    setJogadores((prev) => {
       const jaExiste = prev.some(
-        j =>
+        (j) =>
           norm(j.nome) === norm(novoConvidado.nome) &&
           (j.celular || '') === (novoConvidado.celular || '')
       )
-      return jaExiste ? prev : [...prev, novoConvidado]
+      if (jaExiste) return prev
+      return [...prev, novoConvidado]
     })
+
+    // ✅ Depois de adicionar o convidado à lista,
+    // limpamos os campos de "convidado dono" para
+    // ele não entrar duas vezes no payload.
+    setOwnerGuestNome('')
+    setOwnerGuestTelefone('')
 
     setFeedback(null)
   }
@@ -528,10 +546,20 @@ export default function AgendamentoComum() {
   const agendar = async () => {
     setFeedback(null)
 
-    if (!quadraSelecionada || (jogadores.length === 0 && ownerGuestNome.trim() === '')) {
+    // ✅ Exigir quadra selecionada
+    if (!quadraSelecionada) {
       setFeedback({
         kind: 'error',
-        text: 'Selecione uma quadra e pelo menos um jogador, ou informe um convidado como dono.'
+        text: 'Selecione uma quadra para continuar.'
+      })
+      return
+    }
+
+    // ✅ Exigir pelo menos um jogador (cadastrado ou convidado)
+    if (jogadoresDeduplicados.length === 0) {
+      setFeedback({
+        kind: 'error',
+        text: 'Adicione pelo menos um jogador (cadastrado ou convidado) antes de realizar a reserva.'
       })
       return
     }
@@ -579,19 +607,17 @@ export default function AgendamentoComum() {
     }
 
     const soCadastrados = jogadoresCadastrados
-    const convidadosDaLista = jogadores
-      .filter(j => String(j.id).startsWith('guest-'))
-      .map(j => `${j.nome}${j.celular ? ` ${j.celular}` : ''}`.trim())
+    const convidadosDaLista = jogadoresDeduplicados
+      .filter((j) => String(j.id).startsWith('guest-'))
+      .map((j) => `${j.nome}${j.celular ? ` ${j.celular}` : ''}`.trim())
 
-    const convidadoDono =
-      ownerGuestNome.trim()
-        ? `${ownerGuestNome.trim()} ${ownerGuestTelefone.trim()}`.trim()
-        : ''
+    const convidadoDono = ownerGuestNome.trim()
+      ? `${ownerGuestNome.trim()} ${ownerGuestTelefone.trim()}`.trim()
+      : ''
 
-    const todosConvidados: string[] = [
-      ...(convidadoDono ? [convidadoDono] : []),
-      ...convidadosDaLista
-    ]
+    const todosConvidados: string[] = Array.from(
+      new Set([...(convidadoDono ? [convidadoDono] : []), ...convidadosDaLista])
+    )
 
     const usuarioIdTemp = soCadastrados[0]?.id
 
@@ -600,7 +626,7 @@ export default function AgendamentoComum() {
       horario,
       esporteId: String(esporteSelecionado),
       quadraId: String(quadraSelecionada),
-      jogadoresIds: soCadastrados.map(j => String(j.id))
+      jogadoresIds: soCadastrados.map((j) => String(j.id))
     }
 
     if (todosConvidados.length > 0) {
@@ -642,7 +668,6 @@ export default function AgendamentoComum() {
         msgMulta = `Atenção: multa aplicada de ${valorFmt} por agendar em horário que já passou.`
       }
 
-
       // limpa seleções
       setQuadraSelecionada('')
       setQuadrasDisponiveis([])
@@ -670,7 +695,6 @@ export default function AgendamentoComum() {
     }
   }
 
-
   const horas = [
     '07:00',
     '08:00',
@@ -691,7 +715,6 @@ export default function AgendamentoComum() {
     '23:00'
   ]
 
-
   // 🔧 garante boolean (evita 'boolean | Usuario | null')
   const selecionadoInvalido: boolean = !!(
     showApoiadoUI &&
@@ -704,15 +727,22 @@ export default function AgendamentoComum() {
   const onlyOne = permitidos.length === 1 ? permitidos[0] : null
   const noneAllowed = permitidos.length === 0
 
+  // ✅ Só permite agendar se tiver quadra + pelo menos 1 jogador
+  const podeAgendar =
+    !salvando &&
+    !selecionadoInvalido &&
+    !!quadraSelecionada &&
+    jogadoresDeduplicados.length > 0
+
   return (
     <div className="min-h-screen flex items-start justify-center py-10 px-4">
       <div className="w-full max-w-3xl bg-white rounded-3xl shadow-[0_12px_40px_rgba(0,0,0,0.08)] px-5 sm:px-10 py-7 sm:py-9 relative">
         {/* ALERTA GLOBAL */}
         <SystemAlert
           open={!!feedback}
-          message={feedback?.text ?? ""}
-          variant={feedback?.kind ?? "info"}
-          autoHideMs={feedback?.kind === "error" ? 4000 : 4000}
+          message={feedback?.text ?? ''}
+          variant={feedback?.kind ?? 'info'}
+          autoHideMs={feedback?.kind === 'error' ? 4000 : 4000}
           onClose={() => setFeedback(null)}
         />
 
@@ -720,7 +750,7 @@ export default function AgendamentoComum() {
         <button
           type="button"
           onClick={() => router.back()}
-          className="absolute right-6 top-5 text-gray-400 hover:text-gray-600 text-3xl leading-none"
+          className="absolute right-4 top-4 sm:right-6 sm:top-5 text-gray-400 hover:text-gray-600 text-3xl leading-none p-2"
           aria-label="Fechar"
         >
           ×
@@ -757,7 +787,7 @@ export default function AgendamentoComum() {
                   <div className="relative w-full">
                     <button
                       type="button"
-                      onClick={() => setDataPickerAberto(v => !v)}
+                      onClick={() => setDataPickerAberto((v) => !v)}
                       className="flex items-center justify-between h-9 w-full rounded-md border border-gray-300 bg-white px-3 text-sm hover:border-gray-900 hover:shadow-sm transition"
                     >
                       <span className="text-sm text-gray-800">
@@ -771,19 +801,15 @@ export default function AgendamentoComum() {
                     </button>
 
                     {dataPickerAberto && (
-                      <div className="absolute z-20 mt-1 right-0 w-full rounded-lg border border-gray-200 bg-white shadow-lg p-3">
+                      <div className="absolute z-20 mt-1 right-0 w-full rounded-lg border border-gray-200 bg-white shadow-lg p-3 max-h-[70vh] overflow-auto">
                         {/* Cabeçalho: mês/ano + setas */}
                         <div className="flex items-center justify-between mb-2">
                           <button
                             type="button"
                             onClick={() =>
                               setMesExibido(
-                                prev =>
-                                  new Date(
-                                    prev.getFullYear(),
-                                    prev.getMonth() - 1,
-                                    1
-                                  )
+                                (prev) =>
+                                  new Date(prev.getFullYear(), prev.getMonth() - 1, 1)
                               )
                             }
                             className="p-1 rounded hover:bg-gray-100"
@@ -802,12 +828,8 @@ export default function AgendamentoComum() {
                             type="button"
                             onClick={() =>
                               setMesExibido(
-                                prev =>
-                                  new Date(
-                                    prev.getFullYear(),
-                                    prev.getMonth() + 1,
-                                    1
-                                  )
+                                (prev) =>
+                                  new Date(prev.getFullYear(), prev.getMonth() + 1, 1)
                               )
                             }
                             className="p-1 rounded hover:bg-gray-100"
@@ -818,7 +840,7 @@ export default function AgendamentoComum() {
 
                         {/* Dias da semana */}
                         <div className="grid grid-cols-7 text-[11px] text-gray-500 mb-1">
-                          {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map(d => (
+                          {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((d) => (
                             <div key={d} className="text-center">
                               {d}
                             </div>
@@ -844,8 +866,7 @@ export default function AgendamentoComum() {
                               d.setDate(startDate.getDate() + i)
 
                               const iso = isoFromDate(d)
-                              const isCurrentMonth =
-                                d.getMonth() === mesExibido.getMonth()
+                              const isCurrentMonth = d.getMonth() === mesExibido.getMonth()
                               const isSelected = data === iso
                               const isToday = todayIso === iso
 
@@ -860,12 +881,8 @@ export default function AgendamentoComum() {
                                   }}
                                   className={[
                                     'h-8 w-8 rounded-full flex items-center justify-center mx-auto',
-                                    !isCurrentMonth
-                                      ? 'text-gray-300'
-                                      : 'text-gray-800',
-                                    isToday && !isSelected
-                                      ? 'border border-orange-400'
-                                      : '',
+                                    !isCurrentMonth ? 'text-gray-300' : 'text-gray-800',
+                                    isToday && !isSelected ? 'border border-orange-400' : '',
                                     isSelected
                                       ? 'bg-orange-600 text-white font-semibold'
                                       : 'hover:bg-orange-50'
@@ -886,10 +903,7 @@ export default function AgendamentoComum() {
               {/* HORÁRIO – ícone fora + botão */}
               <div>
                 <p className="text-xs text-gray-500 mb-1">Escolha o horário:</p>
-                <div
-                  ref={horarioWrapperRef}
-                  className="flex items-center gap-2 w-full"
-                >
+                <div ref={horarioWrapperRef} className="flex items-center gap-2 w-full">
                   {/* ÍCONE DO RELÓGIO */}
                   <Image
                     src="/icons/iconhoraio.png"
@@ -902,7 +916,7 @@ export default function AgendamentoComum() {
                   <div className="relative w-full">
                     <button
                       type="button"
-                      onClick={() => setHorarioAberto(v => !v)}
+                      onClick={() => setHorarioAberto((v) => !v)}
                       className="flex items-center justify-between h-9 border border-gray-300 rounded-md px-3 text-sm bg-white w-full hover:border-gray-900 hover:shadow-sm transition"
                     >
                       <span className="text-sm text-gray-800">
@@ -934,7 +948,7 @@ export default function AgendamentoComum() {
                           Selecione um horário
                         </button>
 
-                        {horas.map(h => {
+                        {horas.map((h) => {
                           const selecionado = horario === h
                           return (
                             <button
@@ -979,21 +993,18 @@ export default function AgendamentoComum() {
             ) : noneAllowed ? (
               <div className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-xs bg-red-50 border border-red-200 text-red-700">
                 <span>
-                  Nenhuma sessão permitida neste horário para o esporte
-                  selecionado.
+                  Nenhuma sessão permitida neste horário para o esporte selecionado.
                 </span>
               </div>
             ) : onlyOne ? (
               <div className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs bg-gray-100 border border-gray-200 text-gray-700">
-                <span className="font-semibold">
-                  {onlyOne === 'AULA' ? 'Aula' : 'Jogo'}
-                </span>
+                <span className="font-semibold">{onlyOne === 'AULA' ? 'Aula' : 'Jogo'}</span>
                 <span className="text-[10px] text-gray-500">
                   (definido pelas regras do esporte)
                 </span>
               </div>
             ) : (
-              <div className="inline-flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={() => setTipoSessao('AULA')}
@@ -1026,8 +1037,7 @@ export default function AgendamentoComum() {
             )}
 
             <p className="text-[11px] text-gray-500 mt-1">
-              As opções seguem as janelas configuradas para o esporte no
-              dia/horário escolhido.
+              As opções seguem as janelas configuradas para o esporte no dia/horário escolhido.
             </p>
           </section>
         )}
@@ -1055,13 +1065,13 @@ export default function AgendamentoComum() {
                      focus:outline-none focus:ring-1 focus:ring-orange-400 focus:border-orange-400
                      appearance-none"
                   value={esporteSelecionado}
-                  onChange={e => {
+                  onChange={(e) => {
                     setEsporteSelecionado(e.target.value)
                     setFeedback(null)
                   }}
                 >
                   <option value="">Selecione o esporte</option>
-                  {esportes.map(e => (
+                  {esportes.map((e) => (
                     <option key={String(e.id)} value={String(e.id)}>
                       {e.nome}
                     </option>
@@ -1086,7 +1096,7 @@ export default function AgendamentoComum() {
                     type="checkbox"
                     className="h-4 w-4 rounded border-gray-300"
                     checked={isApoiado}
-                    onChange={e => setIsApoiado(e.target.checked)}
+                    onChange={(e) => setIsApoiado(e.target.checked)}
                   />
                   <span>Este agendamento é de aluno apoiado?</span>
                 </label>
@@ -1103,7 +1113,7 @@ export default function AgendamentoComum() {
                                focus:outline-none focus:ring-1 focus:ring-orange-400 focus:border-orange-400"
                     placeholder="Buscar por nome do usuário apoiado"
                     value={apoiadoBusca}
-                    onChange={e => {
+                    onChange={(e) => {
                       setApoiadoBusca(e.target.value)
                       setApoiadoSelecionado(null)
                     }}
@@ -1111,7 +1121,7 @@ export default function AgendamentoComum() {
 
                   {apoiadoResultados.length > 0 && !apoiadoSelecionado && (
                     <ul className="border border-gray-200 rounded-md bg-white max-h-60 overflow-y-auto divide-y text-sm">
-                      {apoiadoResultados.map(u => {
+                      {apoiadoResultados.map((u) => {
                         const tag = norm(u.tipo)
                         const ehElegivel = isUsuarioElegivelApoio(u)
                         return (
@@ -1125,19 +1135,13 @@ export default function AgendamentoComum() {
                             }}
                             title={u.celular || ''}
                           >
-                            <div className="font-medium text-gray-800">
-                              {u.nome}
-                            </div>
+                            <div className="font-medium text-gray-800">{u.nome}</div>
                             <div className="text-[11px] text-gray-600">
                               {tag || 'SEM TIPO'}
-                              {ehElegivel
-                                ? ' • elegível para apoio'
-                                : ' • não elegível'}
+                              {ehElegivel ? ' • elegível para apoio' : ' • não elegível'}
                             </div>
                             {u.celular && (
-                              <div className="text-[11px] text-gray-500">
-                                {u.celular}
-                              </div>
+                              <div className="text-[11px] text-gray-500">{u.celular}</div>
                             )}
                           </li>
                         )
@@ -1152,12 +1156,10 @@ export default function AgendamentoComum() {
                         : 'text-amber-800 bg-amber-50 border-amber-200'
                         }`}
                     >
-                      Usuário apoiado selecionado:{' '}
-                      <b>{apoiadoSelecionado.nome}</b>
+                      Usuário apoiado selecionado: <b>{apoiadoSelecionado.nome}</b>
                       {!isUsuarioElegivelApoio(apoiadoSelecionado) && (
                         <span className="block text-[11px] mt-1">
-                          Atenção: este usuário não é elegível para apoio
-                          (permitido:{' '}
+                          Atenção: este usuário não é elegível para apoio (permitido:{' '}
                           <b>
                             CLIENTE_APOIADO, ADMIN_MASTER, ADMIN_ATENDENTE,
                             ADMIN_PROFESSORES
@@ -1175,9 +1177,7 @@ export default function AgendamentoComum() {
 
         {/* JOGADORES */}
         <section className="mb-8">
-          <p className="text-sm font-semibold text-orange-600 mb-3">
-            Jogadores:
-          </p>
+          <p className="text-sm font-semibold text-orange-600 mb-3">Jogadores:</p>
 
           <div className="rounded-xl bg-[#F6F6F6] border-gray-200 px-4 py-4 sm:px-5 sm:py-5 space-y-5">
             {/* Jogadores cadastrados */}
@@ -1196,16 +1196,16 @@ export default function AgendamentoComum() {
                 <input
                   type="text"
                   className="flex-1 h-10 rounded-md border border-gray-300 px-3 text-sm bg-white
-                             focus:outline-none focus:ring-1 focus:ring-orange-400 focus:border-orange-400"
+                     focus:outline-none focus:ring-1 focus:ring-orange-400 focus:border-orange-400"
                   placeholder="Insira o nome do atleta cadastrado"
                   value={buscaUsuario}
-                  onChange={e => setBuscaUsuario(e.target.value)}
+                  onChange={(e) => setBuscaUsuario(e.target.value)}
                 />
               </div>
 
               {usuariosEncontrados.length > 0 && (
                 <ul className="mt-2 border border-gray-200 rounded-md bg-white max-h-60 overflow-y-auto divide-y text-sm">
-                  {usuariosEncontrados.map(u => (
+                  {usuariosEncontrados.map((u) => (
                     <li
                       key={String(u.id)}
                       className="px-3 py-2 hover:bg-orange-50 cursor-pointer"
@@ -1214,14 +1214,10 @@ export default function AgendamentoComum() {
                     >
                       <div className="font-medium text-gray-800">{u.nome}</div>
                       {u.tipo && (
-                        <div className="text-[11px] text-gray-500">
-                          {norm(u.tipo)}
-                        </div>
+                        <div className="text-[11px] text-gray-500">{norm(u.tipo)}</div>
                       )}
                       {u.celular && (
-                        <div className="text-[11px] text-gray-500">
-                          {u.celular}
-                        </div>
+                        <div className="text-[11px] text-gray-500">{u.celular}</div>
                       )}
                     </li>
                   ))}
@@ -1250,10 +1246,10 @@ export default function AgendamentoComum() {
                   <input
                     type="text"
                     className="flex-1 h-10 rounded-md border border-gray-300 px-3 text-sm bg-white
-                               focus:outline-none focus:ring-1 focus:ring-orange-400 focus:border-orange-400"
+                       focus:outline-none focus:ring-1 focus:ring-orange-400 focus:border-orange-400"
                     placeholder="Insira o nome do convidado (dono)"
                     value={ownerGuestNome}
-                    onChange={e => setOwnerGuestNome(e.target.value)}
+                    onChange={(e) => setOwnerGuestNome(e.target.value)}
                   />
                 </div>
 
@@ -1268,23 +1264,23 @@ export default function AgendamentoComum() {
                   <input
                     type="tel"
                     className="flex-1 h-10 rounded-md border border-gray-300 px-3 text-sm bg-white
-                               focus:outline-none focus:ring-1 focus:ring-orange-400 focus:border-orange-400"
+                       focus:outline-none focus:ring-1 focus:ring-orange-400 focus:border-orange-400"
                     placeholder="(00) 000000000"
                     value={ownerGuestTelefone}
-                    onChange={e => setOwnerGuestTelefone(e.target.value)}
+                    onChange={(e) => setOwnerGuestTelefone(e.target.value)}
                   />
                 </div>
 
-                {/* Botão ADICIONAR convidado à lista */}
-                <div className="flex justify-end sm:justify-start">
+                {/* Botão ADICIONAR convidado à lista (centralizado no mobile e sem ficar gigante) */}
+                <div className="flex w-full sm:w-auto justify-center sm:justify-start">
                   <button
                     type="button"
                     onClick={adicionarConvidadoManual}
                     disabled={!ownerGuestNome.trim()}
-                    className="mt-2 sm:mt-0 inline-flex items-center justify-center h-10 px-3 rounded-md
-                               border border-orange-500 bg-white text-[11px] font-semibold text-orange-600
-                               hover:bg-orange-50 disabled:opacity-50 disabled:cursor-not-allowed
-                               transition-colors"
+                    className="mt-1 sm:mt-0 inline-flex items-center justify-center h-10 px-3 rounded-md
+                       border border-orange-500 bg-white text-[11px] font-semibold text-orange-600
+                       hover:bg-orange-50 disabled:opacity-50 disabled:cursor-not-allowed
+                       transition-colors"
                   >
                     Adicionar
                   </button>
@@ -1297,23 +1293,26 @@ export default function AgendamentoComum() {
               </p>
             </div>
 
-            {/* Lista de jogadores adicionados */}
-            {jogadores.length > 0 && (
+            {/* Lista de jogadores adicionados (sem duplicar por ID) */}
+            {jogadoresDeduplicados.length > 0 && (
               <div>
                 <p className="text-sm font-semibold text-gray-700 mb-2">
                   Jogadores adicionados:
                 </p>
 
-                <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-4 justify-items-center">
-                  {jogadores.map(j => (
-                    <div key={j.id ?? j.nome} className="flex items-center gap-3">
-                      {/* Card cinza do jogador */}
+                <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-2 gap-y-4 justify-items-stretch">
+                  {jogadoresDeduplicados.map((j) => (
+                    <div
+                      key={j.id ?? j.nome}
+                      className="flex w-full flex-col sm:flex-row sm:items-center gap-2 sm:gap-3"
+                    >
+                      {/* Card do jogador */}
                       <div
-                        className="flex-1 flex flex-col gap-0.5 px-4 py-1 rounded-md
-                       bg-[#F4F4F4] border border-[#D3D3D3] shadow-sm
-                       min-w-[180px] max-w-[200px]"
+                        className="w-full sm:flex-1 flex flex-col gap-0.5 px-4 py-2 rounded-md
+                 bg-[#F4F4F4] border border-[#D3D3D3] shadow-sm
+                 sm:min-w-[180px] sm:max-w-[200px]"
                       >
-                        {/* Nome + ícone de usuário */}
+                        {/* Nome */}
                         <div className="flex items-center gap-1 text-[11px] text-[#555555] truncate">
                           <Image
                             src="/iconescards/icone-permanente.png"
@@ -1322,24 +1321,39 @@ export default function AgendamentoComum() {
                             height={14}
                             className="w-3.5 h-3.5 flex-shrink-0 opacity-80"
                           />
-                          <span className="font-semibold truncate">
-                            {j.nome}
-                          </span>
+                          <span className="font-semibold truncate">{j.nome}</span>
                         </div>
 
-                        {/* Telefone com ícone */}
-                        {j.celular && (
-                          <div className="flex items-center gap-1 text-[11px] text-[#777777] truncate">
-                            <Image
-                              src="/iconescards/icone_phone.png"
-                              alt="Telefone"
-                              width={12}
-                              height={12}
-                              className="w-3 h-3 flex-shrink-0"
-                            />
-                            <span className="truncate">{j.celular}</span>
+                        {/* Linha do telefone + remover (SÓ NO MOBILE) */}
+                        <div className="flex items-center justify-between gap-2 sm:block">
+                          <div className="flex items-center gap-1 text-[11px] text-[#777777] min-w-0">
+                            {j.celular ? (
+                              <>
+                                <Image
+                                  src="/iconescards/icone_phone.png"
+                                  alt="Telefone"
+                                  width={12}
+                                  height={12}
+                                  className="w-3 h-3 flex-shrink-0"
+                                />
+                                <span className="truncate">{j.celular}</span>
+                              </>
+                            ) : (
+                              <span className="text-[11px] text-[#777777]"> </span>
+                            )}
                           </div>
-                        )}
+
+                          <button
+                            type="button"
+                            onClick={() => removerJogador(j.id)}
+                            className="sm:hidden inline-flex items-center gap-1 px-2 py-[2px] rounded-sm flex-shrink-0
+                     border border-[#C73737] bg-[#FFE9E9] text-[#B12A2A] text-[10px] font-semibold
+                     hover:bg-[#FFDADA] disabled:opacity-60 transition-colors"
+                          >
+                            <X className="w-4 h-4" strokeWidth={4} />
+                            Remover
+                          </button>
+                        </div>
 
                         {/* Tipo */}
                         {j.tipo && (
@@ -1349,14 +1363,14 @@ export default function AgendamentoComum() {
                         )}
                       </div>
 
-                      {/* Botão remover */}
+                      {/* Remover FORA (SÓ NO DESKTOP / sm+) */}
                       <button
                         type="button"
                         onClick={() => removerJogador(j.id)}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-[2px] rounded-sm
-                       border border-[#C73737] bg-[#FFE9E9] text-[#B12A2A] text-[10px] font-semibold
-                       hover:bg-[#FFDADA] disabled:opacity-60
-                       transition-colors shadow-[0_1px_0_rgba(0,0,0,0.05)]"
+                        className="hidden sm:inline-flex self-end sm:self-auto items-center gap-1.5 px-2.5 py-[2px] rounded-sm
+                 border border-[#C73737] bg-[#FFE9E9] text-[#B12A2A] text-[10px] font-semibold
+                 hover:bg-[#FFDADA] disabled:opacity-60
+                 transition-colors shadow-[0_1px_0_rgba(0,0,0,0.05)]"
                       >
                         <X className="w-4 h-4" strokeWidth={4} />
                         Remover
@@ -1371,9 +1385,7 @@ export default function AgendamentoComum() {
 
         {/* QUADRAS */}
         <section>
-          <p className="text-sm font-semibold mb-3 text-orange-600">
-            Quadras:
-          </p>
+          <p className="text-sm font-semibold mb-3 text-orange-600">Quadras:</p>
 
           {loadingQuadras ? (
             <div className="flex items-center gap-2 text-xs text-gray-500">
@@ -1387,7 +1399,7 @@ export default function AgendamentoComum() {
           ) : (
             <>
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-                {quadrasDisponiveis.map(q => {
+                {quadrasDisponiveis.map((q) => {
                   const selected = quadraSelecionada === String(q.quadraId)
                   const numeroFmt =
                     typeof q.numero === 'number' || typeof q.numero === 'string'
@@ -1410,13 +1422,13 @@ export default function AgendamentoComum() {
                         }`}
                     >
                       {/* imagem da quadra */}
-                      <div className="relative w-full h-40 flex items-center justify-center">
+                      <div className="relative w-full h-28 sm:h-40 flex items-center justify-center">
                         {/* imagem (fica por baixo) */}
                         <AppImage
                           src={src}
                           alt={q.nome}
                           fill
-                          className={`object-contain pointer-events-none select-none transition-opacity duration-150 ${quadraImgLoaded[idStr] ? "opacity-100" : "opacity-0"
+                          className={`object-contain pointer-events-none select-none transition-opacity duration-150 ${quadraImgLoaded[idStr] ? 'opacity-100' : 'opacity-0'
                             }`}
                           fallbackSrc="/quadra.png"
                           onLoadingComplete={() => marcarQuadraCarregada(idStr)}
@@ -1429,7 +1441,6 @@ export default function AgendamentoComum() {
                           </div>
                         )}
                       </div>
-
 
                       {/* texto */}
                       <div className="px-3 py-3 bg-white text-center">
@@ -1450,16 +1461,20 @@ export default function AgendamentoComum() {
                 <button
                   type="button"
                   onClick={agendar}
-                  disabled={salvando || selecionadoInvalido}
+                  disabled={!podeAgendar}
                   aria-busy={salvando}
-                  className={`min-w-[340px] h-11 rounded-md border text-sm font-semibold ${salvando || selecionadoInvalido
+                  className={`w-full max-w-[340px] sm:min-w-[340px] h-11 rounded-md border text-sm font-semibold ${!podeAgendar
                     ? 'border-orange-200 text-orange-200 bg-white cursor-not-allowed'
                     : 'border-orange-500 text-orange-700 bg-orange-100 hover-orange-200'
                     }`}
                   title={
                     selecionadoInvalido
                       ? 'O usuário selecionado não é elegível para apoio.'
-                      : undefined
+                      : !quadraSelecionada
+                        ? 'Selecione uma quadra antes de realizar a reserva.'
+                        : jogadoresDeduplicados.length === 0
+                          ? 'Adicione pelo menos um jogador (cadastrado ou convidado).'
+                          : undefined
                   }
                 >
                   {salvando ? (
@@ -1475,11 +1490,9 @@ export default function AgendamentoComum() {
 
               {selecionadoInvalido && (
                 <p className="mt-2 text-[12px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
-                  O apoiado selecionado não é elegível para apoio. Tipos
-                  permitidos:{' '}
+                  O apoiado selecionado não é elegível para apoio. Tipos permitidos:{' '}
                   <b>
-                    CLIENTE_APOIADO, ADMIN_MASTER, ADMIN_ATENDENTE,
-                    ADMIN_PROFESSORES
+                    CLIENTE_APOIADO, ADMIN_MASTER, ADMIN_ATENDENTE, ADMIN_PROFESSORES
                   </b>
                   .
                 </p>
