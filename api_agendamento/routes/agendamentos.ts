@@ -441,8 +441,22 @@ router.post("/", verificarToken, async (req, res) => {
     obs: obsBody,
   } = parsed.data;
 
-  const usuarioIdDono =
-    isAdmin && usuarioIdBody ? usuarioIdBody : reqCustom.usuario.usuarioLogadoId;
+  // 🔧 LÓGICA NOVA DE DONO:
+  // - base sempre é o usuário logado
+  // - se admin e veio usuarioId => dono = usuarioIdBody
+  // - se admin, sem usuarioIdBody, mas com jogadoresIds => dono = primeiro jogador
+  // - se não for admin mas veio usuarioIdBody, aceita (pensando em uso futuro)
+  let usuarioIdDono: string = reqCustom.usuario.usuarioLogadoId;
+
+  if (isAdmin) {
+    if (usuarioIdBody) {
+      usuarioIdDono = usuarioIdBody;
+    } else if (jogadoresIds.length > 0) {
+      usuarioIdDono = jogadoresIds[0];
+    }
+  } else if (usuarioIdBody) {
+    usuarioIdDono = usuarioIdBody;
+  }
 
   try {
     // === TZ-safe: derive do YMD local salvo (00:00Z)
@@ -642,6 +656,18 @@ router.post("/", verificarToken, async (req, res) => {
     for (const nome of convidadosNomes) {
       const convidado = await criarConvidadoComoUsuario(nome);
       convidadosCriadosIds.push(convidado.id);
+    }
+
+    // 🔧 LÓGICA NOVA: permitir CONVIDADO como dono
+    // Se for ADMIN, sem usuarioIdBody, sem jogadoresIds, mas com convidadosCriadosIds,
+    // o dono passa a ser o primeiro convidado criado
+    if (
+      isAdmin &&
+      !usuarioIdBody &&
+      jogadoresIds.length === 0 &&
+      convidadosCriadosIds.length > 0
+    ) {
+      usuarioIdDono = convidadosCriadosIds[0];
     }
 
     // garante connect do apoiado como jogador quando aplicável
