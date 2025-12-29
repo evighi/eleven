@@ -1711,7 +1711,7 @@ export default function AdminHome() {
           {/* Botão "Ver todas as reservas" + seta para recolher (CHURRASQUEIRAS) */}
           <div className="flex items-center gap-2">
             <Link
-              href={`/adminMaster/todosHorarios?data=${data || todayStrSP()
+              href={`/adminMaster/todosHorariosChurrasqueiras?data=${data || todayStrSP()
                 }`}
               className="inline-flex items-center justify-center h-9 px-6 rounded-md font-semibold bg-orange-600 hover:bg-orange-700 text-white text-sm cursor-pointer transition shadow-sm whitespace-nowrap"
             >
