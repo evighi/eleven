@@ -200,6 +200,97 @@ function firstName(u?: Usuario | null) {
   return a || "";
 }
 
+/**
+ * ✅ MESMO CONCEITO DA HOME: preferir o usuário que já vem no slot (lista do dia)
+ * e só usar o retorno do detalhe se ele vier preenchido.
+ * Isso resolve o caso do avulso que muitas vezes não retorna `usuario` completo.
+ */
+function resolveUsuarioDetalhes(det: any, fallbackSlotUsuario?: Usuario | null): string | Usuario | "—" {
+  const cand =
+    det?.usuario ??
+    det?.cliente ??
+    det?.cliente?.usuario ??
+    det?.usuarioReserva ??
+    det?.usuarioAgendado ??
+    det?.dadosUsuario;
+
+  if (typeof cand === "string" && cand.trim()) return cand;
+  if (cand && typeof cand === "object") {
+    if (typeof cand.nome === "string" && cand.nome.trim()) return cand as Usuario;
+    if (cand.usuario && typeof cand.usuario === "object" && typeof cand.usuario.nome === "string") {
+      return cand.usuario as Usuario;
+    }
+  }
+
+  const nomeStr =
+    det?.nome ??
+    det?.nomeCliente ??
+    det?.clienteNome ??
+    det?.usuarioNome;
+
+  if (typeof nomeStr === "string" && nomeStr.trim()) return nomeStr;
+
+  if (fallbackSlotUsuario?.nome?.trim()) return fallbackSlotUsuario;
+
+  return "—";
+}
+
+/** Map DiaSemana -> index JS (Home) */
+const DIA_IDX: Record<string, number> = {
+  DOMINGO: 0,
+  SEGUNDA: 1,
+  TERCA: 2,
+  QUARTA: 3,
+  QUINTA: 4,
+  SEXTA: 5,
+  SABADO: 6,
+};
+
+/** Formata Date -> YYYY-MM-DD em SP (Home) */
+function toYmdSP(d: Date) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: SP_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
+/** Próximas datas do mesmo dia-da-semana (Home) */
+function gerarProximasDatasDiaSemana(
+  diaSemana: string,
+  baseYmd?: string | null,
+  dataInicio?: string | null,
+  quantidade = 6,
+  incluirBase = true
+): string[] {
+  const target = DIA_IDX[diaSemana] ?? 0;
+  const baseIso = (baseYmd || todayStrSP()) + "T00:00:00-03:00";
+  const start = new Date(baseIso);
+  start.setHours(0, 0, 0, 0);
+
+  if (dataInicio) {
+    const di = new Date(`${dataInicio}T00:00:00-03:00`);
+    di.setHours(0, 0, 0, 0);
+    if (di > start) start.setTime(di.getTime());
+  }
+
+  const startDow = start.getDay();
+  let delta = (target - startDow + 7) % 7;
+  if (delta === 0 && !incluirBase) delta = 7;
+
+  const first = new Date(start);
+  first.setDate(first.getDate() + delta);
+
+  const out: string[] = [];
+  for (let i = 0; i < quantidade; i++) {
+    const d = new Date(first);
+    d.setDate(first.getDate() + i * 7);
+    out.push(toYmdSP(d));
+  }
+  return out;
+}
+
 /** Normaliza a resposta da API (disponibilidade[]) para turnos{DIA,NOITE} */
 function buildTurnos(
   disponibilidade: ApiSlotChurrasRaw[] | undefined | null
@@ -278,9 +369,17 @@ export default function TodosHorariosChurrasqueirasPage() {
   const [agendamentoSelecionado, setAgendamentoSelecionado] =
     useState<AgendamentoSelecionado | null>(null);
 
-  // Cancelar (avulso ou permanente)
+  // Cancelar (avulso) + fluxo permanente (igual Home)
   const [confirmarCancelamento, setConfirmarCancelamento] = useState(false);
   const [loadingCancelamento, setLoadingCancelamento] = useState(false);
+
+  const [mostrarOpcoesCancelamento, setMostrarOpcoesCancelamento] = useState(false);
+  const [mostrarExcecaoModal, setMostrarExcecaoModal] = useState(false);
+  const [datasExcecao, setDatasExcecao] = useState<string[]>([]);
+  const [dataExcecaoSelecionada, setDataExcecaoSelecionada] = useState<string | null>(
+    null
+  );
+  const [postandoExcecao, setPostandoExcecao] = useState(false);
 
   // Transferência
   const [abrirModalTransferencia, setAbrirModalTransferencia] = useState(false);
@@ -333,7 +432,7 @@ export default function TodosHorariosChurrasqueirasPage() {
     return () => document.removeEventListener("mousedown", onDown);
   }, [dataPickerAberto]);
 
-  // ESC fecha tudo
+  // ESC fecha tudo (igual Home)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
@@ -351,6 +450,8 @@ export default function TodosHorariosChurrasqueirasPage() {
       if (agendamentoSelecionado) {
         setAgendamentoSelecionado(null);
         setConfirmarCancelamento(false);
+        setMostrarOpcoesCancelamento(false);
+        setMostrarExcecaoModal(false);
         return;
       }
 
@@ -428,8 +529,6 @@ export default function TodosHorariosChurrasqueirasPage() {
   ========================= */
   const abrirDetalhes = useCallback(
     async (slot: SlotInfoChurrasqueira, turno: Turno, ch: ChurrasqueiraLinhaDia) => {
-      // para detalhes precisamos do id; tipoReserva pode vir null em edge-cases,
-      // mas na tua API está vindo — ainda assim, protegemos:
       if (!slot?.agendamentoId) return;
 
       const tipo = slot.tipoReserva ?? "comum";
@@ -446,10 +545,8 @@ export default function TodosHorariosChurrasqueirasPage() {
           withCredentials: true,
         });
 
-        const usuarioValor: string | Usuario =
-          typeof det?.usuario === "object" || typeof det?.usuario === "string"
-            ? det.usuario
-            : "—";
+        // ✅ aqui é o ajuste: usa o mesmo "fallback do slot" (como na Home)
+        const usuarioValor = resolveUsuarioDetalhes(det, slot.usuario);
 
         setAgendamentoSelecionado({
           dia: data,
@@ -477,16 +574,19 @@ export default function TodosHorariosChurrasqueirasPage() {
   /* =========================
      Slot livre -> confirmar reserva rápida
   ========================= */
-  const abrirConfirmAgendar = useCallback((turno: Turno, ch: ChurrasqueiraLinhaDia) => {
-    if (!data) return;
-    setAgendarCtx({
-      turno,
-      churrasqueiraId: ch.churrasqueiraId,
-      churrasqueiraNome: ch.nome,
-      churrasqueiraNumero: ch.numero,
-    });
-    setConfirmAgendar(true);
-  }, [data]);
+  const abrirConfirmAgendar = useCallback(
+    (turno: Turno, ch: ChurrasqueiraLinhaDia) => {
+      if (!data) return;
+      setAgendarCtx({
+        turno,
+        churrasqueiraId: ch.churrasqueiraId,
+        churrasqueiraNome: ch.nome,
+        churrasqueiraNumero: ch.numero,
+      });
+      setConfirmAgendar(true);
+    },
+    [data]
+  );
 
   const confirmarAgendamentoRapido = () => {
     if (!agendarCtx || !data) return;
@@ -500,35 +600,46 @@ export default function TodosHorariosChurrasqueirasPage() {
     setConfirmAgendar(false);
     setAgendarCtx(null);
 
-    router.push(`/adminMaster/churrasqueiras/agendarComum?${params.toString()}`);
+    router.push(`/adminMaster/churrasqueiras/agendarChurrasqueira?${params.toString()}`);
   };
 
   /* =========================
-     Cancelar
+     Cancelar (fluxo igual Home)
   ========================= */
   const abrirFluxoCancelamento = () => {
     if (!agendamentoSelecionado) return;
+
+    if (agendamentoSelecionado.tipoReserva === "permanente") {
+      setMostrarOpcoesCancelamento(true);
+      setConfirmarCancelamento(false);
+      return;
+    }
+
     setConfirmarCancelamento(true);
   };
 
-  const cancelarAgendamento = async () => {
+  const cancelarAgendamentoAvulso = async () => {
     if (!agendamentoSelecionado) {
       showAlert("Nenhuma reserva selecionada.", "error");
       return;
     }
 
+    if (agendamentoSelecionado.tipoReserva !== "comum") {
+      showAlert("Para permanentes, use a exceção (cancelar 1 dia).", "info");
+      return;
+    }
+
     setLoadingCancelamento(true);
 
-    const rota =
-      agendamentoSelecionado.tipoReserva === "permanente"
-        ? `agendamentosPermanentesChurrasqueiras/cancelar/${agendamentoSelecionado.agendamentoId}`
-        : `agendamentosChurrasqueiras/cancelar/${agendamentoSelecionado.agendamentoId}`;
+    const rota = `agendamentosChurrasqueiras/cancelar/${agendamentoSelecionado.agendamentoId}`;
 
     try {
       await axios.post(`${API_URL}/${rota}`, {}, { withCredentials: true });
       showAlert("Reserva cancelada com sucesso!", "success");
       setAgendamentoSelecionado(null);
       setConfirmarCancelamento(false);
+      setMostrarOpcoesCancelamento(false);
+      setMostrarExcecaoModal(false);
       refresh();
     } catch (error: any) {
       console.error("Erro ao cancelar:", error);
@@ -539,6 +650,60 @@ export default function TodosHorariosChurrasqueirasPage() {
       showAlert(msg, "error");
     } finally {
       setLoadingCancelamento(false);
+    }
+  };
+
+  // Abrir modal de exceção (cancelar apenas 1 dia) — igual Home
+  const abrirExcecao = () => {
+    if (!agendamentoSelecionado?.diaSemana) {
+      showAlert("Não foi possível identificar o dia da semana deste permanente.", "error");
+      return;
+    }
+
+    const baseRef = agendamentoSelecionado.dia || data || todayStrSP();
+
+    const lista = gerarProximasDatasDiaSemana(
+      agendamentoSelecionado.diaSemana,
+      baseRef,
+      agendamentoSelecionado.dataInicio || null,
+      6,
+      true
+    );
+
+    setDatasExcecao(lista);
+    setDataExcecaoSelecionada(null);
+    setMostrarExcecaoModal(true);
+    setMostrarOpcoesCancelamento(false);
+  };
+
+  const confirmarExcecao = async () => {
+    if (!agendamentoSelecionado?.agendamentoId || !dataExcecaoSelecionada) {
+      showAlert("Selecione uma data para cancelar.", "info");
+      return;
+    }
+
+    try {
+      setPostandoExcecao(true);
+
+      const rota = `agendamentosPermanentesChurrasqueiras/${agendamentoSelecionado.agendamentoId}/cancelar-dia`;
+
+      await axios.post(
+        `${API_URL}/${rota}`,
+        { data: dataExcecaoSelecionada, usuarioId: (usuario as any)?.id },
+        { withCredentials: true }
+      );
+
+      showAlert("Exceção criada com sucesso (cancelado somente este dia).", "success");
+      setMostrarExcecaoModal(false);
+      setAgendamentoSelecionado(null);
+      refresh();
+    } catch (e: any) {
+      console.error(e);
+      const raw = e?.response?.data?.erro ?? e?.response?.data?.message ?? e?.message;
+      const msg = typeof raw === "string" ? raw : JSON.stringify(raw);
+      showAlert(msg, "error");
+    } finally {
+      setPostandoExcecao(false);
     }
   };
 
@@ -635,18 +800,18 @@ export default function TodosHorariosChurrasqueirasPage() {
     ch: ChurrasqueiraLinhaDia;
   }) => {
     const isBloq = !!slot.bloqueada;
-    const isAgendado = !!slot.agendamentoId; // basta ter id
+    const isAgendado = !!slot.agendamentoId;
     const tipo = slot.tipoReserva ?? null;
 
     const isPerm = tipo === "permanente";
-    const isComum = tipo === "comum" || (isAgendado && !tipo); // fallback
+    const isComum = tipo === "comum" || (isAgendado && !tipo);
     const isLivre = !isBloq && !isAgendado && !!slot.disponivel;
 
     const base =
       "min-h-9 xs:min-h-10 sm:min-h-11 md:min-h-12 text-[9px] xs:text-[10px] sm:text-[11px] md:text-xs " +
       "rounded-none border flex items-center justify-center text-center px-1 py-1 whitespace-normal break-words leading-tight";
 
-    let cls = "bg-white text-gray-900 border-gray-300"; // livre
+    let cls = "bg-white text-gray-900 border-gray-300";
     if (isBloq) cls = "bg-red-600 text-white border-red-700";
     else if (isPerm) cls = "bg-emerald-600 text-white border-emerald-700";
     else if (isComum) cls = "bg-orange-600 text-white border-orange-700";
@@ -673,10 +838,7 @@ export default function TodosHorariosChurrasqueirasPage() {
         type="button"
         disabled={!clickable}
         onClick={onClick}
-        title={
-          slot.usuario?.nome ||
-          (isBloq ? "Bloqueada" : isLivre ? "Livre" : label)
-        }
+        title={slot.usuario?.nome || (isBloq ? "Bloqueada" : isLivre ? "Livre" : label)}
         className={`${base} ${cls} ${
           clickable ? "cursor-pointer hover:brightness-95" : "cursor-default"
         }`}
@@ -841,56 +1003,83 @@ export default function TodosHorariosChurrasqueirasPage() {
       ) : churrasqueiras.length === 0 ? (
         <div className="text-sm text-gray-500">Nenhuma churrasqueira cadastrada.</div>
       ) : (
-        <section className="space-y-3">
-          <h2 className="text-center text-xl sm:text-2xl md:text-3xl font-extrabold text-gray-900 mb-2">
-            Churrasqueiras — {toDdMm(data)}
-          </h2>
+        <section className="space-y-10">
+          {(() => {
+            const ordenadas = churrasqueiras.slice().sort((a, b) => a.numero - b.numero);
 
-          {/* Cabeçalho (mesma pegada do quadro antigo) */}
-          <div className="grid grid-cols-3 gap-0">
-            <div className="min-h-9 xs:min-h-10 sm:min-h-11 md:min-h-12 rounded-none border border-gray-300 bg-gray-100 text-gray-700 text-[10px] xs:text-[11px] sm:text-sm flex items-center justify-center font-semibold">
-              Churrasqueira
-            </div>
-            <div className="min-h-9 xs:min-h-10 sm:min-h-11 md:min-h-12 rounded-none border border-gray-300 bg-gray-100 text-gray-700 text-[10px] xs:text-[11px] sm:text-sm flex items-center justify-center font-semibold">
-              Dia
-            </div>
-            <div className="min-h-9 xs:min-h-10 sm:min-h-11 md:min-h-12 rounded-none border border-gray-300 bg-gray-100 text-gray-700 text-[10px] xs:text-[11px] sm:text-sm flex items-center justify-center font-semibold">
-              Noite
-            </div>
-          </div>
+            // igual quadras: grupos de 6 colunas
+            const grupos: ChurrasqueiraLinhaDia[][] = [];
+            for (let i = 0; i < ordenadas.length; i += 6) {
+              grupos.push(ordenadas.slice(i, i + 6));
+            }
 
-          {/* Linhas */}
-          {churrasqueiras
-            .slice()
-            .sort((a, b) => a.numero - b.numero)
-            .map((ch) => {
-              const dia = ch.turnos?.DIA ?? {
-                disponivel: true,
-                tipoReserva: null,
-                usuario: null,
-                agendamentoId: null,
-              };
-              const noite = ch.turnos?.NOITE ?? {
-                disponivel: true,
-                tipoReserva: null,
-                usuario: null,
-                agendamentoId: null,
-              };
+            return grupos.map((grupo, gi) => {
+              if (!grupo.length) return null;
+
+              const minNum = Math.min(...grupo.map((c) => c.numero));
+              const maxNum = Math.max(...grupo.map((c) => c.numero));
 
               return (
-                <div key={ch.churrasqueiraId} className="grid grid-cols-3 gap-0">
-                  <div
-                    className="min-h-9 xs:min-h-10 sm:min-h-11 md:min-h-12 rounded-none border border-gray-300 bg-white text-gray-900 text-[10px] xs:text-[11px] sm:text-sm flex items-center justify-center font-semibold px-2 text-center"
-                    title={ch.nome}
-                  >
-                    {String(ch.numero).padStart(2, "0")} — {ch.nome}
+                <section key={`churras-grupo-${gi}`} className="space-y-0">
+                  <h3 className="text-center text-lg sm:text-xl md:text-2xl font-semibold text-gray-900 mb-3">
+                    Churrasqueiras – {String(minNum).padStart(2, "0")} a{" "}
+                    {String(maxNum).padStart(2, "0")} - {toDdMm(data)}
+                  </h3>
+
+                  {/* Linha com os números das churrasqueiras (como quadras) */}
+                  <div className="grid grid-cols-6 gap-0">
+                    {grupo.map((ch) => (
+                      <div
+                        key={ch.churrasqueiraId}
+                        className="min-h-9 xs:min-h-10 sm:min-h-11 md:min-h-12 rounded-none border border-gray-300 bg-gray-100 text-gray-700 text-[9px] xs:text-[10px] sm:text-[11px] md:text-xs flex items-center justify-center font-semibold"
+                        title={`${String(ch.numero).padStart(2, "0")} — ${ch.nome}`}
+                      >
+                        {String(ch.numero).padStart(2, "0")}
+                      </div>
+                    ))}
+
+                    {Array.from({ length: Math.max(0, 6 - grupo.length) }).map((_, i) => (
+                      <div key={`void-h-${gi}-${i}`} className="border border-transparent" />
+                    ))}
                   </div>
 
-                  <Cell slot={dia} turno="DIA" ch={ch} />
-                  <Cell slot={noite} turno="NOITE" ch={ch} />
-                </div>
+                  {/* Grade: turnos x churrasqueiras (turno vira linha) */}
+                  <div className="space-y-0">
+                    {(["DIA", "NOITE"] as Turno[]).map((turno) => (
+                      <div key={turno} className="grid grid-cols-6 gap-0">
+                        {grupo.map((ch) => {
+                          const slot =
+                            ch.turnos?.[turno] ?? {
+                              disponivel: true,
+                              bloqueada: false,
+                              tipoReserva: null,
+                              usuario: null,
+                              agendamentoId: null,
+                            };
+
+                          return (
+                            <Cell
+                              key={`${ch.churrasqueiraId}-${turno}`}
+                              slot={slot}
+                              turno={turno}
+                              ch={ch}
+                            />
+                          );
+                        })}
+
+                        {Array.from({ length: Math.max(0, 6 - grupo.length) }).map((_, i) => (
+                          <div
+                            key={`pad-${gi}-${turno}-${i}`}
+                            className="border border-transparent"
+                          />
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </section>
               );
-            })}
+            });
+          })()}
         </section>
       )}
 
@@ -977,6 +1166,8 @@ export default function TodosHorariosChurrasqueirasPage() {
             if (e.target === e.currentTarget) {
               setAgendamentoSelecionado(null);
               setConfirmarCancelamento(false);
+              setMostrarOpcoesCancelamento(false);
+              setMostrarExcecaoModal(false);
             }
           }}
         >
@@ -985,7 +1176,12 @@ export default function TodosHorariosChurrasqueirasPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <button
-              onClick={() => setAgendamentoSelecionado(null)}
+              onClick={() => {
+                setAgendamentoSelecionado(null);
+                setConfirmarCancelamento(false);
+                setMostrarOpcoesCancelamento(false);
+                setMostrarExcecaoModal(false);
+              }}
               className="absolute right-5 top-4 text-gray-400 hover:text-gray-600 text-3xl leading-none"
               aria-label="Fechar"
             >
@@ -1101,7 +1297,6 @@ export default function TodosHorariosChurrasqueirasPage() {
                   </span>
                 </div>
 
-                {/* espaço para alinhar grid */}
                 <div className="hidden sm:block" />
               </div>
 
@@ -1122,27 +1317,13 @@ export default function TodosHorariosChurrasqueirasPage() {
                 >
                   Cancelar reserva
                 </button>
-
-                <button
-                  onClick={abrirModalTransferir}
-                  disabled={loadingTransferencia}
-                  className="
-                    w-full sm:w-[200px]
-                    inline-flex items-center justify-center
-                    rounded-md border border-gray-500
-                    bg-gray-50 text-gray-700
-                    px-6 py-2.5 text-sm font-semibold
-                    cursor-pointer hover:bg-gray-100
-                    disabled:opacity-60 transition-colors
-                  "
-                >
-                  {loadingTransferencia ? "Transferindo..." : "Transferir"}
-                </button>
               </div>
             </div>
 
-            {/* CONFIRMAR CANCELAMENTO */}
-            {confirmarCancelamento && (
+            {/* ========= OVERLAYS INTERNOS (igual Home) ========= */}
+
+            {/* CONFIRMAR CANCELAMENTO (AVULSO) */}
+            {confirmarCancelamento && agendamentoSelecionado && (
               <div className="absolute inset-0 bg-black/40 flex items-center justify-center rounded-3xl z-50">
                 <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-md mx-4 px-8 py-10">
                   <button
@@ -1154,7 +1335,7 @@ export default function TodosHorariosChurrasqueirasPage() {
                   </button>
 
                   <h3 className="text-lg font-semibold text-orange-700 text-left">
-                    Cancelar Reserva
+                    Cancelar Reserva Avulsa
                   </h3>
 
                   <p className="mt-4 text-sm text-gray-800 text-center leading-relaxed">
@@ -1178,7 +1359,7 @@ export default function TodosHorariosChurrasqueirasPage() {
                       Voltar
                     </button>
                     <button
-                      onClick={cancelarAgendamento}
+                      onClick={cancelarAgendamentoAvulso}
                       disabled={loadingCancelamento}
                       className="w-full sm:min-w-[150px] px-5 py-2.5 rounded-md border border-[#C73737]
                         bg-[#FFE9E9] text-[#B12A2A] text-sm font-semibold
@@ -1186,6 +1367,135 @@ export default function TodosHorariosChurrasqueirasPage() {
                         transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
                     >
                       {loadingCancelamento ? "Cancelando..." : "Confirmar"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* OPÇÕES: PERMANENTE -> IR PARA EXCEÇÃO (igual Home) */}
+            {mostrarOpcoesCancelamento && agendamentoSelecionado && (
+              <div className="absolute inset-0 bg-black/40 flex items-center justify-center rounded-3xl z-50">
+                <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-md mx-4 px-8 py-10">
+                  <button
+                    onClick={() => setMostrarOpcoesCancelamento(false)}
+                    className="absolute right-6 top-4 text-gray-400 hover:text-gray-600 text-2xl leading-none"
+                    aria-label="Fechar"
+                  >
+                    ×
+                  </button>
+
+                  <h3 className="text-lg font-semibold text-orange-700 text-left">
+                    Cancelar Reserva Permanente
+                  </h3>
+
+                  <p className="mt-4 text-sm text-gray-800 text-center leading-relaxed">
+                    Para reservas permanentes, você cancela apenas{" "}
+                    <span className="font-semibold">um dia específico</span> (exceção).
+                    <br className="hidden sm:block" />
+                    Deseja escolher o dia do cancelamento?
+                  </p>
+
+                  <div className="mt-8 flex flex-col sm:flex-row justify-center gap-3 sm:gap-8">
+                    <button
+                      onClick={() => setMostrarOpcoesCancelamento(false)}
+                      disabled={loadingCancelamento}
+                      className="w-full sm:min-w-[150px] px-5 py-2.5 rounded-md border border-[#E97A1F]
+                        bg-[#FFF3E0] text-[#D86715] text-sm font-semibold
+                        hover:bg-[#FFE6C2] disabled:opacity-60
+                        transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
+                    >
+                      Voltar
+                    </button>
+                    <button
+                      onClick={abrirExcecao}
+                      disabled={loadingCancelamento}
+                      className="w-full sm:min-w-[150px] px-5 py-2.5 rounded-md border border-[#C73737]
+                        bg-[#FFE9E9] text-[#B12A2A] text-sm font-semibold
+                        hover:bg-[#FFDADA] disabled:opacity-60
+                        transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
+                    >
+                      Confirmar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* EXCEÇÃO: ESCOLHER DIA (igual Home) */}
+            {mostrarExcecaoModal && agendamentoSelecionado && (
+              <div className="absolute inset-0 bg-black/40 flex items-center justify-center rounded-3xl z-50">
+                <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-md mx-4 px-8 py-10">
+                  <button
+                    onClick={() => setMostrarExcecaoModal(false)}
+                    className="absolute right-6 top-4 text-gray-400 hover:text-gray-600 text-2xl leading-none"
+                    aria-label="Fechar"
+                  >
+                    ×
+                  </button>
+
+                  <h3 className="text-lg font-semibold text-orange-700 text-left">
+                    Escolha o dia do cancelamento
+                  </h3>
+
+                  <p className="mt-4 text-sm text-gray-800 text-center leading-relaxed">
+                    Você pode cancelar até 6 semanas à frente.
+                    <br className="hidden sm:block" />
+                    Escolha o dia:
+                  </p>
+
+                  <div className="mt-6 grid grid-cols-3 gap-3 justify-items-center">
+                    {datasExcecao.length === 0 ? (
+                      <p className="col-span-3 text-xs text-gray-500 text-center">
+                        Não há datas disponíveis para exceção.
+                      </p>
+                    ) : (
+                      datasExcecao.map((d) => {
+                        const ativo = dataExcecaoSelecionada === d;
+                        const [ano, mes, dia] = d.split("-");
+                        const label = `${dia}/${mes}`;
+
+                        return (
+                          <button
+                            key={d}
+                            type="button"
+                            onClick={() => setDataExcecaoSelecionada(d)}
+                            className={`min-w-[60px] h-8 px-3 rounded-md border text-sm font-medium
+                              ${
+                                ativo
+                                  ? "border-[#E97A1F] bg-[#FFF3E0] text-[#D86715]"
+                                  : "border-gray-600 bg-white text-gray-800 hover:bg-gray-50"
+                              }`}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  <div className="mt-8 flex flex-col sm:flex-row justify-center gap-3 sm:gap-8">
+                    <button
+                      type="button"
+                      onClick={() => setMostrarExcecaoModal(false)}
+                      disabled={postandoExcecao}
+                      className="w-full sm:min-w-[150px] px-5 py-2.5 rounded-md border border-[#E97A1F]
+                        bg-[#FFF3E0] text-[#D86715] text-sm font-semibold
+                        hover:bg-[#FFE6C2] disabled:opacity-60
+                        transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
+                    >
+                      Voltar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={confirmarExcecao}
+                      disabled={postandoExcecao || !dataExcecaoSelecionada}
+                      className="w-full sm:min-w-[150px] px-5 py-2.5 rounded-md border border-[#C73737]
+                        bg-[#FFE9E9] text-[#B12A2A] text-sm font-semibold
+                        hover:bg-[#FFDADA] disabled:opacity-60
+                        transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
+                    >
+                      {postandoExcecao ? "Cancelando..." : "Confirmar"}
                     </button>
                   </div>
                 </div>
@@ -1286,9 +1596,7 @@ export default function TodosHorariosChurrasqueirasPage() {
                             <div className="flex-1 min-w-0">
                               <p className="truncate text-gray-800">{user.nome}</p>
                               {user.celular && (
-                                <p className="text-[11px] text-gray-500 truncate">
-                                  {user.celular}
-                                </p>
+                                <p className="text-[11px] text-gray-500 truncate">{user.celular}</p>
                               )}
                             </div>
                             {ativo && (
@@ -1304,9 +1612,7 @@ export default function TodosHorariosChurrasqueirasPage() {
               </div>
 
               <div>
-                <p className="text-sm font-semibold text-gray-700 mb-2">
-                  Cliente selecionado:
-                </p>
+                <p className="text-sm font-semibold text-gray-700 mb-2">Cliente selecionado:</p>
 
                 {usuarioSelecionado ? (
                   <div className="inline-flex items-center gap-3 px-4 py-3 rounded-lg bg-white border border-gray-200 shadow-sm">
@@ -1319,9 +1625,7 @@ export default function TodosHorariosChurrasqueirasPage() {
                         className="w-4 h-4"
                       />
                       <div className="flex flex-col">
-                        <span className="font-semibold text-[13px]">
-                          {usuarioSelecionado.nome}
-                        </span>
+                        <span className="font-semibold text-[13px]">{usuarioSelecionado.nome}</span>
                         {usuarioSelecionado.celular && (
                           <span className="text-[11px] text-gray-600">
                             {usuarioSelecionado.celular}
