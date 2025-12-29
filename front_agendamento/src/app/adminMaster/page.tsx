@@ -1711,7 +1711,7 @@ export default function AdminHome() {
           {/* Botão "Ver todas as reservas" + seta para recolher (CHURRASQUEIRAS) */}
           <div className="flex items-center gap-2">
             <Link
-              href={`/adminMaster/todosHorarios?data=${data || todayStrSP()
+              href={`/adminMaster/todosHorariosChurrasqueiras?data=${data || todayStrSP()
                 }`}
               className="inline-flex items-center justify-center h-9 px-6 rounded-md font-semibold bg-orange-600 hover:bg-orange-700 text-white text-sm cursor-pointer transition shadow-sm whitespace-nowrap"
             >
@@ -2468,7 +2468,7 @@ export default function AdminHome() {
       transition-colors
     "
                 >
-                  Cancelar
+                  Cancelar reserva
                 </button>
 
                 {agendamentoSelecionado.tipoLocal === "quadra" && (
@@ -2578,17 +2578,6 @@ export default function AdminHome() {
                   {/* BOTÕES */}
                   <div className="mt-8 flex flex-col sm:flex-row justify-center gap-3 sm:gap-8">
                     <button
-                      onClick={cancelarAgendamento}
-                      disabled={loadingCancelamento}
-                      className="w-full sm:min-w-[150px] px-5 py-2.5 rounded-md border border-[#C73737]
-      bg-[#FFE9E9] text-[#B12A2A] text-sm font-semibold
-      hover:bg-[#FFDADA] disabled:opacity-60
-      transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
-                    >
-                      {loadingCancelamento ? "Cancelando..." : "Cancelar"}
-                    </button>
-
-                    <button
                       onClick={() => setConfirmarCancelamento(false)}
                       disabled={loadingCancelamento}
                       className="w-full sm:min-w-[150px] px-5 py-2.5 rounded-md border border-[#E97A1F]
@@ -2598,6 +2587,18 @@ export default function AdminHome() {
                     >
                       Voltar
                     </button>
+                    <button
+                      onClick={cancelarAgendamento}
+                      disabled={loadingCancelamento}
+                      className="w-full sm:min-w-[150px] px-5 py-2.5 rounded-md border border-[#C73737]
+      bg-[#FFE9E9] text-[#B12A2A] text-sm font-semibold
+      hover:bg-[#FFDADA] disabled:opacity-60
+      transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
+                    >
+                      {loadingCancelamento ? "Cancelando..." : "Confirmar"}
+                    </button>
+
+
                   </div>
                 </div>
               </div>
@@ -2688,17 +2689,6 @@ export default function AdminHome() {
                   {/* BOTÕES (Cancelar -> abrir seleção de dia / Voltar) */}
                   <div className="mt-8 flex flex-col sm:flex-row justify-center gap-3 sm:gap-8">
                     <button
-                      onClick={abrirExcecao}
-                      disabled={loadingCancelamento}
-                      className="w-full sm:min-w-[150px] px-5 py-2.5 rounded-md border border-[#C73737]
-      bg-[#FFE9E9] text-[#B12A2A] text-sm font-semibold
-      hover:bg-[#FFDADA] disabled:opacity-60
-      transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
-                    >
-                      Cancelar
-                    </button>
-
-                    <button
                       onClick={() => setMostrarOpcoesCancelamento(false)}
                       disabled={loadingCancelamento}
                       className="w-full sm:min-w-[150px] px-5 py-2.5 rounded-md border border-[#E97A1F]
@@ -2707,6 +2697,16 @@ export default function AdminHome() {
       transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
                     >
                       Voltar
+                    </button>
+                    <button
+                      onClick={abrirExcecao}
+                      disabled={loadingCancelamento}
+                      className="w-full sm:min-w-[150px] px-5 py-2.5 rounded-md border border-[#C73737]
+      bg-[#FFE9E9] text-[#B12A2A] text-sm font-semibold
+      hover:bg-[#FFDADA] disabled:opacity-60
+      transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
+                    >
+                      Confirmar
                     </button>
                   </div>
                 </div>
@@ -2772,18 +2772,6 @@ export default function AdminHome() {
                   <div className="mt-8 flex flex-col sm:flex-row justify-center gap-3 sm:gap-8">
                     <button
                       type="button"
-                      onClick={confirmarExcecao}
-                      disabled={!dataExcecaoSelecionada || postandoExcecao}
-                      className="w-full sm:min-w-[150px] px-5 py-2.5 rounded-md border border-[#C73737]
-      bg-[#FFE9E9] text-[#B12A2A] text-sm font-semibold
-      hover:bg-[#FFDADA] disabled:opacity-60
-      transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
-                    >
-                      {postandoExcecao ? "Cancelando..." : "Cancelar"}
-                    </button>
-
-                    <button
-                      type="button"
                       onClick={() => setMostrarExcecaoModal(false)}
                       disabled={postandoExcecao}
                       className="w-full sm:min-w-[150px] px-5 py-2.5 rounded-md border border-[#E97A1F]
@@ -2792,6 +2780,17 @@ export default function AdminHome() {
       transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
                     >
                       Voltar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={confirmarExcecao}
+                      disabled={!dataExcecaoSelecionada || postandoExcecao}
+                      className="w-full sm:min-w-[150px] px-5 py-2.5 rounded-md border border-[#C73737]
+      bg-[#FFE9E9] text-[#B12A2A] text-sm font-semibold
+      hover:bg-[#FFDADA] disabled:opacity-60
+      transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
+                    >
+                      {postandoExcecao ? "Cancelando..." : "Confirmar"}
                     </button>
                   </div>
                 </div>
@@ -3057,7 +3056,7 @@ export default function AdminHome() {
                            hover:bg-[#FFDADA] disabled:opacity-60
                            transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
               >
-                Cancelar
+                Voltar
               </button>
               <button
                 onClick={confirmarTransferencia}
@@ -3400,7 +3399,7 @@ export default function AdminHome() {
                      hover:bg-[#FFDADA] disabled:opacity-60
                      transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
               >
-                Cancelar
+                Voltar
               </button>
               <button
                 onClick={confirmarAdicionarJogadores}
@@ -3478,7 +3477,7 @@ export default function AdminHome() {
                 onClick={() => setMostrarConfirmaAgendar(false)}
                 className="w-full sm:min-w-[160px] px-5 py-2.5 rounded-md border border-[#C73737] bg-[#FFE9E9] text-[#B12A2A] font-semibold hover:bg-[#FFDADA] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
               >
-                Cancelar
+                Voltar
               </button>
 
               <button
@@ -3541,7 +3540,7 @@ export default function AdminHome() {
                 onClick={() => setMostrarConfirmaChurras(false)}
                 className="w-full sm:min-w-[160px] px-5 py-2.5 rounded-md border border-[#C73737] bg-[#FFE9E9] text-[#B12A2A] font-semibold hover:bg-[#FFDADA] transition-colors shadow-[0_2px_0_rgba(0,0,0,0.05)]"
               >
-                Cancelar
+                Voltar
               </button>
 
               <button
