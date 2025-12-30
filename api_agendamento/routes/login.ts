@@ -1,5 +1,8 @@
 import jwt from "jsonwebtoken";
 import { PrismaClient, TipoUsuario } from "@prisma/client";
+import verificarToken from "../middleware/authMiddleware";
+import { z } from "zod";
+import { requireAdmin } from "../middleware/acl";
 import { Router } from "express";
 import bcrypt from "bcrypt";
 
@@ -15,6 +18,29 @@ const router = Router();
 
 const JWT_KEY = process.env.JWT_KEY as string;
 const isProd = process.env.NODE_ENV === "production";
+
+const SP_TZ = process.env.TZ || "America/Sao_Paulo";
+
+function localYMD(d: Date, tz = SP_TZ) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d); // "YYYY-MM-DD"
+}
+
+// converte "dia local" (00:00 -03:00) para Date (UTC)
+function localMidnightToUTCDate(ymd: string) {
+  return new Date(`${ymd}T00:00:00-03:00`);
+}
+
+function addDaysLocal(ymd: string, days: number) {
+  const d = new Date(`${ymd}T12:00:00-03:00`); // meio-dia local pra evitar rollover
+  d.setUTCDate(d.getUTCDate() + days);
+  return localYMD(d);
+}
+
 
 /**
  * ✅ Sessão de 60 dias
@@ -262,5 +288,81 @@ router.post("/logout", async (req, res) => {
 
   return res.json({ mensagem: "Logout realizado com sucesso" });
 });
+
+// 📊 Estatísticas de logins
+// GET /login/estatisticas/logins/resumo?from=YYYY-MM-DD&to=YYYY-MM-DD (opcional)
+// Requer ADMIN
+router.get("/estatisticas/logins/resumo", verificarToken, requireAdmin, async (req, res) => {
+  try {
+    const qSchema = z.object({
+      from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    }).refine(
+      (v) => (!v.from && !v.to) || (v.from && v.to),
+      "Informe 'from' e 'to' juntos, ou não informe nenhum."
+    );
+
+    const parsed = qSchema.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({
+        erro: "Parâmetros inválidos",
+        detalhes: parsed.error.issues?.[0]?.message,
+      });
+    }
+
+    const { from, to } = parsed.data;
+
+    // intervalo padrão: "até hoje" (inclui hoje)
+    const hojeLocal = localYMD(new Date());
+    const amanhaLocal = addDaysLocal(hojeLocal, 1);
+    const fimUTCExcl = localMidnightToUTCDate(amanhaLocal); // < amanhã 00:00 local
+
+    const inicioUTC = from && to
+      ? localMidnightToUTCDate(from) // >= from 00:00 local
+      : undefined;
+
+    const fimUTCExclCustom = from && to
+      ? localMidnightToUTCDate(addDaysLocal(to, 1)) // < (to+1) 00:00 local
+      : fimUTCExcl;
+
+    // ⚠️ AJUSTE AQUI caso o model da auditoria tenha outro nome no seu Prisma:
+    // exemplos comuns: prisma.auditLog, prisma.audit, prisma.auditoria, prisma.auditEvent...
+    const logs = await prisma.auditLog.findMany({
+      where: {
+        event: "LOGIN",
+        ...(inicioUTC ? { createdAt: { gte: inicioUTC, lt: fimUTCExclCustom } } : { createdAt: { lt: fimUTCExclCustom } }),
+      },
+      select: { createdAt: true },
+      orderBy: { createdAt: "asc" },
+    });
+
+    // agrupa por dia local
+    const map = new Map<string, number>();
+    for (const l of logs) {
+      const dia = localYMD(l.createdAt);
+      map.set(dia, (map.get(dia) || 0) + 1);
+    }
+
+    const totalAteHoje = logs.length;
+    const diasComLogin = map.size;
+    const mediaPorDia = diasComLogin > 0 ? totalAteHoje / diasComLogin : 0;
+
+    const detalhesPorDia = Array.from(map.entries())
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([data, total]) => ({ data, total }));
+
+    return res.json({
+      totalAteHoje,
+      diasComLogin,
+      mediaPorDia,
+      detalhesPorDia,
+      intervalo: from && to ? { from, to } : { ate: hojeLocal },
+    });
+  } catch (err) {
+    console.error("Erro ao calcular estatísticas de logins:", err);
+    return res.status(500).json({ erro: "Erro ao calcular estatísticas de logins" });
+  }
+});
+
 
 export default router;
