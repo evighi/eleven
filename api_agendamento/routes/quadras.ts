@@ -113,6 +113,19 @@ router.post("/", upload.single("imagem"), async (req, res) => {
   }
 });
 
+// ✅ TOTAL de quadras cadastradas (endpoint dedicado)
+// GET /quadras/total
+router.get("/total", async (_req, res) => {
+  try {
+    const total = await prisma.quadra.count();
+    return res.json({ total });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ erro: "Erro ao buscar total de quadras" });
+  }
+});
+
+
 // GET /:id
 router.get("/:id", async (req, res) => {
   const { id } = req.params;

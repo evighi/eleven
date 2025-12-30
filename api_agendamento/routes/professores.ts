@@ -419,6 +419,23 @@ async function aulasDetalhadasPeriodoProfessor(
   }));
 }
 
+// ✅ TOTAL de professores cadastrados (endpoint dedicado)
+// GET /professores/total
+router.get("/total", requireAdmin, async (_req, res) => {
+  try {
+    // se "professor" no teu sistema = tipo ADMIN_PROFESSORES:
+    const total = await prisma.usuario.count({
+      where: { tipo: "ADMIN_PROFESSORES" },
+    });
+
+    return res.json({ total });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ erro: "Erro ao buscar total de professores" });
+  }
+});
+
+
 /* =========================================================
    GET /professores/me/resumo?mes=YYYY-MM
    ou ?from=YYYY-MM-DD&to=YYYY-MM-DD
