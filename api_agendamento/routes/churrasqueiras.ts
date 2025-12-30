@@ -55,6 +55,19 @@ router.post("/", upload.single("imagem"), async (req, res) => {
   }
 });
 
+
+// ✅ TOTAL de churrasqueiras cadastradas (endpoint dedicado)
+// GET /churrasqueiras/total
+router.get("/total", async (_req, res) => {
+  try {
+    const total = await prisma.churrasqueira.count();
+    return res.json({ total });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ erro: "Erro ao buscar total de churrasqueiras" });
+  }
+});
+
 // PUT
 router.put("/:id", upload.single("imagem"), async (req, res) => {
   const { id } = req.params;
@@ -90,6 +103,7 @@ router.put("/:id", upload.single("imagem"), async (req, res) => {
     res.status(500).json({ erro: "Erro ao atualizar churrasqueira" });
   }
 });
+
 
 // GET /:id
 router.get("/:id", async (req, res) => {
