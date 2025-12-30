@@ -1,5 +1,5 @@
 import jwt from "jsonwebtoken";
-import { PrismaClient, TipoUsuario } from "@prisma/client";
+import { PrismaClient, TipoUsuario, Prisma } from "@prisma/client";
 import verificarToken from "../middleware/authMiddleware";
 import { z } from "zod";
 import { requireAdmin } from "../middleware/acl";
@@ -294,13 +294,20 @@ router.post("/logout", async (req, res) => {
 // Requer ADMIN
 router.get("/estatisticas/logins/resumo", verificarToken, requireAdmin, async (req, res) => {
   try {
-    const qSchema = z.object({
-      from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-      to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-    }).refine(
-      (v) => (!v.from && !v.to) || (v.from && v.to),
-      "Informe 'from' e 'to' juntos, ou não informe nenhum."
-    );
+    const qSchema = z
+      .object({
+        from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        days: z.coerce.number().int().min(1).max(3650).optional(), // default 30
+      })
+      .refine(
+        (v) => {
+          const hasFromTo = !!v.from || !!v.to;
+          if (hasFromTo) return !!v.from && !!v.to && !v.days; // from+to juntos e sem days
+          return true;
+        },
+        "Use 'from' e 'to' juntos (sem 'days'), ou use apenas 'days', ou nenhum."
+      );
 
     const parsed = qSchema.safeParse(req.query);
     if (!parsed.success) {
@@ -312,51 +319,53 @@ router.get("/estatisticas/logins/resumo", verificarToken, requireAdmin, async (r
 
     const { from, to } = parsed.data;
 
-    // intervalo padrão: "até hoje" (inclui hoje)
+    // ✅ Por padrão: últimos 30 dias (bem mais leve que “desde sempre”)
+    const days = parsed.data.days ?? 30;
+
     const hojeLocal = localYMD(new Date());
-    const amanhaLocal = addDaysLocal(hojeLocal, 1);
-    const fimUTCExcl = localMidnightToUTCDate(amanhaLocal); // < amanhã 00:00 local
 
-    const inicioUTC = from && to
-      ? localMidnightToUTCDate(from) // >= from 00:00 local
-      : undefined;
+    const fromLocal = from ?? addDaysLocal(hojeLocal, -days + 1); // inclui hoje no range (30 dias contando hoje)
+    const toLocal = to ?? hojeLocal;
 
-    const fimUTCExclCustom = from && to
-      ? localMidnightToUTCDate(addDaysLocal(to, 1)) // < (to+1) 00:00 local
-      : fimUTCExcl;
+    const inicioUTC = localMidnightToUTCDate(fromLocal);
+    const fimUTCExcl = localMidnightToUTCDate(addDaysLocal(toLocal, 1)); // exclusivo
 
-    // ⚠️ AJUSTE AQUI caso o model da auditoria tenha outro nome no seu Prisma:
-    // exemplos comuns: prisma.auditLog, prisma.audit, prisma.auditoria, prisma.auditEvent...
-    const logs = await prisma.auditLog.findMany({
-      where: {
-        event: "LOGIN",
-        ...(inicioUTC ? { createdAt: { gte: inicioUTC, lt: fimUTCExclCustom } } : { createdAt: { lt: fimUTCExclCustom } }),
-      },
-      select: { createdAt: true },
-      orderBy: { createdAt: "asc" },
-    });
+    /**
+     * ✅ AQUI está o ganho:
+     * - NÃO traz 20k registros pro Node
+     * - Agrupa no banco por dia local e retorna só (dia, total)
+     *
+     * ⚠️ Se teu nome de tabela for diferente (por @@map), ajuste "AuditLog".
+     */
+    const rows = await prisma.$queryRaw<
+      { dia: string; total: bigint }[]
+    >(Prisma.sql`
+      SELECT
+        (("createdAt" AT TIME ZONE ${SP_TZ})::date)::text AS dia,
+        COUNT(*)::bigint AS total
+      FROM "AuditLog"
+      WHERE "event" = 'LOGIN'
+        AND "createdAt" >= ${inicioUTC}
+        AND "createdAt" < ${fimUTCExcl}
+      GROUP BY dia
+      ORDER BY dia ASC
+    `);
 
-    // agrupa por dia local
-    const map = new Map<string, number>();
-    for (const l of logs) {
-      const dia = localYMD(l.createdAt);
-      map.set(dia, (map.get(dia) || 0) + 1);
-    }
+    const detalhesPorDia = rows.map((r) => ({
+      data: r.dia, // já vem "YYYY-MM-DD"
+      total: Number(r.total),
+    }));
 
-    const totalAteHoje = logs.length;
-    const diasComLogin = map.size;
+    const totalAteHoje = detalhesPorDia.reduce((acc, cur) => acc + cur.total, 0);
+    const diasComLogin = detalhesPorDia.length;
     const mediaPorDia = diasComLogin > 0 ? totalAteHoje / diasComLogin : 0;
-
-    const detalhesPorDia = Array.from(map.entries())
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-      .map(([data, total]) => ({ data, total }));
 
     return res.json({
       totalAteHoje,
       diasComLogin,
       mediaPorDia,
       detalhesPorDia,
-      intervalo: from && to ? { from, to } : { ate: hojeLocal },
+      intervalo: { from: fromLocal, to: toLocal },
     });
   } catch (err) {
     console.error("Erro ao calcular estatísticas de logins:", err);
