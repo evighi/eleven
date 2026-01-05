@@ -142,19 +142,15 @@ function isDentroDeJanelaAula(
    Cálculo core (p/ um professor) — usa datasets carregados
 ========================= */
 type ComumRow = {
-  id?: string; // opcional, ajuda debug
   data: Date;
   horario: string;
   quadraId: string;
   esporteId: string; // 👈 NOVO
   tipoSessao: TipoSessaoProfessor | null;
   professorId: string | null; // informativo
-  usuarioId: string; // 👈 ADD (legado)
   isencaoApoiado?: boolean | null; // 👈 não entra no VALOR
 };
-
 type PermRow = {
-  id?: string; // opcional, ajuda debug
   diaSemana: DiaSemana;
   horario: string;
   quadraId: string;
@@ -163,26 +159,9 @@ type PermRow = {
   cancelamentos: { data: Date }[];
   tipoSessao: TipoSessaoProfessor | null;
   professorId: string | null; // informativo
-  usuarioId: string; // 👈 ADD (legado)
   // (sem isenção aqui no schema)
 };
-
 type BloqueiosMap = Map<string, Array<{ ini: number; fim: number }>>;
-
-/**
- * ✅ Helper robusto: garante que o row pertence ao professor (novo padrão + legado)
- * Isso impede dataset "global" de contaminar outros professores mesmo se o chamador errar.
- */
-function pertenceAoProfessor(
-  profId: string,
-  row: { professorId: string | null; usuarioId: string }
-) {
-  // novo padrão
-  if (row.professorId) return row.professorId === profId;
-
-  // legado: quando professorId não existia e o professor era o dono
-  return row.usuarioId === profId;
-}
 
 function computeResumoProfessorFromDatasets(
   professor: { id: string; nome: string; valorQuadra: any },
@@ -216,9 +195,6 @@ function computeResumoProfessorFromDatasets(
 
   // 1) Comuns — somente AULA (ou legado null ⇒ conta), dentro da janela AULA
   for (const ag of comuns) {
-    // ✅ FILTRO CRÍTICO: protege contra dataset global
-    if (!pertenceAoProfessor(professor.id, ag)) continue;
-
     if (ag.tipoSessao === "JOGO") continue;
 
     const ymd = toISODateUTC(ag.data); // storage é 00:00Z do dia local
@@ -238,9 +214,6 @@ function computeResumoProfessorFromDatasets(
 
   // 2) Permanentes — somente AULA (ou legado null ⇒ conta), dentro da janela AULA
   for (const p of permanentes) {
-    // ✅ FILTRO CRÍTICO: protege contra dataset global
-    if (!pertenceAoProfessor(professor.id, p)) continue;
-
     if (p.tipoSessao === "JOGO") continue;
 
     const dayIdx = DIA_IDX[p.diaSemana];
@@ -462,6 +435,7 @@ router.get("/total", requireAdmin, async (_req, res) => {
   }
 });
 
+
 /* =========================================================
    GET /professores/me/resumo?mes=YYYY-MM
    ou ?from=YYYY-MM-DD&to=YYYY-MM-DD
@@ -524,11 +498,9 @@ router.get("/me/resumo", async (req, res) => {
         ],
       },
       select: {
-        id: true, // 👈 opcional (debug)
         data: true,
         horario: true,
         quadraId: true,
-        usuarioId: true, // 👈 ADD
         tipoSessao: true,
         professorId: true,
         isencaoApoiado: true,
@@ -552,8 +524,6 @@ router.get("/me/resumo", async (req, res) => {
         ],
       },
       select: {
-        id: true, // 👈 opcional (debug)
-        usuarioId: true, // 👈 ADD
         diaSemana: true,
         horario: true,
         quadraId: true,
@@ -590,31 +560,24 @@ router.get("/me/resumo", async (req, res) => {
 
     // ====== CARREGAR JANELAS AULA DOS ESPORTES ENVOLVIDOS ======
     const esportesIn = Array.from(
-      new Set(
-        [
-          ...comuns.map((c) => String(c.esporteId)),
-          ...permanentes.map((p) => String(p.esporteId)),
-        ].filter(Boolean)
-      )
+      new Set([
+        ...comuns.map((c) => String(c.esporteId)),
+        ...permanentes.map((p) => String(p.esporteId)),
+      ].filter(Boolean))
     );
     const janelasAula = await carregarJanelasAula(esportesIn);
 
     // datasets no formato do cálculo
     const comunsDs: ComumRow[] = comuns.map((ag) => ({
-      id: ag.id,
       data: ag.data,
       horario: ag.horario,
       quadraId: ag.quadraId,
       esporteId: String(ag.esporteId),
       tipoSessao: ag.tipoSessao,
       professorId: ag.professorId,
-      usuarioId: ag.usuarioId, // 👈 ADD
       isencaoApoiado: ag.isencaoApoiado ?? false,
     }));
-
     const permanentesDs: PermRow[] = permanentes.map((p) => ({
-      id: p.id,
-      usuarioId: p.usuarioId, // 👈 ADD
       diaSemana: p.diaSemana,
       horario: p.horario,
       quadraId: p.quadraId,
@@ -764,11 +727,9 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
         ],
       },
       select: {
-        id: true, // 👈 opcional (debug)
         data: true,
         horario: true,
         quadraId: true,
-        usuarioId: true, // 👈 ADD
         tipoSessao: true,
         professorId: true,
         isencaoApoiado: true,
@@ -792,8 +753,6 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
         ],
       },
       select: {
-        id: true, // 👈 opcional (debug)
-        usuarioId: true, // 👈 ADD
         diaSemana: true,
         horario: true,
         quadraId: true,
@@ -830,30 +789,23 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
 
     // ====== CARREGAR JANELAS AULA DOS ESPORTES ENVOLVIDOS ======
     const esportesIn = Array.from(
-      new Set(
-        [
-          ...comuns.map((c) => String(c.esporteId)),
-          ...permanentes.map((p) => String(p.esporteId)),
-        ].filter(Boolean)
-      )
+      new Set([
+        ...comuns.map((c) => String(c.esporteId)),
+        ...permanentes.map((p) => String(p.esporteId)),
+      ].filter(Boolean))
     );
     const janelasAula = await carregarJanelasAula(esportesIn);
 
     const comunsDs: ComumRow[] = comuns.map((ag) => ({
-      id: ag.id,
       data: ag.data,
       horario: ag.horario,
       quadraId: ag.quadraId,
       esporteId: String(ag.esporteId),
       tipoSessao: ag.tipoSessao,
       professorId: ag.professorId,
-      usuarioId: ag.usuarioId, // 👈 ADD
       isencaoApoiado: ag.isencaoApoiado ?? false,
     }));
-
     const permanentesDs: PermRow[] = permanentes.map((p) => ({
-      id: p.id,
-      usuarioId: p.usuarioId, // 👈 ADD
       diaSemana: p.diaSemana,
       horario: p.horario,
       quadraId: p.quadraId,
@@ -1016,11 +968,10 @@ router.get("/admin", requireAdmin, async (req, res) => {
           ],
         },
         select: {
-          id: true, // 👈 opcional (debug)
           data: true,
           horario: true,
           quadraId: true,
-          usuarioId: true, // 👈 ADD (já tinha, mantido)
+          usuarioId: true,
           professorId: true,
           tipoSessao: true,
           isencaoApoiado: true,
@@ -1045,8 +996,7 @@ router.get("/admin", requireAdmin, async (req, res) => {
           ],
         },
         select: {
-          id: true, // 👈 opcional (debug)
-          usuarioId: true, // 👈 ADD (já tinha, mantido)
+          usuarioId: true,
           diaSemana: true,
           horario: true,
           quadraId: true,
@@ -1095,14 +1045,12 @@ router.get("/admin", requireAdmin, async (req, res) => {
 
       const arr = comunsByProf.get(key) || [];
       arr.push({
-        id: ag.id,
         data: ag.data,
         horario: ag.horario,
         quadraId: ag.quadraId,
         esporteId: String(ag.esporteId),
         tipoSessao: ag.tipoSessao,
         professorId: ag.professorId,
-        usuarioId: ag.usuarioId, // 👈 ADD
         isencaoApoiado: ag.isencaoApoiado ?? false,
       });
       comunsByProf.set(key, arr);
@@ -1116,10 +1064,8 @@ router.get("/admin", requireAdmin, async (req, res) => {
     for (const p of permanentesAll) {
       const key = p.professorId ?? p.usuarioId!;
       if (!profIdSet.has(key)) continue;
-
       const arr = permsByProf.get(key) || [];
       arr.push({
-        id: p.id,
         diaSemana: p.diaSemana,
         horario: p.horario,
         quadraId: p.quadraId,
@@ -1128,7 +1074,6 @@ router.get("/admin", requireAdmin, async (req, res) => {
         cancelamentos: p.cancelamentos,
         tipoSessao: p.tipoSessao,
         professorId: p.professorId,
-        usuarioId: p.usuarioId, // 👈 ADD
       });
       permsByProf.set(key, arr);
     }
@@ -1151,17 +1096,18 @@ router.get("/admin", requireAdmin, async (req, res) => {
     for (const m of multasAll) {
       const key = m.professorId ?? m.usuarioId!;
       if (!profIdSet.has(key)) continue;
-      multaByProf.set(key, (multaByProf.get(key) || 0) + Number(m.multa ?? 0));
+      multaByProf.set(
+        key,
+        (multaByProf.get(key) || 0) + Number(m.multa ?? 0)
+      );
     }
 
     // ====== CARREGAR JANELAS AULA UMA ÚNICA VEZ PARA TODOS ======
     const esportesIn = Array.from(
-      new Set(
-        [
-          ...comunsAll.map((c) => String(c.esporteId)),
-          ...permanentesAll.map((p) => String(p.esporteId)),
-        ].filter(Boolean)
-      )
+      new Set([
+        ...comunsAll.map((c) => String(c.esporteId)),
+        ...permanentesAll.map((p) => String(p.esporteId)),
+      ].filter(Boolean))
     );
     const janelasAula = await carregarJanelasAula(esportesIn);
 
