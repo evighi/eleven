@@ -989,6 +989,19 @@ router.patch(
           .json({ erro: "Já existe um agendamento permanente ativo nesse dia/horário/quadra" });
       }
 
+      // ✅ FIX: ao transferir AULA para um dono que é professor, alinhar professorId com novo dono
+      const novoUsuario = await prisma.usuario.findUnique({
+        where: { id: novoUsuarioId },
+        select: { id: true, tipo: true },
+      });
+
+      let professorIdNovo: string | null = perm.professorId ?? null;
+
+      // Se a reserva é AULA e o novo dono é professor, o professorId deve ser o próprio dono
+      if ((perm.tipoSessao ?? null) === "AULA" && novoUsuario?.tipo === "ADMIN_PROFESSORES") {
+        professorIdNovo = novoUsuarioId;
+      }
+
       // Transação: marca original como TRANSFERIDO e cria o novo com o novo usuário
       const [, novoPerm] = await prisma.$transaction([
         prisma.agendamentoPermanente.update({
@@ -1008,7 +1021,7 @@ router.patch(
             dataInicio: perm.dataInicio ?? null,
 
             // manter extras
-            professorId: perm.professorId ?? null,
+            professorId: professorIdNovo, // ✅ AQUI
             tipoSessao: perm.tipoSessao ?? null,
           },
           include: {

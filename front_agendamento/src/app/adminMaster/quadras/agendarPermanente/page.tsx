@@ -93,8 +93,6 @@ export default function CadastrarPermanente() {
   const [proximasDatasDisponiveis, setProximasDatasDisponiveis] = useState<string[]>([]);
 
   // Pré-preenchimento vindo da URL
-  the: {
-  }
   const [esporteQuery, setEsporteQuery] = useState<string | null>(null);
   const [quadraIdQuery, setQuadraIdQuery] = useState<string | null>(null);
   const prefillRef = useRef(true); // true só na primeira carga
@@ -212,13 +210,10 @@ export default function CadastrarPermanente() {
     setLoadingAllowed(true);
 
     axios
-      .get<{ allow: Array<"AULA" | "JOGO"> }>(
-        `${API_URL}/agendamentosPermanentes/_sessoes-permitidas`,
-        {
-          params: { esporteId, diaSemana, horario },
-          withCredentials: true,
-        }
-      )
+      .get<{ allow: Array<"AULA" | "JOGO"> }>(`${API_URL}/agendamentosPermanentes/_sessoes-permitidas`, {
+        params: { esporteId, diaSemana, horario },
+        withCredentials: true,
+      })
       .then((res) => {
         const allow = Array.isArray(res.data?.allow) ? res.data.allow : [];
         setAllowedTipos(allow as Array<"AULA" | "JOGO">);
@@ -251,8 +246,7 @@ export default function CadastrarPermanente() {
     }
 
     const quadraSelecionada = quadras.find((q) => q.quadraId === quadraId);
-    const deveBuscarDatas =
-      quadraSelecionada?.conflitoComum && !quadraSelecionada?.conflitoPermanente;
+    const deveBuscarDatas = quadraSelecionada?.conflitoComum && !quadraSelecionada?.conflitoPermanente;
 
     if (!deveBuscarDatas) {
       setProximasDatasDisponiveis([]);
@@ -380,15 +374,19 @@ export default function CadastrarPermanente() {
       esporteId,
       quadraId,
       horario,
+
       ...(showTipoSessao && tipoSessao ? { tipoSessao } : {}),
+
+      // ✅ BLINDAGEM: se dono é professor e for AULA, manda professorId explícito
+      ...(usuarioId && selectedOwnerIsProfessor && tipoSessao === "AULA" ? { professorId: usuarioId } : {}),
+
       ...(usuarioId
         ? { usuarioId }
         : {
-            // concatena "Nome Telefone" para manter compatibilidade com o backend
-            convidadosNomes: [
-              `${convidadoDonoNome.trim()} ${convidadoDonoTelefone.trim()}`.trim(),
-            ],
-          }),
+          // concatena "Nome Telefone" para manter compatibilidade com o backend
+          convidadosNomes: [`${convidadoDonoNome.trim()} ${convidadoDonoTelefone.trim()}`.trim()],
+        }),
+
       ...(existeAgendamentoComum ? { dataInicio } : {}),
     };
 
@@ -405,11 +403,18 @@ export default function CadastrarPermanente() {
 
       // limpar campos principais
       setUsuarioId("");
+      setBusca("");
+      setUsuariosEncontrados([]);
+      setListaAberta(false);
+
+      setSelectedOwnerIsProfessor(false);
       setConvidadoDonoNome("");
       setConvidadoDonoTelefone("");
+
       setQuadraId("");
       setTipoSessao("");
       setAllowedTipos([]);
+      setErrorAllowed(null);
 
       setTimeout(() => {
         const params = new URLSearchParams({ data: redirectYmd });
@@ -429,8 +434,8 @@ export default function CadastrarPermanente() {
     feedback?.kind === "success"
       ? "border-green-200 bg-green-50 text-green-800"
       : feedback?.kind === "error"
-      ? "border-red-200 bg-red-50 text-red-800"
-      : "border-sky-200 bg-sky-50 text-sky-800";
+        ? "border-red-200 bg-red-50 text-red-800"
+        : "border-sky-200 bg-sky-50 text-sky-800";
 
   return (
     <div className="max-w-md mx-auto mt-10 p-6 bg-white rounded shadow">
@@ -532,9 +537,7 @@ export default function CadastrarPermanente() {
             <div className="mt-2">
               <label className="block font-semibold mb-1">
                 Tipo da sessão{" "}
-                <span className="text-xs text-gray-500">
-                  (conforme janelas do esporte para este dia/horário)
-                </span>
+                <span className="text-xs text-gray-500">(conforme janelas do esporte para este dia/horário)</span>
               </label>
 
               {/* Caso só exista 1 tipo permitido, mostra “chip” travado */}
@@ -605,6 +608,12 @@ export default function CadastrarPermanente() {
                 setUsuarioId("");
                 setListaAberta(true);
                 setFeedback(null);
+
+                // ✅ evita estado antigo (ex.: ficou "professor" selecionado antes)
+                setSelectedOwnerIsProfessor(false);
+                setTipoSessao("");
+                setAllowedTipos([]);
+                setErrorAllowed(null);
               }}
               onFocus={() => setListaAberta(true)}
               placeholder="Buscar usuário por nome"
@@ -635,6 +644,8 @@ export default function CadastrarPermanente() {
 
                       // ao trocar dono, reset do tipo (será reavaliado pelo efeito de allowedTipos)
                       setTipoSessao("");
+                      setAllowedTipos([]);
+                      setErrorAllowed(null);
                     }}
                     title={u.celular || ""}
                   >
@@ -646,12 +657,9 @@ export default function CadastrarPermanente() {
               </ul>
             )}
 
-            {listaAberta &&
-              busca.trim().length >= 2 &&
-              !carregandoUsuarios &&
-              usuariosEncontrados.length === 0 && (
-                <div className="text-xs text-gray-500 mt-1">Nenhum usuário encontrado.</div>
-              )}
+            {listaAberta && busca.trim().length >= 2 && !carregandoUsuarios && usuariosEncontrados.length === 0 && (
+              <div className="text-xs text-gray-500 mt-1">Nenhum usuário encontrado.</div>
+            )}
 
             {usuarioId && <div className="text-xs text-green-700 mt-1">Usuário selecionado.</div>}
           </div>
@@ -671,7 +679,8 @@ export default function CadastrarPermanente() {
                     setListaAberta(false);
                     setSelectedOwnerIsProfessor(false); // convidado não é professor
                     setTipoSessao("");
-                    setAllowedTipos([]); // limpa permitidos pois não mostramos tipo p/ convidado
+                    setAllowedTipos([]);
+                    setErrorAllowed(null);
                   }
                   setFeedback(null);
                 }}
@@ -693,8 +702,8 @@ export default function CadastrarPermanente() {
               />
             </div>
             <p className="text-[11px] text-gray-500 mt-1">
-              Preencha <strong>um</strong> dos dois: usuário cadastrado <em>ou</em> convidado dono.
-              Se usar convidado, informe também o telefone.
+              Preencha <strong>um</strong> dos dois: usuário cadastrado <em>ou</em> convidado dono. Se usar convidado,
+              informe também o telefone.
             </p>
           </div>
         </div>
@@ -704,8 +713,7 @@ export default function CadastrarPermanente() {
           <div className="mt-4 p-4 border border-yellow-400 bg-yellow-100 rounded">
             <p className="mb-2 font-semibold text-yellow-700">
               A quadra selecionada possui conflito com agendamento comum no dia{" "}
-              {format(parseISO(dataUltimoConflito), "dd/MM/yyyy")}.
-              Selecione uma data de início disponível:
+              {format(parseISO(dataUltimoConflito), "dd/MM/yyyy")}. Selecione uma data de início disponível:
             </p>
 
             <div className="grid grid-cols-3 gap-2">
@@ -715,9 +723,8 @@ export default function CadastrarPermanente() {
                   <button
                     key={dataStr}
                     type="button"
-                    className={`py-2 px-3 border rounded ${
-                      dataInicio === dataStr ? "bg-orange-500 text-white" : "bg-white"
-                    }`}
+                    className={`py-2 px-3 border rounded ${dataInicio === dataStr ? "bg-orange-500 text-white" : "bg-white"
+                      }`}
                     onClick={() => setDataInicio(dataStr)}
                   >
                     {dataFormatada}
