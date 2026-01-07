@@ -51,7 +51,6 @@ export default function AdminSideMenu({ open, onClose, anchorRef }: Props) {
     const vw = window.innerWidth;
     const isMobile = vw < 640;
 
-    // tamanhos bem próximos do print
     const width = isMobile ? Math.min(340, vw - 32) : 310;
 
     if (!el) {
@@ -60,12 +59,29 @@ export default function AdminSideMenu({ open, onClose, anchorRef }: Props) {
     }
 
     const r = el.getBoundingClientRect();
-
-    // top: logo abaixo do botão
     const top = Math.round(r.bottom + 8);
 
-    // right: alinhado ao canto direito do botão (fica “colado” nele)
-    const right = Math.max(12, Math.round(vw - r.right));
+    // 🔥 pega o container limitado do header (o da borda)
+    const container = el.closest("[data-admin-header-container]") as HTMLElement | null;
+    const cr = container?.getBoundingClientRect();
+
+    // ✅ (A) alinhar com o FIM DA BORDA (direita do max-w)
+    // se tu quiser alinhar com o fim do conteúdo (px-4), usa PADDING = 16
+    const PADDING = 16; // px-4
+
+    let desiredRightEdge = r.right; // fallback: canto direito do botão
+    if (cr) desiredRightEdge = cr.right - PADDING; // ou cr.right se quiser colar na borda mesmo
+
+    let right = Math.max(12, Math.round(vw - desiredRightEdge));
+
+    // ✅ garante que o menu não “vaze” pra fora do container (lado esquerdo)
+    if (cr) {
+      const left = vw - right - width;
+      const minLeft = cr.left + PADDING; // respeita o mesmo padding
+      if (left < minLeft) {
+        right = Math.max(12, Math.round(vw - (minLeft + width)));
+      }
+    }
 
     setPos({ top, right, width });
   };

@@ -35,7 +35,9 @@ export default function AdminHeader() {
       {/* Fundo ocupa a tela toda */}
       <div className="bg-white">
         {/* ✅ linha/borda limitada ao max-w-6xl */}
-        <div className="max-w-6xl mx-auto border-b border-gray-300">
+        <div
+          data-admin-header-container
+          className="max-w-6xl mx-auto border-b border-gray-300">
           <header className="px-4 py-3 flex items-center justify-between">
             <Link
               href="/adminMaster"
