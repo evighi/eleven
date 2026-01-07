@@ -1,11 +1,12 @@
 // routes/bloqueios.ts
 import { Router } from "express";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, AtendenteFeature } from "@prisma/client";
 import { z } from "zod";
 import { startOfDay, endOfDay } from "date-fns";
 
 import verificarToken from "../middleware/authMiddleware";
 import { requireAdmin } from "../middleware/acl";
+import { requireAtendenteFeature } from "../middleware/atendenteFeatures";
 import { logAudit, TargetType } from "../utils/audit";
 
 const router = Router();
@@ -14,6 +15,10 @@ const prisma = new PrismaClient();
 // 🔒 tudo aqui exige login + ser ADMIN
 router.use(verificarToken);
 router.use(requireAdmin);
+
+// ✅ Feature que controla se ATENDENTE pode acessar bloqueios (GET/POST/DELETE)
+const FEATURE_BLOQUEIOS: AtendenteFeature = "ATD_BLOQUEIOS";
+router.use(requireAtendenteFeature(FEATURE_BLOQUEIOS));
 
 // helpers
 const horaRegex = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -141,7 +146,10 @@ router.post("/", async (req, res) => {
     }
 
     // FK de motivo inválido
-    if (error?.code === "P2003" && String(error?.meta?.field_name || "").includes("motivoId")) {
+    if (
+      error?.code === "P2003" &&
+      String(error?.meta?.field_name || "").includes("motivoId")
+    ) {
       return res
         .status(400)
         .json({ erro: "Motivo de bloqueio inválido ou inexistente" });
