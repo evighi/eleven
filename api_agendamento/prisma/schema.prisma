@@ -15,6 +15,18 @@ enum TipoUsuario {
   CLIENTE_APOIADO // 👈 NOVO
 }
 
+// ✅ NOVO: "features" (opções limitadas) que o ADMIN_MASTER pode ligar/desligar pro ADMIN_ATENDENTE.
+// Isso vira base pro menu hamburger e também pro bloqueio real nas rotas.
+enum AtendenteFeature {
+  ATD_AGENDAMENTOS
+  ATD_PERMANENTES
+  ATD_CHURRAS
+  ATD_BLOQUEIOS
+  ATD_USUARIOS_LEITURA
+  ATD_USUARIOS_EDICAO
+  ATD_RELATORIOS
+}
+
 enum StatusAgendamento {
   CONFIRMADO
   CANCELADO
@@ -124,8 +136,9 @@ model Usuario {
   // 👇 NOVO: relação inversa — agendamentos nos quais o usuário foi o APOIADO isento
   agendamentosIsentosComoApoiado Agendamento[] @relation("ApoiadoNosAgendamentos")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  permissoesAtendentes PermissoesAtendente[]
 
   @@index([disabledAt])
   @@index([deletedAt])
@@ -445,6 +458,24 @@ model AgendamentoPermanenteChurrasqueiraCancelamento {
 model ConfiguracaoSistema {
   id               Int     @id
   valorMultaPadrao Decimal @db.Decimal(10, 2)
+}
+
+// ✅ NOVO: Config global (singleton) das permissões do ADMIN_ATENDENTE.
+// A ideia é ter SEMPRE 1 linha (id=1). O ADMIN_MASTER edita essa lista.
+model PermissoesAtendente {
+  id Int @id @default(1)
+
+  // lista de "features" liberadas pro atendente
+  features AtendenteFeature[] @default([])
+
+  // quem alterou por último (opcional)
+  updatedById String?
+  updatedBy   Usuario? @relation(fields: [updatedById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([updatedById])
 }
 
 // =====================
