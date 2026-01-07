@@ -29,7 +29,7 @@ export default function AdminSideMenu({ open, onClose, anchorRef }: Props) {
       { href: "/adminMaster/bloqueioQuadras", label: "Bloqueio de Quadras", icon: "/icons/bloqueio.png" },
       { href: "/adminMaster/professores", label: "Professores", icon: "/icons/icone_professores.png" },
       { href: "/adminMaster/logs", label: "Registros", icon: "/icons/icone_registros.png" },
-      { href: "/adminMaster/usuarios", label: "Usuários", icon: "/icons/icone_usuarios.png" },
+      { href: "/adminMaster/usuarios/perfis", label: "Usuários", icon: "/icons/icone_usuarios.png" },
       { href: "/", label: "Perfil atletas", icon: "/icons/atletas.png" },
     ],
     []
