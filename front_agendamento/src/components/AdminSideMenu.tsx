@@ -1,21 +1,39 @@
 "use client";
 
 import Link from "next/link";
-import { X } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
 import { useAuthStore } from "@/context/AuthStore";
 import { useLoadUser } from "@/hooks/useLoadUser";
 import { useLogout } from "@/hooks/useLogout";
 import AppImage from "@/components/AppImage";
+import type { RefObject } from "react";
 
-type Props = { open: boolean; onClose: () => void };
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  anchorRef: RefObject<HTMLElement | null>;
+};
 
-export default function AdminSideMenu({ open, onClose }: Props) {
+type Pos = { top: number; right: number; width: number };
+
+export default function AdminSideMenu({ open, onClose, anchorRef }: Props) {
   const { usuario } = useAuthStore();
   const logout = useLogout();
+  const pathname = usePathname();
   useLoadUser();
 
-  const nome = usuario?.nome ? usuario.nome.split(" ")[0] : "Admin";
+  const items: Array<{ href: string; label: string; icon: string }> = useMemo(
+    () => [
+      { href: "/adminMaster/painelAdm", label: "Painel Administrativo", icon: "/icons/config.png" },
+      { href: "/adminMaster/bloqueioQuadras", label: "Bloqueio de Quadras", icon: "/icons/bloqueio.png" },
+      { href: "/adminMaster/professores", label: "Professores", icon: "/icons/icone_professores.png" },
+      { href: "/adminMaster/logs", label: "Registros", icon: "/icons/icone_registros.png" },
+      { href: "/adminMaster/usuarios", label: "Usuários", icon: "/icons/icone_usuarios.png" },
+      { href: "/", label: "Perfil atletas", icon: "/icons/atletas.png" },
+    ],
+    []
+  );
 
   // ESC para fechar
   useEffect(() => {
@@ -25,86 +43,115 @@ export default function AdminSideMenu({ open, onClose }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  // 🔒 Congela o fundo quando o menu está aberto
-  useEffect(() => {
-    if (!open) return;
-    const scrollY = window.scrollY;
-    const body = document.body;
+  // 📍 posição do popover abaixo do botão
+  const [pos, setPos] = useState<Pos>({ top: 72, right: 16, width: 310 });
 
-    body.style.position = "fixed";
-    body.style.top = `-${scrollY}px`;
-    body.style.left = "0";
-    body.style.right = "0";
-    body.style.width = "100%";
+  const recomputePos = () => {
+    const el = anchorRef?.current;
+    const vw = window.innerWidth;
+    const isMobile = vw < 640;
+
+    const width = isMobile ? Math.min(340, vw - 32) : 310;
+
+    if (!el) {
+      setPos({ top: 72, right: 16, width });
+      return;
+    }
+
+    const r = el.getBoundingClientRect();
+    const top = Math.round(r.bottom + 8);
+
+    // 🔥 pega o container limitado do header (o da borda)
+    const container = el.closest("[data-admin-header-container]") as HTMLElement | null;
+    const cr = container?.getBoundingClientRect();
+
+    // ✅ (A) alinhar com o FIM DA BORDA (direita do max-w)
+    // se tu quiser alinhar com o fim do conteúdo (px-4), usa PADDING = 16
+    const PADDING = 16; // px-4
+
+    let desiredRightEdge = r.right; // fallback: canto direito do botão
+    if (cr) desiredRightEdge = cr.right - PADDING; // ou cr.right se quiser colar na borda mesmo
+
+    let right = Math.max(12, Math.round(vw - desiredRightEdge));
+
+    // ✅ garante que o menu não “vaze” pra fora do container (lado esquerdo)
+    if (cr) {
+      const left = vw - right - width;
+      const minLeft = cr.left + PADDING; // respeita o mesmo padding
+      if (left < minLeft) {
+        right = Math.max(12, Math.round(vw - (minLeft + width)));
+      }
+    }
+
+    setPos({ top, right, width });
+  };
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    recomputePos();
+
+    const onResize = () => recomputePos();
+    const onScroll = () => recomputePos(); // se tiver scroll, mantém ancorado no botão
+
+    window.addEventListener("resize", onResize);
+    window.addEventListener("scroll", onScroll, true);
 
     return () => {
-      body.style.position = "";
-      body.style.top = "";
-      body.style.left = "";
-      body.style.right = "";
-      body.style.width = "";
-      window.scrollTo(0, scrollY);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("scroll", onScroll, true);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  if (!open) return null;
 
   return (
     <>
-      {/* Overlay */}
-      <div
-        className={`fixed inset-0 z-50 bg-black/40 transition-opacity ${
-          open ? "opacity-100" : "opacity-0 pointer-events-none"
-        }`}
+      {/* Overlay invisível no desktop (só pra fechar clicando fora) e levemente escuro no mobile */}
+      <button
+        type="button"
+        aria-label="Fechar menu"
         onClick={onClose}
-        aria-hidden
+        className="fixed inset-0 z-40 bg-black/20 sm:bg-transparent"
       />
 
-      {/* Drawer */}
+      {/* Popover (abaixo do hamburger, alinhado à direita) */}
       <aside
-        className={`fixed top-0 left-0 z-50 h-dvh max-h-[100dvh] bg-white shadow-2xl rounded-r-2xl
-          w-3/5 max-w-xs sm:max-w-sm transition-transform duration-300 ease-out
-          flex flex-col
-          ${open ? "translate-x-0" : "-translate-x-full"}`}
+        className="
+          fixed z-50
+          bg-white border border-gray-200
+          shadow-[0_12px_30px_rgba(0,0,0,0.12)]
+          rounded-md
+        "
+        style={{
+          top: pos.top,
+          right: pos.right,
+          width: pos.width,
+          maxHeight: "calc(100dvh - 120px)",
+        }}
         role="dialog"
         aria-modal="true"
         aria-label="Menu Admin"
       >
-        {/* Header */}
-        <div className="flex items-start justify-between px-4 pt-4 pb-2">
-          <div>
-            <h2 className="text-xl font-extrabold text-orange-600">Oi, {nome} ;)</h2>
-            <p className="text-xs text-gray-400 -mt-1">Admin Master</p>
-          </div>
-          <button onClick={onClose} className="p-1 rounded-full hover:bg-gray-100" aria-label="Fechar menu">
-            <X size={20} />
-          </button>
-        </div>
-
-        {/* Conteúdo rolável */}
         <div
-          className="flex-1 overflow-y-auto overscroll-contain px-3 pb-6"
+          className="px-3 py-3 overflow-y-auto"
           style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
         >
-          <nav className="space-y-2 mt-1">
-            <Item href="/adminMaster/usuarios" label="Perfil de Usuários" icon="/icons/perfis.png" onClose={onClose} />
-            <Item href="/adminMaster/professores" label="Professores" icon="/icons/perfis.png" onClose={onClose} />
-            <Item href="/adminMaster/esportes" label="Esportes" icon="/icons/editar.png" onClose={onClose} />
-            <Item href="/adminMaster/quadras" label="Quadras" icon="/icons/editar.png" onClose={onClose} />
-            <Item href="/adminMaster/churrasqueiras" label="Churrasqueiras" icon="/icons/editar.png" onClose={onClose} />
-            <Item href="/adminMaster/logs" label="Registros" icon="/icons/editar.png" onClose={onClose} />
-            <Item href="/adminMaster/bloqueioQuadras" label="Bloqueio de Quadras" icon="/icons/bloq.png" onClose={onClose} />
+          <nav className="space-y-2">
+            {items.map((it) => (
+              <MenuItem
+                key={it.href}
+                href={it.href}
+                label={it.label}
+                icon={it.icon}
+                active={isActivePath(pathname, it.href)}
+                onClose={onClose}
+              />
+            ))}
 
-            {/* ⇩ novo botão para ir ao perfil do cliente */}
-            <Item
-              href="/"
-              label="Ir para o perfil do cliente"
-              icon="/icons/sair.png"
-              onClose={onClose}
-            />
-
-            {/* Sair */}
-            <ItemButton
+            <MenuButton
               label="Sair"
-              icon="/icons/sair.png"
+              icon="/icons/exit.png"
               onClick={async () => {
                 try {
                   await logout();
@@ -116,44 +163,61 @@ export default function AdminSideMenu({ open, onClose }: Props) {
           </nav>
         </div>
 
-        {/* safe-area iOS */}
         <div className="pb-[env(safe-area-inset-bottom)]" />
       </aside>
     </>
   );
 }
 
-function Item({
+function isActivePath(pathname: string, href: string) {
+  if (!href || href === "/") return pathname === href;
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+function MenuItem({
   href,
   label,
   icon,
+  active,
   onClose,
 }: {
   href: string;
   label: string;
   icon: string;
+  active: boolean;
   onClose: () => void;
 }) {
   return (
     <Link
       href={href}
       onClick={onClose}
-      className="flex items-center gap-3 rounded-xl bg-gray-100 hover:bg-gray-200 transition px-3 py-3"
+      className={[
+        "relative flex items-center gap-2 px-3 py-2 rounded-md",
+        "bg-[#F4F4F4]",
+        "text-[13px] font-semibold text-gray-700",
+        "hover:bg-[#EFEFEF] hover:border-[#DDDDDD] transition",
+        active ? "bg-[#EFEFEF] border-orange-300 text-gray-900" : "",
+      ].join(" ")}
     >
-      <AppImage
-        src={icon}
-        alt={label}
-        width={20}
-        height={20}
-        className="w-5 h-5 object-contain"
-        priority={false}
-      />
-      <span className="text-[14px] font-medium text-gray-800">{label}</span>
+      {active && <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] bg-orange-500 rounded-r" />}
+
+      <span className="w-6 flex items-center justify-center">
+        <AppImage
+          src={icon}
+          alt={label}
+          width={18}
+          height={18}
+          className="w-[18px] h-[18px] object-contain opacity-90"
+          priority={false}
+        />
+      </span>
+
+      <span className="leading-none">{label}</span>
     </Link>
   );
 }
 
-function ItemButton({
+function MenuButton({
   label,
   icon,
   onClick,
@@ -166,17 +230,24 @@ function ItemButton({
     <button
       type="button"
       onClick={onClick}
-      className="w-full text-left flex items-center gap-3 rounded-xl bg-gray-100 hover:bg-gray-200 transition px-3 py-3 cursor-pointer"
+      className={[
+        "relative w-full text-left flex items-center gap-2 px-3 py-2 rounded-md",
+        "bg-[#F4F4F4]",
+        "text-[13px] font-semibold text-gray-700",
+        "hover:bg-[#EFEFEF] hover:border-[#DDDDDD] transition cursor-pointer",
+      ].join(" ")}
     >
-      <AppImage
-        src={icon}
-        alt={label}
-        width={20}
-        height={20}
-        className="w-5 h-5 object-contain"
-        priority={false}
-      />
-      <span className="text-[14px] font-medium text-gray-800">{label}</span>
+      <span className="w-6 flex items-center justify-center">
+        <AppImage
+          src={icon}
+          alt={label}
+          width={18}
+          height={18}
+          className="w-[18px] h-[18px] object-contain opacity-90"
+          priority={false}
+        />
+      </span>
+      <span className="leading-none">{label}</span>
     </button>
   );
 }
