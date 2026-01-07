@@ -1,11 +1,16 @@
 import { Router, Request } from "express";
-import { PrismaClient, TipoUsuario, Prisma } from "@prisma/client";
+import { PrismaClient, TipoUsuario, Prisma, AtendenteFeature } from "@prisma/client";
 import { z } from "zod";
 
 import verificarToken from "../middleware/authMiddleware";
 import { requireAdmin } from "../middleware/acl";
+import { requireAtendenteFeature, denyAtendente } from "../middleware/atendenteFeatures";
 
-const prisma = new PrismaClient();
+// ✅ Prisma singleton (evita múltiplas conexões em DEV)
+const globalAny = global as any;
+const prisma: PrismaClient = globalAny.__prismaUsuariosAdmin__ ?? new PrismaClient();
+if (process.env.NODE_ENV !== "production") globalAny.__prismaUsuariosAdmin__ = prisma;
+
 const router = Router();
 
 const baseUserSelect = {
@@ -21,11 +26,14 @@ const baseUserSelect = {
 
 const isMaster = (req: Request) => req.usuario?.usuarioLogadoTipo === "ADMIN_MASTER";
 
+// ✅ Feature que controla se ATENDENTE pode listar usuários
+const FEATURE_USUARIOS_LEITURA: AtendenteFeature = "ATD_USUARIOS_LEITURA";
+
 router.use(verificarToken);
 router.use(requireAdmin);
 
-// GET /usuariosAdmin
-router.get("/", async (req, res) => {
+// GET /usuariosAdmin (ADMIN_MASTER sempre pode; ATENDENTE só se tiver a feature)
+router.get("/", requireAtendenteFeature(FEATURE_USUARIOS_LEITURA), async (req, res) => {
   try {
     const querySchema = z.object({
       nome: z.string().trim().optional(),
@@ -74,7 +82,6 @@ router.get("/", async (req, res) => {
       prisma.usuario.count({ where: whereTotal }),
     ]);
 
-    // resposta agora tem total + lista
     return res.json({ total, usuarios });
   } catch (err) {
     console.error(err);
@@ -82,8 +89,8 @@ router.get("/", async (req, res) => {
   }
 });
 
-// PUT /usuariosAdmin/:id/tipo — alterar tipo (apenas ADMIN_MASTER)
-router.put("/:id/tipo", async (req, res) => {
+// PUT /usuariosAdmin/:id/tipo — alterar tipo (somente ADMIN_MASTER; ATENDENTE nunca)
+router.put("/:id/tipo", denyAtendente(), async (req, res) => {
   if (!isMaster(req)) {
     return res.status(403).json({ erro: "Somente ADMIN_MASTER pode alterar o tipo de usuário" });
   }

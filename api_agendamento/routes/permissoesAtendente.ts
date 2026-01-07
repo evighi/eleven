@@ -3,10 +3,10 @@ import { PrismaClient, AtendenteFeature } from "@prisma/client";
 import { z } from "zod";
 import verificarToken from "../middleware/authMiddleware";
 import { requireMaster, invalidateAtendenteFeaturesCache } from "../middleware/atendentePermissions";
+import { clearAtendentePermissionsCache } from "../middleware/atendenteFeatures";
 
 const globalAny = global as any;
-const prisma: PrismaClient =
-    globalAny.__prismaPermAtdRoute__ ?? new PrismaClient();
+const prisma: PrismaClient = globalAny.__prismaPermAtdRoute__ ?? new PrismaClient();
 if (process.env.NODE_ENV !== "production") globalAny.__prismaPermAtdRoute__ = prisma;
 
 const router = Router();
@@ -14,9 +14,8 @@ const router = Router();
 /**
  * ✅ GET /permissoes-atendente
  * Pode ser usado pelo front pra montar o menu.
- * (Qualquer logado lê; mas se quiser, restringe pra admin.)
  */
-router.get("/", verificarToken, async (req, res) => {
+router.get("/", verificarToken, async (_req, res) => {
     const row = await prisma.permissoesAtendente.findUnique({
         where: { id: 1 },
         select: { features: true, updatedAt: true, updatedById: true },
@@ -24,7 +23,7 @@ router.get("/", verificarToken, async (req, res) => {
 
     return res.json({
         id: 1,
-        features: row?.features ?? [],
+        features: (row?.features ?? []) as AtendenteFeature[],
         updatedAt: row?.updatedAt ?? null,
         updatedById: row?.updatedById ?? null,
     });
@@ -55,24 +54,18 @@ router.put("/", verificarToken, requireMaster, async (req, res) => {
     }
 
     const features = parsed.data.features as AtendenteFeature[];
-
     const actorId = (req as any).usuario?.usuarioLogadoId ?? null;
 
     const updated = await prisma.permissoesAtendente.upsert({
         where: { id: 1 },
-        create: {
-            id: 1,
-            features,
-            updatedById: actorId,
-        },
-        update: {
-            features,
-            updatedById: actorId,
-        },
+        create: { id: 1, features, updatedById: actorId },
+        update: { features, updatedById: actorId },
         select: { id: true, features: true, updatedAt: true, updatedById: true },
     });
 
+    // limpa caches
     invalidateAtendenteFeaturesCache();
+    clearAtendentePermissionsCache();
 
     return res.json(updated);
 });

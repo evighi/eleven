@@ -1,10 +1,11 @@
 // routes/motivosBloqueio.ts
 import { Router } from "express";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, AtendenteFeature } from "@prisma/client";
 import { z } from "zod";
 
 import verificarToken from "../middleware/authMiddleware";
 import { requireAdmin } from "../middleware/acl";
+import { requireAtendenteFeature } from "../middleware/atendenteFeatures";
 import { logAudit, TargetType } from "../utils/audit";
 
 const router = Router();
@@ -13,6 +14,10 @@ const prisma = new PrismaClient();
 // 🔒 tudo aqui exige login + ser ADMIN
 router.use(verificarToken);
 router.use(requireAdmin);
+
+// ✅ Feature que controla se ATENDENTE pode acessar motivos de bloqueio (GET/POST/PUT/DELETE)
+const FEATURE_BLOQUEIOS: AtendenteFeature = "ATD_BLOQUEIOS";
+router.use(requireAtendenteFeature(FEATURE_BLOQUEIOS));
 
 // ===== Schemas =====
 const motivoBaseSchema = z.object({
@@ -44,9 +49,7 @@ router.get("/", async (req, res) => {
     return res.json(motivos);
   } catch (error) {
     console.error("Erro ao listar motivos de bloqueio:", error);
-    return res
-      .status(500)
-      .json({ erro: "Erro ao listar motivos de bloqueio" });
+    return res.status(500).json({ erro: "Erro ao listar motivos de bloqueio" });
   }
 });
 
@@ -89,15 +92,11 @@ router.post("/", async (req, res) => {
   } catch (error: any) {
     // unique constraint em nome
     if (error?.code === "P2002") {
-      return res
-        .status(409)
-        .json({ erro: "Já existe um motivo com este nome" });
+      return res.status(409).json({ erro: "Já existe um motivo com este nome" });
     }
 
     console.error("Erro ao criar motivo de bloqueio:", error);
-    return res
-      .status(500)
-      .json({ erro: "Erro ao criar motivo de bloqueio" });
+    return res.status(500).json({ erro: "Erro ao criar motivo de bloqueio" });
   }
 });
 
@@ -122,8 +121,7 @@ router.put("/:id", async (req, res) => {
     dataAtualizacao.nome = parsed.data.nome.trim();
   }
   if (parsed.data.descricao !== undefined) {
-    dataAtualizacao.descricao =
-      parsed.data.descricao?.trim() || null;
+    dataAtualizacao.descricao = parsed.data.descricao?.trim() || null;
   }
   if (parsed.data.ativo !== undefined) {
     dataAtualizacao.ativo = parsed.data.ativo;
@@ -158,15 +156,11 @@ router.put("/:id", async (req, res) => {
       return res.status(404).json({ erro: "Motivo não encontrado" });
     }
     if (error?.code === "P2002") {
-      return res
-        .status(409)
-        .json({ erro: "Já existe um motivo com este nome" });
+      return res.status(409).json({ erro: "Já existe um motivo com este nome" });
     }
 
     console.error("Erro ao atualizar motivo de bloqueio:", error);
-    return res
-      .status(500)
-      .json({ erro: "Erro ao atualizar motivo de bloqueio" });
+    return res.status(500).json({ erro: "Erro ao atualizar motivo de bloqueio" });
   }
 });
 
@@ -207,9 +201,7 @@ router.delete("/:id", async (req, res) => {
     }
 
     console.error("Erro ao remover motivo de bloqueio:", error);
-    return res
-      .status(500)
-      .json({ erro: "Erro ao remover motivo de bloqueio" });
+    return res.status(500).json({ erro: "Erro ao remover motivo de bloqueio" });
   }
 });
 
