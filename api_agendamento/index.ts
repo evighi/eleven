@@ -40,6 +40,9 @@ import routesConfiguracoes from "./routes/configuracoes";
 // 👇 NOVO: rota de motivos de bloqueio
 import routesMotivosBloqueio from "./routes/motivosBloqueio";
 
+// ✅ NOVO: permissões do atendente
+import routesPermissoesAtendente from "./routes/permissoesAtendente";
+
 import verificarToken from "./middleware/authMiddleware";
 
 const app = express();
@@ -99,13 +102,18 @@ app.use("/motivosBloqueio", routesMotivosBloqueio);
 app.use("/usuarios", routesUsuarios);
 app.use("/audit", routesAudit);
 app.use("/professores", routesProfessores);
+
 // 👇 NOVO: expõe as rotas de deleções (precisa ser protegida)
 app.use("/delecoes", routesDelecoes);
+
 // 👇 NOVO: próximas datas para permanente de churrasqueira
 app.use(
   "/proximaDataPermanenteDisponivelChurrasqueira",
   proximaDataPermanenteDisponivelChurrasqueira
 );
+
+// ✅ NOVO: permissões do atendente (GET/PUT)
+app.use("/permissoes-atendente", routesPermissoesAtendente);
 
 // Health/root
 app.get("/", (_req, res) => {
