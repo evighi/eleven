@@ -29,8 +29,10 @@ import routesUsuarios from "./routes/usuarios";
 import routesAudit from "./routes/audit";
 import routesProfessores from "./routes/professores";
 import routesConfigEsportesHorarios from "./routes/configEsportesHorarios";
+
 // 👇 NOVO: rota de deleções (pendências + desfazer)
 import routesDelecoes from "./routes/delecoes";
+
 // 👇 NOVO: próximas datas para permanente de churrasqueira
 import proximaDataPermanenteDisponivelChurrasqueira from "./routes/proximaDataPermanenteDisponivelChurrasqueira";
 
@@ -42,6 +44,9 @@ import routesMotivosBloqueio from "./routes/motivosBloqueio";
 
 // ✅ NOVO: permissões do atendente
 import routesPermissoesAtendente from "./routes/permissoesAtendente";
+
+// 👇 NOVO: relatorios (ocupação média total)
+import routesRelatoriosOcupacaoMedia from "./routes/relatoriosOcupacaoMedia";
 
 import verificarToken from "./middleware/authMiddleware";
 
@@ -88,6 +93,9 @@ app.use(
 app.use("/disponibilidadeChurrasqueiras", routesDisponibilidadeChurrasqueiras);
 app.use("/disponibilidadeGeral", routesDisponibilidadeGeral);
 app.use("/usuariosAdmin", routesUsuariosAdmin);
+
+// 👇 NOVO: rotas de relatorios (ex.: /relatorios/quadras/ocupacao-media)
+app.use("/relatorios", routesRelatoriosOcupacaoMedia);
 
 // 👇 NOVO: rotas de configurações (ex.: /configuracoes/multa)
 app.use("/configuracoes", routesConfiguracoes);
