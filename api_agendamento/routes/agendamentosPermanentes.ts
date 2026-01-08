@@ -450,6 +450,130 @@ router.get("/", async (req, res) => {
   }
 });
 
+// 📊 Estatísticas de ocorrências de agendamentos permanentes (janela)
+// GET /agendamentos-permanentes/estatisticas/resumo?dias=90
+router.get("/estatisticas/resumo", async (req, res) => {
+  // já está com router.use(verificarToken) acima, então req.usuario existe
+  const ehAdmin = isAdminTipo(req.usuario!.usuarioLogadoTipo);
+
+  if (!ehAdmin) {
+    return res.status(403).json({ erro: "Apenas administradores podem ver as estatísticas" });
+  }
+
+  // dias da janela (default 90). Clamp para evitar exagero.
+  const diasQ = Number(req.query.dias ?? "90");
+  const diasJanela = Number.isFinite(diasQ) ? Math.max(7, Math.min(365, Math.trunc(diasQ))) : 90;
+
+  try {
+    const hojeYMD = localYMD(new Date()); // dia local SP "YYYY-MM-DD"
+    const inicioYMD = addDaysLocalYMD(hojeYMD, -(diasJanela - 1)); // inclui hoje
+    const inicioUTC = toUtc00(inicioYMD);
+    const fimExclusiveUTC = toUtc00(addDaysLocalYMD(hojeYMD, 1)); // amanhã 00:00Z (limite exclusivo)
+
+    // 1) permanentes ativos que podem gerar ocorrências até hoje
+    const permanentes = await prisma.agendamentoPermanente.findMany({
+      where: {
+        status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+        OR: [
+          { dataInicio: null },
+          { dataInicio: { lt: fimExclusiveUTC } }, // começou antes de amanhã
+        ],
+      },
+      select: {
+        id: true,
+        diaSemana: true,
+        dataInicio: true,
+      },
+    });
+
+    if (permanentes.length === 0) {
+      return res.json({
+        diasJanela,
+        inicioJanela: inicioYMD,
+        fimJanelaInclusive: hojeYMD,
+        totalPermanentesAtivos: 0,
+        totalOcorrencias: 0,
+        diasComOcorrencia: 0,
+        mediaPorDia: 0,
+        detalhesPorDia: [],
+      });
+    }
+
+    const ids = permanentes.map((p) => p.id);
+
+    // 2) exceções dentro da janela (pra tirar do cálculo)
+    const cancelamentos = await prisma.agendamentoPermanenteCancelamento.findMany({
+      where: {
+        agendamentoPermanenteId: { in: ids },
+        data: { gte: inicioUTC, lt: fimExclusiveUTC },
+      },
+      select: { agendamentoPermanenteId: true, data: true },
+    });
+
+    const cancelSet = new Set<string>();
+    for (const c of cancelamentos) {
+      const ymd = toISODateUTC(new Date(c.data)); // "YYYY-MM-DD"
+      cancelSet.add(`${c.agendamentoPermanenteId}|${ymd}`);
+    }
+
+    // 3) pré-calcula as datas da janela separadas por weekday (0..6)
+    const datasPorWeekIdx = new Map<number, string[]>();
+    for (let i = 0; i < diasJanela; i++) {
+      const ymd = addDaysLocalYMD(inicioYMD, i);
+      const idx = localWeekdayIndexOfYMD(ymd); // 0..6 (local estável)
+      const arr = datasPorWeekIdx.get(idx) ?? [];
+      arr.push(ymd);
+      datasPorWeekIdx.set(idx, arr);
+    }
+
+    // 4) “materializa” as ocorrências dentro da janela
+    const porDia = new Map<string, number>();
+    let totalOcorrencias = 0;
+
+    for (const p of permanentes) {
+      const targetIdx = DIA_IDX[p.diaSemana as DiaSemana] ?? 0;
+      const datas = datasPorWeekIdx.get(targetIdx) ?? [];
+
+      const dataInicioLocalYMD = p.dataInicio ? toISODateUTC(new Date(p.dataInicio)) : null;
+
+      for (const ymd of datas) {
+        // respeita dataInicio
+        if (dataInicioLocalYMD && ymd < dataInicioLocalYMD) continue;
+
+        // remove exceções
+        if (cancelSet.has(`${p.id}|${ymd}`)) continue;
+
+        totalOcorrencias++;
+        porDia.set(ymd, (porDia.get(ymd) ?? 0) + 1);
+      }
+    }
+
+    const diasComOcorrencia = porDia.size;
+    const mediaPorDia = diasComOcorrencia > 0 ? totalOcorrencias / diasComOcorrencia : 0;
+
+    const detalhesPorDia = Array.from(porDia.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([data, total]) => ({ data, total }));
+
+    return res.json({
+      diasJanela,
+      inicioJanela: inicioYMD,
+      fimJanelaInclusive: hojeYMD,
+
+      totalPermanentesAtivos: permanentes.length,
+      totalExcecoesNaJanela: cancelamentos.length,
+
+      totalOcorrencias: totalOcorrencias,
+      diasComOcorrencia,
+      mediaPorDia,
+      detalhesPorDia,
+    });
+  } catch (err) {
+    console.error("Erro ao calcular estatísticas de permanentes:", err);
+    return res.status(500).json({ erro: "Erro ao calcular estatísticas de permanentes" });
+  }
+});
+
 // 📄 Detalhes — dono ou admin
 router.get(
   "/:id",
