@@ -295,6 +295,65 @@ router.get("/", async (req, res) => {
   }
 });
 
+// 📊 Estatísticas gerais de agendamentos de CHURRASQUEIRA (COMUM)
+// GET /agendamentosChurrasqueiras/estatisticas/resumo
+router.get("/estatisticas/resumo", async (req, res) => {
+  if (!req.usuario) {
+    return res.status(401).json({ erro: "Não autenticado" });
+  }
+
+  // 👉 Somente admins
+  const ehAdmin = isAdminTipo(req.usuario.usuarioLogadoTipo);
+  if (!ehAdmin) {
+    return res.status(403).json({ erro: "Apenas administradores podem ver as estatísticas" });
+  }
+
+  try {
+    // boundaries do dia local (SP) codificados em UTC00 (igual você já usa)
+    const { amanhaUTC00 } = getStoredUtcBoundaryForLocalDay(new Date());
+
+    // base: até hoje (inclusive), ignorando cancelados/transferidos
+    const whereBase = {
+      data: { lt: amanhaUTC00 },
+      status: { notIn: ["CANCELADO", "TRANSFERIDO"] as any },
+    };
+
+    // ✅ total até hoje
+    const totalAteHoje = await prisma.agendamentoChurrasqueira.count({
+      where: whereBase,
+    });
+
+    // ✅ contagem por dia (quantos agendamentos em cada data)
+    const porDia = await prisma.agendamentoChurrasqueira.groupBy({
+      by: ["data"],
+      where: whereBase,
+      _count: { _all: true },
+    });
+
+    const diasComAgendamento = porDia.length;
+    const somaAgendamentos = porDia.reduce((acc, d) => acc + d._count._all, 0);
+    const mediaPorDia = diasComAgendamento > 0 ? somaAgendamentos / diasComAgendamento : 0;
+
+    const detalhesPorDia = porDia
+      .sort((a, b) => a.data.getTime() - b.data.getTime())
+      .map((d) => ({
+        data: d.data.toISOString().slice(0, 10), // YYYY-MM-DD
+        total: d._count._all,
+      }));
+
+    return res.json({
+      totalAteHoje,
+      diasComAgendamento,
+      mediaPorDia,
+      detalhesPorDia,
+    });
+  } catch (err) {
+    console.error("Erro ao calcular estatísticas de churrasqueiras:", err);
+    return res.status(500).json({ erro: "Erro ao calcular estatísticas de churrasqueiras" });
+  }
+});
+
+
 // GET /agendamentosChurrasqueiras/:id  (dono ou admin)
 router.get(
   "/:id",
