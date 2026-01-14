@@ -454,7 +454,7 @@ export default function AdminHome() {
 
   const isAllowed =
     !!usuario &&
-    ["ADMIN_MASTER", "ADMIN_PROFESSORES"].includes(
+    ["ADMIN_MASTER", "ADMIN_ATENDENTE", "ADMIN_PROFESSORES"].includes(
       (usuario as { tipo?: string }).tipo || ""
     );
 
