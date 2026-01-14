@@ -12,13 +12,12 @@ export function useLoadUser() {
     if (!hasHydrated) return;
 
     let cancelado = false;
+
     (async () => {
       setCarregandoUser(true);
       try {
         const base = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
 
-        // Se o endpoint /usuarios/me NÃO retorna o token,
-        // usamos Omit para tipar só o que vem da API e depois adicionamos token: ""
         type ApiMeResponse = Omit<UsuarioLogadoItf, "token">;
 
         const { data } = await axios.get<ApiMeResponse>(`${base}/usuarios/me`, {
@@ -26,7 +25,15 @@ export function useLoadUser() {
         });
 
         if (cancelado) return;
-        const usuario: UsuarioLogadoItf = { ...data, token: "" };
+
+        const usuario: UsuarioLogadoItf = {
+          ...data,
+          token: "",
+          // ✅ garante array (evita undefined no menu)
+          atendenteFeatures:
+            data.tipo === "ADMIN_ATENDENTE" ? (data.atendenteFeatures ?? []) : [],
+        };
+
         logaUsuario(usuario);
       } catch (err: unknown) {
         if (cancelado) return;
@@ -37,7 +44,7 @@ export function useLoadUser() {
             deslogaUsuario();
           }
         }
-        // demais erros (rede/5xx): mantém usuário persistido
+        // demais erros: mantém usuário persistido
       } finally {
         if (!cancelado) setCarregandoUser(false);
       }

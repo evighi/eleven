@@ -5,7 +5,10 @@ import { z } from "zod";
 
 import verificarToken from "../middleware/authMiddleware";
 import { requireAdmin } from "../middleware/acl";
-import { requireAtendenteFeature } from "../middleware/atendenteFeatures";
+import {
+  requireAtendenteFeature,
+  denyAtendente,
+} from "../middleware/atendenteFeatures";
 import { logAudit, TargetType } from "../utils/audit";
 
 const router = Router();
@@ -15,9 +18,14 @@ const prisma = new PrismaClient();
 router.use(verificarToken);
 router.use(requireAdmin);
 
-// ✅ Feature que controla se ATENDENTE pode acessar motivos de bloqueio (GET/POST/PUT/DELETE)
+/**
+ * ✅ Regra que tu pediu:
+ * - ATENDENTE pode APENAS LISTAR (GET), porque ele precisa enxergar os motivos pra usar no bloqueio.
+ * - ATENDENTE NUNCA pode CRIAR/EDITAR/EXCLUIR, mesmo que o master habilite a feature.
+ */
+
+// Feature necessária para o ATENDENTE pelo menos conseguir listar (e usar nos bloqueios)
 const FEATURE_BLOQUEIOS: AtendenteFeature = "ATD_BLOQUEIOS";
-router.use(requireAtendenteFeature(FEATURE_BLOQUEIOS));
 
 // ===== Schemas =====
 const motivoBaseSchema = z.object({
@@ -29,17 +37,19 @@ const motivoBaseSchema = z.object({
 const motivoCreateSchema = motivoBaseSchema;
 const motivoUpdateSchema = motivoBaseSchema.partial();
 
+const uuidSchema = z.string().uuid();
+
 // ===== Rotas =====
 
-// GET /motivos-bloqueio?ativos=true
-router.get("/", async (req, res) => {
+// ✅ GET /motivos-bloquequeio?ativos=true|false
+// ATENDENTE: permitido SOMENTE se tiver ATD_BLOQUEIOS
+router.get("/", requireAtendenteFeature(FEATURE_BLOQUEIOS), async (req, res) => {
   try {
     const { ativos } = req.query;
 
     const where: any = {};
-    if (ativos === "true") {
-      where.ativo = true;
-    }
+    if (ativos === "true") where.ativo = true;
+    if (ativos === "false") where.ativo = false;
 
     const motivos = await prisma.motivoBloqueio.findMany({
       where,
@@ -53,8 +63,9 @@ router.get("/", async (req, res) => {
   }
 });
 
-// POST /motivos-bloqueio
-router.post("/", async (req, res) => {
+// ⛔ POST /motivos-bloqueio
+// ATENDENTE: NUNCA pode (denyAtendente)
+router.post("/", denyAtendente(), async (req, res) => {
   const parsed = motivoCreateSchema.safeParse(req.body);
   if (!parsed.success) {
     return res
@@ -63,7 +74,6 @@ router.post("/", async (req, res) => {
   }
 
   const { nome, descricao, ativo } = parsed.data;
-  const actorId = req.usuario!.usuarioLogadoId;
 
   try {
     const criado = await prisma.motivoBloqueio.create({
@@ -74,7 +84,6 @@ router.post("/", async (req, res) => {
       },
     });
 
-    // Audit
     await logAudit({
       event: "MOTIVO_BLOQUEIO_CREATE",
       req,
@@ -90,7 +99,6 @@ router.post("/", async (req, res) => {
       .status(201)
       .json({ mensagem: "Motivo criado com sucesso", motivo: criado });
   } catch (error: any) {
-    // unique constraint em nome
     if (error?.code === "P2002") {
       return res.status(409).json({ erro: "Já existe um motivo com este nome" });
     }
@@ -100,12 +108,12 @@ router.post("/", async (req, res) => {
   }
 });
 
-// PUT /motivos-bloqueio/:id
-router.put("/:id", async (req, res) => {
+// ⛔ PUT /motivos-bloqueio/:id
+// ATENDENTE: NUNCA pode (denyAtendente)
+router.put("/:id", denyAtendente(), async (req, res) => {
   const { id } = req.params;
 
-  // valida id como uuid de forma simples
-  if (!id || id.length < 10) {
+  if (!uuidSchema.safeParse(id).success) {
     return res.status(400).json({ erro: "ID inválido" });
   }
 
@@ -117,15 +125,10 @@ router.put("/:id", async (req, res) => {
   }
 
   const dataAtualizacao: any = {};
-  if (parsed.data.nome !== undefined) {
-    dataAtualizacao.nome = parsed.data.nome.trim();
-  }
-  if (parsed.data.descricao !== undefined) {
+  if (parsed.data.nome !== undefined) dataAtualizacao.nome = parsed.data.nome.trim();
+  if (parsed.data.descricao !== undefined)
     dataAtualizacao.descricao = parsed.data.descricao?.trim() || null;
-  }
-  if (parsed.data.ativo !== undefined) {
-    dataAtualizacao.ativo = parsed.data.ativo;
-  }
+  if (parsed.data.ativo !== undefined) dataAtualizacao.ativo = parsed.data.ativo;
 
   if (Object.keys(dataAtualizacao).length === 0) {
     return res.status(400).json({ erro: "Nenhum campo para atualizar" });
@@ -164,16 +167,16 @@ router.put("/:id", async (req, res) => {
   }
 });
 
-// DELETE /motivos-bloqueio/:id
-router.delete("/:id", async (req, res) => {
+// ⛔ DELETE /motivos-bloqueio/:id
+// ATENDENTE: NUNCA pode (denyAtendente)
+router.delete("/:id", denyAtendente(), async (req, res) => {
   const { id } = req.params;
 
-  if (!id || id.length < 10) {
+  if (!uuidSchema.safeParse(id).success) {
     return res.status(400).json({ erro: "ID inválido" });
   }
 
   try {
-    // verifica se já existe bloqueio usando este motivo
     const emUso = await prisma.bloqueioQuadra.count({
       where: { motivoId: id },
     });

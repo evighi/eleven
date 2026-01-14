@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { PrismaClient, DiaSemana, Prisma, TipoSessaoProfessor } from "@prisma/client";
+import { PrismaClient, DiaSemana, Prisma, TipoSessaoProfessor, AtendenteFeature } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { z } from "zod";
@@ -8,6 +8,7 @@ import verificarToken from "../middleware/authMiddleware";
 import { r2PublicUrl } from "../src/lib/r2";
 import { logAudit, TargetType } from "../utils/audit"; // 👈 AUDITORIA
 import { valorMultaPadrao } from "../utils/multa";     // 👈 multa fixa
+import { requireAtendenteFeature } from "../middleware/atendenteFeatures";
 
 // Mapa DiaSemana -> número JS (0=Dom..6=Sáb)
 const DIA_IDX: Record<DiaSemana, number> = {
@@ -133,6 +134,13 @@ function jogoDefaultPermitido(hhmm: string) {
 
 const prisma = new PrismaClient();
 const router = Router();
+
+/** ✅ BLOQUEIO GLOBAL DO MÓDULO (liga/desliga do atendente)
+ * Se o usuário for ADMIN_ATENDENTE, ele só acessa este arquivo se tiver ATD_AGENDAMENTOS.
+ * ADMIN_MASTER passa sempre. Outros tipos não são afetados.
+ */
+router.use(requireAtendenteFeature(AtendenteFeature.ATD_AGENDAMENTOS));
+
 
 /** ===== Helpers de domínio/RBAC ===== */
 const isAdminRole = (t?: string) =>

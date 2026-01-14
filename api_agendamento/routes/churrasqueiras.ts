@@ -4,6 +4,9 @@ import multer from "multer";
 import { z } from "zod";
 import { uploadToR2, deleteFromR2, r2PublicUrl } from "../src/lib/r2";
 
+import verificarToken from "../middleware/authMiddleware";
+import { denyAtendente } from "../middleware/atendenteFeatures";
+
 const prisma = new PrismaClient();
 const router = Router();
 
@@ -14,7 +17,13 @@ const churrasqueiraSchema = z.object({
   numero: z.coerce.number().int().positive(),
 });
 
-// GET /
+// 🔒 exige login para tudo (inclui atendente)
+router.use(verificarToken);
+
+/**
+ * ✅ GET /churrasqueiras
+ * Atendente pode ver/listar
+ */
 router.get("/", async (_req, res) => {
   try {
     const churrasqueiras = await prisma.churrasqueira.findMany();
@@ -24,8 +33,39 @@ router.get("/", async (_req, res) => {
   }
 });
 
-// POST
-router.post("/", upload.single("imagem"), async (req, res) => {
+/**
+ * ✅ GET /churrasqueiras/total
+ * Atendente pode ver total
+ */
+router.get("/total", async (_req, res) => {
+  try {
+    const total = await prisma.churrasqueira.count();
+    return res.json({ total });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ erro: "Erro ao buscar total de churrasqueiras" });
+  }
+});
+
+/**
+ * ✅ GET /churrasqueiras/:id
+ * Atendente pode ver detalhes
+ */
+router.get("/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const churrasqueira = await prisma.churrasqueira.findUnique({ where: { id } });
+    if (!churrasqueira) return res.status(404).json({ erro: "Churrasqueira não encontrada" });
+    res.json({ ...churrasqueira, imagem: r2PublicUrl(churrasqueira.imagem) });
+  } catch {
+    res.status(500).json({ erro: "Erro ao buscar churrasqueira" });
+  }
+});
+
+/**
+ * ⛔ A partir daqui: atendente NUNCA pode (criar/editar/excluir)
+ */
+router.post("/", denyAtendente(), upload.single("imagem"), async (req, res) => {
   const { nome, observacao } = req.body;
   const numero = parseInt(req.body.numero, 10);
 
@@ -55,21 +95,7 @@ router.post("/", upload.single("imagem"), async (req, res) => {
   }
 });
 
-
-// ✅ TOTAL de churrasqueiras cadastradas (endpoint dedicado)
-// GET /churrasqueiras/total
-router.get("/total", async (_req, res) => {
-  try {
-    const total = await prisma.churrasqueira.count();
-    return res.json({ total });
-  } catch (e) {
-    console.error(e);
-    return res.status(500).json({ erro: "Erro ao buscar total de churrasqueiras" });
-  }
-});
-
-// PUT
-router.put("/:id", upload.single("imagem"), async (req, res) => {
+router.put("/:id", denyAtendente(), upload.single("imagem"), async (req, res) => {
   const { id } = req.params;
   const { nome } = req.body;
   const numero = parseInt(req.body.numero, 10);
@@ -95,30 +121,17 @@ router.put("/:id", upload.single("imagem"), async (req, res) => {
 
     const atualizada = await prisma.churrasqueira.update({
       where: { id },
-      data: { nome, numero, imagem: novaKey },
+      data: { nome, numero, imagem: novaKey, observacao: req.body.observacao ?? atual.observacao ?? null },
     });
 
     res.json({ ...atualizada, imagem: r2PublicUrl(atualizada.imagem) });
-  } catch {
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ erro: "Erro ao atualizar churrasqueira" });
   }
 });
 
-
-// GET /:id
-router.get("/:id", async (req, res) => {
-  const { id } = req.params;
-  try {
-    const churrasqueira = await prisma.churrasqueira.findUnique({ where: { id } });
-    if (!churrasqueira) return res.status(404).json({ erro: "Churrasqueira não encontrada" });
-    res.json({ ...churrasqueira, imagem: r2PublicUrl(churrasqueira.imagem) });
-  } catch {
-    res.status(500).json({ erro: "Erro ao buscar churrasqueira" });
-  }
-});
-
-// DELETE
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", denyAtendente(), async (req, res) => {
   const { id } = req.params;
   try {
     const churrasqueira = await prisma.churrasqueira.findUnique({ where: { id } });

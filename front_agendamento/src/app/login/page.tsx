@@ -7,7 +7,8 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/context/AuthStore";
-import { UsuarioLogadoItf } from "@/utils/types/UsuarioLogadoItf";
+// ✅ use o tipo do store
+import type { UsuarioLogadoItf } from "@/context/AuthStore";
 import Spinner from "@/components/Spinner";
 
 type Inputs = {
@@ -213,7 +214,7 @@ export default function Login() {
           router.push("/adminMaster");
           break;
         case "ADMIN_ATENDENTE":
-          router.push("/admin/atendente");
+          router.push("/adminMaster");
           break;
         case "ADMIN_PROFESSORES":
           router.push("/");

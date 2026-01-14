@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { PrismaClient, DiaSemana, TipoSessaoProfessor } from "@prisma/client";
+import { PrismaClient, DiaSemana, TipoSessaoProfessor, AtendenteFeature } from "@prisma/client";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
@@ -7,6 +7,8 @@ import crypto from "crypto";
 import verificarToken from "../middleware/authMiddleware";
 import { isAdmin as isAdminTipo, requireOwnerByRecord } from "../middleware/acl";
 import { logAudit, TargetType } from "../utils/audit"; // 👈 AUDIT
+import { requireAtendenteFeature } from "../middleware/atendenteFeatures";
+
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -244,6 +246,32 @@ async function proximaDataPermanenteSemExcecao(p: {
 /** ===================== Middleware ====================== */
 // 🔒 todas as rotas daqui exigem login
 router.use(verificarToken);
+
+/**
+ * ✅ FEATURE GATE (ADMIN_ATENDENTE)
+ * - Por padrão: qualquer rota de permanentes exige ATD_PERMANENTES
+ * - EXCEÇÃO: GET /agendamentos-permanentes/:id (detalhe) exige ATD_AGENDAMENTOS
+ *   (pra conseguir abrir detalhes via listagem de disponibilidade)
+ */
+router.use((req, res, next) => {
+  const tipo = (req as any).usuario?.usuarioLogadoTipo;
+
+  // Só aplica ao atendente — os outros seguem normal
+  if (tipo !== "ADMIN_ATENDENTE") return next();
+
+  // Detecta "GET /:id" (somente 1 segmento depois da barra)
+  // Ex.: "/c0a8012e-..." ✅
+  // Ex.: "/estatisticas/resumo" ❌
+  // Ex.: "/:id/datas-excecao" ❌
+  const isGetDetalhe = req.method === "GET" && /^\/[^/]+$/.test(req.path);
+
+  if (isGetDetalhe) {
+    return requireAtendenteFeature(AtendenteFeature.ATD_AGENDAMENTOS)(req, res, next);
+  }
+
+  return requireAtendenteFeature(AtendenteFeature.ATD_PERMANENTES)(req, res, next);
+});
+
 
 /** ===================== Utilitário para o front (igual ao comum) ===================== 
  * GET /agendamentos-permanentes/_sessoes-permitidas?esporteId=...&diaSemana=SEGUNDA&horario=18:30
