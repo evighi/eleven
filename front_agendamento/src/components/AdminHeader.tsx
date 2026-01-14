@@ -19,25 +19,53 @@ export default function AdminHeader() {
   // 👇 ref do botão do hamburger, para o menu abrir exatamente embaixo dele
   const menuBtnRef = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => {
-    if (!carregandoUser && !usuario) router.push("/login");
-    else if (!carregandoUser && usuario?.tipo !== "ADMIN_MASTER") router.push("/");
-  }, [usuario, carregandoUser, router]);
+  // ✅ agora permite ADMIN_MASTER e ADMIN_ATENDENTE
+  const isAdminAllowed =
+    !!usuario &&
+    ["ADMIN_MASTER", "ADMIN_ATENDENTE"].includes(
+      (usuario as { tipo?: string }).tipo || ""
+    );
 
-  if (!usuario || usuario.tipo !== "ADMIN_MASTER") {
-    return <div className="flex justify-center items-center h-screen">Carregando...</div>;
+  useEffect(() => {
+    // 아직 carregando... não faz nada
+    if (carregandoUser) return;
+
+    // sem usuário -> login
+    if (!usuario) {
+      router.push("/login");
+      return;
+    }
+
+    // logado mas sem permissão -> home
+    if (!isAdminAllowed) {
+      router.push("/");
+    }
+  }, [usuario, carregandoUser, router, isAdminAllowed]);
+
+  // ✅ enquanto carrega ou valida permissão, mostra loading
+  if (carregandoUser || !usuario || !isAdminAllowed) {
+    return (
+      <div className="flex justify-center items-center h-screen">
+        Carregando...
+      </div>
+    );
   }
 
   return (
     <>
-      <AdminSideMenu open={open} onClose={() => setOpen(false)} anchorRef={menuBtnRef} />
+      <AdminSideMenu
+        open={open}
+        onClose={() => setOpen(false)}
+        anchorRef={menuBtnRef}
+      />
 
       {/* Fundo ocupa a tela toda */}
       <div className="bg-white">
         {/* ✅ linha/borda limitada ao max-w-6xl */}
         <div
           data-admin-header-container
-          className="max-w-6xl mx-auto border-b border-gray-300">
+          className="max-w-6xl mx-auto border-b border-gray-300"
+        >
           <header className="px-4 py-3 flex items-center justify-between">
             <Link
               href="/adminMaster"
