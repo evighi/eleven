@@ -1,6 +1,6 @@
 // src/routes/usuarios.ts
 import { Request, Response, Router } from "express";
-import { PrismaClient, Prisma, TipoUsuario as TipoUsuarioEnum } from "@prisma/client";
+import { PrismaClient, Prisma, TipoUsuario as TipoUsuarioEnum, AtendenteFeature } from "@prisma/client";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import verificarToken from "../middleware/authMiddleware"; // ⬅️ exige login
@@ -27,21 +27,42 @@ function stripUndefined<T extends object>(obj: T): Partial<T> {
 }
 
 /**
- * Retorna dados básicos do usuário logado.
+ * Retorna dados básicos do usuário logado + permissões do atendente (se for ADMIN_ATENDENTE).
+ * GET /usuarios/me
  */
-router.get("/me", (req: Request, res: Response) => {
+router.get("/me", async (req: Request, res: Response) => {
   if (!req.usuario) {
     return res.status(401).json({ erro: "Não autenticado" });
   }
 
   const { usuarioLogadoId, usuarioLogadoNome, usuarioLogadoTipo } = req.usuario;
 
-  return res.json({
-    id: usuarioLogadoId,
-    nome: usuarioLogadoNome,
-    tipo: usuarioLogadoTipo,
-  });
+  try {
+    // ✅ por padrão, nenhum feature
+    let atendenteFeatures: AtendenteFeature[] = [];
+
+    // ✅ se for atendente, lê o singleton PermissoesAtendente (id=1)
+    if (usuarioLogadoTipo === "ADMIN_ATENDENTE") {
+      const row = await prisma.permissoesAtendente.findUnique({
+        where: { id: 1 },
+        select: { features: true },
+      });
+
+      atendenteFeatures = row?.features ?? [];
+    }
+
+    return res.json({
+      id: usuarioLogadoId,
+      nome: usuarioLogadoNome,
+      tipo: usuarioLogadoTipo,
+      atendenteFeatures, // 👈 front usa pra menu + bloqueios visuais
+    });
+  } catch (e) {
+    console.error("Erro em GET /usuarios/me:", e);
+    return res.status(500).json({ erro: "Erro ao carregar usuário logado" });
+  }
 });
+
 
 /**
  * Atualiza SOMENTE o celular do usuário logado.

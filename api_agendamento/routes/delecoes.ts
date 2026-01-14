@@ -3,18 +3,28 @@ import { Router } from "express";
 import { PrismaClient, DeletionStatus, InteractionType } from "@prisma/client";
 import verificarToken from "../middleware/authMiddleware";
 import { requireAdmin } from "../middleware/acl";
+import { denyAtendente } from "../middleware/atendenteFeatures";
 import { logAudit, TargetType } from "../utils/audit";
 
 const prisma = new PrismaClient();
 const router = Router();
 
+// 🔒 tudo aqui exige login + ser ADMIN
+router.use(verificarToken);
+router.use(requireAdmin);
+
+// ⛔ atendente NUNCA pode mexer com deleções (fila de exclusão / reabilitar usuário)
+router.use(denyAtendente());
+
 /**
  * Enriquecimento em lote das "últimas interações" para evitar N+1
  */
-async function enrichLastInteractions(rows: Array<{
-  lastInteractionType: InteractionType | null;
-  lastInteractionId: string | null;
-}>) {
+async function enrichLastInteractions(
+  rows: Array<{
+    lastInteractionType: InteractionType | null;
+    lastInteractionId: string | null;
+  }>
+) {
   const comumIds: string[] = [];
   const permIds: string[] = [];
   const churrasIds: string[] = [];
@@ -94,7 +104,9 @@ async function enrichLastInteractions(rows: Array<{
           data: a.data,
           horario: a.horario,
           status: a.status,
-          quadra: a.quadra ? { id: a.quadra.id, nome: a.quadra.nome, numero: a.quadra.numero } : null,
+          quadra: a.quadra
+            ? { id: a.quadra.id, nome: a.quadra.nome, numero: a.quadra.numero }
+            : null,
           esporte: a.esporte ? { id: a.esporte.id, nome: a.esporte.nome } : null,
         },
       };
@@ -110,7 +122,9 @@ async function enrichLastInteractions(rows: Array<{
           horario: a.horario,
           status: a.status,
           updatedAt: a.updatedAt,
-          quadra: a.quadra ? { id: a.quadra.id, nome: a.quadra.nome, numero: a.quadra.numero } : null,
+          quadra: a.quadra
+            ? { id: a.quadra.id, nome: a.quadra.nome, numero: a.quadra.numero }
+            : null,
           esporte: a.esporte ? { id: a.esporte.id, nome: a.esporte.nome } : null,
         },
       };
@@ -126,7 +140,11 @@ async function enrichLastInteractions(rows: Array<{
           turno: a.turno,
           status: a.status,
           churrasqueira: a.churrasqueira
-            ? { id: a.churrasqueira.id, nome: a.churrasqueira.nome, numero: a.churrasqueira.numero }
+            ? {
+                id: a.churrasqueira.id,
+                nome: a.churrasqueira.nome,
+                numero: a.churrasqueira.numero,
+              }
             : null,
         },
       };
@@ -139,7 +157,7 @@ async function enrichLastInteractions(rows: Array<{
  * GET /delecoes/pendentes
  * Lista pendências de exclusão com a última interação enriquecida
  */
-router.get("/pendentes", verificarToken, requireAdmin, async (_req, res) => {
+router.get("/pendentes", async (_req, res) => {
   try {
     const rows = await prisma.userDeletionQueue.findMany({
       where: { status: DeletionStatus.PENDING },
@@ -188,20 +206,26 @@ router.get("/pendentes", verificarToken, requireAdmin, async (_req, res) => {
  * POST /delecoes/:usuarioId/desfazer
  * Cancela a exclusão pendente e reabilita o acesso do usuário (disabledAt = null)
  */
-router.post("/:usuarioId/desfazer", verificarToken, requireAdmin, async (req, res) => {
+router.post("/:usuarioId/desfazer", async (req, res) => {
   const usuarioId = req.params.usuarioId;
 
   try {
     const pendencia = await prisma.userDeletionQueue.findUnique({
       where: { usuarioId },
-      include: { usuario: { select: { id: true, nome: true, email: true, disabledAt: true } } },
+      include: {
+        usuario: { select: { id: true, nome: true, email: true, disabledAt: true } },
+      },
     });
 
     if (!pendencia) {
-      return res.status(404).json({ erro: "Nenhuma pendência de exclusão encontrada para este usuário." });
+      return res
+        .status(404)
+        .json({ erro: "Nenhuma pendência de exclusão encontrada para este usuário." });
     }
     if (pendencia.status !== DeletionStatus.PENDING) {
-      return res.status(409).json({ erro: `Não é possível desfazer: status atual = ${pendencia.status}` });
+      return res
+        .status(409)
+        .json({ erro: `Não é possível desfazer: status atual = ${pendencia.status}` });
     }
 
     const agora = new Date();
@@ -219,7 +243,6 @@ router.post("/:usuarioId/desfazer", verificarToken, requireAdmin, async (req, re
       }),
     ]);
 
-    // audit
     await logAudit({
       event: "USUARIO_UPDATE",
       req,

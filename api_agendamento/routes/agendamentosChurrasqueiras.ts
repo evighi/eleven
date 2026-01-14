@@ -1,5 +1,6 @@
+// routes/agendamentosChurrasqueiras.ts
 import { Router } from "express";
-import { PrismaClient, Turno, DiaSemana } from "@prisma/client";
+import { PrismaClient, Turno, DiaSemana, AtendenteFeature } from "@prisma/client";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
@@ -7,6 +8,7 @@ import cron from "node-cron"; // 👈 cron para finalizar vencidos
 
 import verificarToken from "../middleware/authMiddleware";
 import { requireOwnerByRecord, isAdmin as isAdminTipo } from "../middleware/acl";
+import { requireAtendenteFeature } from "../middleware/atendenteFeatures";
 import { logAudit, TargetType } from "../utils/audit";
 
 const prisma = new PrismaClient();
@@ -21,6 +23,23 @@ const DIAS: readonly DiaSemana[] = [
   "SEXTA",
   "SABADO",
 ] as const;
+
+// ✅ Feature: ATENDENTE só pode mexer em CHURRAS se tiver ATD_CHURRAS
+const FEATURE_CHURRAS: AtendenteFeature = "ATD_CHURRAS";
+
+// Middleware: só aplica feature se for ADMIN_ATENDENTE
+function requireFeatureIfAtendente(feature: AtendenteFeature) {
+  const inner = requireAtendenteFeature(feature);
+  return (req: any, res: any, next: any) => {
+    if (!req.usuario) return res.status(401).json({ erro: "Não autenticado" });
+
+    const tipo = req.usuario.usuarioLogadoTipo;
+    if (tipo === "ADMIN_ATENDENTE") {
+      return inner(req, res, next);
+    }
+    return next();
+  };
+}
 
 // ================= Helpers de horário local (America/Sao_Paulo) =================
 const SP_TZ = process.env.TZ || "America/Sao_Paulo";
@@ -152,7 +171,8 @@ if (!globalAny.__cronFinalizaChurrasVencidos__) {
    ======================================================================= */
 
 // POST /agendamentosChurrasqueiras  (criar COMUM por data+turno)
-router.post("/", async (req, res) => {
+// ✅ ADMIN_ATENDENTE precisa de ATD_CHURRAS; CLIENTE não.
+router.post("/", requireFeatureIfAtendente(FEATURE_CHURRAS), async (req, res) => {
   if (!req.usuario) return res.status(401).json({ erro: "Não autenticado" });
 
   const parsed = schemaAgendamentoChurrasqueira.safeParse(req.body);
@@ -213,7 +233,6 @@ router.post("/", async (req, res) => {
         turno,
         status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
         OR: [{ dataInicio: null }, { dataInicio: { lte: dataUTC } }],
-        // usar janela [início, fim) evita problemas de TZ/precision
         cancelamentos: { none: { data: { gte: inicio, lt: fim } } },
       },
       select: { id: true },
@@ -259,7 +278,8 @@ router.post("/", async (req, res) => {
 });
 
 // GET /agendamentosChurrasqueiras?data=YYYY-MM-DD&churrasqueiraId=...
-router.get("/", async (req, res) => {
+// ✅ ADMIN_ATENDENTE precisa de ATD_CHURRAS; CLIENTE não.
+router.get("/", requireFeatureIfAtendente(FEATURE_CHURRAS), async (req, res) => {
   if (!req.usuario) return res.status(401).json({ erro: "Não autenticado" });
 
   const qData = typeof req.query.data === "string" ? req.query.data : undefined;
@@ -297,73 +317,73 @@ router.get("/", async (req, res) => {
 
 // 📊 Estatísticas gerais de agendamentos de CHURRASQUEIRA (COMUM)
 // GET /agendamentosChurrasqueiras/estatisticas/resumo
-router.get("/estatisticas/resumo", async (req, res) => {
-  if (!req.usuario) {
-    return res.status(401).json({ erro: "Não autenticado" });
+// ✅ Admin master ok; admin_atendente só com ATD_CHURRAS
+router.get(
+  "/estatisticas/resumo",
+  requireFeatureIfAtendente(FEATURE_CHURRAS),
+  async (req, res) => {
+    if (!req.usuario) {
+      return res.status(401).json({ erro: "Não autenticado" });
+    }
+
+    // 👉 Somente admins
+    const ehAdmin = isAdminTipo(req.usuario.usuarioLogadoTipo);
+    if (!ehAdmin) {
+      return res.status(403).json({ erro: "Apenas administradores podem ver as estatísticas" });
+    }
+
+    try {
+      const { amanhaUTC00 } = getStoredUtcBoundaryForLocalDay(new Date());
+
+      const whereBase = {
+        data: { lt: amanhaUTC00 },
+        status: { notIn: ["CANCELADO", "TRANSFERIDO"] as any },
+      };
+
+      const totalAteHoje = await prisma.agendamentoChurrasqueira.count({
+        where: whereBase,
+      });
+
+      const porDia = await prisma.agendamentoChurrasqueira.groupBy({
+        by: ["data"],
+        where: whereBase,
+        _count: { _all: true },
+      });
+
+      const diasComAgendamento = porDia.length;
+      const somaAgendamentos = porDia.reduce((acc, d) => acc + d._count._all, 0);
+      const mediaPorDia = diasComAgendamento > 0 ? somaAgendamentos / diasComAgendamento : 0;
+
+      const detalhesPorDia = porDia
+        .sort((a, b) => a.data.getTime() - b.data.getTime())
+        .map((d) => ({
+          data: d.data.toISOString().slice(0, 10),
+          total: d._count._all,
+        }));
+
+      return res.json({
+        totalAteHoje,
+        diasComAgendamento,
+        mediaPorDia,
+        detalhesPorDia,
+      });
+    } catch (err) {
+      console.error("Erro ao calcular estatísticas de churrasqueiras:", err);
+      return res.status(500).json({ erro: "Erro ao calcular estatísticas de churrasqueiras" });
+    }
   }
-
-  // 👉 Somente admins
-  const ehAdmin = isAdminTipo(req.usuario.usuarioLogadoTipo);
-  if (!ehAdmin) {
-    return res.status(403).json({ erro: "Apenas administradores podem ver as estatísticas" });
-  }
-
-  try {
-    // boundaries do dia local (SP) codificados em UTC00 (igual você já usa)
-    const { amanhaUTC00 } = getStoredUtcBoundaryForLocalDay(new Date());
-
-    // base: até hoje (inclusive), ignorando cancelados/transferidos
-    const whereBase = {
-      data: { lt: amanhaUTC00 },
-      status: { notIn: ["CANCELADO", "TRANSFERIDO"] as any },
-    };
-
-    // ✅ total até hoje
-    const totalAteHoje = await prisma.agendamentoChurrasqueira.count({
-      where: whereBase,
-    });
-
-    // ✅ contagem por dia (quantos agendamentos em cada data)
-    const porDia = await prisma.agendamentoChurrasqueira.groupBy({
-      by: ["data"],
-      where: whereBase,
-      _count: { _all: true },
-    });
-
-    const diasComAgendamento = porDia.length;
-    const somaAgendamentos = porDia.reduce((acc, d) => acc + d._count._all, 0);
-    const mediaPorDia = diasComAgendamento > 0 ? somaAgendamentos / diasComAgendamento : 0;
-
-    const detalhesPorDia = porDia
-      .sort((a, b) => a.data.getTime() - b.data.getTime())
-      .map((d) => ({
-        data: d.data.toISOString().slice(0, 10), // YYYY-MM-DD
-        total: d._count._all,
-      }));
-
-    return res.json({
-      totalAteHoje,
-      diasComAgendamento,
-      mediaPorDia,
-      detalhesPorDia,
-    });
-  } catch (err) {
-    console.error("Erro ao calcular estatísticas de churrasqueiras:", err);
-    return res.status(500).json({ erro: "Erro ao calcular estatísticas de churrasqueiras" });
-  }
-});
-
+);
 
 // GET /agendamentosChurrasqueiras/:id  (dono ou admin)
+// ✅ ADMIN_ATENDENTE precisa de ATD_CHURRAS (pq é “módulo churras”)
 router.get(
   "/:id",
+  requireFeatureIfAtendente(FEATURE_CHURRAS),
   requireOwnerByRecord(async (req) => {
     const r = await prisma.agendamentoChurrasqueira.findUnique({
       where: { id: req.params.id },
       select: { usuarioId: true },
     });
-
-    // se não encontrar, bloqueia acesso
     return r?.usuarioId ?? null;
   }),
   async (req, res) => {
@@ -371,50 +391,41 @@ router.get(
       const agendamento = await prisma.agendamentoChurrasqueira.findUnique({
         where: { id: req.params.id },
         include: {
-          usuario: {
-            select: { id: true, nome: true, email: true },
-          },
-          churrasqueira: {
-            select: { id: true, nome: true, numero: true },
-          },
+          usuario: { select: { id: true, nome: true, email: true } },
+          churrasqueira: { select: { id: true, nome: true, numero: true } },
         },
       });
 
       if (!agendamento) {
-        return res
-          .status(404)
-          .json({ erro: "Agendamento de churrasqueira não encontrado" });
+        return res.status(404).json({ erro: "Agendamento de churrasqueira não encontrado" });
       }
 
-      // se quiser manter no padrão das outras rotas:
-      const dataISO = agendamento.data.toISOString().slice(0, 10); // yyyy-mm-dd
+      const dataISO = agendamento.data.toISOString().slice(0, 10);
 
       return res.json({
         id: agendamento.id,
-        tipoReserva: "COMUM", // aqui você pode trocar se tiver enum/tipo no banco
+        tipoReserva: "COMUM",
         data: dataISO,
-        turno: agendamento.turno, // ex: "MANHA" | "TARDE" | "NOITE"
+        turno: agendamento.turno,
         usuarioId: agendamento.usuario?.id ?? agendamento.usuarioId,
         usuarioNome: agendamento.usuario?.nome ?? null,
         usuarioEmail: agendamento.usuario?.email ?? null,
         churrasqueiraId: agendamento.churrasqueira?.id ?? null,
         churrasqueiraNome: agendamento.churrasqueira?.nome ?? null,
         churrasqueiraNumero: agendamento.churrasqueira?.numero ?? null,
-        // se tiver mais campos no modelo (observacao, status, etc), pode adicionar aqui
       });
     } catch (err) {
       console.error(err);
-      return res
-        .status(500)
-        .json({ erro: "Erro ao buscar agendamento de churrasqueira" });
+      return res.status(500).json({ erro: "Erro ao buscar agendamento de churrasqueira" });
     }
   }
 );
 
-
 // POST /agendamentosChurrasqueiras/cancelar/:id  (dono ou admin)
+// ✅ ADMIN_ATENDENTE precisa de ATD_CHURRAS
 router.post(
   "/cancelar/:id",
+  requireFeatureIfAtendente(FEATURE_CHURRAS),
   requireOwnerByRecord(async (req) => {
     const r = await prisma.agendamentoChurrasqueira.findUnique({
       where: { id: req.params.id },
@@ -425,7 +436,6 @@ router.post(
   async (req, res) => {
     if (!req.usuario) return res.status(401).json({ erro: "Não autenticado" });
     try {
-      // carrega antes para log
       const before = await prisma.agendamentoChurrasqueira.findUnique({
         where: { id: req.params.id },
         select: {
@@ -444,7 +454,6 @@ router.post(
         data: { status: "CANCELADO", canceladoPorId: req.usuario.usuarioLogadoId },
       });
 
-      // 📋 AUDIT: cancelamento
       await logAudit({
         event: "CHURRAS_CANCEL",
         req,
@@ -469,8 +478,10 @@ router.post(
 );
 
 // DELETE /agendamentosChurrasqueiras/:id  (dono ou admin)
+// ✅ ADMIN_ATENDENTE precisa de ATD_CHURRAS
 router.delete(
   "/:id",
+  requireFeatureIfAtendente(FEATURE_CHURRAS),
   requireOwnerByRecord(async (req) => {
     const r = await prisma.agendamentoChurrasqueira.findUnique({
       where: { id: req.params.id },
@@ -480,7 +491,6 @@ router.delete(
   }),
   async (req, res) => {
     try {
-      // carrega antes para log
       const before = await prisma.agendamentoChurrasqueira.findUnique({
         where: { id: req.params.id },
         select: {
@@ -496,7 +506,6 @@ router.delete(
 
       await prisma.agendamentoChurrasqueira.delete({ where: { id: req.params.id } });
 
-      // 📋 AUDIT: deleção
       await logAudit({
         event: "CHURRAS_DELETE",
         req,

@@ -29,6 +29,7 @@ type ActionCard = {
 // ✅ ALTERE AQUI os caminhos
 const HREF_USUARIOS_CADASTRADOS = "/adminMaster/usuarios/perfis";
 const HREF_PROFESSORES_CADASTRADOS = "/adminMaster/professores";
+const HREF_PERMISSOES_ATENDENTES = "/adminMaster/permissoesAtendente";
 
 // 8 cards por linha
 const resumoLinha1Base: SummaryCard[] = [
@@ -51,7 +52,12 @@ const resumoLinha1Base: SummaryCard[] = [
         href: HREF_PROFESSORES_CADASTRADOS,
     },
     { label: "Média agendamento", value: "—", iconSrc: "/icons/media2.png" },
-    { label: "", value: "", iconSrc: "/icons/branco.png" },
+    {
+        label: "Perfil atendente",
+        value: "—",
+        iconSrc: "/icons/media.png",
+        href: HREF_PERMISSOES_ATENDENTES,
+    },
 ];
 
 const resumoLinha2: SummaryCard[] = [

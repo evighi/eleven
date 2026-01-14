@@ -17,19 +17,66 @@ type Props = {
 
 type Pos = { top: number; right: number; width: number };
 
+type AtendenteFeature =
+  | "ATD_AGENDAMENTOS"
+  | "ATD_PERMANENTES"
+  | "ATD_CHURRAS"
+  | "ATD_BLOQUEIOS"
+  | "ATD_USUARIOS_LEITURA"
+  | "ATD_USUARIOS_EDICAO"
+  | "ATD_RELATORIOS";
+
+type MenuItemDef = {
+  href: string;
+  label: string;
+  icon: string;
+  feature?: AtendenteFeature; // se definido, atendente precisa ter
+  neverForAtendente?: boolean; // nunca aparece pra atendente
+};
+
 export default function AdminSideMenu({ open, onClose, anchorRef }: Props) {
   const { usuario } = useAuthStore();
   const logout = useLogout();
   const pathname = usePathname();
   useLoadUser();
 
-  const items: Array<{ href: string; label: string; icon: string }> = useMemo(
+  const isAtendente = usuario?.tipo === "ADMIN_ATENDENTE";
+  const atendenteFeatures = (usuario as any)?.atendenteFeatures as AtendenteFeature[] | undefined;
+
+  const items: MenuItemDef[] = useMemo(
     () => [
-      { href: "/adminMaster/painelAdm", label: "Painel Administrativo", icon: "/icons/config.png" },
-      { href: "/adminMaster/bloqueioQuadras", label: "Bloqueio de Quadras", icon: "/icons/bloqueio.png" },
-      { href: "/adminMaster/professores", label: "Professores", icon: "/icons/icone_professores.png" },
-      { href: "/adminMaster/logs", label: "Registros", icon: "/icons/icone_registros.png" },
-      { href: "/adminMaster/usuarios/perfis", label: "Usuários", icon: "/icons/icone_usuarios.png" },
+      {
+        href: "/adminMaster/painelAdm",
+        label: "Painel Administrativo",
+        icon: "/icons/config.png",
+        neverForAtendente: true,
+      },
+      {
+        href: "/adminMaster/bloqueioQuadras",
+        label: "Bloqueio de Quadras",
+        icon: "/icons/bloqueio.png",
+        feature: "ATD_BLOQUEIOS",
+      },
+      {
+        href: "/adminMaster/professores",
+        label: "Professores",
+        icon: "/icons/icone_professores.png",
+        feature: "ATD_RELATORIOS",
+      },
+      {
+        href: "/adminMaster/logs",
+        label: "Registros",
+        icon: "/icons/icone_registros.png",
+        neverForAtendente: true,
+      },
+      {
+        href: "/adminMaster/usuarios/perfis",
+        label: "Usuários",
+        icon: "/icons/icone_usuarios.png",
+        feature: "ATD_USUARIOS_LEITURA",
+      },
+
+      // ✅ sempre aparece
       { href: "/", label: "Perfil atletas", icon: "/icons/atletas.png" },
     ],
     []
@@ -61,23 +108,19 @@ export default function AdminSideMenu({ open, onClose, anchorRef }: Props) {
     const r = el.getBoundingClientRect();
     const top = Math.round(r.bottom + 8);
 
-    // 🔥 pega o container limitado do header (o da borda)
     const container = el.closest("[data-admin-header-container]") as HTMLElement | null;
     const cr = container?.getBoundingClientRect();
 
-    // ✅ (A) alinhar com o FIM DA BORDA (direita do max-w)
-    // se tu quiser alinhar com o fim do conteúdo (px-4), usa PADDING = 16
     const PADDING = 16; // px-4
 
-    let desiredRightEdge = r.right; // fallback: canto direito do botão
-    if (cr) desiredRightEdge = cr.right - PADDING; // ou cr.right se quiser colar na borda mesmo
+    let desiredRightEdge = r.right;
+    if (cr) desiredRightEdge = cr.right - PADDING;
 
     let right = Math.max(12, Math.round(vw - desiredRightEdge));
 
-    // ✅ garante que o menu não “vaze” pra fora do container (lado esquerdo)
     if (cr) {
       const left = vw - right - width;
-      const minLeft = cr.left + PADDING; // respeita o mesmo padding
+      const minLeft = cr.left + PADDING;
       if (left < minLeft) {
         right = Math.max(12, Math.round(vw - (minLeft + width)));
       }
@@ -91,7 +134,7 @@ export default function AdminSideMenu({ open, onClose, anchorRef }: Props) {
     recomputePos();
 
     const onResize = () => recomputePos();
-    const onScroll = () => recomputePos(); // se tiver scroll, mantém ancorado no botão
+    const onScroll = () => recomputePos();
 
     window.addEventListener("resize", onResize);
     window.addEventListener("scroll", onScroll, true);
@@ -105,9 +148,17 @@ export default function AdminSideMenu({ open, onClose, anchorRef }: Props) {
 
   if (!open) return null;
 
+  // ✅ aplica regra por item:
+  // - atendente nunca vê itens "neverForAtendente"
+  // - se item tem "feature", atendente só navega se possuir a feature
+  const visibleItems = items.filter((it) => {
+    if (!isAtendente) return true;
+    if (it.neverForAtendente) return false;
+    return true;
+  });
+
   return (
     <>
-      {/* Overlay invisível no desktop (só pra fechar clicando fora) e levemente escuro no mobile */}
       <button
         type="button"
         aria-label="Fechar menu"
@@ -115,7 +166,6 @@ export default function AdminSideMenu({ open, onClose, anchorRef }: Props) {
         className="fixed inset-0 z-40 bg-black/20 sm:bg-transparent"
       />
 
-      {/* Popover (abaixo do hamburger, alinhado à direita) */}
       <aside
         className="
           fixed z-50
@@ -138,16 +188,35 @@ export default function AdminSideMenu({ open, onClose, anchorRef }: Props) {
           style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
         >
           <nav className="space-y-2">
-            {items.map((it) => (
-              <MenuItem
-                key={it.href}
-                href={it.href}
-                label={it.label}
-                icon={it.icon}
-                active={isActivePath(pathname, it.href)}
-                onClose={onClose}
-              />
-            ))}
+            {visibleItems.map((it) => {
+              const active = isActivePath(pathname, it.href);
+
+              const needsFeature = isAtendente && !!it.feature;
+              const hasFeature = !needsFeature
+                ? true
+                : (atendenteFeatures ?? []).includes(it.feature!);
+
+              // ✅ se preferir ESCONDER ao invés de DESABILITAR:
+              // if (isAtendente && it.feature && !hasFeature) return null;
+
+              return hasFeature ? (
+                <MenuItem
+                  key={it.href}
+                  href={it.href}
+                  label={it.label}
+                  icon={it.icon}
+                  active={active}
+                  onClose={onClose}
+                />
+              ) : (
+                <MenuItemDisabled
+                  key={it.href}
+                  label={it.label}
+                  icon={it.icon}
+                  reason="Sem permissão"
+                />
+              );
+            })}
 
             <MenuButton
               label="Sair"
@@ -199,7 +268,9 @@ function MenuItem({
         active ? "bg-[#EFEFEF] border-orange-300 text-gray-900" : "",
       ].join(" ")}
     >
-      {active && <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] bg-orange-500 rounded-r" />}
+      {active && (
+        <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] bg-orange-500 rounded-r" />
+      )}
 
       <span className="w-6 flex items-center justify-center">
         <AppImage
@@ -214,6 +285,42 @@ function MenuItem({
 
       <span className="leading-none">{label}</span>
     </Link>
+  );
+}
+
+function MenuItemDisabled({
+  label,
+  icon,
+  reason,
+}: {
+  label: string;
+  icon: string;
+  reason?: string;
+}) {
+  return (
+    <div
+      className={[
+        "relative flex items-center gap-2 px-3 py-2 rounded-md",
+        "bg-[#F4F4F4]",
+        "text-[13px] font-semibold text-gray-400",
+        "opacity-70 cursor-not-allowed",
+      ].join(" ")}
+      title={reason ?? "Indisponível"}
+      aria-disabled="true"
+    >
+      <span className="w-6 flex items-center justify-center">
+        <AppImage
+          src={icon}
+          alt={label}
+          width={18}
+          height={18}
+          className="w-[18px] h-[18px] object-contain opacity-50"
+          priority={false}
+        />
+      </span>
+
+      <span className="leading-none">{label}</span>
+    </div>
   );
 }
 

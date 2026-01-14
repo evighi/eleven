@@ -3,6 +3,7 @@ import { Router } from "express";
 import { PrismaClient, AuditTargetType } from "@prisma/client";
 import verificarToken from "../middleware/authMiddleware";
 import { requireAdmin } from "../middleware/acl";
+import { denyAtendente } from "../middleware/atendenteFeatures"; // ✅ novo (MASTER only)
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -71,7 +72,10 @@ async function enrichNamesForLogs(items: any[]) {
 
   // 2) Donos dos alvos + QUADRA dos agendamentos
   const agOwnerById = new Map<string, { id: string; nome: string | null }>();
-  const agQuadraByAgId = new Map<string, { id: string; nome: string | null; numero: number | null }>();
+  const agQuadraByAgId = new Map<
+    string,
+    { id: string; nome: string | null; numero: number | null }
+  >();
   if (agendamentoIds.length) {
     const rows = await prisma.agendamento.findMany({
       where: { id: { in: agendamentoIds } },
@@ -100,7 +104,10 @@ async function enrichNamesForLogs(items: any[]) {
   }
 
   const agPermOwnerById = new Map<string, { id: string; nome: string | null }>();
-  const agPermQuadraByAgId = new Map<string, { id: string; nome: string | null; numero: number | null }>();
+  const agPermQuadraByAgId = new Map<
+    string,
+    { id: string; nome: string | null; numero: number | null }
+  >();
   if (agPermIds.length) {
     const rows = await prisma.agendamentoPermanente.findMany({
       where: { id: { in: agPermIds } },
@@ -197,7 +204,8 @@ async function enrichNamesForLogs(items: any[]) {
     const mdToId =
       rawMd.toOwnerId ?? rawMd.paraDonoId ?? rawMd.transferToId ?? rawMd.novoUsuarioId ?? null;
 
-    const donoNome = rawMd.donoNome ?? (rawMd.donoId ? usersMap.get(String(rawMd.donoId)) || null : null);
+    const donoNome =
+      rawMd.donoNome ?? (rawMd.donoId ? usersMap.get(String(rawMd.donoId)) || null : null);
     const transferFromNome =
       rawMd.transferFromNome ?? (mdFromId ? usersMap.get(String(mdFromId)) || null : null);
     const transferToNome =
@@ -298,13 +306,15 @@ function looksLikeUUID(s: string) {
 
 /**
  * GET /audit/logs
+ * MASTER ONLY (ADMIN_ATENDENTE bloqueado)
+ *
  * Filtros:
  *  - event, targetType, targetId, actorId
  *  - from, to
  *  - qUser  (nome/email/celular OU UUID)
  *  - page, size
  */
-router.get("/logs", verificarToken, requireAdmin, async (req, res) => {
+router.get("/logs", verificarToken, requireAdmin, denyAtendente(), async (req, res) => {
   try {
     const {
       event,

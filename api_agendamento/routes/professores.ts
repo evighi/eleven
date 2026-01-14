@@ -1,20 +1,24 @@
-// routes/professores.ts
 import { Router } from "express";
 import {
   PrismaClient,
   StatusAgendamento,
   DiaSemana,
   TipoSessaoProfessor,
+  AtendenteFeature,
 } from "@prisma/client";
 import { z } from "zod";
 import verificarToken from "../middleware/authMiddleware";
 import { requireAdmin } from "../middleware/acl";
+import { requireAtendenteFeature } from "../middleware/atendenteFeatures"; // 👈 ADD
 
 const prisma = new PrismaClient();
 const router = Router();
 
 // 🔒 exige login para tudo
 router.use(verificarToken);
+
+// 🔐 trava o módulo inteiro para ADMIN_ATENDENTE via feature flag
+router.use(requireAtendenteFeature(AtendenteFeature.ATD_RELATORIOS));
 
 /* =========================
    Helpers — CONSISTENTES com agendamentos*.ts
