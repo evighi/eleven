@@ -47,7 +47,7 @@ export default function Login() {
     getValues,
   } = useForm<Inputs>({ defaultValues: { email: "", senha: "" } });
 
-  const { logaUsuario } = useAuthStore();
+  const { logaUsuario, setCarregandoUser } = useAuthStore();
   const router = useRouter();
 
   // Fluxo
@@ -186,6 +186,10 @@ export default function Login() {
       // Sucesso
       const dados: Omit<UsuarioLogadoItf, "token"> = body ?? {};
       logaUsuario({ ...dados, token: "" });
+
+      // ✅ GARANTE que não vai ficar preso em loading
+      setCarregandoUser(false);
+
 
       try {
         localStorage.setItem("lastEmail", data.email);
