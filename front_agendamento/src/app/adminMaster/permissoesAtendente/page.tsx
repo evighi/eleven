@@ -20,6 +20,11 @@ type ApiResp = {
   features: AtendenteFeature[];
   updatedAt: string | null;
   updatedById: string | null;
+  updatedBy: {
+    id: string;
+    nome: string;
+    email?: string | null;
+  } | null;
 };
 
 function fmtDate(iso?: string | null) {
@@ -43,44 +48,40 @@ export default function PermissoesAtendentePage() {
   const [features, setFeatures] = useState<AtendenteFeature[]>([]);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [updatedById, setUpdatedById] = useState<string | null>(null);
+  const [updatedBy, setUpdatedBy] = useState<ApiResp["updatedBy"]>(null);
 
   const allFeatures = useMemo(
     () =>
       [
         {
           key: "ATD_AGENDAMENTOS" as const,
-          label: "Agendamentos (quadras - comum)",
-          desc: "Permite criar/cancelar/editar agendamentos comuns de quadras (conforme back).",
+          label: "Agendamentos quadras - comum",
+          desc: "Permite criar/cancelar/transferir agendamentos comuns de quadras.",
         },
         {
           key: "ATD_PERMANENTES" as const,
-          label: "Permanentes (quadras + churrasqueiras)",
-          desc: "Libera rotas de permanentes (quadras e churrasqueiras).",
+          label: "Agendamentos quadras e churrasqueiras - permanentes",
+          desc: "Permite criar/cancelar/transferir  agendamentos permanentes de quadras e churrasqueiras",
         },
         {
           key: "ATD_CHURRAS" as const,
-          label: "Churrasqueiras (comum)",
-          desc: "Libera agendamento comum de churrasqueira (turnos).",
+          label: "Agendamentos churrasqueiras - comum",
+          desc: "Permite criar/cancelar agendamentos comuns de churrasqueiras.",
         },
         {
           key: "ATD_BLOQUEIOS" as const,
           label: "Bloqueios",
-          desc: "Libera o bloqueio de quadras.",
+          desc: "Permite bloquear/desbloquear quadras.",
         },
         {
           key: "ATD_USUARIOS_LEITURA" as const,
-          label: "Usuários (leitura)",
+          label: "Listar usuários",
           desc: "Permite listar/visualizar usuários (sem editar).",
         },
         {
-          key: "ATD_USUARIOS_EDICAO" as const,
-          label: "Usuários (edição)",
-          desc: "Permite editar usuários (onde o back liberar).",
-        },
-        {
           key: "ATD_RELATORIOS" as const,
-          label: "Relatórios",
-          desc: "Libera telas/rotas de relatórios (ex.: professores).",
+          label: "Professores",
+          desc: "Permite ver todos relatórios dos professores.",
         },
       ] as const,
     []
@@ -97,6 +98,7 @@ export default function PermissoesAtendentePage() {
       setFeatures(data.features ?? []);
       setUpdatedAt(data.updatedAt ?? null);
       setUpdatedById(data.updatedById ?? null);
+      setUpdatedBy(data.updatedBy ?? null);
     } catch (e: any) {
       console.error(e);
       const msg = e?.response?.data?.erro ?? "Erro ao carregar permissões do atendente.";
@@ -133,6 +135,7 @@ export default function PermissoesAtendentePage() {
       setFeatures(data.features ?? []);
       setUpdatedAt(data.updatedAt ?? null);
       setUpdatedById(data.updatedById ?? null);
+      setUpdatedBy(data.updatedBy ?? null);
 
       toast.success("Permissões do atendente atualizadas!");
     } catch (e: any) {
@@ -166,7 +169,7 @@ export default function PermissoesAtendentePage() {
                 Última atualização: <b>{fmtDate(updatedAt)}</b>
               </div>
               <div>
-                Alterado por: <b>{updatedById ?? "—"}</b>
+                Alterado por: <b>{updatedBy?.nome ?? "—"}</b>
               </div>
             </div>
 
@@ -216,7 +219,6 @@ export default function PermissoesAtendentePage() {
                     <div>
                       <div className="text-[13px] font-semibold text-gray-800">{f.label}</div>
                       <div className="text-[11px] text-gray-600 mt-1">{f.desc}</div>
-                      <div className="text-[10px] text-gray-500 mt-1">Chave: {f.key}</div>
                     </div>
                   </label>
                 );

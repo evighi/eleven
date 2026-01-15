@@ -463,6 +463,20 @@ export default function AdminHome() {
     firstAndLastName((usuario as { nome?: string } | null)?.nome || "") ||
     "Admin";
 
+  // ✅ Label bonitinho pro tipo do usuário
+  const tipoLabel = (() => {
+    const tipo = (usuario as { tipo?: string } | null)?.tipo;
+
+    const map: Record<string, string> = {
+      ADMIN_MASTER: "Administrador Master",
+      ADMIN_ATENDENTE: "Administrador Atendente",
+      ADMIN_PROFESSORES: "Administrador Professores",
+    };
+
+    return map[tipo || ""] ?? "Administrador";
+  })();
+
+
   // ========= BUSCAS BACKEND =========
 
   const buscarDisponQuadras = useCallback(async () => {
@@ -1078,7 +1092,7 @@ export default function AdminHome() {
           <span className="inline-block align-middle">👋</span>
         </h1>
         <p className="mt-1 text-sm sm:text-base font-medium text-gray-500">
-          Administrador Master
+          {tipoLabel}
         </p>
       </div>
 
