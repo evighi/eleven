@@ -12,8 +12,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 type Usuario = { nome: string; email?: string; celular?: string | null };
 
 type PermMeta = {
-  proximaData: string | null;     // YYYY-MM-DD (ou ISO/Date -> normalizamos)
-  dataInicio: string | null;      // YYYY-MM-DD (ou ISO/Date -> normalizamos)
+  proximaData: string | null; // YYYY-MM-DD (ou ISO/Date -> normalizamos)
+  dataInicio: string | null; // YYYY-MM-DD (ou ISO/Date -> normalizamos)
   excecoes: { id: string; data: string; motivo: string | null }[];
 };
 
@@ -37,7 +37,7 @@ type EsporteBlock = {
   grupos: QuadraSlots[][];
 };
 
-/* ====== NOVO: Tipos para Churrasqueiras ====== */
+/* ====== Tipos para Churrasqueiras ====== */
 type Turno = "DIA" | "NOITE";
 
 type ChurrasqueiraTurnoSlot = {
@@ -57,10 +57,9 @@ type ChurrasqueiraLinha = {
 };
 
 type ApiResp = {
-  diaSemana: DiaSemana;  // "SEGUNDA" | ...
-  horas: string[];       // ["07:00", ... "23:00"]
+  diaSemana: DiaSemana; // "SEGUNDA" | ...
+  horas: string[]; // ["07:00", ... "23:00"]
   esportes: Record<string, EsporteBlock>;
-  // NOVO (opcional, mas esperado para este recurso):
   churrasqueiras?: ChurrasqueiraLinha[];
 };
 
@@ -87,7 +86,6 @@ type AgendamentoSelecionado = {
   dataInicio?: string | null; // YYYY-MM-DD
   proximaData?: string | null;
   excecoes?: { id: string; data: string; motivo: string | null }[];
-  // para churrasqueiras ajuda mostrar o turno clicado
   turno?: Turno | null;
 };
 
@@ -202,7 +200,7 @@ export default function PermanentesGridPage() {
   const [loadingTransferencia, setLoadingTransferencia] = useState(false);
   const [copiarExcecoes, setCopiarExcecoes] = useState(true);
 
-  // >>> NOVO: confirmação de agendar permanente rápido (slot livre de quadra)
+  // ✅ Confirmação agendar permanente (QUADRA)
   const [confirmAgendar, setConfirmAgendar] = useState(false);
   const [agendarCtx, setAgendarCtx] = useState<{
     hora: string;
@@ -212,10 +210,19 @@ export default function PermanentesGridPage() {
     quadraNumero: number;
   } | null>(null);
 
+  // ✅ NOVO: Confirmação agendar permanente (CHURRASQUEIRA)
+  const [confirmAgendarChurras, setConfirmAgendarChurras] = useState(false);
+  const [agendarChurrasCtx, setAgendarChurrasCtx] = useState<{
+    turno: Turno;
+    churrasqueiraId: string;
+    churrasqueiraNome: string;
+    churrasqueiraNumero: number;
+  } | null>(null);
+
   // inicializa via query (?diaSemana=SEGUNDA)
   useEffect(() => {
     const q = searchParams.get("diaSemana") as DiaSemana | null;
-    if (q && ["DOMINGO","SEGUNDA","TERCA","QUARTA","QUINTA","SEXTA","SABADO"].includes(q)) {
+    if (q && ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"].includes(q)) {
       setDiaSemana(q);
     }
   }, [searchParams]);
@@ -233,7 +240,7 @@ export default function PermanentesGridPage() {
 
         setHoras(resp.horas || []);
         setEsportes(resp.esportes || {});
-        setChurrasqueiras(resp.churrasqueiras ?? []); // NOVO
+        setChurrasqueiras(resp.churrasqueiras ?? []);
       } catch (e) {
         console.error(e);
         setEsportes(null);
@@ -301,7 +308,7 @@ export default function PermanentesGridPage() {
     [API_URL]
   );
 
-  /* ====== Detalhes do PERMANENTE — CHURRASQUEIRA (novo) ====== */
+  // Detalhes do PERMANENTE — CHURRASQUEIRA
   const abrirDetalhesChurrasqueira = useCallback(
     async (agendamentoId: string, turno: Turno, meta?: PermMeta) => {
       if (!agendamentoId) return;
@@ -326,7 +333,7 @@ export default function PermanentesGridPage() {
         }));
 
         setAgendamentoSelecionado({
-          horario: turno, // para churrasqueiras usamos o turno no campo "horario" exibido
+          horario: turno,
           usuario: usuarioValor,
           tipoReserva: "permanente",
           agendamentoId,
@@ -360,7 +367,6 @@ export default function PermanentesGridPage() {
     [router, diaSemana]
   );
 
-  // >>> NOVO: abrir confirmação antes de redirecionar (quadras)
   const abrirConfirmAgendar = useCallback(
     (hora: string, esporte: string, q: { quadraId: string; nome: string; numero: number }) => {
       setAgendarCtx({
@@ -375,6 +381,33 @@ export default function PermanentesGridPage() {
     []
   );
 
+  /* ✅ NOVO: REDIRECIONAR para agendar PERMANENTE (slot livre de CHURRASQUEIRA) */
+  const irParaAgendarChurrasqueiraPermanente = useCallback(
+    (turno: Turno, c: { churrasqueiraId: string; nome: string; numero: number }) => {
+      const params = new URLSearchParams({
+        diaSemana,
+        turno,
+        churrasqueiraId: c.churrasqueiraId,
+      });
+
+      router.push(`/adminMaster/churrasqueiras/agendarChurrasqueiraPermanente?${params.toString()}`);
+    },
+    [router, diaSemana]
+  );
+
+  const abrirConfirmAgendarChurras = useCallback(
+    (turno: Turno, c: { churrasqueiraId: string; nome: string; numero: number }) => {
+      setAgendarChurrasCtx({
+        turno,
+        churrasqueiraId: c.churrasqueiraId,
+        churrasqueiraNome: c.nome,
+        churrasqueiraNumero: c.numero,
+      });
+      setConfirmAgendarChurras(true);
+    },
+    []
+  );
+
   /* ====== Cancelar PARA SEMPRE ====== */
   const abrirFluxoCancelarForever = () => {
     setConfirmarCancelamentoForever(true);
@@ -385,7 +418,6 @@ export default function PermanentesGridPage() {
     try {
       setLoadingCancelamento(true);
 
-      // Rota depende do tipo local:
       const rota =
         agendamentoSelecionado.tipoLocal === "churrasqueira"
           ? `${API_URL}/agendamentosPermanentesChurrasqueiras/cancelar/${agendamentoSelecionado.agendamentoId}`
@@ -496,6 +528,7 @@ export default function PermanentesGridPage() {
   }) => {
     const isPerm = slot.tipoReserva === "permanente";
     const isLivre = !isPerm && slot.disponivel; // livre = sem permanente
+
     const base =
       "min-h-7 xs:min-h-8 sm:min-h-9 md:min-h-10 text-[9px] xs:text-[10px] sm:text-[11px] md:text-xs " +
       "rounded-none border flex items-center justify-center text-center px-1 py-1 whitespace-normal break-words leading-tight";
@@ -504,9 +537,7 @@ export default function PermanentesGridPage() {
     if (isPerm) cls = "bg-emerald-600 text-white border-emerald-700";
 
     const hourLabel = onlyHour(hora);
-    const label = isPerm
-      ? `${firstName(slot.usuario?.nome)} - ${hourLabel}`
-      : `Sem permanente - ${hourLabel}`;
+    const label = isPerm ? `${firstName(slot.usuario?.nome)} - ${hourLabel}` : `Sem permanente - ${hourLabel}`;
 
     const hasPermAgendado = isPerm && !!slot.agendamentoId;
     const clickable = hasPermAgendado || isLivre;
@@ -516,23 +547,18 @@ export default function PermanentesGridPage() {
       if (hasPermAgendado) {
         abrirDetalhes(slot.agendamentoId!, hora, esporte, slot.permanenteMeta);
       } else if (isLivre) {
-        // antes: irParaAgendarPermanente(hora, esporte, quadra);
         abrirConfirmAgendar(hora, esporte, quadra);
       }
     };
 
     const title = isPerm
       ? [
-          slot.usuario?.nome,
-          slot.permanenteMeta?.proximaData
-            ? `Próxima: ${normalizeDateYmdSP(slot.permanenteMeta.proximaData)}`
-            : null,
-          slot.permanenteMeta?.dataInicio
-            ? `Início: ${normalizeDateYmdSP(slot.permanenteMeta.dataInicio)}`
-            : null,
-        ]
-          .filter(Boolean)
-          .join(" | ")
+        slot.usuario?.nome,
+        slot.permanenteMeta?.proximaData ? `Próxima: ${normalizeDateYmdSP(slot.permanenteMeta.proximaData)}` : null,
+        slot.permanenteMeta?.dataInicio ? `Início: ${normalizeDateYmdSP(slot.permanenteMeta.dataInicio)}` : null,
+      ]
+        .filter(Boolean)
+        .join(" | ")
       : "Sem permanente";
 
     return (
@@ -548,7 +574,7 @@ export default function PermanentesGridPage() {
     );
   };
 
-  /* ====== CÉLULAS — CHURRASQUEIRAS (novo) ====== */
+  /* ====== CÉLULAS — CHURRASQUEIRAS (AGORA COM CLIQUE NO VAZIO) ====== */
   const CellChurrasqueira = ({
     slot,
     turno,
@@ -556,40 +582,48 @@ export default function PermanentesGridPage() {
   }: {
     slot: ChurrasqueiraTurnoSlot;
     turno: Turno;
-    churrasqueira: { id: string; nome: string; numero: number };
+    churrasqueira: { id: string; nome: string; numero: number; churrasqueiraId: string };
   }) => {
     const isPerm = slot.tipoReserva === "permanente";
+    const isLivre = !isPerm && slot.disponivel;
+
     const base =
-      "min-h-9 text-[10px] sm:text-xs rounded-none border flex items-center justify-center text-center px-2 py-2 whitespace-normal break-words leading-tight";
+      "min-h-9 xs:min-h-10 sm:min-h-11 md:min-h-12 " +
+      "text-[9px] xs:text-[10px] sm:text-[11px] md:text-xs " +
+      "rounded-none border flex items-center justify-center text-center " +
+      "px-1 py-1 whitespace-normal break-words leading-tight";
 
     let cls = "bg-white text-gray-900 border-gray-300";
     if (isPerm) cls = "bg-emerald-600 text-white border-emerald-700";
 
-    const label = isPerm
-      ? `${firstName(slot.usuario?.nome)} — ${turno}`
-      : `Sem permanente — ${turno}`;
+    const label = isPerm ? `${firstName(slot.usuario?.nome)} — ${turno}` : `Sem permanente — ${turno}`;
 
     const hasPermAgendado = isPerm && !!slot.agendamentoId;
-    const clickable = hasPermAgendado; // por enquanto, só abrir detalhes/cancelar
+    const clickable = hasPermAgendado || isLivre;
 
     const onClick = () => {
       if (!clickable) return;
-      abrirDetalhesChurrasqueira(slot.agendamentoId!, turno, slot.permanenteMeta);
+
+      if (hasPermAgendado) {
+        abrirDetalhesChurrasqueira(slot.agendamentoId!, turno, slot.permanenteMeta);
+      } else if (isLivre) {
+        abrirConfirmAgendarChurras(turno, {
+          churrasqueiraId: churrasqueira.churrasqueiraId,
+          nome: churrasqueira.nome,
+          numero: churrasqueira.numero,
+        });
+      }
     };
 
     const title = isPerm
       ? [
-          slot.usuario?.nome,
-          slot.permanenteMeta?.proximaData
-            ? `Próxima: ${normalizeDateYmdSP(slot.permanenteMeta.proximaData)}`
-            : null,
-          slot.permanenteMeta?.dataInicio
-            ? `Início: ${normalizeDateYmdSP(slot.permanenteMeta.dataInicio)}`
-            : null,
-        ]
-          .filter(Boolean)
-          .join(" | ")
-      : "Sem permanente";
+        slot.usuario?.nome,
+        slot.permanenteMeta?.proximaData ? `Próxima: ${normalizeDateYmdSP(slot.permanenteMeta.proximaData)}` : null,
+        slot.permanenteMeta?.dataInicio ? `Início: ${normalizeDateYmdSP(slot.permanenteMeta.dataInicio)}` : null,
+      ]
+        .filter(Boolean)
+        .join(" | ")
+      : "Clique para cadastrar permanente";
 
     return (
       <button
@@ -637,12 +671,10 @@ export default function PermanentesGridPage() {
 
                     return (
                       <section key={`${esporte}-${gi}`}>
-                        {/* Cabeçalho por grupo */}
                         <h2 className="text-center text-xl sm:text-2xl md:text-3xl font-extrabold text-gray-900 mb-3">
                           {esporte} – {minNum} - {maxNum}
                         </h2>
 
-                        {/* Linha com os números das quadras */}
                         <div className="grid grid-cols-6 gap-0">
                           {grupo.map((q) => (
                             <div
@@ -658,7 +690,6 @@ export default function PermanentesGridPage() {
                           ))}
                         </div>
 
-                        {/* Grade: horas x quadras */}
                         <div className="space-y-0">
                           {horas.map((hora) => (
                             <div key={hora} className="grid grid-cols-6 gap-0">
@@ -689,70 +720,96 @@ export default function PermanentesGridPage() {
           </div>
         )}
 
-        {/* ====== CHURRASQUEIRAS (NOVO) ====== */}
+        {/* ====== CHURRASQUEIRAS — EM GRUPOS DE 6 ====== */}
         {churrasqueiras && churrasqueiras.length > 0 && (
-          <section>
-            <h2 className="text-center text-2xl md:text-3xl font-extrabold text-gray-900 mb-6">
-              Churrasqueiras — Permanentes
-            </h2>
+          <section className="space-y-10">
+            {(() => {
+              const ordenadas = churrasqueiras.slice().sort((a, b) => a.numero - b.numero);
 
-            <div className="space-y-3">
-              {/* Cabeçalho dos turnos */}
-              <div className="grid grid-cols-3 gap-0">
-                <div className="min-h-9 rounded-none border border-gray-300 bg-gray-100 text-gray-700 text-xs sm:text-sm flex items-center justify-center font-semibold">
-                  Churrasqueira
-                </div>
-                <div className="min-h-9 rounded-none border border-gray-300 bg-gray-100 text-gray-700 text-xs sm:text-sm flex items-center justify-center font-semibold">
-                  Dia
-                </div>
-                <div className="min-h-9 rounded-none border border-gray-300 bg-gray-100 text-gray-700 text-xs sm:text-sm flex items-center justify-center font-semibold">
-                  Noite
-                </div>
-              </div>
+              const grupos: ChurrasqueiraLinha[][] = [];
+              for (let i = 0; i < ordenadas.length; i += 6) {
+                grupos.push(ordenadas.slice(i, i + 6));
+              }
 
-              {/* Linhas */}
-              {churrasqueiras
-                .slice()
-                .sort((a, b) => a.numero - b.numero)
-                .map((ch) => {
-                  const dia = ch.disponibilidade.find((d) => d.turno === "DIA") || {
-                    turno: "DIA",
-                    disponivel: true,
-                  };
-                  const noite = ch.disponibilidade.find((d) => d.turno === "NOITE") || {
-                    turno: "NOITE",
-                    disponivel: true,
-                  };
+              return grupos.map((grupo, gi) => {
+                if (!grupo.length) return null;
 
-                  return (
-                    <div key={ch.churrasqueiraId} className="grid grid-cols-3 gap-0">
-                      <div
-                        className="min-h-9 rounded-none border border-gray-300 bg-white text-gray-900 text-xs sm:text-sm flex items-center justify-center font-semibold"
-                        title={ch.nome}
-                      >
-                        {ch.numero} — {ch.nome}
-                      </div>
+                const minNum = Math.min(...grupo.map((c) => c.numero));
+                const maxNum = Math.max(...grupo.map((c) => c.numero));
 
-                      <CellChurrasqueira
-                        slot={dia as ChurrasqueiraTurnoSlot}
-                        turno="DIA"
-                        churrasqueira={{ id: ch.churrasqueiraId, nome: ch.nome, numero: ch.numero }}
-                      />
+                return (
+                  <section key={`churras-perm-grupo-${gi}`} className="space-y-0">
+                    <h3 className="text-center text-lg sm:text-xl md:text-2xl font-semibold text-gray-900 mb-3">
+                      Churrasqueiras — {String(minNum).padStart(2, "0")} a {String(maxNum).padStart(2, "0")} —{" "}
+                      {DIA_LABEL[diaSemana]}
+                    </h3>
 
-                      <CellChurrasqueira
-                        slot={noite as ChurrasqueiraTurnoSlot}
-                        turno="NOITE"
-                        churrasqueira={{ id: ch.churrasqueiraId, nome: ch.nome, numero: ch.numero }}
-                      />
+                    <div className="grid grid-cols-6 gap-0">
+                      {grupo.map((ch) => (
+                        <div
+                          key={ch.churrasqueiraId}
+                          className="min-h-9 xs:min-h-10 sm:min-h-11 md:min-h-12 rounded-none border border-gray-300 bg-gray-100
+                    text-gray-700 text-[9px] xs:text-[10px] sm:text-[11px] md:text-xs
+                    flex items-center justify-center font-semibold"
+                          title={`${String(ch.numero).padStart(2, "0")} — ${ch.nome}`}
+                        >
+                          {String(ch.numero).padStart(2, "0")}
+                        </div>
+                      ))}
+
+                      {Array.from({ length: Math.max(0, 6 - grupo.length) }).map((_, i) => (
+                        <div key={`void-ch-perm-${gi}-${i}`} className="border border-transparent" />
+                      ))}
                     </div>
-                  );
-                })}
-            </div>
+
+                    <div className="space-y-0">
+                      {(["DIA", "NOITE"] as Turno[]).map((turno) => (
+                        <div key={turno} className="grid grid-cols-6 gap-0">
+                          {grupo.map((ch) => {
+                            const slot =
+                              (ch.disponibilidade || []).find((d) => d.turno === turno) ??
+                              ({ turno, disponivel: true } as ChurrasqueiraTurnoSlot);
+
+                            return (
+                              <CellChurrasqueira
+                                key={`${ch.churrasqueiraId}-${turno}`}
+                                slot={slot as ChurrasqueiraTurnoSlot}
+                                turno={turno}
+                                churrasqueira={{
+                                  id: ch.churrasqueiraId,
+                                  churrasqueiraId: ch.churrasqueiraId,
+                                  nome: ch.nome,
+                                  numero: ch.numero,
+                                }}
+                              />
+                            );
+                          })}
+
+                          {Array.from({ length: Math.max(0, 6 - grupo.length) }).map((_, i) => (
+                            <div key={`pad-ch-perm-${gi}-${turno}-${i}`} className="border border-transparent" />
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                );
+              });
+            })()}
           </section>
         )}
       </div>
     );
-  }, [loading, erro, esportes, horas, churrasqueiras, abrirDetalhes, abrirDetalhesChurrasqueira, abrirConfirmAgendar]);
+  }, [
+    loading,
+    erro,
+    esportes,
+    horas,
+    churrasqueiras,
+    abrirDetalhes,
+    abrirDetalhesChurrasqueira,
+    abrirConfirmAgendar,
+    abrirConfirmAgendarChurras,
+  ]);
 
   return (
     <div className="px-2 sm:px-3 md:px-4 py-4">
@@ -770,13 +827,15 @@ export default function PermanentesGridPage() {
             router.replace(url.toString(), { scroll: false });
           }}
         >
-          {(["DOMINGO","SEGUNDA","TERCA","QUARTA","QUINTA","SEXTA","SABADO"] as DiaSemana[]).map((d) => (
-            <option key={d} value={d}>{DIA_LABEL[d]}</option>
+          {(["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"] as DiaSemana[]).map((d) => (
+            <option key={d} value={d}>
+              {DIA_LABEL[d]}
+            </option>
           ))}
         </select>
       </div>
 
-      {/* Conteúdo (tabela/grade) */}
+      {/* Conteúdo */}
       {Conteudo}
 
       {/* OVERLAY: carregando detalhes */}
@@ -790,32 +849,40 @@ export default function PermanentesGridPage() {
         </div>
       )}
 
-      {/* MODAL DE DETALHES (PERMANENTE) */}
+      {/* MODAL DE DETALHES */}
       {agendamentoSelecionado && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg shadow-lg w-80 relative max-h-[90vh] overflow-auto">
             <h2 className="text-lg font-semibold mb-4">Agendamento Permanente</h2>
 
-            <p><strong>Dia da semana:</strong> {agendamentoSelecionado.diaSemana ?? "-"}</p>
+            <p>
+              <strong>Dia da semana:</strong> {agendamentoSelecionado.diaSemana ?? "-"}
+            </p>
             <p>
               <strong>{agendamentoSelecionado.tipoLocal === "churrasqueira" ? "Turno" : "Horário"}:</strong>{" "}
               {agendamentoSelecionado.tipoLocal === "churrasqueira"
-                ? (agendamentoSelecionado.turno ?? "—")
+                ? agendamentoSelecionado.turno ?? "—"
                 : agendamentoSelecionado.horario}
             </p>
             {agendamentoSelecionado.tipoLocal === "quadra" && agendamentoSelecionado.esporte && (
-              <p><strong>Esporte:</strong> {agendamentoSelecionado.esporte}</p>
+              <p>
+                <strong>Esporte:</strong> {agendamentoSelecionado.esporte}
+              </p>
             )}
             <p>
               <strong>Usuário:</strong>{" "}
               {typeof agendamentoSelecionado.usuario === "string"
                 ? agendamentoSelecionado.usuario
                 : [agendamentoSelecionado.usuario?.nome, agendamentoSelecionado.usuario?.celular]
-                    .filter(Boolean)
-                    .join(" — ")}
+                  .filter(Boolean)
+                  .join(" — ")}
             </p>
-            <p><strong>Data de início:</strong> {agendamentoSelecionado.dataInicio ?? "—"}</p>
-            <p><strong>Próxima data:</strong> {agendamentoSelecionado.proximaData ?? "—"}</p>
+            <p>
+              <strong>Data de início:</strong> {agendamentoSelecionado.dataInicio ?? "—"}
+            </p>
+            <p>
+              <strong>Próxima data:</strong> {agendamentoSelecionado.proximaData ?? "—"}
+            </p>
 
             <div className="mt-3">
               <strong>Exceções:</strong>
@@ -882,18 +949,21 @@ export default function PermanentesGridPage() {
         </div>
       )}
 
-      {/* >>> CONFIRMAÇÃO DE AGENDAMENTO PERMANENTE (slot livre de QUADRA) */}
+      {/* CONFIRMAÇÃO DE AGENDAMENTO PERMANENTE (QUADRA) */}
       {confirmAgendar && agendarCtx && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[65]">
           <div className="bg-white rounded-lg p-5 w-[90%] max-w-md">
             <h3 className="text-lg font-semibold mb-2">Confirmar agendamento permanente</h3>
             <p className="text-sm text-gray-700 mb-4">
-              Deseja agendar a <b>Quadra {agendarCtx.quadraNumero}</b> ({agendarCtx.quadraNome})
-              em <b>{DIA_LABEL[diaSemana]}</b> às <b>{agendarCtx.hora}</b> para <b>{agendarCtx.esporte}</b>?
+              Deseja agendar a <b>Quadra {agendarCtx.quadraNumero}</b> ({agendarCtx.quadraNome}) em{" "}
+              <b>{DIA_LABEL[diaSemana]}</b> às <b>{agendarCtx.hora}</b> para <b>{agendarCtx.esporte}</b>?
             </p>
             <div className="flex justify-end gap-2">
               <button
-                onClick={() => { setConfirmAgendar(false); setAgendarCtx(null); }}
+                onClick={() => {
+                  setConfirmAgendar(false);
+                  setAgendarCtx(null);
+                }}
                 className="px-3 py-2 rounded bg-gray-300 hover:bg-gray-400"
               >
                 Cancelar
@@ -907,6 +977,47 @@ export default function PermanentesGridPage() {
                   });
                   setConfirmAgendar(false);
                   setAgendarCtx(null);
+                }}
+                className="px-3 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700"
+              >
+                Sim, agendar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ NOVO: CONFIRMAÇÃO DE AGENDAMENTO PERMANENTE (CHURRASQUEIRA) */}
+      {confirmAgendarChurras && agendarChurrasCtx && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[66]">
+          <div className="bg-white rounded-lg p-5 w-[90%] max-w-md">
+            <h3 className="text-lg font-semibold mb-2">Confirmar permanente (Churrasqueira)</h3>
+            <p className="text-sm text-gray-700 mb-4">
+              Deseja agendar a <b>Churrasqueira {String(agendarChurrasCtx.churrasqueiraNumero).padStart(2, "0")}</b>{" "}
+              ({agendarChurrasCtx.churrasqueiraNome}) em <b>{DIA_LABEL[diaSemana]}</b> no turno{" "}
+              <b>{agendarChurrasCtx.turno}</b>?
+            </p>
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setConfirmAgendarChurras(false);
+                  setAgendarChurrasCtx(null);
+                }}
+                className="px-3 py-2 rounded bg-gray-300 hover:bg-gray-400"
+              >
+                Cancelar
+              </button>
+
+              <button
+                onClick={() => {
+                  irParaAgendarChurrasqueiraPermanente(agendarChurrasCtx.turno, {
+                    churrasqueiraId: agendarChurrasCtx.churrasqueiraId,
+                    nome: agendarChurrasCtx.churrasqueiraNome,
+                    numero: agendarChurrasCtx.churrasqueiraNumero,
+                  });
+                  setConfirmAgendarChurras(false);
+                  setAgendarChurrasCtx(null);
                 }}
                 className="px-3 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700"
               >
@@ -942,7 +1053,8 @@ export default function PermanentesGridPage() {
               {usuariosFiltrados.map((user) => (
                 <li
                   key={user.id}
-                  className={`p-2 cursor-pointer hover:bg-blue-100 ${usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""}`}
+                  className={`p-2 cursor-pointer hover:bg-blue-100 ${usuarioSelecionado?.id === user.id ? "bg-blue-300 font-semibold" : ""
+                    }`}
                   onClick={() => setUsuarioSelecionado(user)}
                   title={user.celular || ""}
                 >
@@ -952,11 +1064,7 @@ export default function PermanentesGridPage() {
             </ul>
 
             <label className="flex items-center gap-2 mb-4 text-sm">
-              <input
-                type="checkbox"
-                checked={copiarExcecoes}
-                onChange={(e) => setCopiarExcecoes(e.target.checked)}
-              />
+              <input type="checkbox" checked={copiarExcecoes} onChange={(e) => setCopiarExcecoes(e.target.checked)} />
               Copiar exceções (datas já canceladas)
             </label>
 

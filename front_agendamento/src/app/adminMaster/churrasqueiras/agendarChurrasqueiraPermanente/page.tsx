@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import axios from "axios";
 import { format, parseISO, addDays } from "date-fns";
 import { toast } from "sonner";
+import { useSearchParams } from "next/navigation";
 
 type ChurrasqueiraDisponivel = {
   churrasqueiraId: string;
@@ -49,14 +50,15 @@ function proximaDataParaDiaSemana(diaSemana: string): string {
 }
 
 export default function AgendarChurrasqueiraPermanente() {
+  const searchParams = useSearchParams();
+
   const [diaSemana, setDiaSemana] = useState<string>("");
   const [turno, setTurno] = useState<string>("");
 
   const [churrasqueiras, setChurrasqueiras] = useState<ChurrasqueiraDisponivel[]>([]);
   const [churrasqueiraId, setChurrasqueiraId] = useState<string>("");
 
-  // ⚠ agora o controle de conflito é *por churrasqueira selecionada*,
-  // não mais um boolean global
+  // ⚠ agora o controle de conflito é *por churrasqueira selecionada*
   const [dataUltimoConflito, setDataUltimoConflito] = useState<string | null>(null);
   const [proximasDatasDisponiveis, setProximasDatasDisponiveis] = useState<string[]>([]);
   const [dataInicio, setDataInicio] = useState<string>("");
@@ -78,6 +80,40 @@ export default function AgendarChurrasqueiraPermanente() {
 
   // estabilizar seleção entre recargas de lista
   const prefillRef = useRef(true);
+
+  // ✅ NOVO: garante que o prefill via URL rode só 1 vez
+  const initializedFromQueryRef = useRef(false);
+
+  /* =========================
+     ✅ PREFILL VIA QUERY PARAMS
+     URL exemplo:
+     ?diaSemana=QUINTA&turno=DIA&churrasqueiraId=xxxxx
+  ========================= */
+  useEffect(() => {
+    if (initializedFromQueryRef.current) return;
+
+    const qDia = searchParams.get("diaSemana");
+    const qTurno = searchParams.get("turno");
+    const qChId = searchParams.get("churrasqueiraId");
+
+    // normaliza pra evitar caso venha em minúsculo
+    const diaNorm = qDia ? qDia.toUpperCase() : null;
+    const turnoNorm = qTurno ? qTurno.toUpperCase() : null;
+
+    const diaOk = !!diaNorm && diasEnum.includes(diaNorm as any);
+    const turnoOk = turnoNorm === "DIA" || turnoNorm === "NOITE";
+
+    if (diaOk) setDiaSemana(diaNorm!);
+    if (turnoOk) setTurno(turnoNorm!);
+    if (qChId) setChurrasqueiraId(qChId);
+
+    // se veio algo na URL, não queremos que ele sugira a primeira automaticamente
+    if (diaOk || turnoOk || qChId) {
+      prefillRef.current = false;
+    }
+
+    initializedFromQueryRef.current = true;
+  }, [searchParams]);
 
   /* ===== Disponibilidade (permanente) ===== */
   useEffect(() => {
@@ -259,8 +295,7 @@ export default function AgendarChurrasqueiraPermanente() {
     const temConflitoComumSelecionada =
       !!selecionada && !!selecionada.conflitoComum && !selecionada.conflitoPermanente;
 
-    const precisaDataInicio =
-      temConflitoComumSelecionada && proximasDatasDisponiveis.length > 0;
+    const precisaDataInicio = temConflitoComumSelecionada && proximasDatasDisponiveis.length > 0;
 
     if (precisaDataInicio && !dataInicio) {
       setFeedback({ kind: "error", text: "Selecione uma data de início válida." });
@@ -274,7 +309,6 @@ export default function AgendarChurrasqueiraPermanente() {
       ...(usuarioId
         ? { usuarioId }
         : {
-            // concatena "Nome Telefone" como no de quadras, compatível com o backend
             convidadosNomes: [
               `${convidadoDonoNome.trim()} ${convidadoDonoTelefone.trim()}`.trim(),
             ],
@@ -369,7 +403,7 @@ export default function AgendarChurrasqueiraPermanente() {
           </select>
         </div>
 
-        {/* Churrasqueira (select como quadra) */}
+        {/* Churrasqueira */}
         <div>
           <label className="block font-semibold mb-1">Churrasqueira</label>
           <select
@@ -401,7 +435,7 @@ export default function AgendarChurrasqueiraPermanente() {
           </select>
         </div>
 
-        {/* Dono cadastrado OU Convidado dono (com telefone) */}
+        {/* Dono cadastrado OU Convidado dono */}
         <div className="space-y-2">
           <label className="block font-semibold">Dono do agendamento</label>
 
@@ -435,7 +469,6 @@ export default function AgendarChurrasqueiraPermanente() {
                       setBusca(u.nome);
                       setUsuariosEncontrados([]);
                       setListaAberta(false);
-                      // ao escolher usuário, zera convidado
                       setConvidadoDonoNome("");
                       setConvidadoDonoTelefone("");
                     }}
@@ -458,7 +491,7 @@ export default function AgendarChurrasqueiraPermanente() {
             {usuarioId && <div className="text-xs text-green-700 mt-1">Usuário selecionado.</div>}
           </div>
 
-          {/* Convidado dono (nome + telefone) */}
+          {/* Convidado dono */}
           <div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <input
@@ -498,7 +531,7 @@ export default function AgendarChurrasqueiraPermanente() {
           </div>
         </div>
 
-        {/* Conflito + datas de início (quando há comum) */}
+        {/* Conflito + datas de início */}
         {dataUltimoConflito && proximasDatasDisponiveis.length > 0 && (
           <div className="mt-4 p-4 border border-yellow-400 bg-yellow-100 rounded">
             <p className="mb-2 font-semibold text-yellow-700">
