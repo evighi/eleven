@@ -1,22 +1,33 @@
 // src/hooks/useLoadUser.ts
 "use client";
-import { useEffect } from "react";
+
+import { useEffect, useRef } from "react";
 import axios from "axios";
 import { useAuthStore } from "@/context/AuthStore";
 import type { UsuarioLogadoItf } from "@/context/AuthStore";
 
 export function useLoadUser() {
-  const { logaUsuario, deslogaUsuario, setCarregandoUser, hasHydrated } = useAuthStore();
+  const startedRef = useRef(false);
+
+  const {
+    logaUsuario,
+    deslogaUsuario,
+    setCarregandoUser,
+  } = useAuthStore();
 
   useEffect(() => {
-    if (!hasHydrated) return;
+    // ✅ evita disparar 10x em vários componentes
+    if (startedRef.current) return;
+    startedRef.current = true;
 
     let cancelado = false;
 
     (async () => {
       setCarregandoUser(true);
+
       try {
-        const base = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
+        const base =
+          process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
 
         type ApiMeResponse = Omit<UsuarioLogadoItf, "token">;
 
@@ -29,9 +40,10 @@ export function useLoadUser() {
         const usuario: UsuarioLogadoItf = {
           ...data,
           token: "",
-          // ✅ garante array (evita undefined no menu)
           atendenteFeatures:
-            data.tipo === "ADMIN_ATENDENTE" ? (data.atendenteFeatures ?? []) : [],
+            data.tipo === "ADMIN_ATENDENTE"
+              ? (data.atendenteFeatures ?? [])
+              : [],
         };
 
         logaUsuario(usuario);
@@ -44,7 +56,7 @@ export function useLoadUser() {
             deslogaUsuario();
           }
         }
-        // demais erros: mantém usuário persistido
+        // Outros erros: mantém o usuario do persist
       } finally {
         if (!cancelado) setCarregandoUser(false);
       }
@@ -53,5 +65,5 @@ export function useLoadUser() {
     return () => {
       cancelado = true;
     };
-  }, [logaUsuario, deslogaUsuario, setCarregandoUser, hasHydrated]);
+  }, [logaUsuario, deslogaUsuario, setCarregandoUser]);
 }

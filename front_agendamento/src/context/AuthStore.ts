@@ -23,8 +23,6 @@ export interface UsuarioLogadoItf {
   nome: string;
   tipo: TipoUsuario;
   token?: string;
-
-  // ✅ NOVO: vem do /usuarios/me (só faz sentido pro atendente)
   atendenteFeatures?: AtendenteFeature[];
 }
 
@@ -42,10 +40,16 @@ export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
       usuario: null,
-      carregandoUser: true,
+
+      // ✅ MUITO IMPORTANTE: começa FALSE
+      // o loading só existe quando o /usuarios/me for chamado
+      carregandoUser: false,
+
       hasHydrated: false,
+
       logaUsuario: (u) => set({ usuario: u }),
       deslogaUsuario: () => set({ usuario: null }),
+
       setCarregandoUser: (b) => set({ carregandoUser: b }),
       setHasHydrated: (b) => set({ hasHydrated: b }),
     }),
