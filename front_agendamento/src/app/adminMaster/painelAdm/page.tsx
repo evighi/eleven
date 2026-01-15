@@ -55,7 +55,7 @@ const resumoLinha1Base: SummaryCard[] = [
     {
         label: "Perfil atendente",
         value: "—",
-        iconSrc: "/icons/media.png",
+        iconSrc: "/icons/icone-permanente.png",
         href: HREF_PERMISSOES_ATENDENTES,
     },
 ];

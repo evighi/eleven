@@ -29,11 +29,24 @@ function requireMaster(req: any, res: any, next: any) {
 /**
  * ✅ GET /permissoes-atendente
  * Pode ser usado pelo front (inclusive atendente) pra montar menu.
+ * ✅ Agora retorna também o "updatedBy" com nome/email.
  */
 router.get("/", async (_req, res) => {
   const row = await prisma.permissoesAtendente.findUnique({
     where: { id: 1 },
-    select: { features: true, updatedAt: true, updatedById: true },
+    select: {
+      id: true,
+      features: true,
+      updatedAt: true,
+      updatedById: true,
+      updatedBy: {
+        select: {
+          id: true,
+          nome: true,
+          email: true,
+        },
+      },
+    },
   });
 
   return res.json({
@@ -41,6 +54,7 @@ router.get("/", async (_req, res) => {
     features: (row?.features ?? []) as AtendenteFeature[],
     updatedAt: row?.updatedAt ?? null,
     updatedById: row?.updatedById ?? null,
+    updatedBy: row?.updatedBy ?? null, // ✅ NOVO
   });
 });
 
@@ -48,6 +62,7 @@ router.get("/", async (_req, res) => {
  * ✅ PUT /permissoes-atendente
  * Só ADMIN_MASTER altera.
  * ⛔ E o atendente é barrado ANTES (denyAtendente).
+ * ✅ Retorna updatedBy com nome/email também.
  */
 const putSchema = z.object({
   features: z.array(
@@ -76,7 +91,19 @@ router.put("/", denyAtendente(), requireMaster, async (req, res) => {
     where: { id: 1 },
     create: { id: 1, features, updatedById: actorId },
     update: { features, updatedById: actorId },
-    select: { id: true, features: true, updatedAt: true, updatedById: true },
+    select: {
+      id: true,
+      features: true,
+      updatedAt: true,
+      updatedById: true,
+      updatedBy: {
+        select: {
+          id: true,
+          nome: true,
+          email: true,
+        },
+      },
+    },
   });
 
   clearAtendentePermissionsCache();
