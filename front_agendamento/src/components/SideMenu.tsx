@@ -38,12 +38,14 @@ export default function SideMenu({ open, onClose }: Props) {
     if (first) setNomeUsuario(first);
   }, [usuario]);
 
-  // identifica ADMIN_MASTER tolerando diferentes chaves (tipo / usuarioLogadoTipo / perfil)
-  const isAdminMaster = useMemo(() => {
-    return readUserRole(usuario).toUpperCase() === "ADMIN_MASTER";
+  // ✅ ADMIN_MASTER ou ADMIN_ATENDENTE (usuário de painel admin)
+  const isAdminPanelUser = useMemo(() => {
+    const role = readUserRole(usuario).toUpperCase();
+    return role === "ADMIN_MASTER" || role === "ADMIN_ATENDENTE";
   }, [usuario]);
 
-  const roleLabel = isAdminMaster ? "Administrador" : "Atleta";
+  const roleLabel = isAdminPanelUser ? "Administrador" : "Atleta";
+
 
   // ESC para fechar
   useEffect(() => {
@@ -79,9 +81,8 @@ export default function SideMenu({ open, onClose }: Props) {
     <>
       {/* Overlay */}
       <div
-        className={`fixed inset-0 z-50 bg-black/40 transition-opacity ${
-          open ? "opacity-100" : "opacity-0 pointer-events-none"
-        }`}
+        className={`fixed inset-0 z-50 bg-black/40 transition-opacity ${open ? "opacity-100" : "opacity-0 pointer-events-none"
+          }`}
         onClick={onClose}
         aria-hidden
       />
@@ -126,8 +127,8 @@ export default function SideMenu({ open, onClose }: Props) {
             <Item href="/reservasAnteriores" label="Ver reservas anteriores" icon="/icons/verreservasanter.png" onClose={onClose} />
             {/*<Item href="/transferenciasAnteriores" label="Ver transferências anteriores" icon="/icons/vertransferenciasanter.png" onClose={onClose} />*/}
 
-            {/* item exclusivo do ADMIN_MASTER */}
-            {isAdminMaster && (
+            {/* item exclusivo do ADMIN_MASTER e ADMIN_ATENDENTE */}
+            {isAdminPanelUser && (
               <Item
                 href="/adminMaster"
                 label="Ir para o perfil do administrador"
