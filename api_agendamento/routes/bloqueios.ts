@@ -16,7 +16,7 @@ const prisma = new PrismaClient();
 router.use(verificarToken);
 router.use(requireAdmin);
 
-// ✅ Feature que controla se ATENDENTE pode acessar bloqueios (GET/POST/DELETE)
+// ✅ Feature que controla se ATENDENTE pode acessar bloqueios (GET/POST/PATCH/DELETE)
 const FEATURE_BLOQUEIOS: AtendenteFeature = "ATD_BLOQUEIOS";
 router.use(requireAtendenteFeature(FEATURE_BLOQUEIOS));
 
@@ -30,6 +30,17 @@ const bloqueioSchema = z.object({
   fimBloqueio: z.string().regex(horaRegex, "Hora final inválida (HH:MM)"),
   // 👇 motivoId opcional (palavra-chave cadastrada)
   motivoId: z.string().uuid().optional().nullable(),
+});
+
+// ✅ Schema de edição: tudo opcional
+// - quadraIds pode vir [] (e aí bloqueamos com mensagem clara)
+const editarBloqueioSchema = z.object({
+  quadraIds: z.array(z.string().uuid()).optional(),
+  dataBloqueio: z.coerce.date().optional(),
+  inicioBloqueio: z.string().regex(horaRegex, "Hora inicial inválida (HH:MM)").optional(),
+  fimBloqueio: z.string().regex(horaRegex, "Hora final inválida (HH:MM)").optional(),
+  // 👇 pode mandar null para remover motivo
+  motivoId: z.string().uuid().nullable().optional(),
 });
 
 // 👇 Helper igual ao que você usa em disponibilidadeGeral:
@@ -159,6 +170,198 @@ router.post("/", async (req, res) => {
     return res
       .status(500)
       .json({ erro: "Erro interno ao tentar bloquear as quadras" });
+  }
+});
+
+/**
+ * ✅ PATCH /bloqueios/:id
+ * Edita qualquer detalhe do bloqueio:
+ * - quadras (set)
+ * - data
+ * - inicio/fim
+ * - motivo (inclui remover -> null)
+ *
+ * Regras:
+ * - não permite remover todas as quadras
+ * - valida horário (inicio < fim)
+ * - valida conflito com agendamentos comuns confirmados
+ */
+router.patch("/:id", async (req, res) => {
+  const parsed = editarBloqueioSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res
+      .status(400)
+      .json({ erro: "Dados inválidos", detalhes: parsed.error.errors });
+  }
+
+  // se body vazio, evita PATCH "sem nada"
+  if (Object.keys(parsed.data).length === 0) {
+    return res.status(400).json({
+      erro: "Nenhum campo enviado para atualização. Envie ao menos um campo.",
+    });
+  }
+
+  try {
+    const atual = await prisma.bloqueioQuadra.findUnique({
+      where: { id: req.params.id },
+      include: {
+        quadras: { select: { id: true, nome: true, numero: true } },
+        motivo: { select: { id: true, nome: true } },
+        bloqueadoPor: { select: { id: true, nome: true, email: true } },
+      },
+    });
+
+    if (!atual) {
+      return res.status(404).json({ erro: "Bloqueio não encontrado" });
+    }
+
+    // -------------------------
+    // 1) Monta estado FINAL (merge atual + body)
+    // -------------------------
+    const dataFinal = parsed.data.dataBloqueio ?? atual.dataBloqueio;
+    const inicioFinal = parsed.data.inicioBloqueio ?? atual.inicioBloqueio;
+    const fimFinal = parsed.data.fimBloqueio ?? atual.fimBloqueio;
+
+    // motivoId: precisa respeitar null (remover motivo)
+    const bodyTemMotivoId = Object.prototype.hasOwnProperty.call(parsed.data, "motivoId");
+    const motivoFinal = bodyTemMotivoId ? parsed.data.motivoId : atual.motivoId;
+
+    // quadras: se veio no body, substitui; senão mantém as atuais
+    let quadraIdsFinal: string[] = atual.quadras.map((q) => q.id);
+
+    if (Object.prototype.hasOwnProperty.call(parsed.data, "quadraIds")) {
+      const recebido = parsed.data.quadraIds ?? [];
+      const uniqueRecebido = Array.from(new Set(recebido));
+
+      // ✅ regra que você pediu: não pode ficar sem quadras
+      if (uniqueRecebido.length === 0) {
+        return res.status(400).json({
+          erro: "Não é possível atualizar o bloqueio: todas as quadras foram removidas. Selecione ao menos 1 quadra.",
+        });
+      }
+
+      quadraIdsFinal = uniqueRecebido;
+    }
+
+    // -------------------------
+    // 2) Valida janela de horário final
+    // -------------------------
+    if (inicioFinal >= fimFinal) {
+      return res
+        .status(400)
+        .json({ erro: "Hora inicial deve ser menor que a final" });
+    }
+
+    // -------------------------
+    // 3) Conflitos (agendamentos comuns CONFIRMADOS)
+    // -------------------------
+    const dataInicio = startOfDay(dataFinal);
+    const dataFim = endOfDay(dataFinal);
+
+    for (const quadraId of quadraIdsFinal) {
+      const conflitoComum = await prisma.agendamento.findFirst({
+        where: {
+          quadraId,
+          status: "CONFIRMADO",
+          data: { gte: dataInicio, lte: dataFim },
+          horario: { gte: inicioFinal, lt: fimFinal },
+        },
+        select: { id: true },
+      });
+
+      if (conflitoComum) {
+        return res.status(409).json({
+          erro: `Não é possível atualizar o bloqueio: conflito com agendamento comum confirmado na quadra ${quadraId}.`,
+        });
+      }
+    }
+
+    // -------------------------
+    // 4) Diferenças de quadras (pra audit)
+    // -------------------------
+    const quadrasAntesIds = new Set(atual.quadras.map((q) => q.id));
+    const quadrasDepoisIds = new Set(quadraIdsFinal);
+
+    const quadrasAdicionadas = quadraIdsFinal.filter((id) => !quadrasAntesIds.has(id));
+    const quadrasRemovidas = atual.quadras.map((q) => q.id).filter((id) => !quadrasDepoisIds.has(id));
+
+    // -------------------------
+    // 5) Atualiza no banco (set nas quadras)
+    // -------------------------
+    const atualizado = await prisma.bloqueioQuadra.update({
+      where: { id: req.params.id },
+      data: {
+        dataBloqueio: dataFinal,
+        inicioBloqueio: inicioFinal,
+        fimBloqueio: fimFinal,
+        motivoId: motivoFinal ?? null,
+        quadras: { set: quadraIdsFinal.map((id) => ({ id })) },
+      },
+      include: {
+        bloqueadoPor: { select: { id: true, nome: true, email: true } },
+        quadras: { select: { id: true, nome: true, numero: true } },
+        motivo: { select: { id: true, nome: true, descricao: true } },
+      },
+    });
+
+    // 📝 AUDIT: BLOQUEIO_UPDATE (antes/depois + diffs)
+    await logAudit({
+      event: "BLOQUEIO_UPDATE",
+      req,
+      target: { type: TargetType.QUADRA, id: req.params.id },
+      metadata: {
+        bloqueioId: req.params.id,
+        antes: {
+          dataBloqueio: atual.dataBloqueio.toISOString().slice(0, 10),
+          inicioBloqueio: atual.inicioBloqueio,
+          fimBloqueio: atual.fimBloqueio,
+          motivoId: atual.motivoId ?? null,
+          motivoNome: atual.motivo?.nome ?? null,
+          quadras: atual.quadras.map((q) => ({
+            id: q.id,
+            nome: q.nome,
+            numero: q.numero,
+          })),
+        },
+        depois: {
+          dataBloqueio: atualizado.dataBloqueio.toISOString().slice(0, 10),
+          inicioBloqueio: atualizado.inicioBloqueio,
+          fimBloqueio: atualizado.fimBloqueio,
+          motivoId: atualizado.motivoId ?? null,
+          motivoNome: atualizado.motivo?.nome ?? null,
+          quadras: atualizado.quadras.map((q) => ({
+            id: q.id,
+            nome: q.nome,
+            numero: q.numero,
+          })),
+        },
+        quadrasAdicionadas,
+        quadrasRemovidas,
+      },
+    });
+
+    return res.json({
+      mensagem: "Bloqueio atualizado com sucesso",
+      bloqueio: atualizado,
+    });
+  } catch (error: any) {
+    // Bloqueio inexistente / IDs inválidos
+    if (error?.code === "P2025") {
+      return res.status(404).json({ erro: "Bloqueio não encontrado" });
+    }
+
+    // FK de motivo inválido
+    if (
+      error?.code === "P2003" &&
+      String(error?.meta?.field_name || "").includes("motivoId")
+    ) {
+      return res
+        .status(400)
+        .json({ erro: "Motivo de bloqueio inválido ou inexistente" });
+    }
+
+    console.error("Erro ao atualizar bloqueio:", error);
+    return res.status(500).json({ erro: "Erro interno ao atualizar bloqueio" });
   }
 });
 

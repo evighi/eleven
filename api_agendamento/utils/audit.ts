@@ -50,6 +50,7 @@ export type AuditEvent =
   // Bloqueios de quadra
   | "BLOQUEIO_CREATE"
   | "BLOQUEIO_DELETE"
+  | "BLOQUEIO_UPDATE"
   | "MOTIVO_BLOQUEIO_CREATE"
   | "MOTIVO_BLOQUEIO_UPDATE"
   | "MOTIVO_BLOQUEIO_DELETE"
