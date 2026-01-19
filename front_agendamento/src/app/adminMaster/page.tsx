@@ -424,7 +424,6 @@ export default function AdminHome() {
   const [data, setData] = useState(""); // QUADRAS
   const [dataPickerAberto, setDataPickerAberto] = useState(false);
 
-  const [dataChurras, setDataChurras] = useState(""); // CHURRASQUEIRAS
   const [dataPickerChurrasAberto, setDataPickerChurrasAberto] =
     useState(false);
 
@@ -434,7 +433,7 @@ export default function AdminHome() {
   });
 
   const [mesExibidoChurras, setMesExibidoChurras] = useState(() => {
-    const base = dataChurras ? new Date(dataChurras + "T00:00:00") : new Date();
+    const base = data ? new Date(data + "T00:00:00") : new Date();
     return new Date(base.getFullYear(), base.getMonth(), 1);
   });
 
@@ -442,15 +441,13 @@ export default function AdminHome() {
   useEffect(() => {
     if (!data) return;
     const base = new Date(data + "T00:00:00");
-    setMesExibido(new Date(base.getFullYear(), base.getMonth(), 1));
+    const mes = new Date(base.getFullYear(), base.getMonth(), 1);
+
+    setMesExibido(mes);
+    setMesExibidoChurras(mes); // ✅ agora ambos seguem a mesma data
   }, [data]);
 
-  // manter o mês de churrasqueiras em sincronia
-  useEffect(() => {
-    if (!dataChurras) return;
-    const base = new Date(dataChurras + "T00:00:00");
-    setMesExibidoChurras(new Date(base.getFullYear(), base.getMonth(), 1));
-  }, [dataChurras]);
+
 
   const isAllowed =
     !!usuario &&
@@ -531,7 +528,7 @@ export default function AdminHome() {
     ultimoReqChurrasRef.current = reqId;
     setLoadingChurras(true);
 
-    if (!dataChurras) {
+    if (!data) {
       if (ultimoReqChurrasRef.current === reqId) {
         setDisponChurras(null);
         setLoadingChurras(false);
@@ -543,7 +540,7 @@ export default function AdminHome() {
       const res = await axios.get<DisponibilidadeGeral>(
         `${API_URL}/disponibilidadeGeral/geral-admin-churrasqueiras`,
         {
-          params: { data: dataChurras, horario: hourStrSP() },
+          params: { data, horario: horario || hourStrSP() }, // ✅ opcional: usa o mesmo horário de quadras
           withCredentials: true,
         }
       );
@@ -562,13 +559,12 @@ export default function AdminHome() {
         setLoadingChurras(false);
       }
     }
-  }, [API_URL, dataChurras, isAllowed]);
+  }, [API_URL, data, horario, isAllowed]);
 
   // Inicializa data/horário (SP) para ambos
   useEffect(() => {
     const hoje = todayStrSP();
     setData(hoje);
-    setDataChurras(hoje);
     setHorario(hourStrSP());
   }, []);
 
@@ -1208,6 +1204,7 @@ export default function AdminHome() {
                           onClick={() => {
                             setData(iso);
                             setDataPickerAberto(false);
+                            setDataPickerChurrasAberto(false); // ✅ fecha o outro também
                           }}
                           className={[
                             "h-8 w-8 rounded-full flex items-center justify-center mx-auto",
@@ -1605,7 +1602,7 @@ export default function AdminHome() {
               <div className="flex items-center">
                 <Calendar className="w-4 h-4 text-gray-600 mr-2" />
                 <span className="text-sm text-gray-800">
-                  {formatarDataBR(dataChurras)}
+                  {formatarDataBR(data)}
                 </span>
               </div>
 
@@ -1688,7 +1685,7 @@ export default function AdminHome() {
                       const iso = isoFromDate(d);
                       const isCurrentMonth =
                         d.getMonth() === mesExibidoChurras.getMonth();
-                      const isSelected = dataChurras === iso;
+                      const isSelected = data === iso;
                       const isToday = todayIso === iso;
 
                       return (
@@ -1696,8 +1693,9 @@ export default function AdminHome() {
                           key={iso}
                           type="button"
                           onClick={() => {
-                            setDataChurras(iso);
+                            setData(iso);
                             setDataPickerChurrasAberto(false);
+                            setDataPickerAberto(false);
                           }}
                           className={[
                             "h-8 w-8 rounded-full flex items-center justify-center mx-auto",
@@ -1770,9 +1768,9 @@ export default function AdminHome() {
             <div className="flex items-baseline justify-between mb-4">
               <h2 className="text-xl font-semibold text-gray-500">
                 Churrasqueiras
-                {dataChurras && (
+                {data && (
                   <span className="ml-2 text-xl font-semibold text-gray-500">
-                    - {formatarDataBR(dataChurras)}
+                    - {formatarDataBR(data)}
                   </span>
                 )}
               </h2>
@@ -1835,7 +1833,7 @@ export default function AdminHome() {
                     onClick={() => {
                       if (disponivel) {
                         abrirConfirmacaoChurras({
-                          data: dataChurras,
+                          data: data,
                           turno: "DIA",
                           churrasqueiraId: c.churrasqueiraId,
                           churrasqueiraNome: c.nome,
@@ -1847,7 +1845,7 @@ export default function AdminHome() {
                             ...(diaInfo as DetalheItemMin),
                             tipoLocal: "churrasqueira",
                           },
-                          { turno: "DIA", dia: dataChurras }
+                          { turno: "DIA", dia: data }
                         );
                       }
                     }}
@@ -2027,7 +2025,7 @@ export default function AdminHome() {
                     onClick={() => {
                       if (disponivel) {
                         abrirConfirmacaoChurras({
-                          data: dataChurras,
+                          data: data,
                           turno: "NOITE",
                           churrasqueiraId: c.churrasqueiraId,
                           churrasqueiraNome: c.nome,
@@ -2039,7 +2037,7 @@ export default function AdminHome() {
                             ...(noiteInfo as DetalheItemMin),
                             tipoLocal: "churrasqueira",
                           },
-                          { turno: "NOITE", dia: dataChurras }
+                          { turno: "NOITE", dia: data }
                         );
                       }
                     }}
