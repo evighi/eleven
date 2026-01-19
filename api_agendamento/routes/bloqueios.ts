@@ -255,15 +255,15 @@ router.patch("/:id", async (req, res) => {
     // -------------------------
     // 3) Conflitos (agendamentos comuns CONFIRMADOS)
     // -------------------------
-    const dataInicio = startOfDay(dataFinal);
-    const dataFim = endOfDay(dataFinal);
+    const dataFinalYMD = dataFinal.toISOString().slice(0, 10);
+    const { inicio: dataInicio, fim: dataFim } = getUtcDayRange(dataFinalYMD);
 
     for (const quadraId of quadraIdsFinal) {
       const conflitoComum = await prisma.agendamento.findFirst({
         where: {
           quadraId,
           status: "CONFIRMADO",
-          data: { gte: dataInicio, lte: dataFim },
+          data: { gte: dataInicio, lt: dataFim }, // ✅ [início, fim)
           horario: { gte: inicioFinal, lt: fimFinal },
         },
         select: { id: true },
