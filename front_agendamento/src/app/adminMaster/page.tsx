@@ -16,6 +16,8 @@ import {
   X,
 } from "lucide-react";
 import Image from "next/image";
+import SystemAlert, { AlertVariant } from "@/components/SystemAlert";
+
 
 /** Helpers de data/hora em America/Sao_Paulo */
 const SP_TZ = "America/Sao_Paulo";
@@ -233,84 +235,6 @@ function gerarProximasDatasDiaSemana(
     out.push(toYmdSP(d));
   }
   return out;
-}
-
-type AlertVariant = "success" | "error" | "info";
-
-interface SystemAlertProps {
-  open: boolean;
-  message: string;
-  variant?: AlertVariant;
-  onClose: () => void;
-}
-
-function SystemAlert({
-  open,
-  message,
-  variant = "info",
-  onClose,
-}: SystemAlertProps) {
-  if (!open || !message) return null;
-
-  const styles =
-    {
-      success: {
-        container:
-          "bg-emerald-50 border-emerald-200 text-emerald-800",
-        chip:
-          "bg-emerald-100 border border-emerald-300 text-emerald-800",
-      },
-      error: {
-        container: "bg-red-50 border-red-200 text-red-800",
-        chip: "bg-red-100 border border-red-300 text-red-800",
-      },
-      info: {
-        container:
-          "bg-orange-50 border-orange-200 text-orange-800",
-        chip:
-          "bg-orange-100 border border-orange-300 text-orange-800",
-      },
-    }[variant] || {
-      container: "bg-slate-50 border-slate-200 text-slate-800",
-      chip: "bg-slate-100 border border-slate-300 text-slate-800",
-    };
-
-  return (
-    <div className="fixed inset-0 z-[80] pointer-events-none flex justify-center pt-6 sm:pt-8">
-      <div className="pointer-events-auto">
-        <div
-          className={`
-            flex items-center gap-4 rounded-2xl px-5 py-3
-            min-w-[260px] max-w-[90vw]
-            border shadow-xl
-            ${styles.container}
-          `}
-        >
-          <div className="flex flex-col">
-            {/* “cabeçalho” tipo navegador */}
-            <span className="text-[11px] uppercase tracking-[0.16em] text-black/50">
-              Eleven Sports • Aviso
-            </span>
-            <span className="mt-1 text-sm font-medium leading-snug">
-              {message}
-            </span>
-          </div>
-
-          <button
-            type="button"
-            onClick={onClose}
-            className={`
-              ml-2 sm:ml-4 px-4 py-1.5 rounded-full text-xs font-semibold
-              transition
-              ${styles.chip}
-            `}
-          >
-            OK
-          </button>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 

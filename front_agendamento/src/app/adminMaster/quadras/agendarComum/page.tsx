@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import axios from 'axios'
 import Spinner from '@/components/Spinner'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { toast } from 'sonner'
 import Image from 'next/image'
 import { ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import AppImage from '@/components/AppImage'
@@ -601,7 +600,6 @@ export default function AgendamentoComum() {
         const msg =
           'O usuário selecionado não é elegível para apoio (permitido: CLIENTE_APOIADO, ADMIN_MASTER, ADMIN_ATENDENTE ou ADMIN_PROFESSORES).'
         setFeedback({ kind: 'error', text: msg })
-        toast.error(msg)
         return
       }
     }

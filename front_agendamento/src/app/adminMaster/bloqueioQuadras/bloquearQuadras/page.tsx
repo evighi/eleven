@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { useAuthStore } from "@/context/AuthStore";
+import SystemAlert, { AlertVariant } from "@/components/SystemAlert";
 
 type QuadraDTO = {
   id: string;
@@ -19,9 +20,15 @@ type MotivoBloqueio = {
   ativo: boolean;
 };
 
+type Feedback = { kind: "success" | "error" | "info"; text: string };
+
 export default function BloqueioQuadrasPage() {
   const { usuario } = useAuthStore();
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
+
+  // ✅ Feedback padronizado
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const closeFeedback = () => setFeedback(null);
 
   // Filtros / Formulário
   const [data, setData] = useState<string>(""); // Data do bloqueio
@@ -63,6 +70,7 @@ export default function BloqueioQuadrasPage() {
         setQuadras(data);
       } catch (error) {
         console.error("Erro ao buscar quadras:", error);
+        setFeedback({ kind: "error", text: "Erro ao carregar quadras." });
       } finally {
         setLoadingQuadras(false);
       }
@@ -87,6 +95,7 @@ export default function BloqueioQuadrasPage() {
         }
       } catch (error) {
         console.error("Erro ao buscar motivos de bloqueio:", error);
+        setFeedback({ kind: "error", text: "Erro ao carregar motivos de bloqueio." });
       } finally {
         setLoadingMotivos(false);
       }
@@ -121,9 +130,8 @@ export default function BloqueioQuadrasPage() {
 
   // Seleção de quadra
   const toggleQuadraSelecionada = (id: string) => {
-    setQuadrasSelecionadas((prev) =>
-      prev.includes(id) ? prev.filter((q) => q !== id) : [...prev, id]
-    );
+    setFeedback(null);
+    setQuadrasSelecionadas((prev) => (prev.includes(id) ? prev.filter((q) => q !== id) : [...prev, id]));
   };
 
   // Validação simples
@@ -154,13 +162,15 @@ export default function BloqueioQuadrasPage() {
   const enviarBloqueio = async () => {
     const erro = validar();
     if (erro) {
-      alert(erro);
+      setFeedback({ kind: "error", text: erro });
       return;
     }
 
     const fimReq = normalizeFim(fim);
 
     setEnviando(true);
+    setFeedback(null);
+
     try {
       await axios.post(
         `${API_URL}/bloqueios`,
@@ -176,16 +186,16 @@ export default function BloqueioQuadrasPage() {
         { withCredentials: true }
       );
 
-      alert("Quadras bloqueadas com sucesso!");
+      setFeedback({ kind: "success", text: "Quadras bloqueadas com sucesso!" });
       setQuadrasSelecionadas([]);
     } catch (e: unknown) {
       console.error(e);
       let msg = "Erro ao criar bloqueio.";
       if (axios.isAxiosError(e)) {
-        const d = e.response?.data as { erro?: string; error?: string } | undefined;
-        msg = d?.erro || d?.error || msg;
+        const d = e.response?.data as { erro?: string; error?: string; message?: string } | undefined;
+        msg = d?.erro || d?.error || d?.message || msg;
       }
-      alert(msg);
+      setFeedback({ kind: "error", text: msg });
     } finally {
       setEnviando(false);
     }
@@ -203,6 +213,14 @@ export default function BloqueioQuadrasPage() {
 
   return (
     <div className="space-y-8">
+      {/* ✅ ALERTA PADRONIZADO */}
+      <SystemAlert
+        open={!!feedback}
+        variant={(feedback?.kind as AlertVariant) || "info"}
+        message={feedback?.text || ""}
+        onClose={closeFeedback}
+      />
+
       <h1 className="text-xl font-semibold text-orange-700">Bloquear Quadras</h1>
 
       {/* Filtros / Formulário */}
@@ -213,7 +231,10 @@ export default function BloqueioQuadrasPage() {
             type="date"
             className="border p-2 rounded-lg"
             value={data}
-            onChange={(e) => setData(e.target.value)}
+            onChange={(e) => {
+              setData(e.target.value);
+              setFeedback(null);
+            }}
           />
         </div>
 
@@ -222,7 +243,10 @@ export default function BloqueioQuadrasPage() {
           <select
             className="border p-2 rounded-lg"
             value={inicio}
-            onChange={(e) => setInicio(e.target.value)}
+            onChange={(e) => {
+              setInicio(e.target.value);
+              setFeedback(null);
+            }}
           >
             <option value="">Selecione</option>
             {opcoesHoraInicio.map((h) => (
@@ -238,7 +262,10 @@ export default function BloqueioQuadrasPage() {
           <select
             className="border p-2 rounded-lg"
             value={fim}
-            onChange={(e) => setFim(e.target.value)}
+            onChange={(e) => {
+              setFim(e.target.value);
+              setFeedback(null);
+            }}
           >
             <option value="">Selecione</option>
             {opcoesHoraFimUI.map((h) => (
@@ -258,15 +285,14 @@ export default function BloqueioQuadrasPage() {
           <select
             className="border p-2 rounded-lg"
             value={motivoSelecionadoId}
-            onChange={(e) => setMotivoSelecionadoId(e.target.value)}
+            onChange={(e) => {
+              setMotivoSelecionadoId(e.target.value);
+              setFeedback(null);
+            }}
             disabled={loadingMotivos || semMotivos}
           >
             <option value="">
-              {loadingMotivos
-                ? "Carregando motivos..."
-                : semMotivos
-                ? "Nenhum motivo cadastrado"
-                : "Selecione o motivo"}
+              {loadingMotivos ? "Carregando motivos..." : semMotivos ? "Nenhum motivo cadastrado" : "Selecione o motivo"}
             </option>
             {motivos.map((m) => (
               <option key={m.id} value={m.id}>
@@ -300,10 +326,9 @@ export default function BloqueioQuadrasPage() {
                         key={q.id}
                         onClick={() => toggleQuadraSelecionada(q.id)}
                         className={`p-3 rounded-lg text-center cursor-pointer select-none transition border
-                          ${
-                            selecionada
-                              ? "border-green-600 bg-green-100"
-                              : "border-gray-300 hover:border-orange-500 hover:bg-orange-50"
+                          ${selecionada
+                            ? "border-green-600 bg-green-100"
+                            : "border-gray-300 hover:border-orange-500 hover:bg-orange-50"
                           }`}
                       >
                         <p className="font-medium">{q.nome}</p>
@@ -332,7 +357,10 @@ export default function BloqueioQuadrasPage() {
           {enviando ? "Bloqueando..." : "Bloquear quadras"}
         </button>
         <button
-          onClick={() => setQuadrasSelecionadas([])}
+          onClick={() => {
+            setQuadrasSelecionadas([]);
+            setFeedback(null);
+          }}
           className="bg-gray-200 hover:bg-gray-300 text-gray-900 px-4 py-2 rounded cursor-pointer"
         >
           Limpar seleção

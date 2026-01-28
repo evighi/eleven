@@ -259,16 +259,23 @@ router.use((req, res, next) => {
   // Só aplica ao atendente — os outros seguem normal
   if (tipo !== "ADMIN_ATENDENTE") return next();
 
-  // Detecta "GET /:id" (somente 1 segmento depois da barra)
-  // Ex.: "/c0a8012e-..." ✅
-  // Ex.: "/estatisticas/resumo" ❌
-  // Ex.: "/:id/datas-excecao" ❌
-  const isGetDetalhe = req.method === "GET" && /^\/[^/]+$/.test(req.path);
+  // ✅ Rotas que devem ser permitidas ao atendente SEM "ATD_PERMANENTES"
+  // (usar ATD_AGENDAMENTOS, que é mais “comum”/segura)
+  const allowAtdAgendamentos =
+    // Detalhe do permanente
+    (req.method === "GET" && /^\/[^/]+$/.test(req.path)) ||
+    // Datas elegíveis p/ exceção
+    (req.method === "GET" && /^\/[^/]+\/datas-excecao$/.test(req.path)) ||
+    // Criar exceção (cancelar um dia específico)
+    (req.method === "POST" && /^\/[^/]+\/cancelar-dia$/.test(req.path)) ||
+    // Cancelar a próxima ocorrência
+    (req.method === "POST" && /^\/[^/]+\/cancelar-proxima$/.test(req.path));
 
-  if (isGetDetalhe) {
+  if (allowAtdAgendamentos) {
     return requireAtendenteFeature(AtendenteFeature.ATD_AGENDAMENTOS)(req, res, next);
   }
 
+  // ✅ Todo o resto continua exigindo PERMANENTES (ex.: POST /, transferir, delete, etc.)
   return requireAtendenteFeature(AtendenteFeature.ATD_PERMANENTES)(req, res, next);
 });
 

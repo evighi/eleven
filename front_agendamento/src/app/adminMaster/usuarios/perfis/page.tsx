@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 import Spinner from '@/components/Spinner'
 import { useRouter } from 'next/navigation'
+import SystemAlert, { AlertVariant } from '@/components/SystemAlert'
 
 interface Usuario {
   id: string
@@ -16,12 +17,21 @@ interface Usuario {
   valorQuadra?: number | string | null
 }
 
-const tipos = ["CLIENTE", "CLIENTE_APOIADO", "ADMIN_MASTER", "ADMIN_ATENDENTE", "ADMIN_PROFESSORES"]
+const tipos = [
+  'CLIENTE',
+  'CLIENTE_APOIADO',
+  'ADMIN_MASTER',
+  'ADMIN_ATENDENTE',
+  'ADMIN_PROFESSORES',
+]
 
-const collator = new Intl.Collator('pt-BR', { sensitivity: 'base', ignorePunctuation: true })
+const collator = new Intl.Collator('pt-BR', {
+  sensitivity: 'base',
+  ignorePunctuation: true,
+})
 
 const mostrarCelular = (cel?: string | null) =>
-  (cel && cel.trim().length > 0) ? cel : '00000000000'
+  cel && cel.trim().length > 0 ? cel : '00000000000'
 
 const onlyDigits = (s: string) => s.replace(/\D+/g, '')
 const brToNumber = (s: string) => {
@@ -50,56 +60,56 @@ const normalizeText = (s: string) =>
    ============================ */
 type QueueLastInteraction =
   | {
-      type: "AG_COMUM";
-      id: string;
-      resumo: {
-        data: string;
-        horario: string;
-        status: string;
-        quadra?: { id: string; nome: string | null; numero: number | null } | null;
-        esporte?: { id: string; nome: string | null } | null;
-      };
+    type: 'AG_COMUM'
+    id: string
+    resumo: {
+      data: string
+      horario: string
+      status: string
+      quadra?: { id: string; nome: string | null; numero: number | null } | null
+      esporte?: { id: string; nome: string | null } | null
     }
+  }
   | {
-      type: "AG_PERM";
-      id: string;
-      resumo: {
-        diaSemana: string;
-        horario: string;
-        status: string;
-        updatedAt: string;
-        quadra?: { id: string; nome: string | null; numero: number | null } | null;
-        esporte?: { id: string; nome: string | null } | null;
-      };
+    type: 'AG_PERM'
+    id: string
+    resumo: {
+      diaSemana: string
+      horario: string
+      status: string
+      updatedAt: string
+      quadra?: { id: string; nome: string | null; numero: number | null } | null
+      esporte?: { id: string; nome: string | null } | null
     }
+  }
   | {
-      type: "CHURRAS";
-      id: string;
-      resumo: {
-        data: string;
-        turno: "DIA" | "NOITE";
-        status: string;
-        churrasqueira?: { id: string; nome: string | null; numero: number | null } | null;
-      };
-    };
+    type: 'CHURRAS'
+    id: string
+    resumo: {
+      data: string
+      turno: 'DIA' | 'NOITE'
+      status: string
+      churrasqueira?: { id: string; nome: string | null; numero: number | null } | null
+    }
+  }
 
 type Delete202Queued = {
-  mensagem?: string;
-  eligibleAt: string; // ISO
-  lastInteraction?: QueueLastInteraction | null;
-};
+  mensagem?: string
+  eligibleAt: string // ISO
+  lastInteraction?: QueueLastInteraction | null
+}
 
 type Delete409HasConfirmed = {
-  code?: "HAS_CONFIRMED";
-  message?: string;
+  code?: 'HAS_CONFIRMED'
+  message?: string
   details?: {
     agendamentos?: Array<{
-      tipo: "AG_COMUM" | "AG_PERM" | "CHURRAS";
-      id: string;
-      quando?: string;
-    }>;
-  };
-};
+      tipo: 'AG_COMUM' | 'AG_PERM' | 'CHURRAS'
+      id: string
+      quando?: string
+    }>
+  }
+}
 
 const fmtDateTimeBR = (iso?: string | null) => {
   if (!iso) return '-'
@@ -120,8 +130,25 @@ const tipoInteracaoLabel = (t?: string) => {
   return 'Interação'
 }
 
+/* ✅ PADRÃO DE ERRO DO PROJETO */
+const getApiErrorMessage = (e: any, fallback: string) => {
+  return (
+    e?.response?.data?.erro ||
+    e?.response?.data?.error ||
+    e?.response?.data?.message ||
+    e?.message ||
+    fallback
+  )
+}
+
+type Feedback = { kind: 'success' | 'error' | 'info'; text: string }
+
 export default function UsuariosAdmin() {
   const router = useRouter()
+
+  // ✅ Feedback padronizado
+  const [feedback, setFeedback] = useState<Feedback | null>(null)
+  const closeFeedback = () => setFeedback(null)
 
   const [usuarios, setUsuarios] = useState<Usuario[]>([])
   const [totalUsuarios, setTotalUsuarios] = useState<number | null>(null)
@@ -151,53 +178,62 @@ export default function UsuariosAdmin() {
   const [excluindo, setExcluindo] = useState(false)
   const [resultadoExclusao204, setResultadoExclusao204] = useState<boolean>(false)
   const [resultadoExclusao202, setResultadoExclusao202] = useState<Delete202Queued | null>(null)
-  const [resultadoExclusao409, setResultadoExclusao409] = useState<Delete409HasConfirmed | null>(null)
+  const [resultadoExclusao409, setResultadoExclusao409] =
+    useState<Delete409HasConfirmed | null>(null)
 
   const API_URL = process.env.NEXT_PUBLIC_URL_API || 'http://localhost:3001'
 
-  const carregarUsuarios = useCallback(async () => {
-    setLoading(true)
-    try {
-      const res = await axios.get(`${API_URL}/usuariosAdmin`, {
-        // 👇 back espera "tipo", não "tipos"
-        params: { tipo: filtroTipo || undefined },
-        withCredentials: true,
-      })
+  const carregarUsuarios = useCallback(
+    async (opts?: { keepFeedback?: boolean }) => {
+      const keepFeedback = !!opts?.keepFeedback
 
-      let lista: Usuario[] = []
-      let totalFromApi: number | undefined
+      setLoading(true)
+      if (!keepFeedback) setFeedback(null)
 
-      if (Array.isArray(res.data)) {
-        lista = res.data
-        totalFromApi = lista.length
-      } else {
-        const data = res.data as { usuarios: Usuario[]; total: number }
-        lista = Array.isArray(data.usuarios) ? data.usuarios : []
-        totalFromApi = data.total
+      try {
+        const res = await axios.get(`${API_URL}/usuariosAdmin`, {
+          params: { tipo: filtroTipo || undefined },
+          withCredentials: true,
+        })
+
+        let lista: Usuario[] = []
+        let totalFromApi: number | undefined
+
+        if (Array.isArray(res.data)) {
+          lista = res.data
+          totalFromApi = lista.length
+        } else {
+          const data = res.data as { usuarios: Usuario[]; total: number }
+          lista = Array.isArray(data.usuarios) ? data.usuarios : []
+          totalFromApi = data.total
+        }
+
+        if (busca.trim()) {
+          const q = normalizeText(busca)
+          lista = lista.filter((u) => normalizeText(u.nome ?? '').includes(q))
+        }
+
+        lista.sort((a, b) => collator.compare(a?.nome ?? '', b?.nome ?? ''))
+        setUsuarios(lista)
+        setTotalUsuarios(totalFromApi ?? lista.length)
+      } catch (e: any) {
+        console.error(e)
+        const msg = getApiErrorMessage(e, 'Erro ao carregar usuários.')
+        setFeedback({ kind: 'error', text: msg })
+        setUsuarios([])
+        setTotalUsuarios(0)
+      } finally {
+        setLoading(false)
       }
+    },
+    [API_URL, filtroTipo, busca],
+  )
 
-      // 👇 filtro de nome sem acento (João <- joao)
-      if (busca.trim()) {
-        const q = normalizeText(busca)
-        lista = lista.filter(u =>
-          normalizeText(u.nome ?? '').includes(q)
-        )
-      }
-
-      lista.sort((a, b) => collator.compare(a?.nome ?? '', b?.nome ?? ''))
-      setUsuarios(lista)
-      setTotalUsuarios(totalFromApi ?? lista.length)
-    } catch (err) {
-      console.error(err)
-      setUsuarios([])
-      setTotalUsuarios(0)
-    } finally {
-      setLoading(false)
-    }
-  }, [API_URL, filtroTipo, busca])
 
   useEffect(() => {
-    const delay = setTimeout(() => { void carregarUsuarios() }, 300)
+    const delay = setTimeout(() => {
+      void carregarUsuarios()
+    }, 300)
     return () => clearTimeout(delay)
   }, [carregarUsuarios])
 
@@ -234,6 +270,8 @@ export default function UsuariosAdmin() {
 
   const handleValorChange = (raw: string) => {
     setValorErro('')
+    setFeedback(null)
+
     const digits = onlyDigits(raw)
     if (!digits) {
       setValorQuadraStr('')
@@ -255,7 +293,8 @@ export default function UsuariosAdmin() {
 
     if (form.nome !== (usuarioSelecionado.nome ?? '')) base.nome = form.nome
     if (form.email !== (usuarioSelecionado.email ?? '')) base.email = form.email
-    if ((form.celular || '') !== (usuarioSelecionado.celular || '')) base.celular = form.celular || null
+    if ((form.celular || '') !== (usuarioSelecionado.celular || ''))
+      base.celular = form.celular || null
 
     const nascOriginal = toDateInputValue(usuarioSelecionado.nascimento)
     if ((form.nascimento || '') !== (nascOriginal || '')) {
@@ -273,7 +312,7 @@ export default function UsuariosAdmin() {
       const novoNum = valorQuadraStr ? brToNumber(valorQuadraStr) : NaN
 
       if (Number.isFinite(novoNum)) {
-        const arred = Number((novoNum).toFixed(2))
+        const arred = Number(novoNum.toFixed(2))
         if (originalNum == null || Math.abs(arred - Number(originalNum)) > 0.0001) {
           base.valorQuadra = arred
         }
@@ -292,16 +331,22 @@ export default function UsuariosAdmin() {
   const salvarEdicao = async () => {
     if (!usuarioSelecionado) return
 
+    setFeedback(null)
+
     if (form.tipo === 'ADMIN_PROFESSORES') {
       const n = brToNumber(valorQuadraStr || '0')
       if (!Number.isFinite(n) || n < 0.01) {
         setValorErro('Para professor, informe um valor maior ou igual a R$ 0,01.')
+        setFeedback({
+          kind: 'error',
+          text: 'Para professor, informe um valor maior ou igual a R$ 0,01.',
+        })
         return
       }
     }
 
     if (Object.keys(diffPayload).length === 0) {
-      alert('Nenhuma alteração para salvar.')
+      setFeedback({ kind: 'info', text: 'Nenhuma alteração para salvar.' })
       return
     }
 
@@ -310,14 +355,16 @@ export default function UsuariosAdmin() {
       await axios.put(`${API_URL}/usuarios/${usuarioSelecionado.id}`, diffPayload, {
         withCredentials: true,
       })
-      alert('Usuário atualizado com sucesso!')
+
+      setFeedback({ kind: 'success', text: 'Usuário atualizado com sucesso!' })
+
       setUsuarioSelecionado(null)
       setEditMode(false)
-      void carregarUsuarios()
-    } catch (err: any) {
-      console.error(err)
-      const msg = err?.response?.data?.erro || 'Erro ao atualizar usuário'
-      alert(msg)
+      void carregarUsuarios({ keepFeedback: true })
+    } catch (e: any) {
+      console.error(e)
+      const msg = getApiErrorMessage(e, 'Erro ao atualizar usuário.')
+      setFeedback({ kind: 'error', text: msg })
     } finally {
       setSaving(false)
     }
@@ -328,6 +375,8 @@ export default function UsuariosAdmin() {
      ============================ */
   const abrirConfirmacaoExcluir = () => {
     if (!usuarioSelecionado) return
+
+    setFeedback(null)
     setResultadoExclusao204(false)
     setResultadoExclusao202(null)
     setResultadoExclusao409(null)
@@ -336,8 +385,11 @@ export default function UsuariosAdmin() {
 
   const confirmarExcluirUsuario = async () => {
     if (!usuarioSelecionado) return
+
+    setFeedback(null)
     setAbrirConfirmarExclusao(false)
     setExcluindo(true)
+
     try {
       const resp = await axios.delete(`${API_URL}/clientes/${usuarioSelecionado.id}`, {
         withCredentials: true,
@@ -355,13 +407,15 @@ export default function UsuariosAdmin() {
         setResultadoExclusao409(resp.data as Delete409HasConfirmed)
       } else {
         const msg =
-          (resp.data && (resp.data.erro || resp.data.message)) ||
+          (resp.data && (resp.data.erro || resp.data.error || resp.data.message)) ||
           `Falha ao excluir (HTTP ${resp.status})`
-        alert(msg)
+
+        setFeedback({ kind: 'error', text: String(msg) })
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e)
-      alert('Erro ao excluir usuário.')
+      const msg = getApiErrorMessage(e, 'Erro ao excluir usuário.')
+      setFeedback({ kind: 'error', text: msg })
     } finally {
       setExcluindo(false)
     }
@@ -369,6 +423,14 @@ export default function UsuariosAdmin() {
 
   return (
     <div className="max-w-4xl mx-auto mt-10 p-6 bg-white rounded shadow">
+      {/* ✅ ALERTA PADRONIZADO */}
+      <SystemAlert
+        open={!!feedback}
+        variant={(feedback?.kind as AlertVariant) || 'info'}
+        message={feedback?.text || ''}
+        onClose={closeFeedback}
+      />
+
       <h1 className="text-2xl font-medium mb-2">Gerenciar Usuários Cadastrados no Sistema</h1>
 
       {totalUsuarios !== null && (
@@ -385,7 +447,10 @@ export default function UsuariosAdmin() {
             type="text"
             placeholder="Digite o nome..."
             value={busca}
-            onChange={(e) => setBusca(e.target.value)}
+            onChange={(e) => {
+              setBusca(e.target.value)
+              setFeedback(null)
+            }}
             className="p-2 border rounded w-full"
           />
         </div>
@@ -394,12 +459,17 @@ export default function UsuariosAdmin() {
           <label className="font-medium mb-1">Filtrar por tipo de cadastro</label>
           <select
             value={filtroTipo}
-            onChange={(e) => setFiltroTipo(e.target.value)}
+            onChange={(e) => {
+              setFiltroTipo(e.target.value)
+              setFeedback(null)
+            }}
             className="p-2 border rounded cursor-pointer w-full"
           >
             <option value="">Todos os tipos</option>
             {tipos.map((t) => (
-              <option key={t} value={t}>{t}</option>
+              <option key={t} value={t}>
+                {t}
+              </option>
             ))}
           </select>
         </div>
@@ -421,17 +491,18 @@ export default function UsuariosAdmin() {
             <div
               className="p-3 hover:bg-gray-100 cursor-pointer"
               onClick={() => {
-                if (usuarioSelecionado?.id === u.id) {
-                  setUsuarioSelecionado(null)
-                } else {
-                  setUsuarioSelecionado(u)
-                }
+                setFeedback(null)
+                if (usuarioSelecionado?.id === u.id) setUsuarioSelecionado(null)
+                else setUsuarioSelecionado(u)
               }}
             >
               <strong>{u.nome}</strong> — {mostrarCelular(u.celular)} —{' '}
               <span
                 className={`italic px-2 py-[2px] rounded text-xs
-                  ${u.tipo === 'CLIENTE_APOIADO' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-700'}
+                  ${u.tipo === 'CLIENTE_APOIADO'
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : 'bg-gray-100 text-gray-700'
+                  }
                 `}
               >
                 {u.tipo}
@@ -448,7 +519,10 @@ export default function UsuariosAdmin() {
                     <input
                       type="text"
                       value={form.nome}
-                      onChange={(e) => setForm(f => ({ ...f, nome: e.target.value }))}
+                      onChange={(e) => {
+                        setForm((f) => ({ ...f, nome: e.target.value }))
+                        setFeedback(null)
+                      }}
                       className="w-full p-2 border rounded"
                       disabled={!editMode || saving}
                     />
@@ -459,7 +533,10 @@ export default function UsuariosAdmin() {
                     <input
                       type="email"
                       value={form.email}
-                      onChange={(e) => setForm(f => ({ ...f, email: e.target.value }))}
+                      onChange={(e) => {
+                        setForm((f) => ({ ...f, email: e.target.value }))
+                        setFeedback(null)
+                      }}
                       className="w-full p-2 border rounded"
                       disabled={!editMode || saving}
                     />
@@ -470,7 +547,10 @@ export default function UsuariosAdmin() {
                     <input
                       type="text"
                       value={form.celular}
-                      onChange={(e) => setForm(f => ({ ...f, celular: e.target.value }))}
+                      onChange={(e) => {
+                        setForm((f) => ({ ...f, celular: e.target.value }))
+                        setFeedback(null)
+                      }}
                       className="w-full p-2 border rounded"
                       disabled={!editMode || saving}
                       placeholder="Somente dígitos (ex.: 53999999999)"
@@ -482,7 +562,10 @@ export default function UsuariosAdmin() {
                     <input
                       type="date"
                       value={form.nascimento}
-                      onChange={(e) => setForm(f => ({ ...f, nascimento: e.target.value }))}
+                      onChange={(e) => {
+                        setForm((f) => ({ ...f, nascimento: e.target.value }))
+                        setFeedback(null)
+                      }}
                       className="w-full p-2 border rounded"
                       disabled={!editMode || saving}
                     />
@@ -493,7 +576,10 @@ export default function UsuariosAdmin() {
                     <input
                       type="text"
                       value={form.cpf}
-                      onChange={(e) => setForm(f => ({ ...f, cpf: e.target.value }))}
+                      onChange={(e) => {
+                        setForm((f) => ({ ...f, cpf: e.target.value }))
+                        setFeedback(null)
+                      }}
                       className="w-full p-2 border rounded"
                       disabled={!editMode || saving}
                       placeholder="Somente dígitos"
@@ -507,24 +593,29 @@ export default function UsuariosAdmin() {
                       value={form.tipo}
                       onChange={(e) => {
                         const v = e.target.value
-                        setForm(f => ({ ...f, tipo: v }))
-                        if (v !== 'ADMIN_PROFESSORES') {
-                          setValorErro('')
-                        }
+                        setForm((f) => ({ ...f, tipo: v }))
+                        setFeedback(null)
+                        if (v !== 'ADMIN_PROFESSORES') setValorErro('')
                       }}
                       disabled={!editMode || saving}
                     >
                       {tipos.map((t) => (
-                        <option key={t} value={t}>{t}</option>
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
                       ))}
                     </select>
                   </div>
 
                   {mostrarCampoProfessor && (
                     <div className="md:col-span-2">
-                      <label className="block text-sm font-medium mb-1">Valor cobrado (por aula)</label>
+                      <label className="block text-sm font-medium mb-1">
+                        Valor cobrado (por aula)
+                      </label>
                       <div className="flex items-stretch rounded-lg border overflow-hidden bg-white">
-                        <span className="px-3 py-2 text-sm font-semibold bg-gray-100 text-gray-700 select-none">R$</span>
+                        <span className="px-3 py-2 text-sm font-semibold bg-gray-100 text-gray-700 select-none">
+                          R$
+                        </span>
                         <input
                           type="text"
                           inputMode="numeric"
@@ -535,9 +626,7 @@ export default function UsuariosAdmin() {
                           disabled={!editMode || saving}
                         />
                       </div>
-                      {valorErro && (
-                        <p className="mt-1 text-xs text-red-600">{valorErro}</p>
-                      )}
+                      {valorErro && <p className="mt-1 text-xs text-red-600">{valorErro}</p>}
                     </div>
                   )}
                 </div>
@@ -548,12 +637,15 @@ export default function UsuariosAdmin() {
                     disabled={saving}
                     className="bg-green-600 text-white px-4 py-2 rounded cursor-pointer disabled:opacity-60 flex items-center gap-2"
                   >
-                    {saving && <Spinner size="w-4 h-4" />}
+                    {saving && <Spinner />}
                     {saving ? 'Salvando…' : 'Salvar'}
                   </button>
 
                   <button
-                    onClick={() => setEditMode((v) => !v)}
+                    onClick={() => {
+                      setEditMode((v) => !v)
+                      setFeedback(null)
+                    }}
                     disabled={saving}
                     className="px-4 py-2 rounded cursor-pointer disabled:opacity-60 bg-orange-600 text-white"
                   >
@@ -561,7 +653,10 @@ export default function UsuariosAdmin() {
                   </button>
 
                   <button
-                    onClick={() => setUsuarioSelecionado(null)}
+                    onClick={() => {
+                      setUsuarioSelecionado(null)
+                      setFeedback(null)
+                    }}
                     disabled={saving}
                     className="bg-gray-400 text-white px-4 py-2 rounded cursor-pointer disabled:opacity-60"
                   >
@@ -583,8 +678,7 @@ export default function UsuariosAdmin() {
         ))}
       </ul>
 
-      {/* Modais de exclusão mantidos iguais ... (não mexi) */}
-
+      {/* ✅ Modais de exclusão (mantidos) */}
       {abrirConfirmarExclusao && usuarioSelecionado && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[80]">
           <div className="bg-white p-5 rounded-lg shadow-lg w-[360px]">
@@ -595,9 +689,12 @@ export default function UsuariosAdmin() {
             </p>
             <div className="flex gap-2 justify-end">
               <button
-                onClick={() => setAbrirConfirmarExclusao(false)}
+                onClick={() => {
+                  setAbrirConfirmarExclusao(false)
+                  setFeedback(null)
+                }}
                 disabled={excluindo}
-                className="px-3 py-2 rounded bg-gray-300 hover:bg-gray-400"
+                className="px-3 py-2 rounded bg-gray-300 hover:bg-gray-400 disabled:opacity-60"
               >
                 Não
               </button>
@@ -617,9 +714,7 @@ export default function UsuariosAdmin() {
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[80]">
           <div className="bg-white p-5 rounded-lg shadow-lg w-[340px]">
             <h3 className="text-lg font-semibold mb-3">Usuário excluído</h3>
-            <p className="text-sm text-gray-700 mb-4">
-              O usuário foi excluído com sucesso.
-            </p>
+            <p className="text-sm text-gray-700 mb-4">O usuário foi excluído com sucesso.</p>
             <div className="flex justify-end">
               <button
                 onClick={() => setResultadoExclusao204(false)}
@@ -641,43 +736,48 @@ export default function UsuariosAdmin() {
             </p>
 
             <div className="mt-3 text-sm">
-              <p><b>Elegível em:</b> {fmtDateTimeBR(resultadoExclusao202.eligibleAt)}</p>
+              <p>
+                <b>Elegível em:</b> {fmtDateTimeBR(resultadoExclusao202.eligibleAt)}
+              </p>
+
               {resultadoExclusao202.lastInteraction && (
                 <div className="mt-2 border rounded p-2 bg-gray-50">
                   <p className="font-semibold mb-1">
-                    Última interação: {tipoInteracaoLabel(resultadoExclusao202.lastInteraction.type)}
+                    Última interação:{' '}
+                    {tipoInteracaoLabel(resultadoExclusao202.lastInteraction.type)}
                   </p>
 
-                  {resultadoExclusao202.lastInteraction.type === "AG_COMUM" && (
+                  {resultadoExclusao202.lastInteraction.type === 'AG_COMUM' && (
                     <ul className="text-xs space-y-1">
                       <li>ID: {resultadoExclusao202.lastInteraction.id}</li>
                       <li>
-                        Data/Hora: {fmtDateTimeBR(resultadoExclusao202.lastInteraction.resumo.data)}{" "}
-                        {resultadoExclusao202.lastInteraction.resumo.horario || ""}
+                        Data/Hora: {fmtDateTimeBR(resultadoExclusao202.lastInteraction.resumo.data)}{' '}
+                        {resultadoExclusao202.lastInteraction.resumo.horario || ''}
                       </li>
                       <li>Status: {resultadoExclusao202.lastInteraction.resumo.status}</li>
                     </ul>
                   )}
 
-                  {resultadoExclusao202.lastInteraction.type === "AG_PERM" && (
+                  {resultadoExclusao202.lastInteraction.type === 'AG_PERM' && (
                     <ul className="text-xs space-y-1">
                       <li>ID: {resultadoExclusao202.lastInteraction.id}</li>
                       <li>
-                        Dia/Horário: {resultadoExclusao202.lastInteraction.resumo.diaSemana}{" "}
+                        Dia/Horário: {resultadoExclusao202.lastInteraction.resumo.diaSemana}{' '}
                         {resultadoExclusao202.lastInteraction.resumo.horario}
                       </li>
                       <li>Status: {resultadoExclusao202.lastInteraction.resumo.status}</li>
                       <li>
-                        Atualizado em: {fmtDateTimeBR(resultadoExclusao202.lastInteraction.resumo.updatedAt)}
+                        Atualizado em:{' '}
+                        {fmtDateTimeBR(resultadoExclusao202.lastInteraction.resumo.updatedAt)}
                       </li>
                     </ul>
                   )}
 
-                  {resultadoExclusao202.lastInteraction.type === "CHURRAS" && (
+                  {resultadoExclusao202.lastInteraction.type === 'CHURRAS' && (
                     <ul className="text-xs space-y-1">
                       <li>ID: {resultadoExclusao202.lastInteraction.id}</li>
                       <li>
-                        Data/Turno: {fmtDateTimeBR(resultadoExclusao202.lastInteraction.resumo.data)}{" "}
+                        Data/Turno: {fmtDateTimeBR(resultadoExclusao202.lastInteraction.resumo.data)}{' '}
                         ({resultadoExclusao202.lastInteraction.resumo.turno})
                       </li>
                       <li>Status: {resultadoExclusao202.lastInteraction.resumo.status}</li>
@@ -707,7 +807,8 @@ export default function UsuariosAdmin() {
           <div className="bg-white p-5 rounded-lg shadow-lg w-[420px] max-w-[95vw]">
             <h3 className="text-lg font-semibold mb-3">Não é possível excluir</h3>
             <p className="text-sm text-gray-700">
-              {resultadoExclusao409.message || 'Existem agendamentos confirmados/futuros vinculados.'}
+              {resultadoExclusao409.message ||
+                'Existem agendamentos confirmados/futuros vinculados.'}
             </p>
 
             {resultadoExclusao409.details?.agendamentos?.length ? (
