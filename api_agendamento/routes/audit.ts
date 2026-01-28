@@ -353,14 +353,15 @@ router.get(
   denyAtendente(),
   async (req, res) => {
     try {
-      const qSchema = require("zod")
-        .z
+      const z = require("zod").z;
+
+      const qSchema = z
         .object({
-          from: require("zod").z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-          to: require("zod").z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-          days: require("zod").z.coerce.number().int().min(1).max(3650).optional(),
-          thresholdPerHour: require("zod").z.coerce.number().int().min(1).max(120).optional(),
-          take: require("zod").z.coerce.number().int().min(1).max(300).optional(),
+          from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+          to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+          days: z.coerce.number().int().min(1).max(3650).optional(),
+          thresholdPerHour: z.coerce.number().int().min(1).max(120).optional(),
+          take: z.coerce.number().int().min(1).max(300).optional(),
         })
         .refine(
           (v: any) => {
@@ -398,13 +399,6 @@ router.get(
       const inicioUTC = localMidnightToUTCDate(fromLocal);
       const fimUTCExcl = localMidnightToUTCDate(addDaysLocal(toLocal, 1)); // exclusivo
 
-      /**
-       * Estratégia:
-       * 1) cria buckets por "hora local" (SP) via date_trunc('hour', createdAt AT TIME ZONE TZ)
-       * 2) conta logins por (actorId, hora)
-       * 3) filtra horas que excederam threshold (HAVING)
-       * 4) agrega por usuário: maxPorHora, horasComExcesso, totalExcessLogins
-       */
       const abuseRows = await prisma.$queryRaw<
         {
           actorId: string;
@@ -445,14 +439,22 @@ router.get(
       `);
 
       const actorIds = abuseRows.map((r) => r.actorId);
+
+      // ✅ retorno vazio já no formato “didático”
       if (actorIds.length === 0) {
         return res.json({
-          intervalo: { from: fromLocal, to: toLocal },
-          tz: SP_TZ,
-          thresholdPerHour,
-          take,
-          totalUsuariosSuspeitos: 0,
-          items: [],
+          periodo: { inicio: fromLocal, fim: toLocal, timezone: SP_TZ },
+          regraDeteccao: {
+            descricao:
+              "Um usuário é considerado suspeito quando ultrapassa o limite de logins em pelo menos 1 hora dentro do período.",
+            limiteDeLoginsPorHora: thresholdPerHour,
+            observacao: "A contagem por hora considera a hora local.",
+          },
+          resumoGeral: {
+            totalDeUsuariosSuspeitos: 0,
+            limiteDeResultados: take,
+          },
+          usuariosSuspeitos: [],
         });
       }
 
@@ -463,7 +465,7 @@ router.get(
       });
       const userMap = new Map(users.map((u) => [u.id, u]));
 
-      // total de logins no período (por usuário) — ajuda a dar contexto
+      // total de logins no período (por usuário)
       const totals = await prisma.auditLog.groupBy({
         by: ["actorId"],
         where: {
@@ -475,7 +477,7 @@ router.get(
       });
       const totalMap = new Map(totals.map((t) => [String(t.actorId), t._count._all]));
 
-      // top ips (opcional) - só para enriquecer a análise
+      // top ips
       const topIps = await prisma.$queryRaw<
         { actorId: string; ip: string | null; total: bigint }[]
       >(Prisma.sql`
@@ -499,7 +501,7 @@ router.get(
         topIpsByActor.set(r.actorId, arr);
       }
 
-      // top userAgents (opcional)
+      // top userAgents
       const topUAs = await prisma.$queryRaw<
         { actorId: string; userAgent: string | null; total: bigint }[]
       >(Prisma.sql`
@@ -523,35 +525,60 @@ router.get(
         topUAsByActor.set(r.actorId, arr);
       }
 
-      const items = abuseRows.map((r) => {
+      // ✅ monta lista didática (PT-BR)
+      const usuariosSuspeitos = abuseRows.map((r) => {
         const u = userMap.get(r.actorId);
+
         const ips = (topIpsByActor.get(r.actorId) ?? []).slice(0, 3);
         const uas = (topUAsByActor.get(r.actorId) ?? []).slice(0, 2);
 
+        const totalLoginsPeriodo = totalMap.get(r.actorId) ?? 0;
+        const picoPorHora = Number(r.maxPorHora);
+        const horasAcimaDoLimite = Number(r.horasComExcesso);
+        const loginsSomenteNasHorasAcimaDoLimite = Number(r.totalExcessLogins);
+
+        const excessoEstimado = Math.max(
+          0,
+          loginsSomenteNasHorasAcimaDoLimite - horasAcimaDoLimite * thresholdPerHour
+        );
+
         return {
-          userId: r.actorId,
-          userName: u?.nome ?? null,
-          userEmail: u?.email ?? null,
-          userTipo: u?.tipo ?? null,
-
-          totalLoginsPeriodo: totalMap.get(r.actorId) ?? 0,
-
-          maxLoginsEmUmaHora: Number(r.maxPorHora),
-          horasComExcesso: Number(r.horasComExcesso),
-          totalLoginsNasHorasComExcesso: Number(r.totalExcessLogins),
-
-          topIps: ips,
-          topUserAgents: uas,
+          usuario: {
+            id: r.actorId,
+            nome: u?.nome ?? null,
+            email: u?.email ?? null,
+            tipo: u?.tipo ?? null,
+          },
+          resumo: {
+            totalLoginsNoPeriodo: totalLoginsPeriodo,
+            maiorPicoDeLoginsEm1Hora: picoPorHora,
+            quantidadeDeHorasAcimaDoLimite: horasAcimaDoLimite,
+            totalDeLoginsNasHorasAcimaDoLimite: loginsSomenteNasHorasAcimaDoLimite,
+            excessoEstimadoDeLogins: excessoEstimado,
+          },
+          sinais: {
+            ipsMaisFrequentes: ips.map((x) => ({ ip: x.ip, totalLogins: x.total })),
+            dispositivosMaisFrequentes: uas.map((x) => ({
+              userAgent: x.userAgent,
+              totalLogins: x.total,
+            })),
+          },
         };
       });
 
       return res.json({
-        intervalo: { from: fromLocal, to: toLocal },
-        tz: SP_TZ,
-        thresholdPerHour,
-        take,
-        totalUsuariosSuspeitos: items.length,
-        items,
+        periodo: { inicio: fromLocal, fim: toLocal, timezone: SP_TZ },
+        regraDeteccao: {
+          descricao:
+            "Um usuário é considerado suspeito quando ultrapassa o limite de logins em pelo menos 1 hora dentro do período.",
+          limiteDeLoginsPorHora: thresholdPerHour,
+          observacao: "A contagem por hora considera a hora local.",
+        },
+        resumoGeral: {
+          totalDeUsuariosSuspeitos: usuariosSuspeitos.length,
+          limiteDeResultados: take,
+        },
+        usuariosSuspeitos,
       });
     } catch (e) {
       console.error("[audit] login-abuse error:", e);
@@ -559,6 +586,7 @@ router.get(
     }
   }
 );
+
 
 
 /**
