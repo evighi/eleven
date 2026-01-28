@@ -1,6 +1,6 @@
 // routes/audit.ts
 import { Router } from "express";
-import { PrismaClient, AuditTargetType } from "@prisma/client";
+import { PrismaClient, AuditTargetType, Prisma } from "@prisma/client";
 import verificarToken from "../middleware/authMiddleware";
 import { requireAdmin } from "../middleware/acl";
 import { denyAtendente } from "../middleware/atendenteFeatures"; // ✅ novo (MASTER only)
@@ -303,6 +303,263 @@ async function enrichNamesForLogs(items: any[]) {
 function looksLikeUUID(s: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
 }
+
+// ✅ 2) COLE ESTE BLOCO dentro do routes/audit.ts
+// 👉 Cole ANTES do router.get("/logs", ...)
+// (pode colar logo acima do comentário do GET /audit/logs)
+
+// ====== helpers de data (mesma ideia do seu login.ts) ======
+const SP_TZ = process.env.TZ || "America/Sao_Paulo";
+
+function localYMD(d: Date, tz = SP_TZ) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d); // "YYYY-MM-DD"
+}
+
+// converte "dia local" (00:00 -03:00) para Date (UTC)
+function localMidnightToUTCDate(ymd: string) {
+  return new Date(`${ymd}T00:00:00-03:00`);
+}
+
+function addDaysLocal(ymd: string, days: number) {
+  const d = new Date(`${ymd}T12:00:00-03:00`); // meio-dia local pra evitar rollover
+  d.setUTCDate(d.getUTCDate() + days);
+  return localYMD(d);
+}
+
+// ===================================================================================
+// GET /audit/login-abuse
+// MASTER ONLY (ADMIN_ATENDENTE bloqueado)
+//
+// Lista usuários que excederam X logins por hora (hora local SP) no período.
+//
+// Query:
+//  - from=YYYY-MM-DD&to=YYYY-MM-DD  (opcional, use os dois juntos)
+//  - days=1..3650                   (opcional, default 30) — não pode junto de from/to
+//  - thresholdPerHour=number        (opcional, default 6)
+//  - take=number                    (opcional, default 50; max 300)
+//
+// Exemplo:
+//  /audit/login-abuse?days=30&thresholdPerHour=6
+// ===================================================================================
+router.get(
+  "/login-abuse",
+  verificarToken,
+  requireAdmin,
+  denyAtendente(),
+  async (req, res) => {
+    try {
+      const qSchema = require("zod")
+        .z
+        .object({
+          from: require("zod").z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+          to: require("zod").z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+          days: require("zod").z.coerce.number().int().min(1).max(3650).optional(),
+          thresholdPerHour: require("zod").z.coerce.number().int().min(1).max(120).optional(),
+          take: require("zod").z.coerce.number().int().min(1).max(300).optional(),
+        })
+        .refine(
+          (v: any) => {
+            const hasFromTo = !!v.from || !!v.to;
+            if (hasFromTo) return !!v.from && !!v.to && !v.days; // from+to juntos e sem days
+            return true;
+          },
+          "Use 'from' e 'to' juntos (sem 'days'), ou use apenas 'days', ou nenhum."
+        );
+
+      const parsed = qSchema.safeParse(req.query);
+      if (!parsed.success) {
+        return res.status(400).json({
+          erro: "Parâmetros inválidos",
+          detalhes: parsed.error.issues?.[0]?.message,
+        });
+      }
+
+      const { from, to } = parsed.data as {
+        from?: string;
+        to?: string;
+        days?: number;
+        thresholdPerHour?: number;
+        take?: number;
+      };
+
+      const days = parsed.data.days ?? 30;
+      const thresholdPerHour = parsed.data.thresholdPerHour ?? 6;
+      const take = parsed.data.take ?? 50;
+
+      const hojeLocal = localYMD(new Date());
+      const fromLocal = from ?? addDaysLocal(hojeLocal, -days + 1);
+      const toLocal = to ?? hojeLocal;
+
+      const inicioUTC = localMidnightToUTCDate(fromLocal);
+      const fimUTCExcl = localMidnightToUTCDate(addDaysLocal(toLocal, 1)); // exclusivo
+
+      /**
+       * Estratégia:
+       * 1) cria buckets por "hora local" (SP) via date_trunc('hour', createdAt AT TIME ZONE TZ)
+       * 2) conta logins por (actorId, hora)
+       * 3) filtra horas que excederam threshold (HAVING)
+       * 4) agrega por usuário: maxPorHora, horasComExcesso, totalExcessLogins
+       */
+      const abuseRows = await prisma.$queryRaw<
+        {
+          actorId: string;
+          maxPorHora: bigint;
+          horasComExcesso: bigint;
+          totalExcessLogins: bigint;
+        }[]
+      >(Prisma.sql`
+        WITH hourly AS (
+          SELECT
+            "actorId" AS "actorId",
+            date_trunc('hour', ("createdAt" AT TIME ZONE ${SP_TZ})) AS "horaLocal",
+            COUNT(*)::bigint AS "cnt"
+          FROM "AuditLog"
+          WHERE "event" = 'LOGIN'
+            AND "actorId" IS NOT NULL
+            AND "createdAt" >= ${inicioUTC}
+            AND "createdAt" < ${fimUTCExcl}
+          GROUP BY "actorId", "horaLocal"
+        ),
+        offenders AS (
+          SELECT
+            "actorId",
+            "horaLocal",
+            "cnt"
+          FROM hourly
+          WHERE "cnt" > ${thresholdPerHour}
+        )
+        SELECT
+          "actorId",
+          MAX("cnt")::bigint AS "maxPorHora",
+          COUNT(*)::bigint AS "horasComExcesso",
+          SUM("cnt")::bigint AS "totalExcessLogins"
+        FROM offenders
+        GROUP BY "actorId"
+        ORDER BY "maxPorHora" DESC, "horasComExcesso" DESC
+        LIMIT ${take}
+      `);
+
+      const actorIds = abuseRows.map((r) => r.actorId);
+      if (actorIds.length === 0) {
+        return res.json({
+          intervalo: { from: fromLocal, to: toLocal },
+          tz: SP_TZ,
+          thresholdPerHour,
+          take,
+          totalUsuariosSuspeitos: 0,
+          items: [],
+        });
+      }
+
+      // nomes dos usuários
+      const users = await prisma.usuario.findMany({
+        where: { id: { in: actorIds } },
+        select: { id: true, nome: true, email: true, tipo: true },
+      });
+      const userMap = new Map(users.map((u) => [u.id, u]));
+
+      // total de logins no período (por usuário) — ajuda a dar contexto
+      const totals = await prisma.auditLog.groupBy({
+        by: ["actorId"],
+        where: {
+          event: "LOGIN",
+          actorId: { in: actorIds },
+          createdAt: { gte: inicioUTC, lt: fimUTCExcl },
+        },
+        _count: { _all: true },
+      });
+      const totalMap = new Map(totals.map((t) => [String(t.actorId), t._count._all]));
+
+      // top ips (opcional) - só para enriquecer a análise
+      const topIps = await prisma.$queryRaw<
+        { actorId: string; ip: string | null; total: bigint }[]
+      >(Prisma.sql`
+        SELECT
+          "actorId" AS "actorId",
+          "ip" AS "ip",
+          COUNT(*)::bigint AS "total"
+        FROM "AuditLog"
+        WHERE "event" = 'LOGIN'
+          AND "actorId" IN (${Prisma.join(actorIds)})
+          AND "createdAt" >= ${inicioUTC}
+          AND "createdAt" < ${fimUTCExcl}
+        GROUP BY "actorId", "ip"
+        ORDER BY "actorId" ASC, "total" DESC
+      `);
+
+      const topIpsByActor = new Map<string, { ip: string | null; total: number }[]>();
+      for (const r of topIps) {
+        const arr = topIpsByActor.get(r.actorId) ?? [];
+        arr.push({ ip: r.ip, total: Number(r.total) });
+        topIpsByActor.set(r.actorId, arr);
+      }
+
+      // top userAgents (opcional)
+      const topUAs = await prisma.$queryRaw<
+        { actorId: string; userAgent: string | null; total: bigint }[]
+      >(Prisma.sql`
+        SELECT
+          "actorId" AS "actorId",
+          "userAgent" AS "userAgent",
+          COUNT(*)::bigint AS "total"
+        FROM "AuditLog"
+        WHERE "event" = 'LOGIN'
+          AND "actorId" IN (${Prisma.join(actorIds)})
+          AND "createdAt" >= ${inicioUTC}
+          AND "createdAt" < ${fimUTCExcl}
+        GROUP BY "actorId", "userAgent"
+        ORDER BY "actorId" ASC, "total" DESC
+      `);
+
+      const topUAsByActor = new Map<string, { userAgent: string | null; total: number }[]>();
+      for (const r of topUAs) {
+        const arr = topUAsByActor.get(r.actorId) ?? [];
+        arr.push({ userAgent: r.userAgent, total: Number(r.total) });
+        topUAsByActor.set(r.actorId, arr);
+      }
+
+      const items = abuseRows.map((r) => {
+        const u = userMap.get(r.actorId);
+        const ips = (topIpsByActor.get(r.actorId) ?? []).slice(0, 3);
+        const uas = (topUAsByActor.get(r.actorId) ?? []).slice(0, 2);
+
+        return {
+          userId: r.actorId,
+          userName: u?.nome ?? null,
+          userEmail: u?.email ?? null,
+          userTipo: u?.tipo ?? null,
+
+          totalLoginsPeriodo: totalMap.get(r.actorId) ?? 0,
+
+          maxLoginsEmUmaHora: Number(r.maxPorHora),
+          horasComExcesso: Number(r.horasComExcesso),
+          totalLoginsNasHorasComExcesso: Number(r.totalExcessLogins),
+
+          topIps: ips,
+          topUserAgents: uas,
+        };
+      });
+
+      return res.json({
+        intervalo: { from: fromLocal, to: toLocal },
+        tz: SP_TZ,
+        thresholdPerHour,
+        take,
+        totalUsuariosSuspeitos: items.length,
+        items,
+      });
+    } catch (e) {
+      console.error("[audit] login-abuse error:", e);
+      return res.status(500).json({ erro: "Falha ao gerar relatório de abuso de login." });
+    }
+  }
+);
+
 
 /**
  * GET /audit/logs
