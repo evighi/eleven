@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { Loader2 } from "lucide-react";
-import { toast } from "sonner";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
+import SystemAlert, { AlertVariant } from "@/components/SystemAlert";
 
 type AtendenteFeature =
   | "ATD_AGENDAMENTOS"
@@ -27,6 +27,8 @@ type ApiResp = {
   } | null;
 };
 
+type Feedback = { kind: "success" | "error" | "info"; text: string };
+
 function fmtDate(iso?: string | null) {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -35,20 +37,20 @@ function fmtDate(iso?: string | null) {
 }
 
 export default function PermissoesAtendentePage() {
-  // ✅ padrão do teu projeto (redirect automático)
-  const { isChecking, usuario } = useRequireAuth(["ADMIN_MASTER"]);
-
-  // ✅ mesma env var do resto do teu painel
+  const { isChecking } = useRequireAuth(["ADMIN_MASTER"]);
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
 
   const [features, setFeatures] = useState<AtendenteFeature[]>([]);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [updatedById, setUpdatedById] = useState<string | null>(null);
   const [updatedBy, setUpdatedBy] = useState<ApiResp["updatedBy"]>(null);
+
+  // ✅ Feedback padronizado
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const closeFeedback = () => setFeedback(null);
 
   const allFeatures = useMemo(
     () =>
@@ -61,7 +63,7 @@ export default function PermissoesAtendentePage() {
         {
           key: "ATD_PERMANENTES" as const,
           label: "Agendamentos quadras e churrasqueiras - permanentes",
-          desc: "Permite criar/cancelar/transferir  agendamentos permanentes de quadras e churrasqueiras",
+          desc: "Permite criar/cancelar/transferir agendamentos permanentes de quadras e churrasqueiras.",
         },
         {
           key: "ATD_CHURRAS" as const,
@@ -87,12 +89,32 @@ export default function PermissoesAtendentePage() {
     []
   );
 
+  function mensagemErroAxios(error: any, fallback = "Ocorreu um erro. Tente novamente."): string {
+    if (axios.isAxiosError(error)) {
+      const status = error.response?.status;
+      const data = error.response?.data as any;
+
+      const serverMsg =
+        data && (data.erro || data.error || data.message || data.msg)
+          ? String(data.erro || data.error || data.message || data.msg)
+          : "";
+
+      if (status === 401) return "Não autorizado.";
+      if (status === 403) return "Acesso negado.";
+      if (status === 409) return serverMsg || "Conflito ao salvar permissões.";
+      if (status === 400 || status === 422) return serverMsg || "Dados inválidos.";
+      return serverMsg || fallback;
+    }
+    return fallback;
+  }
+
   async function load() {
     setLoading(true);
-    setErro(null);
+    setFeedback(null);
+
     try {
       const { data } = await axios.get<ApiResp>(`${API_URL}/permissoes-atendente`, {
-        withCredentials: true, // ✅ cookie
+        withCredentials: true,
       });
 
       setFeatures(data.features ?? []);
@@ -101,8 +123,8 @@ export default function PermissoesAtendentePage() {
       setUpdatedBy(data.updatedBy ?? null);
     } catch (e: any) {
       console.error(e);
-      const msg = e?.response?.data?.erro ?? "Erro ao carregar permissões do atendente.";
-      setErro(typeof msg === "string" ? msg : "Erro ao carregar permissões do atendente.");
+      const msg = mensagemErroAxios(e, "Erro ao carregar permissões do atendente.");
+      setFeedback({ kind: "error", text: msg });
     } finally {
       setLoading(false);
     }
@@ -110,24 +132,25 @@ export default function PermissoesAtendentePage() {
 
   useEffect(() => {
     if (isChecking) return;
-    // se passou do requireAuth, é master
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isChecking]);
 
   function toggleFeature(key: AtendenteFeature) {
+    setFeedback(null);
     setFeatures((prev) => (prev.includes(key) ? prev.filter((x) => x !== key) : [...prev, key]));
   }
 
   async function salvar() {
     setSaving(true);
-    setErro(null);
+    setFeedback(null);
+
     try {
       const { data } = await axios.put<ApiResp>(
         `${API_URL}/permissoes-atendente`,
         { features },
         {
-          withCredentials: true, // ✅ cookie
+          withCredentials: true,
           headers: { "Content-Type": "application/json" },
         }
       );
@@ -137,12 +160,11 @@ export default function PermissoesAtendentePage() {
       setUpdatedById(data.updatedById ?? null);
       setUpdatedBy(data.updatedBy ?? null);
 
-      toast.success("Permissões do atendente atualizadas!");
+      setFeedback({ kind: "success", text: "Permissões do atendente atualizadas com sucesso!" });
     } catch (e: any) {
       console.error(e);
-      const msg = e?.response?.data?.erro ?? "Erro ao salvar permissões.";
-      setErro(typeof msg === "string" ? msg : "Erro ao salvar permissões.");
-      toast.error("Não foi possível salvar.");
+      const msg = mensagemErroAxios(e, "Erro ao salvar permissões.");
+      setFeedback({ kind: "error", text: msg });
     } finally {
       setSaving(false);
     }
@@ -153,9 +175,19 @@ export default function PermissoesAtendentePage() {
   return (
     <div className="min-h-screen">
       <main className="mx-auto max-w-6xl px-4 py-6">
+        {/* ✅ ALERTA PADRONIZADO */}
+        <SystemAlert
+          open={!!feedback}
+          variant={(feedback?.kind as AlertVariant) || "info"}
+          message={feedback?.text || ""}
+          onClose={closeFeedback}
+        />
+
         {/* Header padrão do painel */}
         <div className="mb-4">
-          <h1 className="text-[32px] font-bold text-orange-600 leading-tight">Permissões do atendente</h1>
+          <h1 className="text-[32px] font-bold text-orange-600 leading-tight">
+            Permissões do atendente
+          </h1>
           <p className="text-[16px] text-gray-500 -mt-0.5">
             Defina quais módulos o <b>ADMIN_ATENDENTE</b> pode usar
           </p>
@@ -173,19 +205,21 @@ export default function PermissoesAtendentePage() {
               </div>
             </div>
 
-            <button
-              onClick={salvar}
-              disabled={saving || loading}
-              className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-md text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              {saving ? (
-                <span className="inline-flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin" /> Salvando…
-                </span>
-              ) : (
-                "Salvar"
-              )}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={salvar}
+                disabled={saving || loading}
+                className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-md text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {saving ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" /> Salvando…
+                  </span>
+                ) : (
+                  "Salvar"
+                )}
+              </button>
+            </div>
           </div>
 
           <div className="border-t border-gray-200 my-4" />
@@ -194,8 +228,6 @@ export default function PermissoesAtendentePage() {
             <div className="text-sm text-gray-600 inline-flex items-center gap-2">
               <Loader2 className="w-4 h-4 animate-spin" /> Carregando…
             </div>
-          ) : erro ? (
-            <div className="text-sm text-red-600">{erro}</div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {allFeatures.map((f) => {
@@ -206,7 +238,9 @@ export default function PermissoesAtendentePage() {
                     className={[
                       "bg-[#F3F3F3] rounded-lg px-4 py-3 border",
                       "flex items-start gap-3 cursor-pointer transition",
-                      checked ? "border-orange-300 bg-orange-50/60" : "border-gray-200 hover:bg-orange-50/40",
+                      checked
+                        ? "border-orange-300 bg-orange-50/60"
+                        : "border-gray-200 hover:bg-orange-50/40",
                     ].join(" ")}
                   >
                     <input

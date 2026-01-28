@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 import Spinner from '@/components/Spinner'
+import SystemAlert, { AlertVariant } from '@/components/SystemAlert'
+import { toast } from 'sonner'
 
 type PorFaixa = { faixa: string; aulas: number; valor: number }
 type PorDia = { data: string; aulas: number; valor: number }
@@ -85,6 +87,9 @@ type ResumoProfessorResponse = {
   aulasDetalhes?: AulaDetalhe[]
 }
 
+/** ===== feedback padrão ===== */
+type Feedback = { kind: 'success' | 'error' | 'info'; text: string }
+
 /** ===== helpers comuns ===== */
 const collator = new Intl.Collator('pt-BR', { sensitivity: 'base', ignorePunctuation: true })
 
@@ -118,8 +123,7 @@ const fmtDDMMYYYYdash = (iso: string) => {
   return `${d}-${m}-${y}`
 }
 
-const ymdFromISODateTime = (isoDT: string) =>
-  isoDT.includes('T') ? isoDT.split('T')[0] : isoDT
+const ymdFromISODateTime = (isoDT: string) => (isoDT.includes('T') ? isoDT.split('T')[0] : isoDT)
 
 const quadraLabel = (q?: MultaDetalhe['quadra']) => {
   if (!q) return '-'
@@ -155,12 +159,10 @@ export default function ProfessoresAdmin() {
   const [busca, setBusca] = useState('')
   const [lista, setLista] = useState<AdminProfessorRow[]>([])
   const [loading, setLoading] = useState(false)
-  const [erro, setErro] = useState<string | null>(null)
 
   const [selecionado, setSelecionado] = useState<AdminProfessorRow | null>(null)
   const [quadro, setQuadro] = useState<ResumoProfessorResponse | null>(null)
   const [loadingQuadro, setLoadingQuadro] = useState(false)
-  const [erroQuadro, setErroQuadro] = useState<string | null>(null)
 
   const [faixaSel, setFaixaSel] = useState<string>('') // '1-7', ...
   const [diaSel, setDiaSel] = useState<string>('') // 'YYYY-MM-DD'
@@ -177,6 +179,10 @@ export default function ProfessoresAdmin() {
   const [mostrarAplicarMulta, setMostrarAplicarMulta] = useState(false)
   const [aplicandoMultaId, setAplicandoMultaId] = useState<string | null>(null)
 
+  // ✅ feedback padrão do painel
+  const [feedback, setFeedback] = useState<Feedback | null>(null)
+  const closeFeedback = () => setFeedback(null)
+
   // resumo geral do mês (todos os professores)
   const [resumoGeral, setResumoGeral] = useState<{
     totalAulas: number
@@ -186,9 +192,28 @@ export default function ProfessoresAdmin() {
     totalApoioValor: number
   } | null>(null)
 
+  function mensagemErroAxios(error: any, fallback = 'Ocorreu um erro. Tente novamente.') {
+    if (axios.isAxiosError(error)) {
+      const status = error.response?.status
+      const data = error.response?.data as any
+
+      const serverMsg =
+        data && (data.erro || data.error || data.message || data.msg)
+          ? String(data.erro || data.error || data.message || data.msg)
+          : ''
+
+      if (status === 401) return 'Não autorizado.'
+      if (status === 403) return 'Acesso negado.'
+      if (status === 409) return serverMsg || 'Conflito: dados incompatíveis.'
+      if (status === 400 || status === 422) return serverMsg || 'Requisição inválida.'
+      return serverMsg || fallback
+    }
+    return fallback
+  }
+
   const carregarProfessores = useCallback(async () => {
     setLoading(true)
-    setErro(null)
+    setFeedback(null)
     try {
       const res = await axios.get<AdminListResponse>(`${API_URL}/professores/admin`, {
         params: { mes },
@@ -209,7 +234,9 @@ export default function ProfessoresAdmin() {
       })
     } catch (e: any) {
       console.error(e)
-      setErro(e?.response?.data?.erro || 'Falha ao carregar professores')
+      const msg = mensagemErroAxios(e, 'Falha ao carregar professores.')
+      setFeedback({ kind: 'error', text: msg })
+      toast.error(msg)
       setLista([])
       setResumoGeral(null)
     } finally {
@@ -230,10 +257,11 @@ export default function ProfessoresAdmin() {
   }, [lista, busca])
 
   const abrirQuadro = async (prof: AdminProfessorRow) => {
+    setFeedback(null)
+
     if (selecionado?.id === prof.id) {
       setSelecionado(null)
       setQuadro(null)
-      setErroQuadro(null)
       setFaixaSel('')
       setDiaSel('')
       setMostrarMultas(false)
@@ -241,26 +269,27 @@ export default function ProfessoresAdmin() {
       setMostrarAplicarMulta(false)
       return
     }
+
     setSelecionado(prof)
     setQuadro(null)
-    setErroQuadro(null)
     setLoadingQuadro(true)
     setMostrarAplicarMulta(false)
+
     try {
-      const res = await axios.get<ResumoProfessorResponse>(
-        `${API_URL}/professores/${prof.id}/resumo`,
-        {
-          params: { mes },
-          withCredentials: true,
-        },
-      )
+      const res = await axios.get<ResumoProfessorResponse>(`${API_URL}/professores/${prof.id}/resumo`, {
+        params: { mes },
+        withCredentials: true,
+      })
+
       setQuadro(res.data)
       const faixas = buildFaixasLabels(res.data.intervalo.to)
       setFaixaSel(faixas[0]?.id || '')
       setDiaSel('')
     } catch (e: any) {
       console.error(e)
-      setErroQuadro(e?.response?.data?.erro || 'Falha ao carregar o quadro deste professor')
+      const msg = mensagemErroAxios(e, 'Falha ao carregar o quadro deste professor.')
+      setFeedback({ kind: 'error', text: msg })
+      toast.error(msg)
     } finally {
       setLoadingQuadro(false)
     }
@@ -316,6 +345,7 @@ export default function ProfessoresAdmin() {
     const yy = d.getUTCFullYear()
     const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
     setMes(`${yy}-${mm}`)
+
     setSelecionado(null)
     setQuadro(null)
     setFaixaSel('')
@@ -323,6 +353,7 @@ export default function ProfessoresAdmin() {
     setMostrarMultas(false)
     setMostrarApoios(false)
     setMostrarAplicarMulta(false)
+    setFeedback(null)
   }
 
   const multasDetalhes = (quadro?.multasDetalhes || []).map((m) => ({
@@ -346,21 +377,21 @@ export default function ProfessoresAdmin() {
   const subtotalAulasMes = quadro ? toNumber(quadro.totais.mes.valor) : 0
 
   const subtotalAulasComDesconto = quadro
-    ? (Number.isFinite(toNumber(quadro.totais.subtotalAulasComDesconto))
-        ? toNumber(quadro.totais.subtotalAulasComDesconto)
-        : subtotalAulasMes * 0.5)
+    ? Number.isFinite(toNumber(quadro.totais.subtotalAulasComDesconto))
+      ? toNumber(quadro.totais.subtotalAulasComDesconto)
+      : subtotalAulasMes * 0.5
     : 0
 
   const totalMesCheio = quadro
-    ? (Number.isFinite(toNumber(quadro.totais.valorMesComMulta))
-        ? toNumber(quadro.totais.valorMesComMulta)
-        : subtotalAulasMes + multaPeriodo)
+    ? Number.isFinite(toNumber(quadro.totais.valorMesComMulta))
+      ? toNumber(quadro.totais.valorMesComMulta)
+      : subtotalAulasMes + multaPeriodo
     : 0
 
   const totalMesComDesconto = quadro
-    ? (Number.isFinite(toNumber(quadro.totais.valorMesComDesconto))
-        ? toNumber(quadro.totais.valorMesComDesconto)
-        : subtotalAulasComDesconto + multaPeriodo)
+    ? Number.isFinite(toNumber(quadro.totais.valorMesComDesconto))
+      ? toNumber(quadro.totais.valorMesComDesconto)
+      : subtotalAulasComDesconto + multaPeriodo
     : 0
 
   // função para remover multa de um agendamento específico
@@ -372,22 +403,15 @@ export default function ProfessoresAdmin() {
 
     try {
       setRemovendoMultaId(multa.id)
-      setErroQuadro(null)
+      setFeedback(null)
 
-      await axios.post(
-        `${API_URL}/agendamentos/${multa.id}/remover-multa`,
-        {},
-        { withCredentials: true },
-      )
+      await axios.post(`${API_URL}/agendamentos/${multa.id}/remover-multa`, {}, { withCredentials: true })
 
       await carregarProfessores()
 
       const res = await axios.get<ResumoProfessorResponse>(
         `${API_URL}/professores/${selecionado.id}/resumo`,
-        {
-          params: { mes },
-          withCredentials: true,
-        },
+        { params: { mes }, withCredentials: true },
       )
       setQuadro(res.data)
 
@@ -397,12 +421,13 @@ export default function ProfessoresAdmin() {
         setDiaSel('')
       }
 
-      alert('Multa removida com sucesso.')
+      setFeedback({ kind: 'success', text: 'Multa removida com sucesso.' })
+      toast.success('Multa removida com sucesso.')
     } catch (e: any) {
       console.error(e)
-      const msg = e?.response?.data?.erro || 'Erro ao remover multa.'
-      setErroQuadro(msg)
-      alert(msg)
+      const msg = mensagemErroAxios(e, 'Erro ao remover multa.')
+      setFeedback({ kind: 'error', text: msg })
+      toast.error(msg)
     } finally {
       setRemovendoMultaId(null)
     }
@@ -417,24 +442,15 @@ export default function ProfessoresAdmin() {
 
     try {
       setRemovendoIsencaoId(apoio.id)
-      setErroQuadro(null)
+      setFeedback(null)
 
-      await axios.post(
-        `${API_URL}/agendamentos/${apoio.id}/remover-isencao`,
-        {},
-        { withCredentials: true },
-      )
+      await axios.post(`${API_URL}/agendamentos/${apoio.id}/remover-isencao`, {}, { withCredentials: true })
 
-      // recarrega lista geral
       await carregarProfessores()
 
-      // recarrega quadro do professor selecionado
       const res = await axios.get<ResumoProfessorResponse>(
         `${API_URL}/professores/${selecionado.id}/resumo`,
-        {
-          params: { mes },
-          withCredentials: true,
-        },
+        { params: { mes }, withCredentials: true },
       )
       setQuadro(res.data)
 
@@ -444,12 +460,13 @@ export default function ProfessoresAdmin() {
         setDiaSel('')
       }
 
-      alert('Isenção removida com sucesso.')
+      setFeedback({ kind: 'success', text: 'Isenção removida com sucesso.' })
+      toast.success('Isenção removida com sucesso.')
     } catch (e: any) {
       console.error(e)
-      const msg = e?.response?.data?.erro || 'Erro ao remover isenção.'
-      setErroQuadro(msg)
-      alert(msg)
+      const msg = mensagemErroAxios(e, 'Erro ao remover isenção.')
+      setFeedback({ kind: 'error', text: msg })
+      toast.error(msg)
     } finally {
       setRemovendoIsencaoId(null)
     }
@@ -464,22 +481,15 @@ export default function ProfessoresAdmin() {
 
     try {
       setAplicandoMultaId(aula.id)
-      setErroQuadro(null)
+      setFeedback(null)
 
-      await axios.post(
-        `${API_URL}/agendamentos/${aula.id}/aplicar-multa`,
-        {},
-        { withCredentials: true },
-      )
+      await axios.post(`${API_URL}/agendamentos/${aula.id}/aplicar-multa`, {}, { withCredentials: true })
 
       await carregarProfessores()
 
       const res = await axios.get<ResumoProfessorResponse>(
         `${API_URL}/professores/${selecionado.id}/resumo`,
-        {
-          params: { mes },
-          withCredentials: true,
-        },
+        { params: { mes }, withCredentials: true },
       )
       setQuadro(res.data)
 
@@ -489,12 +499,13 @@ export default function ProfessoresAdmin() {
         setDiaSel('')
       }
 
-      alert('Multa aplicada com sucesso.')
+      setFeedback({ kind: 'success', text: 'Multa aplicada com sucesso.' })
+      toast.success('Multa aplicada com sucesso.')
     } catch (e: any) {
       console.error(e)
-      const msg = e?.response?.data?.erro || 'Erro ao aplicar multa.'
-      setErroQuadro(msg)
-      alert(msg)
+      const msg = mensagemErroAxios(e, 'Erro ao aplicar multa.')
+      setFeedback({ kind: 'error', text: msg })
+      toast.error(msg)
     } finally {
       setAplicandoMultaId(null)
     }
@@ -502,6 +513,13 @@ export default function ProfessoresAdmin() {
 
   return (
     <div className="max-w-6xl mx-auto mt-6 sm:mt-10 p-4 sm:p-6 bg-white rounded-xl shadow-sm border border-gray-200">
+      <SystemAlert
+        open={!!feedback}
+        variant={(feedback?.kind as AlertVariant) || 'info'}
+        message={feedback?.text || ''}
+        onClose={closeFeedback}
+      />
+
       <div className="flex flex-col gap-4 mb-4">
         <h1 className="text-lg sm:text-xl font-semibold tracking-tight">
           Professores — Quadro e Pagamentos do Mês
@@ -566,9 +584,7 @@ export default function ProfessoresAdmin() {
             </div>
             <div className="flex items-center justify-between">
               <span>Total com desconto (aulas 50% + multas):</span>
-              <span className="font-semibold">
-                {currencyBRL(resumoGeral.totalComDesconto)}
-              </span>
+              <span className="font-semibold">{currencyBRL(resumoGeral.totalComDesconto)}</span>
             </div>
             {resumoGeral.totalApoiadas > 0 && (
               <>
@@ -578,9 +594,7 @@ export default function ProfessoresAdmin() {
                 </div>
                 <div className="flex items-center justify-between">
                   <span>Valor “descontado” (apoio):</span>
-                  <span className="font-semibold">
-                    {currencyBRL(resumoGeral.totalApoioValor)}
-                  </span>
+                  <span className="font-semibold">{currencyBRL(resumoGeral.totalApoioValor)}</span>
                 </div>
               </>
             )}
@@ -593,7 +607,6 @@ export default function ProfessoresAdmin() {
           <Spinner /> <span>Carregando professores…</span>
         </div>
       )}
-      {erro && <div className="mb-3 text-red-600 text-sm">{erro}</div>}
 
       <ul className="border rounded-lg divide-y">
         {!loading && filtrados.length === 0 && (
@@ -624,15 +637,9 @@ export default function ProfessoresAdmin() {
                   <span>
                     <strong>Com desconto:</strong> {formatBRL(valorComDesconto)}
                   </span>
-                  {multaMes > 0 && (
-                    <span className="text-red-600">
-                      (Multas: {formatBRL(multaMes)})
-                    </span>
-                  )}
+                  {multaMes > 0 && <span className="text-red-600">(Multas: {formatBRL(multaMes)})</span>}
                   {typeof p.apoiadasMes === 'number' && p.apoiadasMes > 0 && (
-                    <span className="text-gray-500">
-                      Aulas apoiadas: {p.apoiadasMes}
-                    </span>
+                    <span className="text-gray-500">Aulas apoiadas: {p.apoiadasMes}</span>
                   )}
                   {p.valorQuadra != null && (
                     <span className="text-gray-500">
@@ -649,7 +656,6 @@ export default function ProfessoresAdmin() {
                       <Spinner /> <span>Carregando quadro…</span>
                     </div>
                   )}
-                  {erroQuadro && <div className="text-red-600 text-sm">{erroQuadro}</div>}
 
                   {!loadingQuadro && quadro && (
                     <div className="w-full flex justify-center px-1 sm:px-0">
@@ -657,8 +663,7 @@ export default function ProfessoresAdmin() {
                         <div className="mb-3">
                           <h2 className="text-base sm:text-lg font-bold">{quadro.professor.nome}</h2>
                           <p className="text-[11px] sm:text-xs text-gray-600">
-                            Período: {fmtDDMMYYYYdash(quadro.intervalo.from)} a{' '}
-                            {fmtDDMMYYYYdash(quadro.intervalo.to)}
+                            Período: {fmtDDMMYYYYdash(quadro.intervalo.from)} a {fmtDDMMYYYYdash(quadro.intervalo.to)}
                             {' · '}
                             Duração: {quadro.intervalo.duracaoMin} min
                           </p>
@@ -676,9 +681,9 @@ export default function ProfessoresAdmin() {
                           >
                             {faixasInfo.map((f, i) => (
                               <option key={f.id} value={f.id}>
-                                {`SEMANA ${String(i + 1).padStart(2, '0')} — ${fmtDDMM(
-                                  f.fromISO,
-                                )} À ${fmtDDMM(f.toISO)}`}
+                                {`SEMANA ${String(i + 1).padStart(2, '0')} — ${fmtDDMM(f.fromISO)} À ${fmtDDMM(
+                                  f.toISO,
+                                )}`}
                               </option>
                             ))}
                           </select>
@@ -693,15 +698,10 @@ export default function ProfessoresAdmin() {
                           >
                             {diasDaFaixa.map((d) => (
                               <option key={d.data} value={d.data}>
-                                {`Dia: ${fmtBR(d.data)}  |  Aulas: ${String(d.aulas).padStart(
-                                  2,
-                                  '0',
-                                )}`}
+                                {`Dia: ${fmtBR(d.data)}  |  Aulas: ${String(d.aulas).padStart(2, '0')}`}
                               </option>
                             ))}
-                            {diasDaFaixa.length === 0 && (
-                              <option value="">Sem aulas nesta semana</option>
-                            )}
+                            {diasDaFaixa.length === 0 && <option value="">Sem aulas nesta semana</option>}
                           </select>
                         </div>
 
@@ -729,9 +729,7 @@ export default function ProfessoresAdmin() {
                         <div className="rounded-md bg-gray-200 px-3 py-2 text-[13px] text-gray-700">
                           <div className="flex items-center justify-between">
                             <span>Total a pagar da semana:</span>
-                            <span className="font-semibold">
-                              {currencyBRL(totaisSemanaSel.valor)}
-                            </span>
+                            <span className="font-semibold">{currencyBRL(totaisSemanaSel.valor)}</span>
                           </div>
                         </div>
 
@@ -745,12 +743,8 @@ export default function ProfessoresAdmin() {
                               className="w-full flex items-center justify-between rounded-md bg-gray-100 hover:bg-gray-200 transition px-3 py-2 text-[13px] text-gray-700 cursor-pointer"
                               aria-expanded={mostrarMultas}
                             >
-                              <span className="font-semibold">
-                                Multas do mês ({multasDetalhes.length})
-                              </span>
-                              <span className="text-gray-500">
-                                {mostrarMultas ? '▲' : '▼'}
-                              </span>
+                              <span className="font-semibold">Multas do mês ({multasDetalhes.length})</span>
+                              <span className="text-gray-500">{mostrarMultas ? '▲' : '▼'}</span>
                             </button>
 
                             {mostrarMultas && (
@@ -766,18 +760,14 @@ export default function ProfessoresAdmin() {
                                       </span>
 
                                       <div className="flex items-center gap-2">
-                                        <span className="font-semibold">
-                                          {currencyBRL(Number(m.multa))}
-                                        </span>
+                                        <span className="font-semibold">{currencyBRL(Number(m.multa))}</span>
                                         <button
                                           type="button"
                                           onClick={() => void removerMulta(m)}
                                           disabled={removendoMultaId === m.id}
                                           className="text-[11px] px-2 py-1 rounded border border-red-300 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-60 disabled:cursor-not-allowed"
                                         >
-                                          {removendoMultaId === m.id
-                                            ? 'Removendo...'
-                                            : 'Remover multa'}
+                                          {removendoMultaId === m.id ? 'Removendo...' : 'Remover multa'}
                                         </button>
                                       </div>
                                     </div>
@@ -800,12 +790,8 @@ export default function ProfessoresAdmin() {
                               className="w-full flex items-center justify-between rounded-md bg-gray-100 hover:bg-gray-200 transition px-3 py-2 text-[13px] text-gray-700 cursor-pointer"
                               aria-expanded={mostrarApoios}
                             >
-                              <span className="font-semibold">
-                                Aulas apoiadas ({apoiosDetalhes.length})
-                              </span>
-                              <span className="text-gray-500">
-                                {mostrarApoios ? '▲' : '▼'}
-                              </span>
+                              <span className="font-semibold">Aulas apoiadas ({apoiosDetalhes.length})</span>
+                              <span className="text-gray-500">{mostrarApoios ? '▲' : '▼'}</span>
                             </button>
 
                             {mostrarApoios && (
@@ -829,18 +815,14 @@ export default function ProfessoresAdmin() {
                                           disabled={removendoIsencaoId === a.id}
                                           className="text-[11px] px-2 py-1 rounded border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-60 disabled:cursor-not-allowed"
                                         >
-                                          {removendoIsencaoId === a.id
-                                            ? 'Removendo...'
-                                            : 'Remover isenção'}
+                                          {removendoIsencaoId === a.id ? 'Removendo...' : 'Remover isenção'}
                                         </button>
                                       </div>
                                     </div>
                                     <div className="text-[12px] text-gray-600">
                                       {quadraLabel(a.quadra as any)}
                                       {a.esporte?.nome ? ` · ${a.esporte?.nome}` : ''}
-                                      {a.apoiadoUsuario?.nome
-                                        ? ` · ${a.apoiadoUsuario.nome}`
-                                        : ''}
+                                      {a.apoiadoUsuario?.nome ? ` · ${a.apoiadoUsuario.nome}` : ''}
                                     </div>
                                   </li>
                                 ))}
@@ -853,70 +835,55 @@ export default function ProfessoresAdmin() {
                         <div className="mt-3 rounded-md bg-gray-100 px-3 py-2 text-[13px] text-gray-700 space-y-1">
                           <div className="flex items-center justify-between">
                             <span>Total de aulas do mês:</span>
-                            <span className="font-semibold">
-                              {quadro.totais.mes.aulas}
-                            </span>
+                            <span className="font-semibold">{quadro.totais.mes.aulas}</span>
                           </div>
 
                           <div className="flex items-center justify-between">
                             <span>Subtotal (aulas, sem desconto):</span>
-                            <span className="font-semibold">
-                              {currencyBRL(subtotalAulasMes)}
-                            </span>
+                            <span className="font-semibold">{currencyBRL(subtotalAulasMes)}</span>
                           </div>
 
                           <div className="flex items-center justify-between">
                             <span>Subtotal (aulas, com 50% de desconto):</span>
-                            <span className="font-semibold">
-                              {currencyBRL(subtotalAulasComDesconto)}
-                            </span>
+                            <span className="font-semibold">{currencyBRL(subtotalAulasComDesconto)}</span>
                           </div>
 
                           <div className="flex items-center justify-between">
                             <span>Multas no período:</span>
-                            <span className="font-semibold text-red-700">
-                              {currencyBRL(multaPeriodo)}
-                            </span>
+                            <span className="font-semibold text-red-700">{currencyBRL(multaPeriodo)}</span>
                           </div>
 
-                          {typeof quadro.totais.apoiadasMes === 'number' &&
-                            quadro.totais.apoiadasMes > 0 && (
-                              <>
+                          {typeof quadro.totais.apoiadasMes === 'number' && quadro.totais.apoiadasMes > 0 && (
+                            <>
+                              <div className="flex items-center justify-between">
+                                <span>Aulas apoiadas no mês:</span>
+                                <span className="font-semibold">{quadro.totais.apoiadasMes}</span>
+                              </div>
+                              {typeof quadro.totais.valorApoioDescontadoMes === 'number' && (
                                 <div className="flex items-center justify-between">
-                                  <span>Aulas apoiadas no mês:</span>
+                                  <span>Valor “descontado” (apoio):</span>
                                   <span className="font-semibold">
-                                    {quadro.totais.apoiadasMes}
+                                    {currencyBRL(quadro.totais.valorApoioDescontadoMes)}
                                   </span>
                                 </div>
-                                {typeof quadro.totais.valorApoioDescontadoMes === 'number' && (
-                                  <div className="flex items-center justify-between">
-                                    <span>Valor “descontado” (apoio):</span>
-                                    <span className="font-semibold">
-                                      {currencyBRL(quadro.totais.valorApoioDescontadoMes)}
-                                    </span>
-                                  </div>
-                                )}
-                              </>
-                            )}
+                              )}
+                            </>
+                          )}
 
                           <div className="flex items-center justify-between pt-1 border-t border-gray-200">
                             <span>Total do mês (cheio — aulas + multas):</span>
-                            <span className="font-bold">
-                              {currencyBRL(totalMesCheio)}
-                            </span>
+                            <span className="font-bold">{currencyBRL(totalMesCheio)}</span>
                           </div>
 
                           <div className="flex items-center justify-between">
                             <span>Total do mês com desconto (aulas 50% + multas):</span>
-                            <span className="font-bold">
-                              {currencyBRL(totalMesComDesconto)}
-                            </span>
+                            <span className="font-bold">{currencyBRL(totalMesComDesconto)}</span>
                           </div>
                         </div>
 
                         <p className="mt-2 text-[11px] text-gray-500">
-                          Duração considerada por aula: {quadro.intervalo.duracaoMin} min ·
-                          Valor por aula: {currencyBRL(quadro.professor.valorQuadra || 0)}
+                          Duração considerada por aula: {quadro.intervalo.duracaoMin} min · Valor por aula:{' '}
+                          {currencyBRL(quadro.professor.valorQuadra || 0)}
                         </p>
 
                         {/* 🆕 Aplicar multa — botão laranja suave + listagem de aulas do mês */}
@@ -943,10 +910,7 @@ export default function ProfessoresAdmin() {
                                   {aulasDetalhes.map((a) => {
                                     const jaMultada = a.multa != null
                                     return (
-                                      <li
-                                        key={a.id}
-                                        className="px-3 py-2 text-[13px] flex flex-col gap-0.5"
-                                      >
+                                      <li key={a.id} className="px-3 py-2 text-[13px] flex flex-col gap-0.5">
                                         <div className="flex items-center justify-between gap-2">
                                           <span className="text-gray-700">
                                             {fmtBR(a.ymd!)} · {a.horario}
@@ -963,9 +927,7 @@ export default function ProfessoresAdmin() {
                                               disabled={jaMultada || aplicandoMultaId === a.id}
                                               className="text-[11px] px-2 py-1 rounded border border-orange-300 bg-orange-50 text-orange-800 hover:bg-orange-100 disabled:opacity-60 disabled:cursor-not-allowed"
                                             >
-                                              {aplicandoMultaId === a.id
-                                                ? 'Aplicando...'
-                                                : 'Aplicar multa'}
+                                              {aplicandoMultaId === a.id ? 'Aplicando...' : 'Aplicar multa'}
                                             </button>
                                           </div>
                                         </div>

@@ -7,6 +7,7 @@ import { useAuthStore } from "@/context/AuthStore";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { Calendar, ChevronDown, ChevronLeft, ChevronRight, Check, X } from "lucide-react";
+import SystemAlert, { AlertVariant } from "@/components/SystemAlert";
 
 /* =========================
    Tipos da rota /disponibilidadeGeral/dia
@@ -68,80 +69,6 @@ type UsuarioLista = {
   email?: string;
   celular?: string | null;
 };
-
-type AlertVariant = "success" | "error" | "info";
-
-/* =========================
-   SystemAlert (igual o da Home)
-========================= */
-function SystemAlert({
-  open,
-  message,
-  variant = "info",
-  onClose,
-}: {
-  open: boolean;
-  message: string;
-  variant?: AlertVariant;
-  onClose: () => void;
-}) {
-  if (!open || !message) return null;
-
-  const styles =
-    (
-      {
-        success: {
-          container: "bg-emerald-50 border-emerald-200 text-emerald-800",
-          chip: "bg-emerald-100 border border-emerald-300 text-emerald-800",
-        },
-        error: {
-          container: "bg-red-50 border-red-200 text-red-800",
-          chip: "bg-red-100 border border-red-300 text-red-800",
-        },
-        info: {
-          container: "bg-orange-50 border-orange-200 text-orange-800",
-          chip: "bg-orange-100 border border-orange-300 text-orange-800",
-        },
-      } as const
-    )[variant] || {
-      container: "bg-slate-50 border-slate-200 text-slate-800",
-      chip: "bg-slate-100 border border-slate-300 text-slate-800",
-    };
-
-  return (
-    <div className="fixed inset-0 z-[80] pointer-events-none flex justify-center pt-6 sm:pt-8">
-      <div className="pointer-events-auto">
-        <div
-          className={`
-            flex items-center gap-4 rounded-2xl px-5 py-3
-            min-w-[260px] max-w-[90vw]
-            border shadow-xl
-            ${styles.container}
-          `}
-        >
-          <div className="flex flex-col">
-            <span className="text-[11px] uppercase tracking-[0.16em] text-black/50">
-              Eleven Sports • Aviso
-            </span>
-            <span className="mt-1 text-sm font-medium leading-snug">{message}</span>
-          </div>
-
-          <button
-            type="button"
-            onClick={onClose}
-            className={`
-              ml-2 sm:ml-4 px-4 py-1.5 rounded-full text-xs font-semibold
-              transition
-              ${styles.chip}
-            `}
-          >
-            OK
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /* =========================
    Helpers de data (iguais à Home)
@@ -256,7 +183,7 @@ export default function TodosHorariosPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // 🔔 Alerta estilo Home
+  // 🔔 Alerta padronizado (componente global)
   const [alertConfig, setAlertConfig] = useState<{
     message: string;
     variant: AlertVariant;
@@ -275,7 +202,6 @@ export default function TodosHorariosPage() {
   const [data, setData] = useState<string>("");
   const [horas, setHoras] = useState<string[]>([]);
   const [esportes, setEsportes] = useState<Record<string, EsporteBlock> | null>(null);
-  const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(true);
 
   // Calendário (mesmo da Home)
@@ -356,7 +282,6 @@ export default function TodosHorariosPage() {
   useEffect(() => {
     dataAtualRef.current = data;
   }, [data]);
-
 
   /* =========================
      Inicialização / URL params
@@ -462,8 +387,6 @@ export default function TodosHorariosPage() {
   const carregar = useCallback(
     async (d: string) => {
       const seq = ++carregarSeqRef.current; // ✅ id único para esta chamada
-
-      setErro("");
       setLoading(true);
 
       try {
@@ -486,13 +409,13 @@ export default function TodosHorariosPage() {
 
         console.error(e);
         setEsportes(null);
-        setErro("Erro ao carregar a disponibilidade do dia.");
+        showAlert("Erro ao carregar a disponibilidade do dia.", "error");
       } finally {
         // ✅ só encerra loading se esta for a request mais recente
         if (seq === carregarSeqRef.current) setLoading(false);
       }
     },
-    [API_URL]
+    [API_URL, showAlert]
   );
 
   useEffect(() => {
@@ -1091,8 +1014,6 @@ export default function TodosHorariosPage() {
           <Spinner />
           <span>Carregando disponibilidade do dia…</span>
         </div>
-      ) : erro ? (
-        <div className="text-sm text-red-600">{erro}</div>
       ) : !esportes ? (
         <div className="text-sm text-gray-500">Nenhum dado disponível.</div>
       ) : (

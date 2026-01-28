@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import axios from 'axios'
 import Spinner from '@/components/Spinner'
+import SystemAlert, { AlertVariant } from '@/components/SystemAlert'
 
 type TipoUsuario =
   | 'CLIENTE'
@@ -29,6 +30,30 @@ type CriarUsuarioResponse = {
   senhaTemporaria?: string
 }
 
+type Feedback = { kind: 'success' | 'error' | 'info'; text: string }
+
+function getApiErrorMessage(e: any, fallback: string) {
+  return (
+    e?.response?.data?.erro ||
+    e?.response?.data?.message ||
+    e?.response?.data?.msg ||
+    e?.response?.data?.error ||
+    e?.message ||
+    fallback
+  )
+}
+
+function isValidEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+}
+
+function senhaEhValida(senha: string) {
+  const s = senha.trim()
+  if (s.length < 6) return false
+  if (!/[A-Z]/.test(s)) return false
+  return true
+}
+
 export default function CriarUsuarioAdminPage() {
   const API_URL = process.env.NEXT_PUBLIC_URL_API || 'http://localhost:3001'
   const router = useRouter()
@@ -43,41 +68,66 @@ export default function CriarUsuarioAdminPage() {
   const [verificado, setVerificado] = useState(true)
 
   const [loading, setLoading] = useState(false)
-  const [erro, setErro] = useState<string | null>(null)
-  const [sucesso, setSucesso] = useState<string | null>(null)
+
+  // ✅ Feedback padronizado
+  const [feedback, setFeedback] = useState<Feedback | null>(null)
+  const closeFeedback = () => setFeedback(null)
+
   const [senhaTemporaria, setSenhaTemporaria] = useState<string | null>(null)
   const [usuarioCriado, setUsuarioCriado] = useState<Usuario | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setErro(null)
-    setSucesso(null)
+
+    setFeedback(null)
     setSenhaTemporaria(null)
     setUsuarioCriado(null)
 
-    const senhaInformada = !!senha.trim()
+    const nomeTrim = nome.trim()
+    const emailTrim = email.trim()
+    const senhaTrim = senha.trim()
+    const senhaInformada = !!senhaTrim
+
+    // ✅ validações front (padronizadas)
+    if (nomeTrim.length < 3) {
+      setFeedback({ kind: 'error', text: 'Informe um nome com pelo menos 3 caracteres.' })
+      return
+    }
+
+    if (!isValidEmail(emailTrim)) {
+      setFeedback({ kind: 'error', text: 'Informe um e-mail válido.' })
+      return
+    }
+
+    if (senhaInformada && !senhaEhValida(senhaTrim)) {
+      setFeedback({
+        kind: 'error',
+        text: 'A senha precisa ter no mínimo 6 caracteres e 1 letra maiúscula.',
+      })
+      return
+    }
 
     const payload: any = {
-      nome: nome.trim(),
-      email: email.trim(),
+      nome: nomeTrim,
+      email: emailTrim,
       tipo,
       verificado,
     }
 
-    if (senhaInformada) payload.senha = senha.trim()
+    if (senhaInformada) payload.senha = senhaTrim
     if (celular.trim()) payload.celular = celular.trim()
     if (cpf.trim()) payload.cpf = cpf.trim()
     if (nascimento) payload.nascimento = nascimento
 
     setLoading(true)
     try {
-      const res = await axios.post<CriarUsuarioResponse>(
-        `${API_URL}/clientes/admin/criar`,
-        payload,
-        { withCredentials: true },
-      )
+      const res = await axios.post<CriarUsuarioResponse>(`${API_URL}/clientes/admin/criar`, payload, {
+        withCredentials: true,
+      })
 
-      setSucesso(res.data.mensagem || 'Usuário criado com sucesso.')
+      const msgSucesso = res.data.mensagem || 'Usuário criado com sucesso.'
+      setFeedback({ kind: 'success', text: msgSucesso })
+
       setSenhaTemporaria(res.data.senhaTemporaria || null)
       setUsuarioCriado(res.data.usuario)
 
@@ -85,28 +135,46 @@ export default function CriarUsuarioAdminPage() {
       if (senhaInformada) {
         setTimeout(() => {
           router.push('/adminMaster/usuarios')
-        }, 1500)
+        }, 1200)
       }
-      // Se NÃO foi informada, a senha temporária será exibida e
-      // o admin decide quando ir para a lista clicando no botão.
     } catch (e: any) {
       console.error(e)
-      setErro(e?.response?.data?.erro || 'Erro ao criar usuário')
+      const msg = getApiErrorMessage(e, 'Erro ao criar usuário.')
+      setFeedback({ kind: 'error', text: msg })
     } finally {
       setLoading(false)
     }
   }
 
+  const copiarSenhaTemporaria = async () => {
+    if (!senhaTemporaria) return
+    try {
+      await navigator.clipboard.writeText(senhaTemporaria)
+      setFeedback({ kind: 'success', text: 'Senha temporária copiada!' })
+    } catch (e) {
+      console.error(e)
+      setFeedback({ kind: 'error', text: 'Não foi possível copiar. Copie manualmente.' })
+    }
+  }
+
   return (
     <div className="max-w-3xl mx-auto mt-6 sm:mt-10 p-4 sm:p-6 bg-white rounded-xl shadow-sm border border-gray-200">
+      {/* ✅ ALERTA PADRONIZADO */}
+      <SystemAlert
+        open={!!feedback}
+        variant={(feedback?.kind as AlertVariant) || 'info'}
+        message={feedback?.text || ''}
+        onClose={closeFeedback}
+      />
+
       <div className="mb-4 flex flex-col gap-2">
         <h1 className="text-lg sm:text-xl font-semibold tracking-tight">
           Criar usuário manualmente
         </h1>
         <p className="text-sm text-gray-600">
-          Use esta tela para cadastrar usuários manualmente (por exemplo, pessoas sem acesso
-          ao e-mail). O usuário já pode entrar como <strong>verificado</strong>, pulando a etapa
-          de código por e-mail.
+          Use esta tela para cadastrar usuários manualmente (por exemplo, pessoas sem acesso ao
+          e-mail). O usuário já pode entrar como <strong>verificado</strong>, pulando a etapa de
+          código por e-mail.
         </p>
       </div>
 
@@ -119,13 +187,14 @@ export default function CriarUsuarioAdminPage() {
           <input
             type="text"
             value={nome}
-            onChange={(e) => setNome(e.target.value)}
+            onChange={(e) => {
+              setNome(e.target.value)
+              setFeedback(null)
+            }}
             className="p-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
             required
           />
-          <p className="text-xs text-gray-500">
-            Obrigatório. Mínimo de 3 caracteres.
-          </p>
+          <p className="text-xs text-gray-500">Obrigatório. Mínimo de 3 caracteres.</p>
         </div>
 
         {/* Email */}
@@ -136,7 +205,10 @@ export default function CriarUsuarioAdminPage() {
           <input
             type="email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setEmail(e.target.value)
+              setFeedback(null)
+            }}
             className="p-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
             required
           />
@@ -151,7 +223,10 @@ export default function CriarUsuarioAdminPage() {
           <input
             type="text"
             value={senha}
-            onChange={(e) => setSenha(e.target.value)}
+            onChange={(e) => {
+              setSenha(e.target.value)
+              setFeedback(null)
+            }}
             placeholder="Deixe em branco para gerar uma senha automática"
             className="p-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
           />
@@ -159,8 +234,8 @@ export default function CriarUsuarioAdminPage() {
             Opcional. Se informar, precisa ter pelo menos{' '}
             <span className="font-semibold">6 caracteres</span> e{' '}
             <span className="font-semibold">1 letra maiúscula</span>. Se deixar em branco, o
-            sistema gera uma <span className="font-semibold">senha temporária forte</span> e
-            mostra logo abaixo.
+            sistema gera uma <span className="font-semibold">senha temporária forte</span> e mostra
+            logo abaixo.
           </p>
         </div>
 
@@ -171,7 +246,10 @@ export default function CriarUsuarioAdminPage() {
           </label>
           <select
             value={tipo}
-            onChange={(e) => setTipo(e.target.value as TipoUsuario)}
+            onChange={(e) => {
+              setTipo(e.target.value as TipoUsuario)
+              setFeedback(null)
+            }}
             className="p-2 border rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-orange-300"
           >
             <option value="CLIENTE">CLIENTE (padrão)</option>
@@ -194,13 +272,14 @@ export default function CriarUsuarioAdminPage() {
           <input
             type="tel"
             value={celular}
-            onChange={(e) => setCelular(e.target.value)}
+            onChange={(e) => {
+              setCelular(e.target.value)
+              setFeedback(null)
+            }}
             placeholder="Ex: 11999998888"
             className="p-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
           />
-          <p className="text-xs text-gray-500">
-            Opcional. Pode deixar em branco se não tiver na hora.
-          </p>
+          <p className="text-xs text-gray-500">Opcional. Pode deixar em branco se não tiver na hora.</p>
         </div>
 
         {/* CPF */}
@@ -209,7 +288,10 @@ export default function CriarUsuarioAdminPage() {
           <input
             type="text"
             value={cpf}
-            onChange={(e) => setCpf(e.target.value)}
+            onChange={(e) => {
+              setCpf(e.target.value)
+              setFeedback(null)
+            }}
             placeholder="Somente números"
             className="p-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
           />
@@ -226,12 +308,13 @@ export default function CriarUsuarioAdminPage() {
           <input
             type="date"
             value={nascimento}
-            onChange={(e) => setNascimento(e.target.value)}
+            onChange={(e) => {
+              setNascimento(e.target.value)
+              setFeedback(null)
+            }}
             className="p-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
           />
-          <p className="text-xs text-gray-500">
-            Opcional. Use o calendário para selecionar dia/mês/ano.
-          </p>
+          <p className="text-xs text-gray-500">Opcional. Use o calendário para selecionar dia/mês/ano.</p>
         </div>
 
         {/* Verificado */}
@@ -240,42 +323,44 @@ export default function CriarUsuarioAdminPage() {
             <input
               type="checkbox"
               checked={verificado}
-              onChange={(e) => setVerificado(e.target.checked)}
+              onChange={(e) => {
+                setVerificado(e.target.checked)
+                setFeedback(null)
+              }}
               className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
             />
             Marcar usuário como verificado
           </label>
           <p className="text-xs text-gray-500">
             Se marcado (padrão), o usuário já entra como{' '}
-            <span className="font-semibold">verificado</span> e não precisa confirmar o
-            e-mail. Desmarque apenas se quiser que ele passe pela verificação depois.
+            <span className="font-semibold">verificado</span> e não precisa confirmar o e-mail.
+            Desmarque apenas se quiser que ele passe pela verificação depois.
           </p>
         </div>
 
-        {/* Erro / sucesso */}
-        {erro && (
-          <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
-            {erro}
-          </div>
-        )}
-
-        {sucesso && (
-          <div className="rounded-md bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-700">
-            {sucesso}
-          </div>
-        )}
-
+        {/* senha temporária */}
         {senhaTemporaria && (
           <div className="rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-sm text-blue-800">
             <div className="font-semibold mb-1">Senha temporária gerada:</div>
-            <div className="inline-flex items-center gap-2">
-              <code className="px-2 py-1 bg-white border border-blue-200 rounded text-xs">
+
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+              <code className="px-2 py-1 bg-white border border-blue-200 rounded text-xs break-all">
                 {senhaTemporaria}
               </code>
+
+              <button
+                type="button"
+                onClick={copiarSenhaTemporaria}
+                className="inline-flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-md text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-300"
+              >
+                Copiar
+              </button>
             </div>
+
             <p className="mt-1 text-xs text-blue-900">
               Copie esta senha e entregue ao usuário. Ele pode trocá-la no primeiro acesso.
             </p>
+
             <div className="mt-3">
               <button
                 type="button"
@@ -301,9 +386,7 @@ export default function CriarUsuarioAdminPage() {
       {/* Resuminho do último usuário criado */}
       {usuarioCriado && (
         <div className="mt-6 border-t border-gray-200 pt-4">
-          <h2 className="text-sm font-semibold text-gray-800 mb-2">
-            Último usuário criado
-          </h2>
+          <h2 className="text-sm font-semibold text-gray-800 mb-2">Último usuário criado</h2>
           <div className="text-sm text-gray-700 space-y-1">
             <div>
               <span className="font-medium">Nome: </span>

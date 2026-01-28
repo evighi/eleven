@@ -5,6 +5,7 @@ import axios from "axios";
 import Spinner from "@/components/Spinner";
 import { useAuthStore } from "@/context/AuthStore";
 import { useRouter, useSearchParams } from "next/navigation";
+import SystemAlert, { AlertVariant } from "@/components/SystemAlert";
 
 /* =========================
    Tipos da rota /disponibilidadeGeral/permanentes
@@ -163,6 +164,17 @@ export default function PermanentesGridPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  /* =========================
+     ✅ Feedback padronizado (SystemAlert)
+  ========================= */
+  const [feedback, setFeedback] = useState<{ kind: "success" | "error" | "info"; text: string } | null>(null);
+
+  const showFeedback = useCallback((kind: "success" | "error" | "info", text: string) => {
+    setFeedback({ kind, text });
+  }, []);
+
+  const closeFeedback = useCallback(() => setFeedback(null), []);
+
   // diaSemana: default = hoje (timezone SP)
   const [diaSemana, setDiaSemana] = useState<DiaSemana>(() => {
     const now = new Date(
@@ -184,8 +196,7 @@ export default function PermanentesGridPage() {
 
   // Modal de detalhes
   const [loadingDetalhes, setLoadingDetalhes] = useState(false);
-  const [agendamentoSelecionado, setAgendamentoSelecionado] =
-    useState<AgendamentoSelecionado | null>(null);
+  const [agendamentoSelecionado, setAgendamentoSelecionado] = useState<AgendamentoSelecionado | null>(null);
 
   // Cancelar PARA SEMPRE
   const [confirmarCancelamentoForever, setConfirmarCancelamentoForever] = useState(false);
@@ -245,12 +256,15 @@ export default function PermanentesGridPage() {
         console.error(e);
         setEsportes(null);
         setChurrasqueiras(null);
-        setErro("Erro ao carregar a grade de permanentes.");
+
+        const msg = "Erro ao carregar a grade de permanentes.";
+        setErro(msg);
+        showFeedback("error", msg);
       } finally {
         setLoading(false);
       }
     },
-    [API_URL]
+    [API_URL, showFeedback]
   );
 
   useEffect(() => {
@@ -273,9 +287,7 @@ export default function PermanentesGridPage() {
         });
 
         const usuarioValor: string | Usuario =
-          typeof det?.usuario === "object" || typeof det?.usuario === "string"
-            ? det.usuario
-            : "—";
+          typeof det?.usuario === "object" || typeof det?.usuario === "string" ? det.usuario : "—";
 
         const esporteNome =
           (typeof det?.esporte === "string" ? det.esporte : det?.esporte?.nome) ?? (esporte ?? null);
@@ -301,11 +313,12 @@ export default function PermanentesGridPage() {
         });
       } catch (err) {
         console.error("Erro ao buscar detalhes:", err);
+        showFeedback("error", "Erro ao buscar detalhes do agendamento permanente.");
       } finally {
         setLoadingDetalhes(false);
       }
     },
-    [API_URL]
+    [API_URL, showFeedback]
   );
 
   // Detalhes do PERMANENTE — CHURRASQUEIRA
@@ -315,15 +328,12 @@ export default function PermanentesGridPage() {
 
       try {
         setLoadingDetalhes(true);
-        const { data: det } = await axios.get(
-          `${API_URL}/agendamentosPermanentesChurrasqueiras/${agendamentoId}`,
-          { withCredentials: true }
-        );
+        const { data: det } = await axios.get(`${API_URL}/agendamentosPermanentesChurrasqueiras/${agendamentoId}`, {
+          withCredentials: true,
+        });
 
         const usuarioValor: string | Usuario =
-          typeof det?.usuario === "object" || typeof det?.usuario === "string"
-            ? det.usuario
-            : "—";
+          typeof det?.usuario === "object" || typeof det?.usuario === "string" ? det.usuario : "—";
 
         const dataInicioYmd = normalizeDateYmdSP(meta?.dataInicio ?? (det as any)?.dataInicio ?? null);
         const proximaDataYmd = normalizeDateYmdSP(meta?.proximaData ?? (det as any)?.proximaData ?? null);
@@ -346,11 +356,12 @@ export default function PermanentesGridPage() {
         });
       } catch (err) {
         console.error("Erro ao buscar detalhes (churrasqueira):", err);
+        showFeedback("error", "Erro ao buscar detalhes da churrasqueira permanente.");
       } finally {
         setLoadingDetalhes(false);
       }
     },
-    [API_URL]
+    [API_URL, showFeedback]
   );
 
   /* ====== REDIRECIONAR para agendar PERMANENTE (slot livre de QUADRA) ====== */
@@ -425,7 +436,7 @@ export default function PermanentesGridPage() {
 
       await axios.post(rota, {}, { withCredentials: true });
 
-      alert("Agendamento permanente cancelado para sempre!");
+      showFeedback("success", "Agendamento permanente cancelado para sempre!");
       setAgendamentoSelecionado(null);
       setConfirmarCancelamentoForever(false);
       refresh();
@@ -435,7 +446,7 @@ export default function PermanentesGridPage() {
         error?.response?.data?.erro ||
         error?.response?.data?.message ||
         "Erro ao cancelar agendamento permanente.";
-      alert(msg);
+      showFeedback("error", msg);
     } finally {
       setLoadingCancelamento(false);
     }
@@ -478,8 +489,14 @@ export default function PermanentesGridPage() {
   };
 
   const confirmarTransferencia = async () => {
-    if (!agendamentoSelecionado?.agendamentoId) return alert("Nenhum agendamento selecionado.");
-    if (!usuarioSelecionado) return alert("Selecione um usuário para transferir.");
+    if (!agendamentoSelecionado?.agendamentoId) {
+      showFeedback("info", "Nenhum agendamento selecionado.");
+      return;
+    }
+    if (!usuarioSelecionado) {
+      showFeedback("info", "Selecione um usuário para transferir.");
+      return;
+    }
 
     setLoadingTransferencia(true);
     try {
@@ -498,7 +515,7 @@ export default function PermanentesGridPage() {
         { withCredentials: true }
       );
 
-      alert("Agendamento permanente transferido com sucesso!");
+      showFeedback("success", "Agendamento permanente transferido com sucesso!");
       setAgendamentoSelecionado(null);
       setAbrirModalTransferencia(false);
       refresh();
@@ -508,7 +525,7 @@ export default function PermanentesGridPage() {
         error?.response?.data?.erro ||
         error?.response?.data?.message ||
         "Erro ao transferir agendamento.";
-      alert(msg);
+      showFeedback("error", msg);
     } finally {
       setLoadingTransferencia(false);
     }
@@ -647,6 +664,7 @@ export default function PermanentesGridPage() {
       );
     }
     if (erro) {
+      // ✅ mantém a lógica existente, mas agora feedback já aparece em SystemAlert também
       return <div className="text-red-600 text-sm">{erro}</div>;
     }
     if ((!esportes || Object.keys(esportes).length === 0) && (!churrasqueiras || churrasqueiras.length === 0)) {
@@ -813,6 +831,14 @@ export default function PermanentesGridPage() {
 
   return (
     <div className="px-2 sm:px-3 md:px-4 py-4">
+      {/* ✅ FEEDBACK PADRONIZADO */}
+      <SystemAlert
+        open={!!feedback}
+        variant={feedback?.kind as AlertVariant}
+        message={feedback?.text || ""}
+        onClose={closeFeedback}
+      />
+
       {/* Filtro: Dia da semana */}
       <div className="bg-white p-3 sm:p-4 shadow rounded-lg max-w-md mb-4">
         <label className="text-sm text-gray-600">Dia da semana</label>

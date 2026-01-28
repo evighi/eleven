@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import SystemAlert, { AlertVariant } from "@/components/SystemAlert";
 
 type Quadra = {
   id: string;
@@ -33,6 +34,8 @@ type Bloqueio = {
   motivo?: MotivoBloqueio | null;
 };
 
+type Feedback = { kind: "success" | "error" | "info"; text: string };
+
 // NÃO usar new Date pra campos date-only que vêm zerados em UTC
 const ymdFromIsoLike = (isoLike: string) => {
   const m = isoLike.match(/^(\d{4}-\d{2}-\d{2})/);
@@ -42,6 +45,10 @@ const ymdFromIsoLike = (isoLike: string) => {
 
 export default function DesbloqueioQuadrasPage() {
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
+
+  // ✅ Feedback padronizado
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const closeFeedback = () => setFeedback(null);
 
   const [bloqueios, setBloqueios] = useState<Bloqueio[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
@@ -58,7 +65,6 @@ export default function DesbloqueioQuadrasPage() {
   // ✅ Modal edição
   const [openEditar, setOpenEditar] = useState(false);
   const [editando, setEditando] = useState(false);
-  const [erroEditar, setErroEditar] = useState<string>("");
 
   // dados do formulário de edição
   const [editData, setEditData] = useState<string>(""); // YYYY-MM-DD
@@ -71,6 +77,25 @@ export default function DesbloqueioQuadrasPage() {
   const [quadrasDisponiveis, setQuadrasDisponiveis] = useState<Quadra[]>([]);
   const [loadingQuadras, setLoadingQuadras] = useState<boolean>(false);
 
+  // helper mensagem padrão
+  function mensagemErroAxios(error: any, fallback = "Ocorreu um erro. Tente novamente."): string {
+    if (axios.isAxiosError(error)) {
+      const status = error.response?.status;
+      const data = error.response?.data as any;
+      const serverMsg =
+        data && (data.erro || data.message || data.msg || data.error)
+          ? String(data.erro || data.message || data.msg || data.error)
+          : "";
+
+      if (status === 409) return serverMsg || "Conflito: existe choque com outro bloqueio.";
+      if (status === 400 || status === 422) return serverMsg || "Requisição inválida.";
+      if (status === 401) return "Não autorizado.";
+      if (status === 404) return serverMsg || "Registro não encontrado.";
+      return serverMsg || fallback;
+    }
+    return fallback;
+  }
+
   // ---- Motivos ativos ----
   useEffect(() => {
     const fetchMotivos = async () => {
@@ -82,6 +107,7 @@ export default function DesbloqueioQuadrasPage() {
         setMotivos(res.data);
       } catch (error) {
         console.error("Erro ao buscar motivos de bloqueio:", error);
+        setFeedback({ kind: "error", text: "Erro ao carregar motivos de bloqueio." });
       }
     };
 
@@ -105,6 +131,7 @@ export default function DesbloqueioQuadrasPage() {
         setBloqueios(res.data);
       } catch (error) {
         console.error("Erro ao buscar bloqueios:", error);
+        setFeedback({ kind: "error", text: "Erro ao buscar bloqueios." });
       } finally {
         setLoading(false);
       }
@@ -132,18 +159,26 @@ export default function DesbloqueioQuadrasPage() {
   // ------------------------------------
   const confirmarDesbloqueioHandler = async () => {
     if (!bloqueioSelecionado) return;
+
     setDeletando(true);
+    setFeedback(null);
+
     try {
       await axios.delete(`${API_URL}/bloqueios/${bloqueioSelecionado.id}`, {
         withCredentials: true,
       });
-      alert("Quadras desbloqueadas com sucesso!");
+
+      setFeedback({ kind: "success", text: "Quadras desbloqueadas com sucesso!" });
+
       setBloqueios((prev) => prev.filter((b) => b.id !== bloqueioSelecionado.id));
       setConfirmarDesbloqueio(false);
       setBloqueioSelecionado(null);
     } catch (error) {
       console.error("Erro ao desbloquear quadras:", error);
-      alert("Erro ao desbloquear quadras.");
+      setFeedback({
+        kind: "error",
+        text: mensagemErroAxios(error, "Erro ao desbloquear quadras."),
+      });
     } finally {
       setDeletando(false);
     }
@@ -153,7 +188,7 @@ export default function DesbloqueioQuadrasPage() {
   // ✅ ABRIR MODAL EDIÇÃO (prefill)
   // ------------------------------------
   const abrirEditar = (bloqueio: Bloqueio) => {
-    setErroEditar("");
+    setFeedback(null);
     setBloqueioSelecionado(bloqueio);
 
     setEditData(ymdFromIsoLike(bloqueio.dataBloqueio)); // YYYY-MM-DD
@@ -183,8 +218,8 @@ export default function DesbloqueioQuadrasPage() {
         setQuadrasDisponiveis(res.data);
       } catch (error) {
         console.error("Erro ao buscar quadras:", error);
-        // se falhar, ainda dá pra salvar usando as quadras já carregadas do bloqueio
         setQuadrasDisponiveis([]);
+        // (sem feedback aqui para não "poluir"; se quiser, eu adiciono)
       } finally {
         setLoadingQuadras(false);
       }
@@ -226,23 +261,27 @@ export default function DesbloqueioQuadrasPage() {
   // ------------------------------------
   const salvarEdicao = async () => {
     if (!bloqueioSelecionado) return;
-    setErroEditar("");
+
+    setFeedback(null);
 
     // validações do front (para ficar intuitivo)
     if (!editData) {
-      setErroEditar("Selecione uma data válida.");
+      setFeedback({ kind: "error", text: "Selecione uma data válida." });
       return;
     }
     if (!editInicio || !editFim) {
-      setErroEditar("Selecione o horário de início e fim.");
+      setFeedback({ kind: "error", text: "Selecione o horário de início e fim." });
       return;
     }
     if (editInicio >= editFim) {
-      setErroEditar("Hora inicial deve ser menor que a final.");
+      setFeedback({ kind: "error", text: "Hora inicial deve ser menor que a final." });
       return;
     }
     if (editQuadraIds.length === 0) {
-      setErroEditar("Não é possível salvar: você removeu todas as quadras do bloqueio.");
+      setFeedback({
+        kind: "error",
+        text: "Não é possível salvar: você removeu todas as quadras do bloqueio.",
+      });
       return;
     }
 
@@ -254,7 +293,7 @@ export default function DesbloqueioQuadrasPage() {
 
       const payload = {
         quadraIds: editQuadraIds,
-        dataBloqueio: editData, // "YYYY-MM-DD" (o zod do back coerce.date resolve)
+        dataBloqueio: editData, // "YYYY-MM-DD"
         inicioBloqueio: editInicio,
         fimBloqueio: editFim,
         motivoId: motivoIdPayload,
@@ -266,7 +305,7 @@ export default function DesbloqueioQuadrasPage() {
         { withCredentials: true }
       );
 
-      alert("Bloqueio atualizado com sucesso!");
+      setFeedback({ kind: "success", text: "Bloqueio atualizado com sucesso!" });
 
       // atualiza lista local
       setBloqueios((prev) =>
@@ -279,13 +318,12 @@ export default function DesbloqueioQuadrasPage() {
     } catch (error: any) {
       console.error("Erro ao atualizar bloqueio:", error);
 
-      // tenta mostrar a mensagem do backend (409 conflito / 400 etc.)
-      const msg =
-        error?.response?.data?.erro ||
-        error?.response?.data?.message ||
-        "Erro ao atualizar o bloqueio. Verifique os dados e tente novamente.";
+      const msg = mensagemErroAxios(
+        error,
+        "Erro ao atualizar o bloqueio. Verifique os dados e tente novamente."
+      );
 
-      setErroEditar(String(msg));
+      setFeedback({ kind: "error", text: String(msg) });
     } finally {
       setEditando(false);
     }
@@ -293,6 +331,14 @@ export default function DesbloqueioQuadrasPage() {
 
   return (
     <div className="space-y-8">
+      {/* ✅ ALERTA PADRONIZADO */}
+      <SystemAlert
+        open={!!feedback}
+        variant={(feedback?.kind as AlertVariant) || "info"}
+        message={feedback?.text || ""}
+        onClose={closeFeedback}
+      />
+
       <h1 className="text-xl font-semibold text-orange-700">Desbloquear Quadras</h1>
 
       {/* Filtros (motivo + data) */}
@@ -302,7 +348,10 @@ export default function DesbloqueioQuadrasPage() {
           <label className="block text-sm font-medium text-gray-700 mb-1">Motivo</label>
           <select
             value={motivoIdFiltro}
-            onChange={(e) => setMotivoIdFiltro(e.target.value)}
+            onChange={(e) => {
+              setMotivoIdFiltro(e.target.value);
+              setFeedback(null);
+            }}
             className="border border-gray-300 rounded px-3 py-2 text-sm min-w-[200px]"
           >
             <option value="">Todos os motivos</option>
@@ -321,7 +370,10 @@ export default function DesbloqueioQuadrasPage() {
           <input
             type="date"
             value={dataFiltro}
-            onChange={(e) => setDataFiltro(e.target.value)}
+            onChange={(e) => {
+              setDataFiltro(e.target.value);
+              setFeedback(null);
+            }}
             className="border border-gray-300 rounded px-3 py-2 text-sm min-w-[160px]"
           />
         </div>
@@ -332,6 +384,7 @@ export default function DesbloqueioQuadrasPage() {
             onClick={() => {
               setMotivoIdFiltro("");
               setDataFiltro("");
+              setFeedback(null);
             }}
             className="text-sm px-3 py-2 rounded bg-gray-200 hover:bg-gray-300"
           >
@@ -365,7 +418,10 @@ export default function DesbloqueioQuadrasPage() {
                     </p>
 
                     <p className="text-sm text-gray-600">
-                      Horário: <span className="font-medium">{bloqueio.inicioBloqueio} – {bloqueio.fimBloqueio}</span>
+                      Horário:{" "}
+                      <span className="font-medium">
+                        {bloqueio.inicioBloqueio} – {bloqueio.fimBloqueio}
+                      </span>
                     </p>
 
                     {/* Motivo */}
@@ -398,6 +454,7 @@ export default function DesbloqueioQuadrasPage() {
 
                     <button
                       onClick={() => {
+                        setFeedback(null);
                         setBloqueioSelecionado(bloqueio);
                         setConfirmarDesbloqueio(true);
                       }}
@@ -440,7 +497,6 @@ export default function DesbloqueioQuadrasPage() {
               <button
                 onClick={() => {
                   setOpenEditar(false);
-                  setErroEditar("");
                 }}
                 className="text-sm px-3 py-2 rounded bg-gray-200 hover:bg-gray-300"
                 disabled={editando}
@@ -461,7 +517,10 @@ export default function DesbloqueioQuadrasPage() {
                   <input
                     type="date"
                     value={editData}
-                    onChange={(e) => setEditData(e.target.value)}
+                    onChange={(e) => {
+                      setEditData(e.target.value);
+                      setFeedback(null);
+                    }}
                     className="border border-gray-300 rounded px-3 py-2 text-sm"
                   />
                 </div>
@@ -471,7 +530,10 @@ export default function DesbloqueioQuadrasPage() {
                   <input
                     type="time"
                     value={editInicio}
-                    onChange={(e) => setEditInicio(e.target.value)}
+                    onChange={(e) => {
+                      setEditInicio(e.target.value);
+                      setFeedback(null);
+                    }}
                     className="border border-gray-300 rounded px-3 py-2 text-sm"
                   />
                 </div>
@@ -481,7 +543,10 @@ export default function DesbloqueioQuadrasPage() {
                   <input
                     type="time"
                     value={editFim}
-                    onChange={(e) => setEditFim(e.target.value)}
+                    onChange={(e) => {
+                      setEditFim(e.target.value);
+                      setFeedback(null);
+                    }}
                     className="border border-gray-300 rounded px-3 py-2 text-sm"
                   />
                 </div>
@@ -492,7 +557,10 @@ export default function DesbloqueioQuadrasPage() {
                 <label className="text-sm font-medium text-gray-700 mb-1">Motivo</label>
                 <select
                   value={editMotivo}
-                  onChange={(e) => setEditMotivo(e.target.value)}
+                  onChange={(e) => {
+                    setEditMotivo(e.target.value);
+                    setFeedback(null);
+                  }}
                   className="border border-gray-300 rounded px-3 py-2 text-sm"
                 >
                   <option value="SEM_MOTIVO">Sem motivo definido</option>
@@ -502,9 +570,7 @@ export default function DesbloqueioQuadrasPage() {
                     </option>
                   ))}
                 </select>
-                <p className="text-xs text-gray-500 mt-1">
-                  Você pode trocar o motivo ou deixar como “Sem motivo”.
-                </p>
+                <p className="text-xs text-gray-500 mt-1">Você pode trocar o motivo ou deixar como “Sem motivo”.</p>
               </div>
 
               {/* Quadras */}
@@ -542,8 +608,8 @@ export default function DesbloqueioQuadrasPage() {
                     <p className="text-sm text-gray-600">Carregando quadras...</p>
                   ) : quadrasParaExibirNoModal.length === 0 ? (
                     <p className="text-sm text-gray-600">
-                      Não foi possível carregar a lista completa de quadras.
-                      Você ainda pode salvar mantendo as quadras do bloqueio atual.
+                      Não foi possível carregar a lista completa de quadras. Você ainda pode salvar mantendo as quadras
+                      do bloqueio atual.
                     </p>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -552,14 +618,16 @@ export default function DesbloqueioQuadrasPage() {
                         return (
                           <label
                             key={q.id}
-                            className={`flex items-center gap-3 p-2 rounded border cursor-pointer ${
-                              checked ? "bg-white border-orange-300" : "bg-white border-gray-200"
-                            }`}
+                            className={`flex items-center gap-3 p-2 rounded border cursor-pointer ${checked ? "bg-white border-orange-300" : "bg-white border-gray-200"
+                              }`}
                           >
                             <input
                               type="checkbox"
                               checked={checked}
-                              onChange={() => toggleQuadra(q.id)}
+                              onChange={() => {
+                                toggleQuadra(q.id);
+                                setFeedback(null);
+                              }}
                               className="h-4 w-4"
                               disabled={editando}
                             />
@@ -580,19 +648,12 @@ export default function DesbloqueioQuadrasPage() {
                 )}
               </div>
 
-              {/* Erro */}
-              {erroEditar && (
-                <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded text-sm">
-                  {erroEditar}
-                </div>
-              )}
-
               {/* Ações */}
               <div className="flex justify-end gap-3">
                 <button
                   onClick={() => {
                     setOpenEditar(false);
-                    setErroEditar("");
+                    setFeedback(null);
                   }}
                   className="bg-gray-200 hover:bg-gray-300 text-gray-900 px-4 py-2 rounded cursor-pointer"
                   disabled={editando}
@@ -622,7 +683,10 @@ export default function DesbloqueioQuadrasPage() {
 
             <div className="mt-6 flex justify-end gap-4">
               <button
-                onClick={() => setConfirmarDesbloqueio(false)}
+                onClick={() => {
+                  setConfirmarDesbloqueio(false);
+                  setFeedback(null);
+                }}
                 className="bg-gray-300 text-black px-4 py-2 rounded cursor-pointer"
                 disabled={deletando}
               >

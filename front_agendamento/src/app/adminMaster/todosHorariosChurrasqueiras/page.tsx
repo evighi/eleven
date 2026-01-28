@@ -7,6 +7,7 @@ import { useAuthStore } from "@/context/AuthStore";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { Calendar, ChevronDown, ChevronLeft, ChevronRight, X } from "lucide-react";
+import SystemAlert, { AlertVariant } from "@/components/SystemAlert";
 
 /* =========================
    Tipos (Churrasqueiras - Dia)
@@ -87,80 +88,6 @@ type UsuarioLista = {
   email?: string;
   celular?: string | null;
 };
-
-type AlertVariant = "success" | "error" | "info";
-
-/* =========================
-   SystemAlert (igual Home)
-========================= */
-function SystemAlert({
-  open,
-  message,
-  variant = "info",
-  onClose,
-}: {
-  open: boolean;
-  message: string;
-  variant?: AlertVariant;
-  onClose: () => void;
-}) {
-  if (!open || !message) return null;
-
-  const styles =
-    (
-      {
-        success: {
-          container: "bg-emerald-50 border-emerald-200 text-emerald-800",
-          chip: "bg-emerald-100 border border-emerald-300 text-emerald-800",
-        },
-        error: {
-          container: "bg-red-50 border-red-200 text-red-800",
-          chip: "bg-red-100 border border-red-300 text-red-800",
-        },
-        info: {
-          container: "bg-orange-50 border-orange-200 text-orange-800",
-          chip: "bg-orange-100 border border-orange-300 text-orange-800",
-        },
-      } as const
-    )[variant] || {
-      container: "bg-slate-50 border-slate-200 text-slate-800",
-      chip: "bg-slate-100 border border-slate-300 text-slate-800",
-    };
-
-  return (
-    <div className="fixed inset-0 z-[80] pointer-events-none flex justify-center pt-6 sm:pt-8">
-      <div className="pointer-events-auto">
-        <div
-          className={`
-            flex items-center gap-4 rounded-2xl px-5 py-3
-            min-w-[260px] max-w-[90vw]
-            border shadow-xl
-            ${styles.container}
-          `}
-        >
-          <div className="flex flex-col">
-            <span className="text-[11px] uppercase tracking-[0.16em] text-black/50">
-              Eleven Sports • Aviso
-            </span>
-            <span className="mt-1 text-sm font-medium leading-snug">{message}</span>
-          </div>
-
-          <button
-            type="button"
-            onClick={onClose}
-            className={`
-              ml-2 sm:ml-4 px-4 py-1.5 rounded-full text-xs font-semibold
-              transition
-              ${styles.chip}
-            `}
-          >
-            OK
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /* =========================
    Helpers de data (iguais à Home)
@@ -326,7 +253,11 @@ export default function TodosHorariosChurrasqueirasPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // 🔔 Alerta estilo Home
+  /* =========================
+     ✅ FEEDBACK PADRONIZADO (SystemAlert)
+     - igual home / igual agendar*
+     - pega feedback vindo por URL (alertSuccess/alertError/alertInfo)
+  ========================= */
   const [alertConfig, setAlertConfig] = useState<{
     message: string;
     variant: AlertVariant;
@@ -338,14 +269,41 @@ export default function TodosHorariosChurrasqueirasPage() {
 
   useEffect(() => {
     if (!alertConfig) return;
-    const id = setTimeout(() => setAlertConfig(null), 3500);
+    const id = setTimeout(() => setAlertConfig(null), 4000);
     return () => clearTimeout(id);
   }, [alertConfig]);
 
+  // ✅ lê alertas da URL uma vez (ex.: vindo do "agendarChurrasqueira" ou outros fluxos)
+  const urlAlertHandledRef = useRef(false);
+  useEffect(() => {
+    if (urlAlertHandledRef.current) return;
+    if (!searchParams) return;
+
+    const s = searchParams.get("alertSuccess");
+    const e = searchParams.get("alertError");
+    const i = searchParams.get("alertInfo");
+
+    if (!s && !e && !i) return;
+
+    urlAlertHandledRef.current = true;
+
+    if (s) showAlert(s, "success");
+    else if (e) showAlert(e, "error");
+    else if (i) showAlert(i, "info");
+
+    // remove os alerts da URL (pra não repetir ao dar refresh)
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("alertSuccess");
+    params.delete("alertError");
+    params.delete("alertInfo");
+
+    router.replace(`/adminMaster/todosHorariosChurrasqueiras?${params.toString()}`, {
+      scroll: false,
+    });
+  }, [router, searchParams, showAlert]);
+
   const [data, setData] = useState<string>("");
-  const [churrasqueiras, setChurrasqueiras] = useState<ChurrasqueiraLinhaDia[] | null>(
-    null
-  );
+  const [churrasqueiras, setChurrasqueiras] = useState<ChurrasqueiraLinhaDia[] | null>(null);
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -376,18 +334,14 @@ export default function TodosHorariosChurrasqueirasPage() {
   const [mostrarOpcoesCancelamento, setMostrarOpcoesCancelamento] = useState(false);
   const [mostrarExcecaoModal, setMostrarExcecaoModal] = useState(false);
   const [datasExcecao, setDatasExcecao] = useState<string[]>([]);
-  const [dataExcecaoSelecionada, setDataExcecaoSelecionada] = useState<string | null>(
-    null
-  );
+  const [dataExcecaoSelecionada, setDataExcecaoSelecionada] = useState<string | null>(null);
   const [postandoExcecao, setPostandoExcecao] = useState(false);
 
   // Transferência
   const [abrirModalTransferencia, setAbrirModalTransferencia] = useState(false);
   const [buscaUsuario, setBuscaUsuario] = useState("");
   const [usuariosFiltrados, setUsuariosFiltrados] = useState<UsuarioLista[]>([]);
-  const [usuarioSelecionado, setUsuarioSelecionado] = useState<UsuarioLista | null>(
-    null
-  );
+  const [usuarioSelecionado, setUsuarioSelecionado] = useState<UsuarioLista | null>(null);
   const [carregandoUsuarios, setCarregandoUsuarios] = useState(false);
   const [loadingTransferencia, setLoadingTransferencia] = useState(false);
 
@@ -421,10 +375,7 @@ export default function TodosHorariosChurrasqueirasPage() {
   useEffect(() => {
     if (!dataPickerAberto) return;
     const onDown = (e: MouseEvent) => {
-      if (
-        calendarioWrapperRef.current &&
-        !calendarioWrapperRef.current.contains(e.target as Node)
-      ) {
+      if (calendarioWrapperRef.current && !calendarioWrapperRef.current.contains(e.target as Node)) {
         setDataPickerAberto(false);
       }
     };
@@ -464,13 +415,7 @@ export default function TodosHorariosChurrasqueirasPage() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [
-    alertConfig,
-    abrirModalTransferencia,
-    loadingTransferencia,
-    agendamentoSelecionado,
-    confirmAgendar,
-  ]);
+  }, [alertConfig, abrirModalTransferencia, loadingTransferencia, agendamentoSelecionado, confirmAgendar]);
 
   /* =========================
      Carregar dia (Churrasqueiras)
@@ -493,14 +438,12 @@ export default function TodosHorariosChurrasqueirasPage() {
         if (seq !== carregarSeqRef.current) return;
         if (dataAtualRef.current && dataAtualRef.current !== d) return;
 
-        const normalizadas: ChurrasqueiraLinhaDia[] = (resp.churrasqueiras || []).map(
-          (ch) => ({
-            churrasqueiraId: ch.churrasqueiraId,
-            nome: ch.nome,
-            numero: ch.numero,
-            turnos: buildTurnos(ch.disponibilidade),
-          })
-        );
+        const normalizadas: ChurrasqueiraLinhaDia[] = (resp.churrasqueiras || []).map((ch) => ({
+          churrasqueiraId: ch.churrasqueiraId,
+          nome: ch.nome,
+          numero: ch.numero,
+          turnos: buildTurnos(ch.disponibilidade),
+        }));
 
         setChurrasqueiras(normalizadas);
       } catch (e) {
@@ -508,12 +451,15 @@ export default function TodosHorariosChurrasqueirasPage() {
 
         console.error(e);
         setChurrasqueiras(null);
-        setErro("Erro ao carregar a disponibilidade das churrasqueiras no dia.");
+
+        const msg = "Erro ao carregar a disponibilidade das churrasqueiras no dia.";
+        setErro(msg);
+        showAlert(msg, "error");
       } finally {
         if (seq === carregarSeqRef.current) setLoading(false);
       }
     },
-    [API_URL]
+    [API_URL, showAlert]
   );
 
   useEffect(() => {
@@ -545,7 +491,7 @@ export default function TodosHorariosChurrasqueirasPage() {
           withCredentials: true,
         });
 
-        // ✅ aqui é o ajuste: usa o mesmo "fallback do slot" (como na Home)
+        // ✅ usa o mesmo "fallback do slot" (como na Home)
         const usuarioValor = resolveUsuarioDetalhes(det, slot.usuario);
 
         setAgendamentoSelecionado({
@@ -819,8 +765,8 @@ export default function TodosHorariosChurrasqueirasPage() {
     const label = isBloq
       ? `Bloqueada — ${turno}`
       : isLivre
-      ? `Livre — ${turno}`
-      : `${firstName(slot.usuario)} — ${turno}`;
+        ? `Livre — ${turno}`
+        : `${firstName(slot.usuario)} — ${turno}`;
 
     const clickable = !isBloq && (isAgendado || isLivre);
 
@@ -839,9 +785,7 @@ export default function TodosHorariosChurrasqueirasPage() {
         disabled={!clickable}
         onClick={onClick}
         title={slot.usuario?.nome || (isBloq ? "Bloqueada" : isLivre ? "Livre" : label)}
-        className={`${base} ${cls} ${
-          clickable ? "cursor-pointer hover:brightness-95" : "cursor-default"
-        }`}
+        className={`${base} ${cls} ${clickable ? "cursor-pointer hover:brightness-95" : "cursor-default"}`}
       >
         <span>{label}</span>
       </button>
@@ -853,10 +797,12 @@ export default function TodosHorariosChurrasqueirasPage() {
   ========================= */
   return (
     <div className="space-y-8">
+      {/* ✅ ALERT PADRONIZADO */}
       <SystemAlert
         open={!!alertConfig}
         message={alertConfig?.message ?? ""}
         variant={alertConfig?.variant ?? "info"}
+        autoHideMs={4000}
         onClose={() => setAlertConfig(null)}
       />
 
@@ -880,9 +826,8 @@ export default function TodosHorariosChurrasqueirasPage() {
               </div>
 
               <ChevronDown
-                className={`w-4 h-4 text-gray-600 ml-2 transition-transform ${
-                  dataPickerAberto ? "rotate-180" : ""
-                }`}
+                className={`w-4 h-4 text-gray-600 ml-2 transition-transform ${dataPickerAberto ? "rotate-180" : ""
+                  }`}
               />
             </button>
 
@@ -892,9 +837,7 @@ export default function TodosHorariosChurrasqueirasPage() {
                   <button
                     type="button"
                     onClick={() =>
-                      setMesExibido(
-                        (prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1)
-                      )
+                      setMesExibido((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))
                     }
                     className="p-1 rounded hover:bg-gray-100"
                   >
@@ -902,18 +845,13 @@ export default function TodosHorariosChurrasqueirasPage() {
                   </button>
 
                   <span className="font-semibold text-sm">
-                    {mesExibido.toLocaleDateString("pt-BR", {
-                      month: "long",
-                      year: "numeric",
-                    })}
+                    {mesExibido.toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}
                   </span>
 
                   <button
                     type="button"
                     onClick={() =>
-                      setMesExibido(
-                        (prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1)
-                      )
+                      setMesExibido((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))
                     }
                     className="p-1 rounded hover:bg-gray-100"
                   >
@@ -1068,10 +1006,7 @@ export default function TodosHorariosChurrasqueirasPage() {
                         })}
 
                         {Array.from({ length: Math.max(0, 6 - grupo.length) }).map((_, i) => (
-                          <div
-                            key={`pad-${gi}-${turno}-${i}`}
-                            className="border border-transparent"
-                          />
+                          <div key={`pad-${gi}-${turno}-${i}`} className="border border-transparent" />
                         ))}
                       </div>
                     ))}
@@ -1093,6 +1028,15 @@ export default function TodosHorariosChurrasqueirasPage() {
           </div>
         </div>
       )}
+
+      {/* ✅ resto do arquivo permanece igual (modais, transferência etc.)
+          Eu não mexi na lógica desses modais, só padronizei os feedbacks/alerts. */}
+
+      {/* ... SEU CÓDIGO DE MODAIS AQUI (IGUAL AO QUE VOCÊ ME ENVIOU) ... */}
+      {/* ==============================================================
+          MANTÉM EXATAMENTE A MESMA PARTE QUE VOCÊ JÁ TEM ABAIXO
+          (ConfirmAgendar / Modal detalhes / Modal transferencia)
+          ============================================================== */}
 
       {/* MODAL: Confirmar reserva rápida (slot livre) */}
       {confirmAgendar && agendarCtx && (
@@ -1159,9 +1103,8 @@ export default function TodosHorariosChurrasqueirasPage() {
       {/* MODAL DE DETALHES (estilo Home) */}
       {agendamentoSelecionado && (
         <div
-          className={`fixed inset-0 flex items-center justify-center z-50 ${
-            abrirModalTransferencia ? "bg-transparent" : "bg-black/40"
-          }`}
+          className={`fixed inset-0 flex items-center justify-center z-50 ${abrirModalTransferencia ? "bg-transparent" : "bg-black/40"
+            }`}
           onClick={(e) => {
             if (e.target === e.currentTarget) {
               setAgendamentoSelecionado(null);
@@ -1461,10 +1404,9 @@ export default function TodosHorariosChurrasqueirasPage() {
                             type="button"
                             onClick={() => setDataExcecaoSelecionada(d)}
                             className={`min-w-[60px] h-8 px-3 rounded-md border text-sm font-medium
-                              ${
-                                ativo
-                                  ? "border-[#E97A1F] bg-[#FFF3E0] text-[#D86715]"
-                                  : "border-gray-600 bg-white text-gray-800 hover:bg-gray-50"
+                              ${ativo
+                                ? "border-[#E97A1F] bg-[#FFF3E0] text-[#D86715]"
+                                : "border-gray-600 bg-white text-gray-800 hover:bg-gray-50"
                               }`}
                           >
                             {label}
@@ -1587,10 +1529,9 @@ export default function TodosHorariosChurrasqueirasPage() {
                             onClick={() => setUsuarioSelecionado(user)}
                             title={user.celular || ""}
                             className={`w-full px-3 py-2 flex items-center justify-between gap-3 text-left transition
-                              ${
-                                ativo
-                                  ? "bg-orange-50 border-l-4 border-orange-500 font-medium"
-                                  : "hover:bg-orange-50"
+                              ${ativo
+                                ? "bg-orange-50 border-l-4 border-orange-500 font-medium"
+                                : "hover:bg-orange-50"
                               }`}
                           >
                             <div className="flex-1 min-w-0">

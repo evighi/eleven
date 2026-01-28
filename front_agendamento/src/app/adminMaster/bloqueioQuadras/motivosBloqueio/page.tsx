@@ -2,6 +2,7 @@
 
 import { useEffect, useState, FormEvent } from "react";
 import axios from "axios";
+import SystemAlert, { AlertVariant } from "@/components/SystemAlert";
 
 type MotivoBloqueio = {
   id: string;
@@ -9,6 +10,8 @@ type MotivoBloqueio = {
   descricao: string | null;
   ativo: boolean;
 };
+
+type Feedback = { kind: "success" | "error" | "info"; text: string };
 
 export default function MotivosBloqueioPage() {
   const API_URL = process.env.NEXT_PUBLIC_URL_API || "http://localhost:3001";
@@ -26,11 +29,34 @@ export default function MotivosBloqueioPage() {
   // controla se o card de formulário está visível
   const [mostrarForm, setMostrarForm] = useState<boolean>(false);
 
+  // ✅ feedback padronizado
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const closeFeedback = () => setFeedback(null);
+
+  function mensagemErroAxios(error: any, fallback = "Ocorreu um erro. Tente novamente."): string {
+    if (axios.isAxiosError(error)) {
+      const status = error.response?.status;
+      const data = error.response?.data as any;
+
+      const serverMsg =
+        data && (data.erro || data.error || data.message || data.msg)
+          ? String(data.erro || data.error || data.message || data.msg)
+          : "";
+
+      if (status === 409) return serverMsg || "Conflito: motivo já existe ou está em uso.";
+      if (status === 400 || status === 422) return serverMsg || "Dados inválidos.";
+      if (status === 401) return "Não autorizado.";
+      return serverMsg || fallback;
+    }
+    return fallback;
+  }
+
   const resetForm = () => {
     setEditandoId(null);
     setNome("");
     setAtivo(true);
     setMostrarForm(false); // esconde o formulário
+    setFeedback(null);
   };
 
   const carregarMotivos = async () => {
@@ -42,7 +68,7 @@ export default function MotivosBloqueioPage() {
       setMotivos(res.data);
     } catch (err) {
       console.error(err);
-      alert("Erro ao carregar motivos de bloqueio.");
+      setFeedback({ kind: "error", text: "Erro ao carregar motivos de bloqueio." });
     } finally {
       setCarregando(false);
     }
@@ -50,12 +76,15 @@ export default function MotivosBloqueioPage() {
 
   useEffect(() => {
     carregarMotivos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [API_URL]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    setFeedback(null);
+
     if (!nome.trim()) {
-      alert("Informe a descrição do motivo.");
+      setFeedback({ kind: "error", text: "Informe a descrição do motivo." });
       return;
     }
 
@@ -71,7 +100,8 @@ export default function MotivosBloqueioPage() {
           },
           { withCredentials: true }
         );
-        alert("Motivo atualizado com sucesso!");
+
+        setFeedback({ kind: "success", text: "Motivo atualizado com sucesso!" });
       } else {
         // POST envia nome + ativo
         await axios.post(
@@ -82,24 +112,23 @@ export default function MotivosBloqueioPage() {
           },
           { withCredentials: true }
         );
-        alert("Motivo criado com sucesso!");
+
+        setFeedback({ kind: "success", text: "Motivo criado com sucesso!" });
       }
 
       resetForm(); // limpa e fecha o form
       await carregarMotivos();
     } catch (err: any) {
       console.error(err);
-      const msg =
-        err?.response?.data?.erro ||
-        err?.response?.data?.error ||
-        "Erro ao salvar motivo.";
-      alert(msg);
+      const msg = mensagemErroAxios(err, "Erro ao salvar motivo.");
+      setFeedback({ kind: "error", text: msg });
     } finally {
       setSalvando(false);
     }
   };
 
   const handleEditar = (motivo: MotivoBloqueio) => {
+    setFeedback(null);
     setEditandoId(motivo.id);
     setNome(motivo.nome);
     setAtivo(motivo.ativo);
@@ -107,26 +136,26 @@ export default function MotivosBloqueioPage() {
   };
 
   const handleExcluir = async (id: string) => {
+    setFeedback(null);
     if (!window.confirm("Tem certeza que deseja excluir este motivo?")) return;
 
     try {
       await axios.delete(`${API_URL}/motivosBloqueio/${id}`, {
         withCredentials: true,
       });
-      alert("Motivo excluído com sucesso!");
+
+      setFeedback({ kind: "success", text: "Motivo excluído com sucesso!" });
       await carregarMotivos();
     } catch (err: any) {
       console.error(err);
-      const msg =
-        err?.response?.data?.erro ||
-        err?.response?.data?.error ||
-        "Erro ao excluir motivo.";
-      alert(msg);
+      const msg = mensagemErroAxios(err, "Erro ao excluir motivo.");
+      setFeedback({ kind: "error", text: msg });
     }
   };
 
   const handleCriarNovoClick = () => {
     // garantir que seja um cadastro novo
+    setFeedback(null);
     setEditandoId(null);
     setNome("");
     setAtivo(true);
@@ -135,11 +164,17 @@ export default function MotivosBloqueioPage() {
 
   return (
     <div className="space-y-8">
+      {/* ✅ ALERTA PADRONIZADO */}
+      <SystemAlert
+        open={!!feedback}
+        variant={(feedback?.kind as AlertVariant) || "info"}
+        message={feedback?.text || ""}
+        onClose={closeFeedback}
+      />
+
       {/* Título + botão de criar */}
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-orange-700">
-          Motivos de Bloqueio
-        </h1>
+        <h1 className="text-xl font-semibold text-orange-700">Motivos de Bloqueio</h1>
 
         {!mostrarForm && (
           <button
@@ -166,7 +201,10 @@ export default function MotivosBloqueioPage() {
                 type="text"
                 className="border p-2 rounded-lg"
                 value={nome}
-                onChange={(e) => setNome(e.target.value)}
+                onChange={(e) => {
+                  setNome(e.target.value);
+                  setFeedback(null);
+                }}
                 placeholder="Ex.: Manutenção, Torneio, Evento, etc."
               />
             </div>
@@ -175,7 +213,10 @@ export default function MotivosBloqueioPage() {
               <input
                 type="checkbox"
                 checked={ativo}
-                onChange={(e) => setAtivo(e.target.checked)}
+                onChange={(e) => {
+                  setAtivo(e.target.checked);
+                  setFeedback(null);
+                }}
               />
               Motivo ativo
             </label>
@@ -191,8 +232,8 @@ export default function MotivosBloqueioPage() {
                     ? "Salvando..."
                     : "Criando..."
                   : editandoId
-                  ? "Salvar alterações"
-                  : "Criar motivo"}
+                    ? "Salvar alterações"
+                    : "Criar motivo"}
               </button>
 
               <button
@@ -217,9 +258,7 @@ export default function MotivosBloqueioPage() {
         {carregando ? (
           <p>Carregando motivos...</p>
         ) : motivos.length === 0 ? (
-          <p className="text-sm text-gray-500">
-            Nenhum motivo cadastrado ainda.
-          </p>
+          <p className="text-sm text-gray-500">Nenhum motivo cadastrado ainda.</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
@@ -241,16 +280,10 @@ export default function MotivosBloqueioPage() {
                     )}
                   </td>
                   <td className="py-2 text-right space-x-2">
-                    <button
-                      onClick={() => handleEditar(m)}
-                      className="text-blue-600 hover:underline"
-                    >
+                    <button onClick={() => handleEditar(m)} className="text-blue-600 hover:underline">
                       Editar
                     </button>
-                    <button
-                      onClick={() => handleExcluir(m.id)}
-                      className="text-red-600 hover:underline"
-                    >
+                    <button onClick={() => handleExcluir(m.id)} className="text-red-600 hover:underline">
                       Excluir
                     </button>
                   </td>

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useCallback } from 'react'
 import axios from 'axios'
 import Link from 'next/link'
 import Spinner from '@/components/Spinner'
+import SystemAlert, { AlertVariant } from '@/components/SystemAlert'
 
 type DeletionStatus = 'PENDING' | 'DONE' | 'CANCELLED'
 
@@ -73,6 +74,19 @@ interface QueueItem {
 /* =================== Helpers =================== */
 const API_URL = process.env.NEXT_PUBLIC_URL_API || 'http://localhost:3001'
 
+type Feedback = { kind: 'success' | 'error' | 'info'; text: string }
+
+const getApiErrorMessage = (e: any, fallback: string) => {
+  return (
+    e?.response?.data?.erro ||
+    e?.response?.data?.error ||
+    e?.response?.data?.message ||
+    e?.response?.data?.msg ||
+    e?.message ||
+    fallback
+  )
+}
+
 const tipoInteracaoLabel = (t?: string) => {
   if (t === 'AG_COMUM') return 'Agendamento comum (quadra)'
   if (t === 'AG_PERM') return 'Agendamento permanente (quadra)'
@@ -104,23 +118,28 @@ export default function PendenciasExclusao() {
   const [lista, setLista] = useState<QueueItem[]>([])
   const [busca, setBusca] = useState('')
   const [carregando, setCarregando] = useState(true)
-  const [erro, setErro] = useState<string | null>(null)
+
+  // ✅ Feedback padronizado
+  const [feedback, setFeedback] = useState<Feedback | null>(null)
+  const closeFeedback = () => setFeedback(null)
 
   const [confirmandoUndo, setConfirmandoUndo] = useState<QueueItem | null>(null)
   const [desfazendo, setDesfazendo] = useState(false)
 
   const carregar = useCallback(async () => {
     setCarregando(true)
-    setErro(null)
+    setFeedback(null)
+
     try {
       const res = await axios.get<QueueItem[]>(`${API_URL}/delecoes/pendentes`, {
         withCredentials: true,
       })
+
       setLista(res.data || [])
     } catch (e: any) {
       console.error(e)
-      const msg = e?.response?.data?.erro || 'Erro ao carregar pendências'
-      setErro(msg)
+      const msg = getApiErrorMessage(e, 'Erro ao carregar pendências.')
+      setFeedback({ kind: 'error', text: msg })
       setLista([])
     } finally {
       setCarregando(false)
@@ -147,23 +166,25 @@ export default function PendenciasExclusao() {
 
   const desfazer = async (usuarioId: string) => {
     setDesfazendo(true)
+    setFeedback(null)
+
     try {
       const res = await axios.post(
         `${API_URL}/delecoes/${usuarioId}/desfazer`,
         {},
-        { withCredentials: true, validateStatus: () => true }
+        { withCredentials: true },
       )
-      if (res.status >= 200 && res.status < 300) {
-        setConfirmandoUndo(null)
-        await carregar()
-        alert('Exclusão cancelada e acesso reabilitado.')
-      } else {
-        const msg = res?.data?.erro || res?.data?.message || `Falha (HTTP ${res.status})`
-        alert(msg)
-      }
-    } catch (e) {
+
+      const msg = res?.data?.mensagem || 'Exclusão cancelada e acesso reabilitado.'
+      setConfirmandoUndo(null)
+
+      await carregar()
+
+      setFeedback({ kind: 'success', text: msg })
+    } catch (e: any) {
       console.error(e)
-      alert('Erro ao desfazer exclusão.')
+      const msg = getApiErrorMessage(e, 'Erro ao desfazer exclusão.')
+      setFeedback({ kind: 'error', text: msg })
     } finally {
       setDesfazendo(false)
     }
@@ -171,11 +192,22 @@ export default function PendenciasExclusao() {
 
   return (
     <div className="max-w-5xl mx-auto mt-10 p-6 bg-white rounded shadow">
+      {/* ✅ ALERTA PADRONIZADO */}
+      <SystemAlert
+        open={!!feedback}
+        variant={(feedback?.kind as AlertVariant) || 'info'}
+        message={feedback?.text || ''}
+        onClose={closeFeedback}
+      />
+
       <div className="flex items-center gap-3 mb-4">
         <h1 className="text-2xl font-medium">Pendências de Exclusão</h1>
         <div className="ml-auto flex items-center gap-2">
           <button
-            onClick={carregar}
+            onClick={() => {
+              setFeedback(null)
+              void carregar()
+            }}
             className="px-3 py-2 rounded bg-orange-600 text-white hover:bg-orange-700"
           >
             Atualizar
@@ -200,7 +232,10 @@ export default function PendenciasExclusao() {
           <input
             type="text"
             value={busca}
-            onChange={(e) => setBusca(e.target.value)}
+            onChange={(e) => {
+              setBusca(e.target.value)
+              setFeedback(null)
+            }}
             placeholder="Ex.: Maria, joao@dominio.com"
             className="w-full p-2 border rounded"
           />
@@ -213,11 +248,7 @@ export default function PendenciasExclusao() {
         </div>
       )}
 
-      {!carregando && erro && (
-        <div className="p-3 rounded border border-red-300 bg-red-50 text-red-700">{erro}</div>
-      )}
-
-      {!carregando && !erro && filtrados.length === 0 && (
+      {!carregando && filtrados.length === 0 && (
         <div className="p-3 rounded border bg-gray-50 text-gray-700">
           Nenhuma pendência de exclusão encontrada.
         </div>
@@ -228,16 +259,15 @@ export default function PendenciasExclusao() {
         {filtrados.map((item) => {
           const diasRest = diffDaysFromNow(item.eligibleAt)
           const atrasado = diasRest <= 0
-          const chip =
-            atrasado ? (
-              <span className="inline-flex items-center text-xs px-2 py-1 rounded bg-emerald-100 text-emerald-800">
-                Elegível para exclusão
-              </span>
-            ) : (
-              <span className="inline-flex items-center text-xs px-2 py-1 rounded bg-yellow-100 text-yellow-800">
-                Faltam {diasRest} {diasRest === 1 ? 'dia' : 'dias'}
-              </span>
-            )
+          const chip = atrasado ? (
+            <span className="inline-flex items-center text-xs px-2 py-1 rounded bg-emerald-100 text-emerald-800">
+              Elegível para exclusão
+            </span>
+          ) : (
+            <span className="inline-flex items-center text-xs px-2 py-1 rounded bg-yellow-100 text-yellow-800">
+              Faltam {diasRest} {diasRest === 1 ? 'dia' : 'dias'}
+            </span>
+          )
 
           return (
             <li key={item.id} className="border rounded-lg overflow-hidden">
@@ -296,7 +326,10 @@ export default function PendenciasExclusao() {
 
                   <div className="mt-3">
                     <button
-                      onClick={() => setConfirmandoUndo(item)}
+                      onClick={() => {
+                        setFeedback(null)
+                        setConfirmandoUndo(item)
+                      }}
                       className="w-full px-3 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700"
                     >
                       Desfazer exclusão
@@ -421,9 +454,12 @@ export default function PendenciasExclusao() {
             </p>
             <div className="flex justify-end gap-2">
               <button
-                onClick={() => setConfirmandoUndo(null)}
+                onClick={() => {
+                  setConfirmandoUndo(null)
+                  setFeedback(null)
+                }}
                 disabled={desfazendo}
-                className="px-3 py-2 rounded bg-gray-300 hover:bg-gray-400"
+                className="px-3 py-2 rounded bg-gray-300 hover:bg-gray-400 disabled:opacity-60"
               >
                 Não
               </button>
