@@ -458,6 +458,16 @@ model AgendamentoPermanenteChurrasqueiraCancelamento {
 model ConfiguracaoSistema {
   id               Int     @id
   valorMultaPadrao Decimal @db.Decimal(10, 2)
+
+  // =========================================================
+  // ✅ NOVO: Regra global para "AULA após horário" (aula extra)
+  // - Editável pelo ADMIN_MASTER
+  // - O valor final SEMPRE é salvo em Agendamento.valorQuadraCobrado
+  // =========================================================
+  aulaExtraAtiva      Boolean @default(true)
+  aulaExtraInicioHHMM String  @default("18:00") // corte
+  aulaExtraFimHHMM    String  @default("23:00") // [inicio, fim) - padrão do teu código
+  valorAulaExtra      Decimal @default(50.00) @db.Decimal(10, 2)
 }
 
 // ✅ NOVO: Config global (singleton) das permissões do ADMIN_ATENDENTE.
