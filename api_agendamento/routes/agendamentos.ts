@@ -132,6 +132,48 @@ function jogoDefaultPermitido(hhmm: string) {
   return horarioDentroIntervalo(hhmm, JOGO_DEFAULT_INICIO, JOGO_DEFAULT_FIM_EXCLUSIVE);
 }
 
+// ===================== COBRANÇA AULA EXTRA (ConfiguraçãoSistema) =====================
+function decimalToNumber(v: any): number | null {
+  if (v == null) return null;
+  // Prisma Decimal costuma ter toNumber()
+  if (typeof v === "object" && typeof v.toNumber === "function") return v.toNumber();
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function round2(n: number) {
+  return Math.round(n * 100) / 100;
+}
+
+// horário dentro do intervalo [ini, fim) (fim exclusivo)
+function dentroFaixa(hhmm: string, ini: string, fim: string) {
+  return hhmm >= ini && hhmm < fim;
+}
+
+async function getConfigAulaExtra() {
+  // singleton id=1
+  const cfg = await prisma.configuracaoSistema.findUnique({
+    where: { id: 1 },
+    select: {
+      aulaExtraAtiva: true,
+      aulaExtraInicioHHMM: true,
+      aulaExtraFimHHMM: true,
+      valorAulaExtra: true,
+    },
+  });
+
+  // se por algum motivo não existir, cai num default seguro
+  return (
+    cfg ?? {
+      aulaExtraAtiva: true,
+      aulaExtraInicioHHMM: "18:00",
+      aulaExtraFimHHMM: "23:00",
+      valorAulaExtra: new Prisma.Decimal("50.00"),
+    }
+  );
+}
+
+
 const prisma = new PrismaClient();
 const router = Router();
 
@@ -613,17 +655,11 @@ router.post("/", verificarToken, async (req, res) => {
       }
     }
 
-    // 3) Multa: aceita número >=0 do body, mas prioriza a automática (horário passado hoje)
-    const multaBodySan =
-      typeof multaBody === "number" && Number.isFinite(multaBody) && multaBody >= 0
-        ? Number(multaBody.toFixed(2))
-        : null;
-    const multaPersistir = multaPorHorarioPassado ?? multaBodySan;
-
     // ======================== NOVO: APOIADO (persistência) ========================
     let isApoiadoFinal = false;
     let apoiadoUsuarioIdFinal: string | null = null;
 
+    // Só permite APOIADO quando for AULA com professor
     if (professorIdFinal && tipoSessaoFinal === "AULA") {
       if (isApoiadoBody === true) {
         if (!apoiadoUsuarioId) {
@@ -631,10 +667,12 @@ router.post("/", verificarToken, async (req, res) => {
             erro: "apoiadoUsuarioId é obrigatório quando 'isApoiado' for true em AULA com professor",
           });
         }
+
         const apoiadoUser = await prisma.usuario.findUnique({
           where: { id: apoiadoUsuarioId },
           select: { id: true, tipo: true },
         });
+
         if (!apoiadoUser) {
           return res.status(404).json({ erro: "Usuário apoiado não encontrado" });
         }
@@ -659,6 +697,58 @@ router.post("/", verificarToken, async (req, res) => {
         apoiadoUsuarioIdFinal = apoiadoUser.id;
       }
     }
+
+    // ======================== NOVO: VALOR COBRADO + HISTÓRICO (valorQuadraCobrado) ========================
+    // Regra:
+    // - Só cobramos quando for AULA com professor.
+    // - Se for apoiado (isencaoApoiado) => valor 0.00
+    // - Se estiver na janela de AULA EXTRA (ConfiguraçãoSistema) e estiver ativa => valorAulaExtra
+    // - Senão => usa Usuario.valorQuadra do professor
+    let valorQuadraCobradoFinal: Prisma.Decimal | null = null;
+
+    if (professorIdFinal && tipoSessaoFinal === "AULA") {
+      if (isApoiadoFinal) {
+        valorQuadraCobradoFinal = new Prisma.Decimal("0.00");
+      } else {
+        const [cfg, prof] = await Promise.all([
+          getConfigAulaExtra(),
+          prisma.usuario.findUnique({
+            where: { id: professorIdFinal },
+            select: { valorQuadra: true },
+          }),
+        ]);
+
+        const isAulaExtra =
+          !!cfg.aulaExtraAtiva &&
+          dentroFaixa(horario, cfg.aulaExtraInicioHHMM, cfg.aulaExtraFimHHMM);
+
+        if (isAulaExtra) {
+          const v = decimalToNumber(cfg.valorAulaExtra);
+          if (v == null) {
+            return res.status(500).json({ erro: "Configuração inválida: valorAulaExtra" });
+          }
+          valorQuadraCobradoFinal = new Prisma.Decimal(round2(v).toFixed(2));
+        } else {
+          const v = decimalToNumber(prof?.valorQuadra);
+          if (v == null) {
+            return res.status(422).json({
+              erro:
+                "Professor sem valorQuadra definido. Defina o valor do professor ou use a janela de Aula Extra.",
+            });
+          }
+          valorQuadraCobradoFinal = new Prisma.Decimal(round2(v).toFixed(2));
+        }
+      }
+    }
+
+
+
+    // 3) Multa: aceita número >=0 do body, mas prioriza a automática (horário passado hoje)
+    const multaBodySan =
+      typeof multaBody === "number" && Number.isFinite(multaBody) && multaBody >= 0
+        ? Number(multaBody.toFixed(2))
+        : null;
+    const multaPersistir = multaPorHorarioPassado ?? multaBodySan;
 
     const convidadosCriadosIds: string[] = [];
     for (const nome of convidadosNomes) {
@@ -706,6 +796,8 @@ router.post("/", verificarToken, async (req, res) => {
         tipoSessao: tipoSessaoFinal,
         multa: multaPersistir ?? null,
 
+        valorQuadraCobrado: valorQuadraCobradoFinal,
+
         // 🆕 APOIO (agora persistido)
         isencaoApoiado: isApoiadoFinal,
         apoiadoUsuarioId: apoiadoUsuarioIdFinal,
@@ -738,6 +830,7 @@ router.post("/", verificarToken, async (req, res) => {
           professorId: professorIdFinal,
           tipoSessao: tipoSessaoFinal,
           multa: multaPersistir ?? null,
+          valorQuadraCobrado: valorQuadraCobradoFinal ? String(valorQuadraCobradoFinal) : null,
           // 🆕 trilha do apoiado
           isApoiado: isApoiadoFinal,
           apoiadoUsuarioId: apoiadoUsuarioIdFinal,
@@ -1234,7 +1327,9 @@ router.post("/:id/remover-isencao", verificarToken, async (req, res) => {
 
   // ⛔ Apenas admin pode remover isenção (se quiser liberar para professor depois, ajustamos aqui)
   if (!isAdminRole(reqCustom.usuario.usuarioLogadoTipo)) {
-    return res.status(403).json({ erro: "Apenas administradores podem remover isenção de apoio" });
+    return res
+      .status(403)
+      .json({ erro: "Apenas administradores podem remover isenção de apoio" });
   }
 
   try {
@@ -1250,6 +1345,8 @@ router.post("/:id/remover-isencao", verificarToken, async (req, res) => {
         isencaoApoiado: true,
         apoiadoUsuarioId: true,
         obs: true,
+        valorQuadraCobrado: true, // ✅ necessário para não dar erro
+        tipoSessao: true, // ✅ evita segunda query
       },
     });
 
@@ -1271,12 +1368,48 @@ router.post("/:id/remover-isencao", verificarToken, async (req, res) => {
       if (!novaObs) novaObs = null;
     }
 
+    // Recalcula valor cobrado ao remover isenção (se for AULA com professor)
+    // default: mantém o valor atual
+    let novoValorCobrado: Prisma.Decimal | null = ag.valorQuadraCobrado ?? null;
+
+    if (ag.professorId && ag.tipoSessao === "AULA") {
+      const [cfg, prof] = await Promise.all([
+        getConfigAulaExtra(),
+        prisma.usuario.findUnique({
+          where: { id: ag.professorId },
+          select: { valorQuadra: true },
+        }),
+      ]);
+
+      const isExtra =
+        !!cfg.aulaExtraAtiva &&
+        dentroFaixa(ag.horario, cfg.aulaExtraInicioHHMM, cfg.aulaExtraFimHHMM);
+
+      if (isExtra) {
+        const v = decimalToNumber(cfg.valorAulaExtra);
+        if (v == null) {
+          return res.status(500).json({ erro: "Configuração inválida: valorAulaExtra" });
+        }
+        novoValorCobrado = new Prisma.Decimal(round2(v).toFixed(2));
+      } else {
+        const v = decimalToNumber(prof?.valorQuadra);
+        if (v == null) {
+          return res.status(422).json({
+            erro:
+              "Professor sem valorQuadra definido. Defina o valor do professor ou use a janela de Aula Extra.",
+          });
+        }
+        novoValorCobrado = new Prisma.Decimal(round2(v).toFixed(2));
+      }
+    }
+
     const atualizado = await prisma.agendamento.update({
       where: { id },
       data: {
         isencaoApoiado: false,
         apoiadoUsuarioId: null,
         obs: novaObs,
+        valorQuadraCobrado: novoValorCobrado,
       },
     });
 
@@ -1299,6 +1432,9 @@ router.post("/:id/remover-isencao", verificarToken, async (req, res) => {
           isencaoApoiadoDepois: false,
           apoiadoUsuarioIdDepois: null,
           removidoPorId: reqCustom.usuario.usuarioLogadoId,
+          // opcional (ajuda no debug)
+          valorQuadraCobradoAntes: ag.valorQuadraCobrado ? String(ag.valorQuadraCobrado) : null,
+          valorQuadraCobradoDepois: novoValorCobrado ? String(novoValorCobrado) : null,
         },
       });
     } catch (e) {
@@ -1329,6 +1465,7 @@ router.post("/:id/remover-isencao", verificarToken, async (req, res) => {
     return res.status(500).json({ erro: "Erro ao remover isenção de apoio do agendamento." });
   }
 });
+
 
 
 // 💸 Aplicar multa manual em um agendamento (apenas admin)
@@ -1787,7 +1924,7 @@ router.patch("/:id/transferir", verificarToken, async (req, res) => {
           professorId: agendamento.professorId ?? null,
           tipoSessao: agendamento.tipoSessao ?? null,
           multa: agendamento.multa ?? null,
-
+          valorQuadraCobrado: agendamento.valorQuadraCobrado ?? null,
           // 🆕 PROPAGAR APOIO
           isencaoApoiado: agendamento.isencaoApoiado ?? false,
           apoiadoUsuarioId: agendamento.apoiadoUsuarioId ?? null,
