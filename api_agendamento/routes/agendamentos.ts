@@ -455,6 +455,83 @@ if (!globalAny.__cronFinalizaVencidos__) {
   globalAny.__cronFinalizaVencidos__ = true;
 }
 
+// ===================== LIMITE AULAS (Beach Tennis pós 18h) =====================
+const LIMITE_AULAS_BEACH_POS18 = 2;
+const LIMITE_AULAS_BEACH_POS18_INICIO = "18:00";
+
+function normalizeKey(s: string) {
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function isBeachTennisByEsporteId(tx: PrismaClient, esporteId: string) {
+  const e = await tx.esporte.findUnique({
+    where: { id: esporteId },
+    select: { nome: true },
+  });
+  if (!e?.nome) return false;
+
+  // Aceita variações comuns
+  const key = normalizeKey(e.nome);
+  return key === "beach tennis" || key === "beachtennis" || key === "beach-tennis";
+}
+
+async function validarLimiteAulasBeachPos18(tx: PrismaClient, p: {
+  dataUTC00: Date;
+  horario: string;
+  esporteId: string;
+  quadraId: string;
+  professorIdFinal: string | null;
+  tipoSessaoFinal: TipoSessaoProfessor | null;
+}) {
+  const { dataUTC00, horario, esporteId, quadraId, professorIdFinal, tipoSessaoFinal } = p;
+
+  // Só aplica se for AULA com professor
+  if (!professorIdFinal) return;
+  if (tipoSessaoFinal !== "AULA") return;
+
+  // Só aplica pós 18:00
+  if (horario < LIMITE_AULAS_BEACH_POS18_INICIO) return;
+
+  // Só aplica Beach Tennis
+  const isBeach = await isBeachTennisByEsporteId(tx, esporteId);
+  if (!isBeach) return;
+
+  // Conta quantas quadras já estão com AULA (professor) nesse mesmo dia/horário/esporte
+  const rows = await tx.agendamento.findMany({
+    where: {
+      data: dataUTC00,
+      horario,
+      esporteId,
+      status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+      professorId: { not: null },
+      tipoSessao: "AULA",
+    },
+    select: { quadraId: true },
+  });
+
+  const quadrasComAula = new Set(rows.map(r => r.quadraId));
+
+  // Se já tiver 2 quadras com aula e a quadra atual ainda não está nesse conjunto => bloqueia
+  if (!quadrasComAula.has(quadraId) && quadrasComAula.size >= LIMITE_AULAS_BEACH_POS18) {
+    const err: any = new Error("LIMITE_AULAS_BEACH_POS18");
+    err.httpStatus = 409;
+    err.payload = {
+      erro: "Limite de aulas atingido para Beach Tennis após 18h",
+      limite: LIMITE_AULAS_BEACH_POS18,
+      encontradas: quadrasComAula.size,
+      data: dataUTC00.toISOString().slice(0, 10),
+      horario,
+    };
+    throw err;
+  }
+}
+
+
 /** ================== ROTAS ================== */
 
 // Criar agendamento (cliente + admin). Admin pode setar usuarioId.
@@ -781,37 +858,91 @@ router.post("/", verificarToken, async (req, res) => {
       obsFinal = obsBody ? `${obsBody}\n${tag}` : tag;
     }
 
-    const novoAgendamento = await prisma.agendamento.create({
-      data: {
-        data,
+    const novoAgendamento = await prisma.$transaction(async (tx) => {
+      // ✅ Re-check (anti corrida) do comum
+      const agendamentoExistenteTx = await tx.agendamento.findFirst({
+        where: {
+          quadraId,
+          horario,
+          data: dataUTC00,
+          status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+        },
+        select: { id: true },
+      });
+      if (agendamentoExistenteTx) {
+        const err: any = new Error("CONFLITO_COMUM");
+        err.httpStatus = 409;
+        err.payload = { erro: "Já existe um agendamento para essa quadra, data e horário" };
+        throw err;
+      }
+
+      // ✅ Re-check (anti corrida) do permanente
+      const permanentesAtivosTx = await tx.agendamentoPermanente.findMany({
+        where: {
+          diaSemana: diaSemanaEnum,
+          horario,
+          quadraId,
+          status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+          OR: [{ dataInicio: null }, { dataInicio: { lte: dataUTC00 } }],
+        },
+        select: { id: true },
+      });
+
+      if (permanentesAtivosTx.length > 0) {
+        const excecaoTx = await tx.agendamentoPermanenteCancelamento.findFirst({
+          where: {
+            agendamentoPermanenteId: { in: permanentesAtivosTx.map(p => p.id) },
+            data: dataUTC00,
+          },
+          select: { id: true },
+        });
+
+        if (!excecaoTx) {
+          const err: any = new Error("CONFLITO_PERMANENTE");
+          err.httpStatus = 409;
+          err.payload = { erro: "Horário ocupado por um agendamento permanente" };
+          throw err;
+        }
+      }
+
+      // ✅ NOVO: Limite de aulas (Beach Tennis pós 18)
+      await validarLimiteAulasBeachPos18(tx as any, {
+        dataUTC00,
         horario,
-        quadraId,
         esporteId,
-        usuarioId: usuarioIdDono,
-        status: statusInicial,
-        jogadores: { connect: connectIds },
+        quadraId,
+        professorIdFinal,
+        tipoSessaoFinal,
+      });
 
-        // 🆕 persistência dos campos
-        professorId: professorIdFinal,
-        tipoSessao: tipoSessaoFinal,
-        multa: multaPersistir ?? null,
+      // ✅ Create final
+      return tx.agendamento.create({
+        data: {
+          data,
+          horario,
+          quadraId,
+          esporteId,
+          usuarioId: usuarioIdDono,
+          status: statusInicial,
+          jogadores: { connect: connectIds },
 
-        valorQuadraCobrado: valorQuadraCobradoFinal,
+          professorId: professorIdFinal,
+          tipoSessao: tipoSessaoFinal,
+          multa: multaPersistir ?? null,
+          valorQuadraCobrado: valorQuadraCobradoFinal,
 
-        // 🆕 APOIO (agora persistido)
-        isencaoApoiado: isApoiadoFinal,
-        apoiadoUsuarioId: apoiadoUsuarioIdFinal,
-
-        // compat existente:
-        obs: obsFinal,
-      },
-      include: {
-        jogadores: { select: { id: true, nome: true, email: true } },
-        usuario: { select: { id: true, nome: true, email: true, tipo: true } },
-        professor: { select: { id: true, nome: true, email: true } }, // nova relação
-        quadra: { select: { id: true, nome: true, numero: true } },
-        esporte: { select: { id: true, nome: true } },
-      },
+          isencaoApoiado: isApoiadoFinal,
+          apoiadoUsuarioId: apoiadoUsuarioIdFinal,
+          obs: obsFinal,
+        },
+        include: {
+          jogadores: { select: { id: true, nome: true, email: true } },
+          usuario: { select: { id: true, nome: true, email: true, tipo: true } },
+          professor: { select: { id: true, nome: true, email: true } },
+          quadra: { select: { id: true, nome: true, numero: true } },
+          esporte: { select: { id: true, nome: true } },
+        },
+      });
     });
 
     try {
@@ -842,6 +973,9 @@ router.post("/", verificarToken, async (req, res) => {
 
     return res.status(201).json(novoAgendamento);
   } catch (err: any) {
+    if (err?.httpStatus && err?.payload) {
+      return res.status(err.httpStatus).json(err.payload);
+    }
     if (
       (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") ||
       err?.code === "23505"

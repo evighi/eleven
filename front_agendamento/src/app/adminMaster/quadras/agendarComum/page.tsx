@@ -542,6 +542,20 @@ export default function AgendamentoComum() {
     return 'Falha ao realizar agendamento.'
   }
 
+  function isLimiteAulasBeachPos18(msg: string) {
+    const s = (msg || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+
+    return (
+      s.includes("limite de aulas") &&
+      (s.includes("beach") || s.includes("beach tennis")) &&
+      (s.includes("18") || s.includes("pos 18") || s.includes("após 18") || s.includes("apos 18"))
+    );
+  }
+
+
   const agendar = async () => {
     setFeedback(null)
 
@@ -686,7 +700,15 @@ export default function AgendamentoComum() {
       router.push(`/adminMaster/todosHorarios?${params.toString()}`)
     } catch (error) {
       console.error(error)
-      const msg = mensagemErroAxios(error)
+      let msg = mensagemErroAxios(error)
+
+      if (isLimiteAulasBeachPos18(msg)) {
+        msg =
+          "Neste horário já existem 2 aulas de Beach Tennis (após 18h). "
+      }
+
+      setFeedback({ kind: 'error', text: msg })
+
       setFeedback({ kind: 'error', text: msg })
     } finally {
       setSalvando(false)
