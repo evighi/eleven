@@ -143,6 +143,72 @@ function isDentroDeJanelaAula(
 }
 
 /* =========================
+   AULA EXTRA (config global)
+========================= */
+type AulaExtraCfg = {
+  ativa: boolean;
+  inicioHHMM: string;
+  fimHHMM: string;
+  valor: number;
+};
+
+async function carregarConfigAulaExtra(): Promise<AulaExtraCfg> {
+  const cfg = await prisma.configuracaoSistema.findUnique({ where: { id: 1 } });
+
+  const ativa = cfg?.aulaExtraAtiva ?? true;
+  const inicioHHMM = cfg?.aulaExtraInicioHHMM ?? "18:00";
+  const fimHHMM = cfg?.aulaExtraFimHHMM ?? "23:00";
+  const valor = Number(cfg?.valorAulaExtra ?? 50);
+
+  return {
+    ativa: Boolean(ativa),
+    inicioHHMM: String(inicioHHMM),
+    fimHHMM: String(fimHHMM),
+    valor: Number.isFinite(valor) ? valor : 50,
+  };
+}
+
+function isDentroIntervaloHHMM(hhmm: string, iniHHMM: string, fimHHMM: string) {
+  const t = hhmmToMinutes(hhmm);
+  const ini = hhmmToMinutes(iniHHMM);
+  const fim = hhmmToMinutes(fimHHMM);
+
+  // intervalo normal [ini, fim)
+  if (ini < fim) return t >= ini && t < fim;
+
+  // intervalo atravessando meia-noite
+  if (ini > fim) return t >= ini || t < fim;
+
+  // ini == fim → vazio
+  return false;
+}
+
+function valorUnitarioAula(params: {
+  professorValorQuadra: number;
+  horario: string;
+  aulaExtra: AulaExtraCfg;
+  valorQuadraCobrado?: any | null; // Prisma Decimal | number | null
+}) {
+  const { professorValorQuadra, horario, aulaExtra, valorQuadraCobrado } = params;
+
+  // ✅ 1) prioridade absoluta: valor final salvo no agendamento
+  if (valorQuadraCobrado !== null && valorQuadraCobrado !== undefined) {
+    const n = Number(valorQuadraCobrado);
+    return Number.isFinite(n) ? n : professorValorQuadra;
+  }
+
+  // ✅ 2) legado: calcula pela configuração global
+  if (
+    aulaExtra.ativa &&
+    isDentroIntervaloHHMM(horario, aulaExtra.inicioHHMM, aulaExtra.fimHHMM)
+  ) {
+    return aulaExtra.valor;
+  }
+
+  return professorValorQuadra;
+}
+
+/* =========================
    Cálculo core (p/ um professor) — usa datasets carregados
 ========================= */
 type ComumRow = {
@@ -155,6 +221,7 @@ type ComumRow = {
   professorId: string | null; // informativo
   usuarioId: string; // 👈 ADD (legado)
   isencaoApoiado?: boolean | null; // 👈 não entra no VALOR
+  valorQuadraCobrado?: any | null; // 👈 NOVO (Prisma Decimal)
 };
 
 type PermRow = {
@@ -194,42 +261,70 @@ function computeResumoProfessorFromDatasets(
     fromYMD,
     toYMD,
     duracaoMin,
-    janelasAula, // 👈 NOVO
-  }: { fromYMD: string; toYMD: string; duracaoMin: number; janelasAula: JanelaMap },
+    janelasAula,
+    aulaExtraCfg,
+  }: {
+    fromYMD: string;
+    toYMD: string;
+    duracaoMin: number;
+    janelasAula: JanelaMap;
+    aulaExtraCfg: AulaExtraCfg;
+  },
   comuns: ComumRow[],
   permanentes: PermRow[],
   bloqueiosMap: BloqueiosMap
 ) {
+  const professorValorQuadra = Number(professor.valorQuadra ?? 0) || 0;
+
   const vistos = new Set<string>();
-  const porDia = new Map<string, { aulas: number; apoiadas: number }>();
+  const porDia = new Map<
+    string,
+    { aulas: number; apoiadas: number; valor: number; valorIsentado: number }
+  >();
 
   const pushAula = (
     ymd: string,
     quadraId: string,
     horario: string,
+    valorUnitario: number,
     apoiada: boolean
   ) => {
     const k = `${ymd}|${quadraId}|${horario}`;
     if (vistos.has(k)) return;
     vistos.add(k);
-    const cur = porDia.get(ymd) || { aulas: 0, apoiadas: 0 };
-    cur.aulas += 1;
-    if (apoiada) cur.apoiadas += 1; // conta aula, mas NÃO entra no valor
-    porDia.set(ymd, cur);
+
+    const cur =
+      porDia.get(ymd) || ({ aulas: 0, apoiadas: 0, valor: 0, valorIsentado: 0 } as const);
+
+    const next = {
+      aulas: cur.aulas + 1,
+      apoiadas: cur.apoiadas + (apoiada ? 1 : 0),
+      valor: cur.valor + (apoiada ? 0 : Math.max(0, valorUnitario)),
+      valorIsentado:
+        cur.valorIsentado + (apoiada ? Math.max(0, valorUnitario) : 0),
+    };
+
+    porDia.set(ymd, next);
   };
 
   // 1) Comuns — somente AULA (ou legado null ⇒ conta), dentro da janela AULA
   for (const ag of comuns) {
-    // ✅ FILTRO CRÍTICO: protege contra dataset global
     if (!pertenceAoProfessor(professor.id, ag)) continue;
-
     if (ag.tipoSessao === "JOGO") continue;
 
-    const ymd = toISODateUTC(ag.data); // storage é 00:00Z do dia local
-    const wd = localWeekdayIndexOfYMD(ymd); // 0..6
+    const ymd = toISODateUTC(ag.data);
+    const wd = localWeekdayIndexOfYMD(ymd);
 
-    // ✅ Regra nova: fallback permissivo se não houver janela
-    if (!isDentroDeJanelaAula(janelasAula, ag.esporteId, wd, ag.horario, duracaoMin)) continue;
+    if (
+      !isDentroDeJanelaAula(
+        janelasAula,
+        ag.esporteId,
+        wd,
+        ag.horario,
+        duracaoMin
+      )
+    )
+      continue;
 
     // bloqueio?
     const slots = bloqueiosMap.get(`${ag.quadraId}|${ymd}`) || [];
@@ -237,18 +332,32 @@ function computeResumoProfessorFromDatasets(
     const fim = ini + duracaoMin;
     if (slots.some((s) => overlaps(ini, fim, s.ini, s.fim))) continue;
 
-    pushAula(ymd, ag.quadraId, ag.horario, !!ag.isencaoApoiado);
+    const valorUnit = valorUnitarioAula({
+      professorValorQuadra,
+      horario: ag.horario,
+      aulaExtra: aulaExtraCfg,
+      valorQuadraCobrado: ag.valorQuadraCobrado ?? null,
+    });
+
+    pushAula(ymd, ag.quadraId, ag.horario, valorUnit, !!ag.isencaoApoiado);
   }
 
   // 2) Permanentes — somente AULA (ou legado null ⇒ conta), dentro da janela AULA
   for (const p of permanentes) {
-    // ✅ FILTRO CRÍTICO: protege contra dataset global
     if (!pertenceAoProfessor(professor.id, p)) continue;
-
     if (p.tipoSessao === "JOGO") continue;
 
     const dayIdx = DIA_IDX[p.diaSemana];
-    if (!isDentroDeJanelaAula(janelasAula, p.esporteId, dayIdx, p.horario, duracaoMin)) continue;
+    if (
+      !isDentroDeJanelaAula(
+        janelasAula,
+        p.esporteId,
+        dayIdx,
+        p.horario,
+        duracaoMin
+      )
+    )
+      continue;
 
     const dataInicioLocalYMD = p.dataInicio
       ? toISODateUTC(new Date(p.dataInicio))
@@ -262,9 +371,7 @@ function computeResumoProfessorFromDatasets(
     const delta = (dayIdx - curIdx + 7) % 7;
     let dYMD = addDaysLocalYMD(firstYMD, delta);
 
-    const excSet = new Set<string>(
-      p.cancelamentos.map((c) => toISODateUTC(c.data))
-    );
+    const excSet = new Set<string>(p.cancelamentos.map((c) => toISODateUTC(c.data)));
 
     while (dYMD <= toYMD) {
       if (!dataInicioLocalYMD || dYMD >= dataInicioLocalYMD) {
@@ -273,8 +380,15 @@ function computeResumoProfessorFromDatasets(
           const ini = hhmmToMinutes(p.horario);
           const fim = ini + duracaoMin;
           if (!slots.some((s) => overlaps(ini, fim, s.ini, s.fim))) {
+            const valorUnit = valorUnitarioAula({
+              professorValorQuadra,
+              horario: p.horario,
+              aulaExtra: aulaExtraCfg,
+              valorQuadraCobrado: null, // permanentes não têm o campo
+            });
+
             // ⚠️ Sem isenção no schema de permanentes — conta como paga
-            pushAula(dYMD, p.quadraId, p.horario, false);
+            pushAula(dYMD, p.quadraId, p.horario, valorUnit, false);
           }
         }
       }
@@ -282,14 +396,9 @@ function computeResumoProfessorFromDatasets(
     }
   }
 
-  const valorAula = Number(professor.valorQuadra ?? 0) || 0;
-
   const porDiaArr = Array.from(porDia.entries())
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-    .map(([ymd, v]) => {
-      const pagas = Math.max(0, v.aulas - v.apoiadas);
-      return { data: ymd, aulas: v.aulas, valor: pagas * valorAula };
-    });
+    .map(([ymd, v]) => ({ data: ymd, aulas: v.aulas, valor: v.valor }));
 
   const lastDayNum = Number(toYMD.split("-")[2]);
   const porFaixaMap = new Map<string, { aulas: number; valor: number }>();
@@ -310,13 +419,18 @@ function computeResumoProfessorFromDatasets(
     { aulas: 0, valor: 0 }
   );
 
+  const valorIsentadoMes = Array.from(porDia.values()).reduce(
+    (acc, v) => acc + (v.valorIsentado || 0),
+    0
+  );
+
   return {
     professor: {
       id: professor.id,
       nome: professor.nome,
-      valorQuadra: valorAula,
+      valorQuadra: professorValorQuadra,
     },
-    totais: { porDia: porDiaArr, porFaixa, mes: totalMes },
+    totais: { porDia: porDiaArr, porFaixa, mes: totalMes, valorIsentadoMes },
   };
 }
 
@@ -383,6 +497,7 @@ async function aulasApoiadasDetalhadasPeriodoProfessor(
       quadra: { select: { id: true, numero: true, nome: true } },
       esporte: { select: { id: true, nome: true } },
       apoiadoUsuario: { select: { id: true, nome: true, email: true } },
+      valorQuadraCobrado: true, // 👈 para exibir valor correto
     },
     orderBy: [{ data: "asc" }, { horario: "asc" }],
   });
@@ -399,6 +514,16 @@ async function aulasDetalhadasPeriodoProfessor(
   fimUTCExcl: Date,
   duracaoMin: number
 ) {
+  // carrega professor (valor padrão)
+  const professor = await prisma.usuario.findUnique({
+    where: { id: profId },
+    select: { id: true, valorQuadra: true },
+  });
+  const professorValorQuadra = Number(professor?.valorQuadra ?? 0) || 0;
+
+  // config aula extra
+  const aulaExtraCfg = await carregarConfigAulaExtra();
+
   const ags = await prisma.agendamento.findMany({
     where: {
       status: {
@@ -421,6 +546,8 @@ async function aulasDetalhadasPeriodoProfessor(
       horario: true,
       multa: true,
       multaAnulada: true,
+      isencaoApoiado: true,
+      valorQuadraCobrado: true, // 👈 NOVO
       quadra: { select: { id: true, numero: true, nome: true } },
       esporte: { select: { id: true, nome: true } },
       esporteId: true, // 👈 para checar janela
@@ -429,32 +556,53 @@ async function aulasDetalhadasPeriodoProfessor(
   });
 
   // Carrega janelas AULA dos esportes presentes
-  const esportesIn = Array.from(new Set(ags.map((a) => String(a.esporteId)).filter(Boolean)));
+  const esportesIn = Array.from(
+    new Set(ags.map((a) => String(a.esporteId)).filter(Boolean))
+  );
   const janelasAula = await carregarJanelasAula(esportesIn);
 
   // Filtra de acordo com janelas de AULA (com fallback permissivo)
   const filtradas = ags.filter((a) => {
     const ymd = toISODateUTC(a.data);
-    const wd = localWeekdayIndexOfYMD(ymd); // 0..6
-    return isDentroDeJanelaAula(janelasAula, String(a.esporteId), wd, a.horario, duracaoMin);
+    const wd = localWeekdayIndexOfYMD(ymd);
+    return isDentroDeJanelaAula(
+      janelasAula,
+      String(a.esporteId),
+      wd,
+      a.horario,
+      duracaoMin
+    );
   });
 
   // normaliza para já ignorar multas anuladas
-  return filtradas.map((a) => ({
-    id: a.id,
-    data: a.data,
-    horario: a.horario,
-    multa: a.multa != null && !a.multaAnulada ? a.multa : null,
-    quadra: a.quadra,
-    esporte: a.esporte,
-  }));
+  return filtradas.map((a) => {
+    const valorAula = valorUnitarioAula({
+      professorValorQuadra,
+      horario: a.horario,
+      aulaExtra: aulaExtraCfg,
+      valorQuadraCobrado: a.valorQuadraCobrado ?? null,
+    });
+
+    const multaOk = a.multa != null && !a.multaAnulada ? Number(a.multa) : null;
+
+    return {
+      id: a.id,
+      data: a.data,
+      horario: a.horario,
+      quadra: a.quadra,
+      esporte: a.esporte,
+      isencaoApoiado: !!a.isencaoApoiado,
+      valorAula, // 👈 VALOR CORRETO (normal/extra ou salvo)
+      multa: multaOk,
+      valorTotal: Math.max(0, Number(valorAula || 0)) + Math.max(0, Number(multaOk || 0)),
+    };
+  });
 }
 
 // ✅ TOTAL de professores cadastrados (endpoint dedicado)
 // GET /professores/total
 router.get("/total", requireAdmin, async (_req, res) => {
   try {
-    // se "professor" no teu sistema = tipo ADMIN_PROFESSORES:
     const total = await prisma.usuario.count({
       where: { tipo: "ADMIN_PROFESSORES" },
     });
@@ -500,8 +648,7 @@ router.get("/me/resumo", async (req, res) => {
       where: { id: userId },
       select: { id: true, nome: true, valorQuadra: true },
     });
-    if (!professor)
-      return res.status(404).json({ erro: "Usuário não encontrado" });
+    if (!professor) return res.status(404).json({ erro: "Usuário não encontrado" });
 
     const { fromYMD, toYMD } = mes
       ? parseMesToLocalRange(mes)
@@ -509,6 +656,8 @@ router.get("/me/resumo", async (req, res) => {
 
     const inicioUTC = toUtc00(fromYMD);
     const fimUTCExcl = toUtc00(addDaysLocalYMD(toYMD, 1));
+
+    const aulaExtraCfg = await carregarConfigAulaExtra();
 
     // SOMENTE AULAS (para contagem) + flag de isenção por agendamento comum
     const comuns = await prisma.agendamento.findMany({
@@ -528,15 +677,16 @@ router.get("/me/resumo", async (req, res) => {
         ],
       },
       select: {
-        id: true, // 👈 opcional (debug)
+        id: true,
         data: true,
         horario: true,
         quadraId: true,
-        usuarioId: true, // 👈 ADD
+        usuarioId: true,
         tipoSessao: true,
         professorId: true,
         isencaoApoiado: true,
-        esporteId: true, // 👈 NOVO
+        esporteId: true,
+        valorQuadraCobrado: true, // 👈 NOVO
       },
     });
 
@@ -556,8 +706,8 @@ router.get("/me/resumo", async (req, res) => {
         ],
       },
       select: {
-        id: true, // 👈 opcional (debug)
-        usuarioId: true, // 👈 ADD
+        id: true,
+        usuarioId: true,
         diaSemana: true,
         horario: true,
         quadraId: true,
@@ -565,7 +715,7 @@ router.get("/me/resumo", async (req, res) => {
         cancelamentos: { select: { data: true } },
         tipoSessao: true,
         professorId: true,
-        esporteId: true, // 👈 NOVO
+        esporteId: true,
       },
     });
 
@@ -612,13 +762,14 @@ router.get("/me/resumo", async (req, res) => {
       esporteId: String(ag.esporteId),
       tipoSessao: ag.tipoSessao,
       professorId: ag.professorId,
-      usuarioId: ag.usuarioId, // 👈 ADD
+      usuarioId: ag.usuarioId,
       isencaoApoiado: ag.isencaoApoiado ?? false,
+      valorQuadraCobrado: (ag as any).valorQuadraCobrado ?? null,
     }));
 
     const permanentesDs: PermRow[] = permanentes.map((p) => ({
       id: p.id,
-      usuarioId: p.usuarioId, // 👈 ADD
+      usuarioId: p.usuarioId,
       diaSemana: p.diaSemana,
       horario: p.horario,
       quadraId: p.quadraId,
@@ -631,7 +782,7 @@ router.get("/me/resumo", async (req, res) => {
 
     const resumo = computeResumoProfessorFromDatasets(
       professor,
-      { fromYMD, toYMD, duracaoMin, janelasAula },
+      { fromYMD, toYMD, duracaoMin, janelasAula, aulaExtraCfg },
       comunsDs,
       permanentesDs,
       bloqueiosMap
@@ -641,17 +792,10 @@ router.get("/me/resumo", async (req, res) => {
     const subtotalAulasMes = resumo.totais.mes.valor;
 
     // multas detalhadas do período (indep. do tipoSessao) — já ignora anuladas
-    const multasDetalhes = await multasDetalhadasPeriodoProfessor(
-      userId,
-      inicioUTC,
-      fimUTCExcl
-    );
-    const multaMes = multasDetalhes.reduce(
-      (acc, m) => acc + Number(m.multa ?? 0),
-      0
-    );
+    const multasDetalhes = await multasDetalhadasPeriodoProfessor(userId, inicioUTC, fimUTCExcl);
+    const multaMes = multasDetalhes.reduce((acc, m) => acc + Number(m.multa ?? 0), 0);
 
-    // valor cheio: aulas + multas (como já era)
+    // valor cheio: aulas + multas
     const valorMesComMulta = subtotalAulasMes + multaMes;
 
     // 💰 DESCONTO 50% APENAS NAS AULAS
@@ -659,22 +803,14 @@ router.get("/me/resumo", async (req, res) => {
     const valorMesComDesconto = subtotalAulasComDesconto + multaMes;
 
     // apoios detalhados do período
-    const apoiosDetalhes = await aulasApoiadasDetalhadasPeriodoProfessor(
-      userId,
-      inicioUTC,
-      fimUTCExcl
-    );
+    const apoiosDetalhes = await aulasApoiadasDetalhadasPeriodoProfessor(userId, inicioUTC, fimUTCExcl);
     const apoiadasMes = apoiosDetalhes.length;
-    const valorApoioDescontadoMes =
-      apoiadasMes * Number(resumo.professor.valorQuadra || 0);
+
+    // ✅ valor correto isentado (considera aula normal/extra)
+    const valorApoioDescontadoMes = Number((resumo as any).totais?.valorIsentadoMes ?? 0);
 
     // 🆕 todas as aulas do período (para aplicar multa manual no front)
-    const aulasDetalhes = await aulasDetalhadasPeriodoProfessor(
-      userId,
-      inicioUTC,
-      fimUTCExcl,
-      duracaoMin
-    );
+    const aulasDetalhes = await aulasDetalhadasPeriodoProfessor(userId, inicioUTC, fimUTCExcl, duracaoMin);
 
     return res.json({
       professor: resumo.professor,
@@ -682,10 +818,9 @@ router.get("/me/resumo", async (req, res) => {
       totais: {
         ...resumo.totais,
         multaMes,
-        valorMesComMulta, // cheio (aulas + multa)
-        // 👇 novos campos de desconto
-        subtotalAulasComDesconto, // aulas com 50% off
-        valorMesComDesconto, // aulas 50% + multa cheia
+        valorMesComMulta,
+        subtotalAulasComDesconto,
+        valorMesComDesconto,
         apoiadasMes,
         valorApoioDescontadoMes,
       },
@@ -697,15 +832,13 @@ router.get("/me/resumo", async (req, res) => {
         quadra: a.quadra,
         esporte: a.esporte,
         apoiadoUsuario: a.apoiadoUsuario,
+        valorAula: Number(a.valorQuadraCobrado ?? 0) || null, // 👈 ajuda no front
       })),
-      // 👇 NOVO
       aulasDetalhes,
     });
   } catch (err) {
     console.error(err);
-    return res
-      .status(500)
-      .json({ erro: "Erro ao calcular resumo do professor" });
+    return res.status(500).json({ erro: "Erro ao calcular resumo do professor" });
   }
 });
 
@@ -741,8 +874,7 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
       where: { id: profId },
       select: { id: true, nome: true, valorQuadra: true },
     });
-    if (!professor)
-      return res.status(404).json({ erro: "Professor não encontrado" });
+    if (!professor) return res.status(404).json({ erro: "Professor não encontrado" });
 
     const { fromYMD, toYMD } = mes
       ? parseMesToLocalRange(mes)
@@ -750,6 +882,8 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
 
     const inicioUTC = toUtc00(fromYMD);
     const fimUTCExcl = toUtc00(addDaysLocalYMD(toYMD, 1));
+
+    const aulaExtraCfg = await carregarConfigAulaExtra();
 
     const comuns = await prisma.agendamento.findMany({
       where: {
@@ -768,15 +902,16 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
         ],
       },
       select: {
-        id: true, // 👈 opcional (debug)
+        id: true,
         data: true,
         horario: true,
         quadraId: true,
-        usuarioId: true, // 👈 ADD
+        usuarioId: true,
         tipoSessao: true,
         professorId: true,
         isencaoApoiado: true,
-        esporteId: true, // 👈 NOVO
+        esporteId: true,
+        valorQuadraCobrado: true, // 👈 NOVO
       },
     });
 
@@ -796,8 +931,8 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
         ],
       },
       select: {
-        id: true, // 👈 opcional (debug)
-        usuarioId: true, // 👈 ADD
+        id: true,
+        usuarioId: true,
         diaSemana: true,
         horario: true,
         quadraId: true,
@@ -805,7 +940,7 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
         cancelamentos: { select: { data: true } },
         tipoSessao: true,
         professorId: true,
-        esporteId: true, // 👈 NOVO
+        esporteId: true,
       },
     });
 
@@ -851,13 +986,14 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
       esporteId: String(ag.esporteId),
       tipoSessao: ag.tipoSessao,
       professorId: ag.professorId,
-      usuarioId: ag.usuarioId, // 👈 ADD
+      usuarioId: ag.usuarioId,
       isencaoApoiado: ag.isencaoApoiado ?? false,
+      valorQuadraCobrado: (ag as any).valorQuadraCobrado ?? null,
     }));
 
     const permanentesDs: PermRow[] = permanentes.map((p) => ({
       id: p.id,
-      usuarioId: p.usuarioId, // 👈 ADD
+      usuarioId: p.usuarioId,
       diaSemana: p.diaSemana,
       horario: p.horario,
       quadraId: p.quadraId,
@@ -870,7 +1006,7 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
 
     const resumo = computeResumoProfessorFromDatasets(
       professor,
-      { fromYMD, toYMD, duracaoMin, janelasAula },
+      { fromYMD, toYMD, duracaoMin, janelasAula, aulaExtraCfg },
       comunsDs,
       permanentesDs,
       bloqueiosMap
@@ -878,40 +1014,20 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
 
     const subtotalAulasMes = resumo.totais.mes.valor;
 
-    // multas do período — já ignorando anuladas pela função helper
-    const multasDetalhes = await multasDetalhadasPeriodoProfessor(
-      profId,
-      inicioUTC,
-      fimUTCExcl
-    );
-    const multaMes = multasDetalhes.reduce(
-      (acc, m) => acc + Number(m.multa ?? 0),
-      0
-    );
+    const multasDetalhes = await multasDetalhadasPeriodoProfessor(profId, inicioUTC, fimUTCExcl);
+    const multaMes = multasDetalhes.reduce((acc, m) => acc + Number(m.multa ?? 0), 0);
 
     const valorMesComMulta = subtotalAulasMes + multaMes;
 
-    // 💰 DESCONTO 50% APENAS NAS AULAS
     const subtotalAulasComDesconto = subtotalAulasMes * 0.5;
     const valorMesComDesconto = subtotalAulasComDesconto + multaMes;
 
-    // apoios detalhados do período
-    const apoiosDetalhes = await aulasApoiadasDetalhadasPeriodoProfessor(
-      profId,
-      inicioUTC,
-      fimUTCExcl
-    );
+    const apoiosDetalhes = await aulasApoiadasDetalhadasPeriodoProfessor(profId, inicioUTC, fimUTCExcl);
     const apoiadasMes = apoiosDetalhes.length;
-    const valorApoioDescontadoMes =
-      apoiadasMes * Number(resumo.professor.valorQuadra || 0);
 
-    // 🆕 todas as aulas do período (para aplicar multa manual no front admin)
-    const aulasDetalhes = await aulasDetalhadasPeriodoProfessor(
-      profId,
-      inicioUTC,
-      fimUTCExcl,
-      duracaoMin
-    );
+    const valorApoioDescontadoMes = Number((resumo as any).totais?.valorIsentadoMes ?? 0);
+
+    const aulasDetalhes = await aulasDetalhadasPeriodoProfessor(profId, inicioUTC, fimUTCExcl, duracaoMin);
 
     return res.json({
       professor: resumo.professor,
@@ -919,9 +1035,9 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
       totais: {
         ...resumo.totais,
         multaMes,
-        valorMesComMulta, // cheio (aulas + multa)
-        subtotalAulasComDesconto, // aulas com 50% off
-        valorMesComDesconto, // aulas 50% + multa cheia
+        valorMesComMulta,
+        subtotalAulasComDesconto,
+        valorMesComDesconto,
         apoiadasMes,
         valorApoioDescontadoMes,
       },
@@ -933,15 +1049,13 @@ router.get("/:id/resumo", requireAdmin, async (req, res) => {
         quadra: a.quadra,
         esporte: a.esporte,
         apoiadoUsuario: a.apoiadoUsuario,
+        valorAula: Number(a.valorQuadraCobrado ?? 0) || null,
       })),
-      // 👇 NOVO
       aulasDetalhes,
     });
   } catch (err) {
     console.error(err);
-    return res
-      .status(500)
-      .json({ erro: "Erro ao calcular resumo do professor" });
+    return res.status(500).json({ erro: "Erro ao calcular resumo do professor" });
   }
 });
 
@@ -978,6 +1092,8 @@ router.get("/admin", requireAdmin, async (req, res) => {
 
     const inicioUTC = toUtc00(fromYMD);
     const fimUTCExcl = toUtc00(addDaysLocalYMD(toYMD, 1));
+
+    const aulaExtraCfg = await carregarConfigAulaExtra();
 
     // 1) Todos os professores
     const professores = await prisma.usuario.findMany({
@@ -1020,15 +1136,16 @@ router.get("/admin", requireAdmin, async (req, res) => {
           ],
         },
         select: {
-          id: true, // 👈 opcional (debug)
+          id: true,
           data: true,
           horario: true,
           quadraId: true,
-          usuarioId: true, // 👈 ADD (já tinha, mantido)
+          usuarioId: true,
           professorId: true,
           tipoSessao: true,
           isencaoApoiado: true,
-          esporteId: true, // 👈 NOVO
+          esporteId: true,
+          valorQuadraCobrado: true, // 👈 NOVO
         },
       }),
       prisma.agendamentoPermanente.findMany({
@@ -1049,8 +1166,8 @@ router.get("/admin", requireAdmin, async (req, res) => {
           ],
         },
         select: {
-          id: true, // 👈 opcional (debug)
-          usuarioId: true, // 👈 ADD (já tinha, mantido)
+          id: true,
+          usuarioId: true,
           diaSemana: true,
           horario: true,
           quadraId: true,
@@ -1058,7 +1175,7 @@ router.get("/admin", requireAdmin, async (req, res) => {
           cancelamentos: { select: { data: true } },
           professorId: true,
           tipoSessao: true,
-          esporteId: true, // 👈 NOVO
+          esporteId: true,
         },
       }),
       prisma.bloqueioQuadra.findMany({
@@ -1106,8 +1223,9 @@ router.get("/admin", requireAdmin, async (req, res) => {
         esporteId: String(ag.esporteId),
         tipoSessao: ag.tipoSessao,
         professorId: ag.professorId,
-        usuarioId: ag.usuarioId, // 👈 ADD
+        usuarioId: ag.usuarioId,
         isencaoApoiado: ag.isencaoApoiado ?? false,
+        valorQuadraCobrado: (ag as any).valorQuadraCobrado ?? null,
       });
       comunsByProf.set(key, arr);
 
@@ -1132,7 +1250,7 @@ router.get("/admin", requireAdmin, async (req, res) => {
         cancelamentos: p.cancelamentos,
         tipoSessao: p.tipoSessao,
         professorId: p.professorId,
-        usuarioId: p.usuarioId, // 👈 ADD
+        usuarioId: p.usuarioId,
       });
       permsByProf.set(key, arr);
     }
@@ -1178,7 +1296,7 @@ router.get("/admin", requireAdmin, async (req, res) => {
       valorMes: number;
       multaMes: number;
       valorMesComMulta: number;
-      valorMesComDesconto: number; // 👈 NOVO
+      valorMesComDesconto: number;
       apoiadasMes: number;
       valorApoioDescontadoMes: number;
       porFaixa: Array<{ faixa: string; aulas: number; valor: number }>;
@@ -1193,7 +1311,7 @@ router.get("/admin", requireAdmin, async (req, res) => {
     for (const prof of professores) {
       const resumo = computeResumoProfessorFromDatasets(
         prof,
-        { fromYMD, toYMD, duracaoMin, janelasAula },
+        { fromYMD, toYMD, duracaoMin, janelasAula, aulaExtraCfg },
         comunsByProf.get(prof.id) || [],
         permsByProf.get(prof.id) || [],
         bloqueiosMapAdmin
@@ -1208,8 +1326,9 @@ router.get("/admin", requireAdmin, async (req, res) => {
       const valorMesComDesconto = valorMes * 0.5 + multaMes;
 
       const apoiadasMes = Number(apoiadasByProf.get(prof.id) || 0);
-      const valorApoioDescontadoMes =
-        apoiadasMes * Number(prof.valorQuadra || 0);
+
+      // ✅ valor correto isentado (considera aula normal/extra)
+      const valorApoioDescontadoMes = Number((resumo as any).totais?.valorIsentadoMes ?? 0);
 
       totalAulasGeral += aulasMes;
       totalValorGeral += valorMesComMulta;
@@ -1235,8 +1354,8 @@ router.get("/admin", requireAdmin, async (req, res) => {
     return res.json({
       intervalo: { from: fromYMD, to: toYMD, duracaoMin },
       professores: resposta,
-      totalGeral: { aulas: totalAulasGeral, valor: totalValorGeral }, // cheio
-      totalValorGeralComDesconto, // 👈 total do mês com desconto
+      totalGeral: { aulas: totalAulasGeral, valor: totalValorGeral },
+      totalValorGeralComDesconto,
       totalApoiadasGeral,
       totalApoioDescontadoGeral,
     });
