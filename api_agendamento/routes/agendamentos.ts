@@ -455,6 +455,100 @@ if (!globalAny.__cronFinalizaVencidos__) {
   globalAny.__cronFinalizaVencidos__ = true;
 }
 
+// ✅ Aceita PrismaClient ou o TransactionClient do prisma.$transaction
+type DbClient = Prisma.TransactionClient | PrismaClient;
+
+// ===== LIMITADOR: max AULAS por (data, horario, esporte) contando comum + permanente =====
+const LIMITE_AULAS_POR_SLOT = 2;
+
+async function countAulasNoSlot(db: DbClient, p: {
+  dataYMD: string;   // "YYYY-MM-DD" (dia local)
+  horario: string;   // "HH:mm"
+  esporteId: string;
+}) {
+  const { dataYMD, horario, esporteId } = p;
+
+  // comuns AULA no dia
+  const dataUTC00 = toUtc00(dataYMD);
+
+  const comunsCount = await db.agendamento.count({
+    where: {
+      data: dataUTC00,
+      horario,
+      esporteId,
+      status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+      tipoSessao: "AULA",
+      // se quiser considerar apenas aula com professor:
+      // professorId: { not: null },
+    },
+  });
+
+  // diaSemana do dia local
+  const idx = localWeekdayIndexOfYMD(dataYMD); // 0..6
+  const diaSemana = (Object.keys(DIA_IDX).find(k => DIA_IDX[k as DiaSemana] === idx) as DiaSemana) ?? null;
+  if (!diaSemana) return comunsCount;
+
+  // permanentes AULA ativos que batem diaSemana+horario+esporte
+  const permanentes = await db.agendamentoPermanente.findMany({
+    where: {
+      diaSemana,
+      horario,
+      esporteId,
+      status: { notIn: ["CANCELADO", "TRANSFERIDO"] },
+      tipoSessao: "AULA",
+    },
+    select: { id: true, dataInicio: true },
+  });
+
+  if (permanentes.length === 0) return comunsCount;
+
+  // filtra por dataInicio (se tiver)
+  const permanentesElegiveis = permanentes.filter((perm) => {
+    if (!perm.dataInicio) return true;
+    const inicioYMD = toISODateUTC(perm.dataInicio); // "YYYY-MM-DD"
+    return inicioYMD <= dataYMD;
+  });
+
+  if (permanentesElegiveis.length === 0) return comunsCount;
+
+  // remove os que têm exceção/cancelamento nesse dia
+  const ids = permanentesElegiveis.map(p => p.id);
+
+  const cancelados = await db.agendamentoPermanenteCancelamento.findMany({
+    where: {
+      agendamentoPermanenteId: { in: ids },
+      data: dataUTC00,
+    },
+    select: { agendamentoPermanenteId: true },
+  });
+
+  const cancelSet = new Set(cancelados.map(c => c.agendamentoPermanenteId));
+  const permanentesCount = permanentesElegiveis.filter(p => !cancelSet.has(p.id)).length;
+
+  return comunsCount + permanentesCount;
+}
+
+async function assertLimiteAulas(db: DbClient, p: {
+  dataYMD: string;
+  horario: string;
+  esporteId: string;
+}) {
+  const total = await countAulasNoSlot(db, p);
+
+  if (total >= LIMITE_AULAS_POR_SLOT) {
+    return {
+      ok: false as const,
+      total,
+      limite: LIMITE_AULAS_POR_SLOT,
+      erro: `Limite de ${LIMITE_AULAS_POR_SLOT} aulas atingido para este esporte nesse horário.`,
+    };
+  }
+
+  return { ok: true as const, total, limite: LIMITE_AULAS_POR_SLOT };
+}
+
+
+
 // ===================== LIMITE AULAS (Beach Tennis pós 18h) =====================
 const LIMITE_AULAS_BEACH_POS18 = 2;
 const LIMITE_AULAS_BEACH_POS18_INICIO = "18:00";
@@ -574,6 +668,7 @@ router.post("/", verificarToken, async (req, res) => {
   // - se admin, sem usuarioIdBody, mas com jogadoresIds => dono = primeiro jogador
   // - se não for admin mas veio usuarioIdBody, aceita (pensando em uso futuro)
   let usuarioIdDono: string = reqCustom.usuario.usuarioLogadoId;
+
 
   if (isAdmin) {
     if (usuarioIdBody) {
@@ -706,6 +801,7 @@ router.post("/", verificarToken, async (req, res) => {
       }
 
       const { aula, jogo } = await resolveSessoesFlags(esporteId, diaSemanaEnum, horario);
+
 
       if (tipoSessaoBody) {
         const t = tipoSessaoBody as TipoSessaoProfessor;
@@ -905,15 +1001,28 @@ router.post("/", verificarToken, async (req, res) => {
         }
       }
 
-      // ✅ NOVO: Limite de aulas (Beach Tennis pós 18)
-      await validarLimiteAulasBeachPos18(tx as any, {
-        dataUTC00,
-        horario,
-        esporteId,
-        quadraId,
-        professorIdFinal,
-        tipoSessaoFinal,
-      });
+      // ✅ NOVO: Limite GLOBAL de AULAS (comum + permanente) por esporte/horário/dia
+      if (professorIdFinal && tipoSessaoFinal === "AULA" && horario >= LIMITE_AULAS_BEACH_POS18_INICIO) {
+        const isBeach = await isBeachTennisByEsporteId(tx as any, esporteId);
+        if (isBeach) {
+          const chk = await assertLimiteAulas(tx as any, { dataYMD, horario, esporteId });
+
+          if (!chk.ok) {
+            const err: any = new Error("LIMITE_AULAS_BEACH_POS18");
+            err.httpStatus = 409;
+            err.payload = {
+              erro: "Limite de aulas atingido para Beach Tennis após 18h",
+              limite: LIMITE_AULAS_BEACH_POS18,
+              total: chk.total,
+              data: dataYMD,
+              horario,
+            };
+            throw err;
+          }
+        }
+      }
+
+
 
       // ✅ Create final
       return tx.agendamento.create({
