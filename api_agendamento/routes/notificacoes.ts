@@ -2,6 +2,7 @@ import { Router } from "express";
 import { PrismaClient, TipoUsuario } from "@prisma/client";
 import { z } from "zod";
 import verificarToken from "../middleware/authMiddleware";
+import { notificationHub } from "../utils/notificationHub";
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -176,5 +177,52 @@ router.post("/read-all", async (req, res) => {
         return res.status(500).json({ erro: "Falha ao marcar todas como lidas" });
     }
 });
+
+/** =========================
+ * GET /notificacoes/stream
+ * SSE: envia eventos em tempo real para o admin logado
+ * - não consulta DB
+ * - depende do cookie (verificarToken) já validar
+========================= */
+router.get("/stream", async (req, res) => {
+    const { userId } = getAuth(req);
+    if (!userId) return res.status(401).json({ erro: "Não autenticado" });
+
+    // Headers SSE
+    res.status(200);
+    res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+    // Evita buffering em alguns proxies (nginx)
+    res.setHeader("X-Accel-Buffering", "no");
+
+    // Se você usa compressão global, isso ajuda a não quebrar SSE:
+    // (e também não deixa a resposta bufferizar)
+    // @ts-ignore
+    if (res.flushHeaders) res.flushHeaders();
+
+    // registra o client no hub
+    const remove = notificationHub.addClient(userId, res);
+
+    // keep-alive (pra não cair em proxy / idle timeout)
+    const pingId = setInterval(() => {
+        try {
+            res.write(`event: ping\n`);
+            res.write(`data: ${JSON.stringify({ ts: Date.now() })}\n\n`);
+        } catch {
+            // se falhar, o close vai limpar
+        }
+    }, 25_000);
+
+    // cleanup quando fechar
+    req.on("close", () => {
+        clearInterval(pingId);
+        remove();
+        try {
+            res.end();
+        } catch { }
+    });
+});
+
 
 export default router;
