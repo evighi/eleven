@@ -73,6 +73,63 @@ enum TipoSessaoProfessor {
   JOGO
 }
 
+/**
+ * ============================================================================
+ * 🔔 NOTIFICAÇÕES (IN-APP)
+ * - Notification: uma notificação “global” criada pelo sistema/ator
+ * - NotificationRecipient: status por usuário (lida/não lida por admin)
+ * ==========================================================================
+ */
+
+enum NotificationType {
+  AGENDAMENTO_COMUM_CRIADO
+  AGENDAMENTO_COMUM_CANCELADO
+  BLOQUEIO_QUADRA_CRIADO
+  BLOQUEIO_QUADRA_REMOVIDO
+
+  // ✅ já fica no schema (implementar depois)
+  AGENDAMENTO_PERMANENTE_EXCECAO
+  AGENDAMENTO_CHURRASQUEIRA_CRIADO
+  AGENDAMENTO_CHURRASQUEIRA_CANCELADO
+  AGENDAMENTO_CHURRASQUEIRA_PERMANENTE_EXCECAO
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  type      NotificationType
+  title     String
+  message   String
+  data      Json?
+  createdAt DateTime         @default(now())
+
+  // (opcional) quem gerou
+  actorId String?
+  actor   Usuario? @relation("NotificationActor", fields: [actorId], references: [id])
+
+  recipients NotificationRecipient[]
+
+  @@index([createdAt])
+  @@index([type])
+  @@index([actorId])
+}
+
+model NotificationRecipient {
+  id             String    @id @default(uuid())
+  notificationId String
+  userId         String
+  readAt         DateTime?
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  user         Usuario      @relation("NotificationRecipientUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationId, userId])
+  @@index([userId, readAt])
+}
+
+/**
+ * ========================================================================
+ */
+
 model Usuario {
   id                String      @id @default(uuid())
   nome              String
@@ -119,6 +176,10 @@ model Usuario {
   multasAnuladas Agendamento[] @relation("MultaAnuladaPor")
 
   auditLogs AuditLog[] @relation("UsuarioAuditLogs")
+
+  // 🔔 NOTIFICAÇÕES
+  notificationsSent     Notification[]          @relation("NotificationActor")
+  notificationsReceived NotificationRecipient[] @relation("NotificationRecipientUser")
 
   // 🔒 controle de acesso e marcações de exclusão
   disabledAt  DateTime? // bloqueia login enquanto pendente
