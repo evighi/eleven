@@ -9,6 +9,7 @@ import { r2PublicUrl } from "../src/lib/r2";
 import { logAudit, TargetType } from "../utils/audit"; // 👈 AUDITORIA
 import { valorMultaPadrao } from "../utils/multa";     // 👈 multa fixa
 import { requireAtendenteFeature } from "../middleware/atendenteFeatures";
+import { notifyAdminsAgendamentoCriado } from "../utils/notificacoes";
 
 // Mapa DiaSemana -> número JS (0=Dom..6=Sáb)
 const DIA_IDX: Record<DiaSemana, number> = {
@@ -1080,6 +1081,15 @@ router.post("/", verificarToken, async (req, res) => {
       console.error("[audit] falha ao registrar criação:", e);
     }
 
+
+    try {
+      await notifyAdminsAgendamentoCriado({
+        agendamento: novoAgendamento,
+        actorId: reqCustom.usuario.usuarioLogadoId,
+      });
+    } catch (e) {
+      console.error("[notify] falha ao criar notificação:", e);
+    }
     return res.status(201).json(novoAgendamento);
   } catch (err: any) {
     if (err?.httpStatus && err?.payload) {

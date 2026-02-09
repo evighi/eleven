@@ -48,6 +48,9 @@ import routesPermissoesAtendente from "./routes/permissoesAtendente";
 // 👇 NOVO: relatorios (ocupação média total)
 import routesRelatoriosOcupacaoMedia from "./routes/relatoriosOcupacaoMedia";
 
+// ✅ NOVO: notificações (in-app)
+import routesNotificacoes from "./routes/notificacoes";
+
 import verificarToken from "./middleware/authMiddleware";
 
 const app = express();
@@ -93,6 +96,9 @@ app.use(
 app.use("/disponibilidadeChurrasqueiras", routesDisponibilidadeChurrasqueiras);
 app.use("/disponibilidadeGeral", routesDisponibilidadeGeral);
 app.use("/usuariosAdmin", routesUsuariosAdmin);
+
+// ✅ NOVO: notificações (badge + lista + marcar lida)
+app.use("/notificacoes", routesNotificacoes);
 
 // 👇 NOVO: rotas de relatorios (ex.: /relatorios/quadras/ocupacao-media)
 app.use("/relatorios", routesRelatoriosOcupacaoMedia);
