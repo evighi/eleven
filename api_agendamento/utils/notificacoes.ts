@@ -4,6 +4,7 @@ import {
     NotificationType,
     TipoUsuario,
     Prisma,
+    AtendenteFeature,
 } from "@prisma/client";
 import { notificationHub } from "./notificationHub"; // ajuste o path se necessário
 
@@ -36,6 +37,50 @@ async function getAdminRecipientsIds() {
 
     return admins.map((a) => a.id);
 }
+
+async function getAtendenteBloqueiosRecipientsIds() {
+    // ✅ pega a config global das features (id=1)
+    const perms = await prisma.permissoesAtendente.findUnique({
+        where: { id: 1 },
+        select: { features: true },
+    });
+
+    const podeBloqueios = (perms?.features ?? []).includes("ATD_BLOQUEIOS" as AtendenteFeature);
+    if (!podeBloqueios) return [];
+
+    const atendentes = await prisma.usuario.findMany({
+        where: {
+            tipo: TipoUsuario.ADMIN_ATENDENTE,
+            disabledAt: null,
+            deletedAt: null,
+        },
+        select: { id: true },
+    });
+
+    return atendentes.map((a) => a.id);
+}
+
+async function getBloqueioRecipientsIds() {
+    const [masters, atendentes] = await Promise.all([
+        getAdminRecipientsIds(),
+        getAtendenteBloqueiosRecipientsIds(),
+    ]);
+
+    // une e remove duplicados
+    return Array.from(new Set([...masters, ...atendentes]));
+}
+
+function formatQuadrasLabel(quadras: { numero: number; nome?: string }[]) {
+    const labels = quadras
+        .slice()
+        .sort((a, b) => a.numero - b.numero)
+        .map((q) => `Quadra ${q.numero}`);
+
+    if (labels.length <= 1) return labels[0] ?? "Quadra";
+    if (labels.length === 2) return `${labels[0]} e ${labels[1]}`;
+    return `${labels.slice(0, -1).join(", ")} e ${labels[labels.length - 1]}`;
+}
+
 
 /**
  * Cria 1 Notification + N NotificationRecipient (um por admin)
@@ -147,3 +192,53 @@ export async function notifyAdminsAgendamentoCriado(params: {
         },
     });
 }
+
+type BloqueioForNotify = {
+    id: string;
+    dataBloqueio: Date;
+    inicioBloqueio: string;
+    fimBloqueio: string;
+    quadras: { id: string; nome: string; numero: number }[];
+    motivo?: { id: string; nome: string } | null;
+};
+
+export async function notifyBloqueioCriado(params: {
+    bloqueio: BloqueioForNotify;
+    actorId?: string | null;
+}) {
+    const { bloqueio, actorId = null } = params;
+
+    const data = ymdUTC(bloqueio.dataBloqueio);
+    const janela = `${bloqueio.inicioBloqueio}–${bloqueio.fimBloqueio}`;
+    const quadrasLabel = formatQuadrasLabel(bloqueio.quadras);
+    const motivoNome = bloqueio.motivo?.nome ?? null;
+
+    const title = "Bloqueio de quadra criado";
+    const message = motivoNome
+        ? `Bloqueio criado (${motivoNome}): ${quadrasLabel} • ${data} • ${janela}`
+        : `Bloqueio criado: ${quadrasLabel} • ${data} • ${janela}`;
+
+    const recipientIds = await getBloqueioRecipientsIds();
+
+    return notifyAdmins({
+        type: NotificationType.BLOQUEIO_QUADRA_CRIADO,
+        title,
+        message,
+        actorId,
+        recipientIds, // ✅ master + atendente (somente aqui)
+        data: {
+            bloqueioId: bloqueio.id,
+            dataBloqueio: data,
+            inicioBloqueio: bloqueio.inicioBloqueio,
+            fimBloqueio: bloqueio.fimBloqueio,
+            motivoId: bloqueio.motivo?.id ?? null,
+            motivoNome,
+            quadras: bloqueio.quadras.map((q) => ({
+                id: q.id,
+                nome: q.nome,
+                numero: q.numero,
+            })),
+        },
+    });
+}
+
