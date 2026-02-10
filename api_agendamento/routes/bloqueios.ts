@@ -3,6 +3,7 @@ import { Router } from "express";
 import { PrismaClient, AtendenteFeature } from "@prisma/client";
 import { z } from "zod";
 import { startOfDay, endOfDay } from "date-fns";
+import { notifyBloqueioCriado } from "../utils/notificacoes";
 
 import verificarToken from "../middleware/authMiddleware";
 import { requireAdmin } from "../middleware/acl";
@@ -141,6 +142,24 @@ router.post("/", async (req, res) => {
           nome: q.nome,
           numero: q.numero,
         })),
+      },
+    });
+
+    await notifyBloqueioCriado({
+      actorId: bloqueadoPorId,
+      bloqueio: {
+        id: bloqueioCriado.id,
+        dataBloqueio: bloqueioCriado.dataBloqueio,
+        inicioBloqueio: bloqueioCriado.inicioBloqueio,
+        fimBloqueio: bloqueioCriado.fimBloqueio,
+        quadras: bloqueioCriado.quadras.map((q) => ({
+          id: q.id,
+          nome: q.nome,
+          numero: q.numero,
+        })),
+        motivo: bloqueioCriado.motivo
+          ? { id: bloqueioCriado.motivo.id, nome: bloqueioCriado.motivo.nome }
+          : null,
       },
     });
 
