@@ -11,7 +11,7 @@ const router = Router();
  * Helpers
 ========================= */
 function isAdminRole(t?: string) {
-    return ["ADMIN_MASTER"].includes(t || "");
+  return ["ADMIN_MASTER", "ADMIN_ATENDENTE"].includes(t || "");
 }
 
 function getAuth(req: any) {

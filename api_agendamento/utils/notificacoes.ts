@@ -39,15 +39,6 @@ async function getAdminRecipientsIds() {
 }
 
 async function getAtendenteBloqueiosRecipientsIds() {
-    // ✅ pega a config global das features (id=1)
-    const perms = await prisma.permissoesAtendente.findUnique({
-        where: { id: 1 },
-        select: { features: true },
-    });
-
-    const podeBloqueios = (perms?.features ?? []).includes("ATD_BLOQUEIOS" as AtendenteFeature);
-    if (!podeBloqueios) return [];
-
     const atendentes = await prisma.usuario.findMany({
         where: {
             tipo: TipoUsuario.ADMIN_ATENDENTE,
@@ -59,6 +50,7 @@ async function getAtendenteBloqueiosRecipientsIds() {
 
     return atendentes.map((a) => a.id);
 }
+
 
 async function getBloqueioRecipientsIds() {
     const [masters, atendentes] = await Promise.all([
