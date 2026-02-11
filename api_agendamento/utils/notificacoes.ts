@@ -634,3 +634,53 @@ export async function notifyAdminsChurrasPermanenteExcecaoSeDentro24h(params: {
     });
 }
 
+/** =========================
+ * CHURRAS COMUM: criado
+========================= */
+type ChurrasCriadoForNotify = {
+    id: string;
+    data: Date; // no banco = 00:00Z do dia
+    turno: Turno;
+
+    usuario?: { id: string; nome: string } | null;
+    churrasqueira?: { id: string; nome: string; numero: number } | null;
+};
+
+export async function notifyAdminsAgendamentoChurrasCriado(params: {
+    agendamento: ChurrasCriadoForNotify;
+    actorId?: string | null;
+}) {
+    const { agendamento, actorId = null } = params;
+
+    const ymd = agendamento.data.toISOString().slice(0, 10);
+
+    const churrasqueiraLabel =
+        agendamento.churrasqueira?.numero != null
+            ? `Churrasqueira ${agendamento.churrasqueira.numero}`
+            : (agendamento.churrasqueira?.nome ?? "Churrasqueira");
+
+    const donoNome = agendamento.usuario?.nome ?? "Usuário";
+
+    const title = "Novo agendamento de churrasqueira";
+    const message =
+        `${donoNome} criou um agendamento de churrasqueira: ` +
+        `${churrasqueiraLabel} • ${ymd} • Turno ${agendamento.turno}`;
+
+    return notifyAdmins({
+        type: NotificationType.AGENDAMENTO_CHURRASQUEIRA_CRIADO,
+        title,
+        message,
+        actorId,
+        data: {
+            agendamentoChurrasId: agendamento.id,
+            data: ymd,
+            turno: agendamento.turno,
+            hmReferencia: turnoStartHM(agendamento.turno), // útil pro front
+            churrasqueiraId: agendamento.churrasqueira?.id ?? null,
+            churrasqueiraNome: agendamento.churrasqueira?.nome ?? null,
+            churrasqueiraNumero: agendamento.churrasqueira?.numero ?? null,
+            usuarioId: agendamento.usuario?.id ?? null,
+            usuarioNome: donoNome,
+        } satisfies Prisma.JsonObject,
+    });
+}
