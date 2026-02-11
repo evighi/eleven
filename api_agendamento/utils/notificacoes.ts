@@ -256,7 +256,7 @@ export async function notifyAdminsAgendamentoCanceladoSeDentro12h(params: {
 }) {
     const { agendamento, actorId = null, actorTipo } = params;
 
-    // ✅ Só notifica se foi ADMIN_MASTER
+    // ✅ Só notifica se foi ADMIN_MASTER (mantém tua regra)
     if (actorTipo !== "ADMIN_MASTER") return null;
 
     const minutesToStart = minutesUntilStartLocal(agendamento.data, agendamento.horario);
@@ -275,15 +275,27 @@ export async function notifyAdminsAgendamentoCanceladoSeDentro12h(params: {
     const esporteNome = agendamento.esporte?.nome ?? "Esporte";
     const donoNome = agendamento.usuario?.nome ?? "Usuário";
 
+    // ✅ pega nome do admin que cancelou
+    let actorNome = "Admin";
+    if (actorId) {
+        const actor = await prisma.usuario.findUnique({
+            where: { id: actorId },
+            select: { nome: true },
+        });
+        if (actor?.nome) actorNome = actor.nome;
+    }
+
     const title = "Cancelamento em cima da hora";
-    const message = `ADMIN cancelou um agendamento com menos de 12h: ${esporteNome} • ${quadraLabel} • ${dataYMD} ${agendamento.horario} (faltavam ${faltam}) • Dono: ${donoNome}`;
+    const message =
+        `${actorNome} cancelou um agendamento com menos de 12h: ` +
+        `${esporteNome} • ${quadraLabel} • ${dataYMD} ${agendamento.horario} ` +
+        `(faltavam ${faltam}) • Dono: ${donoNome}`;
 
     return notifyAdmins({
         type: NotificationType.AGENDAMENTO_COMUM_CANCELADO,
         title,
         message,
         actorId,
-        // ✅ não passa recipientIds => por padrão vai só ADMIN_MASTER
         data: {
             agendamentoId: agendamento.id,
             data: dataYMD,
@@ -297,6 +309,7 @@ export async function notifyAdminsAgendamentoCanceladoSeDentro12h(params: {
             usuarioId: agendamento.usuario?.id ?? null,
             usuarioNome: donoNome,
             canceladoPorId: actorId,
+            canceladoPorNome: actorNome, // 👈 útil pro front também
             canceladoPorTipo: actorTipo ?? null,
         } satisfies Prisma.JsonObject,
     });
