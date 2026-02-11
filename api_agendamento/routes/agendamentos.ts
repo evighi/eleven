@@ -9,7 +9,8 @@ import { r2PublicUrl } from "../src/lib/r2";
 import { logAudit, TargetType } from "../utils/audit"; // 👈 AUDITORIA
 import { valorMultaPadrao } from "../utils/multa";     // 👈 multa fixa
 import { requireAtendenteFeature } from "../middleware/atendenteFeatures";
-import { notifyAdminsAgendamentoCriado } from "../utils/notificacoes";
+import { notifyAdminsAgendamentoCriado, notifyAdminsAgendamentoCanceladoSeDentro12h } from "../utils/notificacoes";
+
 
 // Mapa DiaSemana -> número JS (0=Dom..6=Sáb)
 const DIA_IDX: Record<DiaSemana, number> = {
@@ -1965,6 +1966,9 @@ router.post("/cancelar/:id", verificarToken, async (req, res) => {
         usuarioId: true,
         status: true,
         createdAt: true,
+        usuario: { select: { id: true, nome: true } },
+        quadra: { select: { id: true, nome: true, numero: true } },
+        esporte: { select: { id: true, nome: true } },
       },
     });
 
@@ -2044,6 +2048,24 @@ router.post("/cancelar/:id", verificarToken, async (req, res) => {
       });
     } catch (e) {
       console.error("[audit] falha ao registrar cancelamento:", e);
+    }
+
+    // 🔔 Notificação de cancelamento: somente se ADMIN_MASTER e faltando < 12h
+    try {
+      await notifyAdminsAgendamentoCanceladoSeDentro12h({
+        agendamento: {
+          id: ag.id,
+          data: ag.data,
+          horario: ag.horario,
+          usuario: ag.usuario,
+          quadra: ag.quadra,
+          esporte: ag.esporte,
+        },
+        actorId: reqCustom.usuario.usuarioLogadoId,
+        actorTipo: reqCustom.usuario.usuarioLogadoTipo,
+      });
+    } catch (e) {
+      console.error("[notify] falha ao criar notificação de cancelamento:", e);
     }
 
     return res.status(200).json({
