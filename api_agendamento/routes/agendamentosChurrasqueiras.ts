@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import cron from "node-cron"; // 👈 cron para finalizar vencidos
 import { notifyAdminsChurrasCanceladoSeDentro24h } from "../utils/notificacoes";
+import { notifyAdminsAgendamentoChurrasCriado } from "../utils/notificacoes";
 
 import verificarToken from "../middleware/authMiddleware";
 import { requireOwnerByRecord, isAdmin as isAdminTipo } from "../middleware/acl";
@@ -270,6 +271,28 @@ router.post("/", requireFeatureIfAtendente(FEATURE_CHURRAS), async (req, res) =>
         status: "CONFIRMADO",
       },
     });
+
+    try {
+      await notifyAdminsAgendamentoChurrasCriado({
+        agendamento: {
+          id: novo.id,
+          data: novo.data,
+          turno: novo.turno,
+          usuario: novo.usuario ? { id: novo.usuario.id, nome: novo.usuario.nome } : null,
+          churrasqueira: novo.churrasqueira
+            ? {
+              id: novo.churrasqueira.id,
+              nome: novo.churrasqueira.nome,
+              numero: novo.churrasqueira.numero,
+            }
+            : null,
+        },
+        actorId: req.usuario?.usuarioLogadoId ?? null,
+      });
+    } catch (e) {
+      console.error("[notify] churras comum criado erro:", e);
+    }
+
 
     return res.status(201).json(novo);
   } catch (err) {
