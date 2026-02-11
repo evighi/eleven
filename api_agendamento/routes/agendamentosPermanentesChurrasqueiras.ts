@@ -10,6 +10,11 @@ import { requireAdmin, requireOwnerByRecord } from "../middleware/acl";
 import { requireAtendenteFeature } from "../middleware/atendenteFeatures";
 import { logAudit, TargetType } from "../utils/audit";
 
+// ✅ 🔔 NOTIF (24h por turno)
+import {
+  notifyAdminsChurrasPermanenteExcecaoSeDentro24h,
+} from "../utils/notificacoes";
+
 const prisma = new PrismaClient();
 const router = Router();
 
@@ -152,12 +157,12 @@ router.get(
 
       const excecoesNaJanela = permIds.length
         ? await prisma.agendamentoPermanenteChurrasqueiraCancelamento.findMany({
-            where: {
-              agendamentoPermanenteChurrasqueiraId: { in: permIds },
-              data: { gte: inicioJanelaUTC, lt: fimExclusiveUTC },
-            },
-            select: { id: true, agendamentoPermanenteChurrasqueiraId: true, data: true },
-          })
+          where: {
+            agendamentoPermanenteChurrasqueiraId: { in: permIds },
+            data: { gte: inicioJanelaUTC, lt: fimExclusiveUTC },
+          },
+          select: { id: true, agendamentoPermanenteChurrasqueiraId: true, data: true },
+        })
         : [];
 
       const totalExcecoesNaJanela = excecoesNaJanela.length;
@@ -305,8 +310,14 @@ router.post(
       });
     }
 
-    const { diaSemana, turno, churrasqueiraId, usuarioId: usuarioIdBody, convidadosNomes = [], dataInicio } =
-      validacao.data;
+    const {
+      diaSemana,
+      turno,
+      churrasqueiraId,
+      usuarioId: usuarioIdBody,
+      convidadosNomes = [],
+      dataInicio,
+    } = validacao.data;
 
     try {
       const exists = await prisma.churrasqueira.findUnique({
@@ -344,7 +355,9 @@ router.post(
         donoId = convidado.id;
       }
       if (!donoId) {
-        return res.status(400).json({ erro: "Informe um usuário dono (usuarioId) ou um convidado em convidadosNomes." });
+        return res.status(400).json({
+          erro: "Informe um usuário dono (usuarioId) ou um convidado em convidadosNomes.",
+        });
       }
 
       const novo = await prisma.agendamentoPermanenteChurrasqueira.create({
@@ -631,6 +644,35 @@ router.post(
         },
       });
 
+      // ✅ 🔔 NOTIF (se dentro de 24h do turno)
+      try {
+        const actorId = req.usuario!.usuarioLogadoId;
+        const actorTipo = req.usuario!.usuarioLogadoTipo;
+
+        const permForNotify = await prisma.agendamentoPermanenteChurrasqueira.findUnique({
+          where: { id },
+          select: {
+            id: true,
+            diaSemana: true,
+            turno: true,
+            usuario: { select: { id: true, nome: true } },
+            churrasqueira: { select: { id: true, nome: true, numero: true } },
+          },
+        });
+
+        if (permForNotify) {
+          await notifyAdminsChurrasPermanenteExcecaoSeDentro24h({
+            permanente: permForNotify,
+            ocorrenciaYMD: iso, // o dia cancelado
+            actorId,
+            actorTipo,
+            motivo: motivo ?? null,
+          });
+        }
+      } catch (e) {
+        console.error("[notify] churras permanente excecao (24h) erro:", e);
+      }
+
       await logAudit({
         event: "CHURRAS_PERM_EXCECAO",
         req,
@@ -661,6 +703,22 @@ router.post(
   }
 );
 
+/* =========================================================
+   ✅ Helper: próxima ocorrência (YYYY-MM-DD) de um diaSemana
+   - base = hojeUTC00 (do dia local) para ficar alinhado com teu storage
+   ========================================================= */
+function nextOccurrenceISOFromTodayLocal(diaSemana: DiaSemana) {
+  const { hojeUTC00 } = getStoredUtcBoundaryForLocalDay(new Date());
+  const base = hojeUTC00; // 00:00Z do "hoje local"
+  const targetIdx = DIA_IDX[diaSemana];
+
+  let d = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate()));
+  while (d.getUTCDay() !== targetIdx) {
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return toISODateUTC(d); // "YYYY-MM-DD"
+}
+
 /**
  * POST /churrasqueiras/permanentes/cancelar/:id
  * (encerrar recorrência)
@@ -685,6 +743,7 @@ router.post(
       const antes = await prisma.agendamentoPermanenteChurrasqueira.findUnique({
         where: { id },
         select: {
+          id: true,
           status: true,
           churrasqueiraId: true,
           diaSemana: true,
@@ -693,6 +752,8 @@ router.post(
         },
       });
 
+      if (!antes) return res.status(404).json({ erro: "Agendamento permanente não encontrado" });
+
       const agendamento = await prisma.agendamentoPermanenteChurrasqueira.update({
         where: { id },
         data: {
@@ -700,6 +761,56 @@ router.post(
           canceladoPorId: req.usuario.usuarioLogadoId,
         },
       });
+
+      // ✅ 🔔 NOTIF (se a PRÓXIMA ocorrência do permanente está dentro de 24h)
+      // Como o cancelamento é “da recorrência inteira”, usamos a próxima ocorrência (a mais próxima no calendário)
+      try {
+        const actorId = req.usuario.usuarioLogadoId;
+        const actorTipo = req.usuario.usuarioLogadoTipo;
+
+        const permForNotify = await prisma.agendamentoPermanenteChurrasqueira.findUnique({
+          where: { id },
+          select: {
+            id: true,
+            diaSemana: true,
+            turno: true,
+            usuario: { select: { id: true, nome: true } },
+            churrasqueira: { select: { id: true, nome: true, numero: true } },
+          },
+        });
+
+        if (permForNotify) {
+          const ocorrenciaYMD = nextOccurrenceISOFromTodayLocal(permForNotify.diaSemana as DiaSemana);
+
+          // se tiver dataInicio e a próxima ocorrência calculada cair antes dela, pula pra próxima semana até bater
+          // (evita notificação “antes de começar”)
+          const dataInicio = await prisma.agendamentoPermanenteChurrasqueira.findUnique({
+            where: { id },
+            select: { dataInicio: true },
+          });
+
+          let ocorr = ocorrenciaYMD;
+          if (dataInicio?.dataInicio) {
+            const startISO = toISODateUTC(new Date(dataInicio.dataInicio));
+            // se ocorr < startISO => empurra de 7 em 7 até >= startISO
+            let occDate = toUtc00(ocorr);
+            while (toISODateUTC(occDate) < startISO) {
+              occDate = new Date(Date.UTC(occDate.getUTCFullYear(), occDate.getUTCMonth(), occDate.getUTCDate() + 7));
+            }
+            ocorr = toISODateUTC(occDate);
+          }
+
+          await notifyAdminsChurrasPermanenteExcecaoSeDentro24h({
+            permanente: permForNotify,
+            ocorrenciaYMD: ocorr,
+            actorId,
+            actorTipo,
+            motivo: "Cancelamento da recorrência",
+          });
+        }
+      } catch (e) {
+        console.error("[notify] churras permanente cancel (24h) erro:", e);
+      }
 
       await logAudit({
         event: "CHURRAS_PERM_CANCEL",

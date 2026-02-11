@@ -5,6 +5,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import cron from "node-cron"; // 👈 cron para finalizar vencidos
+import { notifyAdminsChurrasCanceladoSeDentro24h } from "../utils/notificacoes";
 
 import verificarToken from "../middleware/authMiddleware";
 import { requireOwnerByRecord, isAdmin as isAdminTipo } from "../middleware/acl";
@@ -468,6 +469,33 @@ router.post(
           canceladoPorId: req.usuario.usuarioLogadoId,
         },
       });
+
+      // 🔔 NOTIF: só dispara se ADMIN_MASTER e faltavam < 24h (por turno)
+      try {
+        const actorId = req.usuario.usuarioLogadoId;
+        const actorTipo = req.usuario.usuarioLogadoTipo;
+
+        const agForNotify = await prisma.agendamentoChurrasqueira.findUnique({
+          where: { id: before.id },
+          select: {
+            id: true,
+            data: true,
+            turno: true,
+            usuario: { select: { id: true, nome: true } },
+            churrasqueira: { select: { id: true, nome: true, numero: true } },
+          },
+        });
+
+        if (agForNotify) {
+          await notifyAdminsChurrasCanceladoSeDentro24h({
+            agendamento: agForNotify,
+            actorId,
+            actorTipo,
+          });
+        }
+      } catch (e) {
+        console.error("[notify] churras cancelado (24h) erro:", e);
+      }
 
       return res.json({ message: "Agendamento cancelado com sucesso.", agendamento: up });
     } catch (err) {

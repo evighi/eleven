@@ -8,6 +8,7 @@ import {
 } from "@prisma/client";
 import { notificationHub } from "./notificationHub"; // ajuste o path se necessário
 import { differenceInMinutes } from "date-fns";
+import { Turno } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
@@ -459,4 +460,177 @@ export async function notifyAdminsPermanenteExcecaoSeDentro12h(params: {
     });
 }
 
+const CHURRAS_TURNO_START: Record<Turno, string> = {
+    DIA: "10:00",
+    NOITE: "18:00",
+};
+
+function turnoStartHM(turno: Turno): string {
+    return CHURRAS_TURNO_START[turno] ?? "10:00";
+}
+
+type ChurrasCanceladoForNotify = {
+    id: string;
+    data: Date; // no banco = 00:00Z do dia
+    turno: Turno;
+
+    usuario?: { id: string; nome: string } | null;
+    churrasqueira?: { id: string; nome: string; numero: number } | null;
+};
+
+export async function notifyAdminsChurrasCanceladoSeDentro24h(params: {
+    agendamento: ChurrasCanceladoForNotify;
+    actorId?: string | null;
+    actorTipo?: TipoUsuario | string;
+}) {
+    const { agendamento, actorId = null, actorTipo } = params;
+
+    // ✅ Mesma regra: só notifica se foi ADMIN_MASTER
+    if (actorTipo !== "ADMIN_MASTER") return null;
+
+    const ymd = agendamento.data.toISOString().slice(0, 10);
+    const hmRef = turnoStartHM(agendamento.turno);
+
+    const minutesToStart = minutesUntilStartLocalFromYMD(ymd, hmRef);
+
+    // ✅ faltam < 24h (e ainda não começou)
+    if (!(minutesToStart > 0 && minutesToStart < 24 * 60)) return null;
+
+    // nome do admin que cancelou
+    let actorNome = "Admin";
+    if (actorId) {
+        const actor = await prisma.usuario.findUnique({
+            where: { id: actorId },
+            select: { nome: true },
+        });
+        if (actor?.nome) actorNome = actor.nome;
+    }
+
+    const faltam = formatFaltam(minutesToStart);
+
+    const churrasqueiraLabel =
+        agendamento.churrasqueira?.numero != null
+            ? `Churrasqueira ${agendamento.churrasqueira.numero}`
+            : (agendamento.churrasqueira?.nome ?? "Churrasqueira");
+
+    const donoNome = agendamento.usuario?.nome ?? "Usuário";
+
+    const title = "Cancelamento em cima da hora (churrasqueira)";
+    const message =
+        `${actorNome} cancelou um agendamento de churrasqueira com menos de 24h: ` +
+        `${churrasqueiraLabel} • ${ymd} • Turno ${agendamento.turno} ` +
+        `(faltavam ${faltam}) • Dono: ${donoNome}`;
+
+    return notifyAdmins({
+        type: NotificationType.AGENDAMENTO_CHURRASQUEIRA_CANCELADO,
+        title,
+        message,
+        actorId,
+        data: {
+            agendamentoChurrasId: agendamento.id,
+            data: ymd,
+            turno: agendamento.turno,
+            hmReferencia: hmRef,
+            minsAteInicio: minutesToStart,
+
+            churrasqueiraId: agendamento.churrasqueira?.id ?? null,
+            churrasqueiraNome: agendamento.churrasqueira?.nome ?? null,
+            churrasqueiraNumero: agendamento.churrasqueira?.numero ?? null,
+
+            usuarioId: agendamento.usuario?.id ?? null,
+            usuarioNome: donoNome,
+
+            canceladoPorId: actorId,
+            canceladoPorNome: actorNome,
+            canceladoPorTipo: actorTipo ?? null,
+        } satisfies Prisma.JsonObject,
+    });
+}
+
+/** =========================
+ * CHURRAS PERMANENTE: exceção (um dia) dentro de 24h
+========================= */
+type ChurrasPermanenteOcorrenciaCanceladaForNotify = {
+    id: string; // permanenteId
+    diaSemana: string;
+    turno: Turno;
+
+    usuario?: { id: string; nome: string } | null;
+    churrasqueira?: { id: string; nome: string; numero: number } | null;
+};
+
+export async function notifyAdminsChurrasPermanenteExcecaoSeDentro24h(params: {
+    permanente: ChurrasPermanenteOcorrenciaCanceladaForNotify;
+    ocorrenciaYMD: string; // "YYYY-MM-DD" (dia local da ocorrência cancelada)
+    actorId?: string | null;
+    actorTipo?: TipoUsuario | string;
+    motivo?: string | null;
+}) {
+    const {
+        permanente,
+        ocorrenciaYMD,
+        actorId = null,
+        actorTipo,
+        motivo = null,
+    } = params;
+
+    if (actorTipo !== "ADMIN_MASTER") return null;
+
+    const hmRef = turnoStartHM(permanente.turno);
+    const minutesToStart = minutesUntilStartLocalFromYMD(ocorrenciaYMD, hmRef);
+
+    if (!(minutesToStart > 0 && minutesToStart < 24 * 60)) return null;
+
+    let actorNome = "Admin";
+    if (actorId) {
+        const actor = await prisma.usuario.findUnique({
+            where: { id: actorId },
+            select: { nome: true },
+        });
+        if (actor?.nome) actorNome = actor.nome;
+    }
+
+    const faltam = formatFaltam(minutesToStart);
+
+    const churrasqueiraLabel =
+        permanente.churrasqueira?.numero != null
+            ? `Churrasqueira ${permanente.churrasqueira.numero}`
+            : (permanente.churrasqueira?.nome ?? "Churrasqueira");
+
+    const donoNome = permanente.usuario?.nome ?? "Usuário";
+
+    const title = "Cancelamento em cima da hora (permanente churras)";
+    const message =
+        `${actorNome} cancelou uma ocorrência de permanente (churrasqueira) com menos de 24h: ` +
+        `${churrasqueiraLabel} • ${ocorrenciaYMD} • Turno ${permanente.turno} ` +
+        `(faltavam ${faltam}) • Dono: ${donoNome}`;
+
+    return notifyAdmins({
+        type: NotificationType.AGENDAMENTO_CHURRASQUEIRA_PERMANENTE_EXCECAO,
+        title,
+        message,
+        actorId,
+        data: {
+            permanenteChurrasId: permanente.id,
+            ocorrenciaData: ocorrenciaYMD,
+            turno: permanente.turno,
+            hmReferencia: hmRef,
+            minsAteInicio: minutesToStart,
+            diaSemana: permanente.diaSemana,
+
+            churrasqueiraId: permanente.churrasqueira?.id ?? null,
+            churrasqueiraNome: permanente.churrasqueira?.nome ?? null,
+            churrasqueiraNumero: permanente.churrasqueira?.numero ?? null,
+
+            usuarioId: permanente.usuario?.id ?? null,
+            usuarioNome: donoNome,
+
+            canceladoPorId: actorId,
+            canceladoPorNome: actorNome,
+            canceladoPorTipo: actorTipo ?? null,
+
+            motivo: motivo ?? null,
+        } satisfies Prisma.JsonObject,
+    });
+}
 
