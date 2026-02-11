@@ -365,3 +365,98 @@ export async function notifyBloqueioCriado(params: {
     });
 }
 
+type PermanenteOcorrenciaCanceladaForNotify = {
+    id: string;               // permanenteId
+    diaSemana: string;
+    horario: string;
+
+    usuario?: { id: string; nome: string } | null;
+    quadra?: { id: string; nome: string; numero: number } | null;
+    esporte?: { id: string; nome: string } | null;
+};
+
+// calcula minutos até a ocorrência (YYYY-MM-DD local + HH:mm) no MESMO padrão SP-safe
+function minutesUntilStartLocalFromYMD(ymd: string, hm: string) {
+    const now = new Date();
+    const nowYMD = localYMD(now);
+    const nowHM = localHM(now);
+    const nowMs = msFromLocalYMDHM(nowYMD, nowHM);
+
+    const schedMs = msFromLocalYMDHM(ymd, hm);
+    return Math.floor((schedMs - nowMs) / 60000);
+}
+
+export async function notifyAdminsPermanenteExcecaoSeDentro12h(params: {
+    permanente: PermanenteOcorrenciaCanceladaForNotify;
+    ocorrenciaYMD: string; // "YYYY-MM-DD" (dia local da ocorrência que foi cancelada)
+    actorId?: string | null;
+    actorTipo?: TipoUsuario | string;
+    motivo?: string | null;
+}) {
+    const { permanente, ocorrenciaYMD, actorId = null, actorTipo, motivo = null } = params;
+
+    // ✅ Só notifica se foi ADMIN_MASTER (mantém igual ao comum)
+    if (actorTipo !== "ADMIN_MASTER") return null;
+
+    const minutesToStart = minutesUntilStartLocalFromYMD(ocorrenciaYMD, permanente.horario);
+
+    // ✅ Só notifica se ainda vai acontecer e faltam < 12h
+    if (!(minutesToStart > 0 && minutesToStart < 12 * 60)) return null;
+
+    // nome do admin que cancelou
+    let actorNome = "Admin";
+    if (actorId) {
+        const actor = await prisma.usuario.findUnique({
+            where: { id: actorId },
+            select: { nome: true },
+        });
+        if (actor?.nome) actorNome = actor.nome;
+    }
+
+    const faltam = formatFaltam(minutesToStart);
+
+    const quadraLabel =
+        permanente.quadra?.numero != null
+            ? `Quadra ${permanente.quadra.numero}`
+            : (permanente.quadra?.nome ?? "Quadra");
+
+    const esporteNome = permanente.esporte?.nome ?? "Esporte";
+    const donoNome = permanente.usuario?.nome ?? "Usuário";
+
+    const title = "Cancelamento em cima da hora (permanente)";
+    const message =
+        `${actorNome} cancelou a próxima ocorrência de um permanente com menos de 12h: ` +
+        `${esporteNome} • ${quadraLabel} • ${ocorrenciaYMD} ${permanente.horario} ` +
+        `(faltavam ${faltam}) • Dono: ${donoNome}`;
+
+    return notifyAdmins({
+        type: NotificationType.AGENDAMENTO_PERMANENTE_EXCECAO,
+        title,
+        message,
+        actorId,
+        data: {
+            permanenteId: permanente.id,
+            ocorrenciaData: ocorrenciaYMD,
+            horario: permanente.horario,
+            minsAteInicio: minutesToStart,
+            diaSemana: permanente.diaSemana,
+
+            esporteId: permanente.esporte?.id ?? null,
+            esporteNome,
+            quadraId: permanente.quadra?.id ?? null,
+            quadraNumero: permanente.quadra?.numero ?? null,
+            quadraNome: permanente.quadra?.nome ?? null,
+
+            usuarioId: permanente.usuario?.id ?? null,
+            usuarioNome: donoNome,
+
+            canceladoPorId: actorId,
+            canceladoPorNome: actorNome,
+            canceladoPorTipo: actorTipo ?? null,
+
+            motivo: motivo ?? null,
+        } satisfies Prisma.JsonObject,
+    });
+}
+
+
