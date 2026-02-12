@@ -793,14 +793,22 @@ export default function AdminHome() {
   }, [buscaUsuario, buscarUsuarios]);
 
   const abrirModalTransferir = () => {
+    if (!agendamentoSelecionado) return;
+
+    if (agendamentoSelecionado.tipoReserva !== "comum") {
+      showAlert("Transferência disponível apenas para agendamentos avulsos.", "info");
+      return;
+    }
+
     setBuscaUsuario("");
     setUsuariosFiltrados([]);
     setUsuarioSelecionado(null);
-    setCopiarExcecoes(true); // padrão
+    setCopiarExcecoes(true);
     setAbrirModalTransferencia(true);
   };
 
   const confirmarTransferencia = async () => {
+    
     if (!agendamentoSelecionado) {
       showAlert("Nenhum agendamento selecionado.", "error");
       return;
@@ -809,6 +817,7 @@ export default function AdminHome() {
       showAlert("Selecione um usuário para transferir.", "info");
       return;
     }
+    
 
     if (agendamentoSelecionado.tipoLocal !== "quadra") {
       showAlert(
@@ -817,9 +826,11 @@ export default function AdminHome() {
       );
       return;
     }
+    
 
     setLoadingTransferencia(true);
     try {
+      
       const isPerm = agendamentoSelecionado.tipoReserva === "permanente";
       const rota = isPerm
         ? `agendamentosPermanentes/${agendamentoSelecionado.agendamentoId}/transferir`
@@ -2406,12 +2417,12 @@ export default function AdminHome() {
                 >
                   Cancelar reserva
                 </button>
-
-                {agendamentoSelecionado.tipoLocal === "quadra" && (
-                  <button
-                    onClick={abrirModalTransferir}
-                    disabled={loadingTransferencia}
-                    className="
+                {agendamentoSelecionado.tipoLocal === "quadra" &&
+                  agendamentoSelecionado.tipoReserva === "comum" && (
+                    <button
+                      onClick={abrirModalTransferir}
+                      disabled={loadingTransferencia}
+                      className="
         w-full sm:w-[200px]
         inline-flex items-center justify-center
         rounded-md
@@ -2425,10 +2436,10 @@ export default function AdminHome() {
         disabled:opacity-60
         transition-colors
       "
-                  >
-                    {loadingTransferencia ? "Transferindo..." : "Transferir"}
-                  </button>
-                )}
+                    >
+                      {loadingTransferencia ? "Transferindo..." : "Transferir"}
+                    </button>
+                  )}
               </div>
             </div>
 
