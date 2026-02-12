@@ -1398,33 +1398,35 @@ export default function TodosHorariosPage() {
                 <button
                   onClick={abrirFluxoCancelamento}
                   className="
-                    w-full sm:w-[200px]
-                    inline-flex items-center justify-center
-                    rounded-md border border-red-500
-                    bg-red-50 text-red-600
-                    px-6 py-2.5 text-sm font-semibold
-                    cursor-pointer hover:bg-red-100
-                    transition-colors
-                  "
+      w-full sm:w-[200px]
+      inline-flex items-center justify-center
+      rounded-md border border-red-500
+      bg-red-50 text-red-600
+      px-6 py-2.5 text-sm font-semibold
+      cursor-pointer hover:bg-red-100
+      transition-colors
+    "
                 >
                   Cancelar reserva
                 </button>
 
-                <button
-                  onClick={abrirModalTransferir}
-                  disabled={loadingTransferencia}
-                  className="
-                    w-full sm:w-[200px]
-                    inline-flex items-center justify-center
-                    rounded-md border border-gray-500
-                    bg-gray-50 text-gray-700
-                    px-6 py-2.5 text-sm font-semibold
-                    cursor-pointer hover:bg-gray-100
-                    disabled:opacity-60 transition-colors
-                  "
-                >
-                  {loadingTransferencia ? "Transferindo..." : "Transferir"}
-                </button>
+                {agendamentoSelecionado.tipoReserva === "comum" && (
+                  <button
+                    onClick={abrirModalTransferir}
+                    disabled={loadingTransferencia}
+                    className="
+        w-full sm:w-[200px]
+        inline-flex items-center justify-center
+        rounded-md border border-gray-500
+        bg-gray-50 text-gray-700
+        px-6 py-2.5 text-sm font-semibold
+        cursor-pointer hover:bg-gray-100
+        disabled:opacity-60 transition-colors
+      "
+                  >
+                    {loadingTransferencia ? "Transferindo..." : "Transferir"}
+                  </button>
+                )}
               </div>
             </div>
 
