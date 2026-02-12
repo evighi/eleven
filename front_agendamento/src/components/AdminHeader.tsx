@@ -2,26 +2,46 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { Bell, Menu } from "lucide-react";
+import { Menu } from "lucide-react";
 import { useRef, useState } from "react";
 import { useAuthStore } from "@/context/AuthStore";
 import AdminSideMenu from "@/components/AdminSideMenu";
 
+import AdminNotificationsPopover from "@/components/AdminNotificationsPopover";
+import NotificationBell from "@/components/NotificationBell";
+import { useNotifications } from "@/hooks/useNotifications";
+
 export default function AdminHeader() {
   const { usuario } = useAuthStore();
-  const [open, setOpen] = useState(false);
-  const menuBtnRef = useRef<HTMLButtonElement>(null);
 
-  // ✅ Se não tem usuário, não renderiza nada
+  const [openMenu, setOpenMenu] = useState(false);
+  const menuBtnRef = useRef<HTMLButtonElement | null>(null);
+
+  const [openNotif, setOpenNotif] = useState(false);
+  const notifBtnRef = useRef<HTMLButtonElement | null>(null);
+
+  // ✅ um único estado de notificações para tudo
+  const notif = useNotifications();
+
   if (!usuario) return null;
 
   return (
     <>
-      <AdminSideMenu open={open} onClose={() => setOpen(false)} anchorRef={menuBtnRef} />
+      <AdminNotificationsPopover
+        open={openNotif}
+        onClose={() => setOpenNotif(false)}
+        anchorRef={notifBtnRef}
+        loading={notif.loading}
+        items={notif.items}
+        fetchNotifications={notif.fetchNotifications}
+        markVisibleRead={notif.markVisibleRead}
+      />
+
+      <AdminSideMenu open={openMenu} onClose={() => setOpenMenu(false)} anchorRef={menuBtnRef} />
 
       <div className="bg-white">
         <div className="max-w-6xl mx-auto border-b border-gray-300">
-          <header className="px-4 py-3 flex items-center justify-between">
+          <header data-admin-header-container className="px-4 py-3 flex items-center justify-between">
             <Link href="/adminMaster" className="flex items-center">
               <Image
                 src="/logoelevenhor.png"
@@ -34,17 +54,35 @@ export default function AdminHeader() {
             </Link>
 
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                className="p-2 rounded-md text-gray-600 hover:text-gray-800 hover:bg-gray-100 transition"
-                aria-label="Notificações"
-              >
-                <Bell size={24} className="text-gray-600" fill="currentColor" />
-              </button>
+              <NotificationBell
+                open={openNotif}
+                anchorRef={notifBtnRef}
+                countUnread={notif.countUnread}
+                onToggle={() => {
+                  setOpenMenu(false);
+
+                  if (openNotif) {
+                    // ✅ fecha na hora
+                    setOpenNotif(false);
+
+                    // ✅ marca lidas "em background" (não bloqueia UI)
+                    void notif.markVisibleRead();
+                    return;
+                  }
+
+                  setOpenNotif(true);
+                }}
+              />
 
               <button
                 ref={menuBtnRef}
-                onClick={() => setOpen((v) => !v)}
+                onClick={() => {
+                  if (openNotif) {
+                    setOpenNotif(false);
+                    void notif.markVisibleRead();
+                  }
+                  setOpenMenu((v) => !v);
+                }}
                 className="p-2 rounded-md text-gray-700 hover:text-gray-900 hover:bg-gray-100 transition cursor-pointer"
                 aria-label="Abrir menu"
               >
