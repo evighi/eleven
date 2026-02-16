@@ -84,6 +84,52 @@ function toISODateUTC(d: Date) {
   return d.toISOString().slice(0, 10);
 }
 
+// =========================
+// CLUBE ABERTO/FECHADO
+// - padrão: aberto 07:00..23:00
+// - fechado se existir BloqueioQuadra com motivo.nome = "Fechado" no intervalo
+// =========================
+
+const MOTIVO_FECHADO_NOME = "Fechado";
+
+// Horários permitidos para reserva: [07:00, 23:00)
+// OBS: 23:00 não é "slot" de reserva (é o fim do range)
+function horarioDentroDaJanelaDoClube(horario: string) {
+  return horario >= "07:00" && horario < "23:00";
+}
+
+// Busca intervalos de FECHAMENTO do clube (bloqueios com motivo "Fechado") no dia UTC
+async function getFechamentosClubeNoDia(range: { inicio: Date; fim: Date }) {
+  const fechamentos = await prisma.bloqueioQuadra.findMany({
+    where: {
+      dataBloqueio: { gte: range.inicio, lt: range.fim },
+      motivo: { is: { nome: MOTIVO_FECHADO_NOME } }, // exige motivoId != null e nome "Fechado"
+    },
+    select: {
+      id: true,
+      inicioBloqueio: true,
+      fimBloqueio: true,
+      motivo: { select: { nome: true } },
+    },
+    orderBy: [{ inicioBloqueio: "asc" }],
+  });
+
+  return fechamentos.map((f) => ({
+    id: f.id,
+    inicio: f.inicioBloqueio,
+    fim: f.fimBloqueio,
+    motivoNome: f.motivo?.nome ?? MOTIVO_FECHADO_NOME,
+  }));
+}
+
+function clubeFechadoNoHorario(
+  horario: string,
+  fechamentos: { inicio: string; fim: string }[]
+) {
+  return fechamentos.some((f) => horarioDentroDoBloqueio(horario, f.inicio, f.fim));
+}
+
+
 /** Próxima data do permanente PULANDO exceções (usa hoje como base ou dataInicio se no futuro) */
 async function proximaDataPermanenteSemExcecao(p: {
   id: string;
@@ -2500,5 +2546,74 @@ router.get("/permanentes", async (req, res) => {
     return res.status(500).json({ erro: "Erro ao montar grade de permanentes" });
   }
 });
+
+/**
+ * ✅ /disponibilidadeGeral/clube-status
+ * Parâmetros: ?data=YYYY-MM-DD (obrigatório)
+ *
+ * Retorna:
+ * - horas (07..23)
+ * - funcionamentoPorHora (aberto/fechado)
+ * - abertoAgora (com base no relógio do servidor)
+ */
+router.get("/clube-status", async (req, res) => {
+  const { data } = req.query;
+
+  if (typeof data !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(data)) {
+    return res.status(400).json({ erro: "Parâmetro obrigatório: data (YYYY-MM-DD)" });
+  }
+
+  const range = getUtcDayRange(data);
+
+  try {
+    const horas = horasDoDia(); // 07:00..23:00 (slots)
+    const fechamentos = await getFechamentosClubeNoDia(range);
+
+    const funcionamentoPorHora: Record<
+      string,
+      { aberto: boolean; fechadoPorMotivo: string | null }
+    > = {};
+
+    for (const h of horas) {
+      const dentroJanela = horarioDentroDaJanelaDoClube(h);
+      const fechado = clubeFechadoNoHorario(h, fechamentos);
+
+      const aberto = dentroJanela && !fechado;
+
+      funcionamentoPorHora[h] = {
+        aberto,
+        fechadoPorMotivo: fechado ? MOTIVO_FECHADO_NOME : null,
+      };
+    }
+
+    // "agora" (usa hora local do servidor, mas checa status dentro do grid)
+    // "agora" em America/Sao_Paulo (independente do timezone do servidor)
+    const now = new Date();
+    const horaAgora = now.toLocaleTimeString("pt-BR", {
+      timeZone: "America/Sao_Paulo",
+      hour: "2-digit",
+      minute: "2-digit",
+    }); // ex: "17:42"
+
+    // Se agora não é exatamente ":00", checa por intervalo:
+    // vamos considerar fechado se cair dentro de qualquer intervalo e dentro da janela 07-23.
+    const abertoAgora =
+      horarioDentroDaJanelaDoClube(horaAgora) &&
+      !clubeFechadoNoHorario(horaAgora, fechamentos);
+
+    return res.json({
+      data,
+      horas,
+      abertoAgora,
+      horaAgora,
+      fechamentos, // opcional: ajuda o admin a entender por quê fechou
+      funcionamentoPorHora,
+    });
+  } catch (err) {
+    console.error("Erro /disponibilidadeGeral/clube-status:", err);
+    return res.status(500).json({ erro: "Erro ao calcular status do clube" });
+  }
+});
+
 
 export default router;
