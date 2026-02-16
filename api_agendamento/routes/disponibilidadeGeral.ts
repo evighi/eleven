@@ -94,9 +94,13 @@ const MOTIVO_FECHADO_NOME = "Fechado";
 
 // Horários permitidos para reserva: [07:00, 23:00)
 // OBS: 23:00 não é "slot" de reserva (é o fim do range)
+// Horários permitidos para reserva: [07:00, 23:00)
+// OBS: 23:00 não é "slot" de reserva, mas pode aparecer no status como limite final.
 function horarioDentroDaJanelaDoClube(horario: string) {
+  if (horario === "23:00") return true; // 👈 permite o slot de borda no status
   return horario >= "07:00" && horario < "23:00";
 }
+
 
 // Busca intervalos de FECHAMENTO do clube (bloqueios com motivo "Fechado") no dia UTC
 async function getFechamentosClubeNoDia(range: { inicio: Date; fim: Date }) {
