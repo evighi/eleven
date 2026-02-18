@@ -54,6 +54,23 @@ function getUtcDayRange(dateStr: string) {
   return { inicio, fim };
 }
 
+function hhmmToMinutes(hhmm: string) {
+  const [hh, mm] = hhmm.split(":").map(Number);
+  return hh * 60 + mm;
+}
+
+// ✅ range UTC para um período (dias) inclusivo: [inicioDia, (fimDia+1) )
+function getUtcDateRangeInclusive(dataInicioStr: string, dataFimStr: string) {
+  const baseIni = dataInicioStr.slice(0, 10);
+  const baseFim = dataFimStr.slice(0, 10);
+
+  const inicio = new Date(`${baseIni}T00:00:00.000Z`);
+  const fimExclusive = new Date(`${baseFim}T00:00:00.000Z`);
+  fimExclusive.setUTCDate(fimExclusive.getUTCDate() + 1);
+
+  return { inicio, fimExclusive };
+}
+
 router.post("/", async (req, res) => {
   const parsed = bloqueioSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -485,6 +502,122 @@ router.delete("/:id", async (req, res) => {
     }
     console.error("Erro ao remover bloqueio:", error);
     return res.status(500).json({ erro: "Erro ao remover bloqueio" });
+  }
+});
+
+router.get("/relatorio-horas", async (req, res) => {
+  try {
+    const { dataInicio, dataFim, motivoId } = req.query;
+
+    // validações básicas
+    if (typeof dataInicio !== "string" || dataInicio.trim() === "") {
+      return res.status(400).json({ erro: "Parâmetro 'dataInicio' é obrigatório (YYYY-MM-DD)." });
+    }
+    if (typeof dataFim !== "string" || dataFim.trim() === "") {
+      return res.status(400).json({ erro: "Parâmetro 'dataFim' é obrigatório (YYYY-MM-DD)." });
+    }
+    if (typeof motivoId !== "string" || motivoId.trim() === "") {
+      return res.status(400).json({ erro: "Parâmetro 'motivoId' é obrigatório (uuid)." });
+    }
+
+    const iniStr = dataInicio.trim();
+    const fimStr = dataFim.trim();
+    const motivoStr = motivoId.trim();
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(iniStr)) {
+      return res.status(400).json({ erro: "Parâmetro 'dataInicio' inválido. Use YYYY-MM-DD." });
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fimStr)) {
+      return res.status(400).json({ erro: "Parâmetro 'dataFim' inválido. Use YYYY-MM-DD." });
+    }
+    // valida uuid simples (como tu já usa zod em outros pontos)
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(motivoStr)) {
+      return res.status(400).json({ erro: "Parâmetro 'motivoId' inválido. Envie um uuid válido." });
+    }
+
+    // valida ordem do período
+    if (iniStr > fimStr) {
+      return res.status(400).json({ erro: "'dataInicio' não pode ser maior que 'dataFim'." });
+    }
+
+    const { inicio, fimExclusive } = getUtcDateRangeInclusive(iniStr, fimStr);
+
+    // (opcional) garantir que motivo existe (pra não retornar tudo zerado por typo)
+    const motivo = await prisma.motivoBloqueio.findUnique({
+      where: { id: motivoStr },
+      select: { id: true, nome: true, descricao: true, ativo: true },
+    });
+
+    if (!motivo) {
+      return res.status(404).json({ erro: "Motivo de bloqueio não encontrado." });
+    }
+
+    // busca bloqueios do período + motivo
+    const bloqueios = await prisma.bloqueioQuadra.findMany({
+      where: {
+        motivoId: motivoStr,
+        dataBloqueio: { gte: inicio, lt: fimExclusive },
+      },
+      select: {
+        id: true,
+        dataBloqueio: true,
+        inicioBloqueio: true,
+        fimBloqueio: true,
+        quadras: { select: { id: true, nome: true, numero: true } },
+      },
+      orderBy: [{ dataBloqueio: "asc" }, { inicioBloqueio: "asc" }],
+    });
+
+    // agrega por quadra
+    const porQuadraMap = new Map<
+      string,
+      { quadraId: string; nome: string; numero: number; horas: number }
+    >();
+
+    let totalHoras = 0;
+
+    for (const b of bloqueios) {
+      const iniMin = hhmmToMinutes(b.inicioBloqueio);
+      const fimMin = hhmmToMinutes(b.fimBloqueio);
+
+      // por segurança (mesmo já validando no POST/PATCH)
+      if (iniMin >= fimMin) continue;
+
+      const duracaoHoras = (fimMin - iniMin) / 60;
+
+      // soma pra cada quadra conectada
+      for (const q of b.quadras) {
+        totalHoras += duracaoHoras;
+
+        const atual = porQuadraMap.get(q.id);
+        if (atual) {
+          atual.horas += duracaoHoras;
+        } else {
+          porQuadraMap.set(q.id, {
+            quadraId: q.id,
+            nome: q.nome,
+            numero: q.numero,
+            horas: duracaoHoras,
+          });
+        }
+      }
+    }
+
+    const porQuadra = Array.from(porQuadraMap.values()).sort((a, b) => b.horas - a.horas);
+
+    // arredondamento opcional (2 casas) pra ficar bonito no front
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+
+    return res.json({
+      periodo: { dataInicio: iniStr, dataFim: fimStr },
+      motivo: { id: motivo.id, nome: motivo.nome, descricao: motivo.descricao, ativo: motivo.ativo },
+      totalHoras: round2(totalHoras),
+      porQuadra: porQuadra.map((i) => ({ ...i, horas: round2(i.horas) })),
+    });
+  } catch (error) {
+    console.error("Erro no relatório de bloqueios:", error);
+    return res.status(500).json({ erro: "Erro interno ao gerar relatório de bloqueios" });
   }
 });
 
