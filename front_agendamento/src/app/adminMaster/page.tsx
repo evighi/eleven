@@ -103,6 +103,29 @@ interface DisponibilidadeGeral {
   churrasqueiras: ChurrasqueiraDisp[];
 }
 
+type ClubeStatusResp = {
+  data: string;
+  horas: string[];
+  abertoAgora: boolean;
+  horaAgora: string;
+  fechamentos: { id: string; inicio: string; fim: string; motivoNome: string }[];
+  funcionamentoPorHora: Record<string, { aberto: boolean; fechadoPorMotivo: string | null }>;
+};
+
+type FuncionamentoInfoUI = {
+  aberto: boolean;
+  inicio: string;
+  fim: string;
+  motivo?: string | null;
+};
+
+type FuncionamentoDiaUI = {
+  data: string;
+  quadras: FuncionamentoInfoUI;
+  churrasqueiras: FuncionamentoInfoUI;
+};
+
+
 interface DetalheItemMin {
   agendamentoId?: string;
   id?: string;
@@ -290,6 +313,10 @@ export default function AdminHome() {
   const [confirmarCancelamento, setConfirmarCancelamento] = useState(false);
   const [loadingCancelamento, setLoadingCancelamento] = useState(false);
   const [loadingTransferencia, setLoadingTransferencia] = useState(false);
+
+  // ✅ Funcionamento do dia (card)
+  const [funcionamentoDia, setFuncionamentoDia] = useState<FuncionamentoDiaUI | null>(null);
+  const [loadingFuncionamento, setLoadingFuncionamento] = useState(false);
 
   // Opções p/ permanente
   const [mostrarOpcoesCancelamento, setMostrarOpcoesCancelamento] =
@@ -485,6 +512,254 @@ export default function AdminHome() {
     }
   }, [API_URL, data, horario, isAllowed]);
 
+  const buscarFuncionamentoDia = useCallback(async () => {
+    if (!isAllowed) return;
+    if (!data) { setFuncionamentoDia(null); return; }
+
+    setLoadingFuncionamento(true);
+    try {
+      const res = await axios.get<ClubeStatusResp>(
+        `${API_URL}/disponibilidadeGeral/clube-status`,
+        { params: { data }, withCredentials: true }
+      );
+
+      const payload = res.data;
+
+      // hora do card: usa a selecionada; senão usa horaAgora arredondada
+      const horaSelecionada = normHora(
+        horario ||
+        `${String(parseInt(payload.horaAgora.slice(0, 2), 10)).padStart(2, "0")}:00`
+      );
+
+      // ✅ 1) status EXATO da hora selecionada (aberto/fechado/motivo e faixa dela)
+      const faixaSelecionada = calcularFaixaPorHora(payload, horaSelecionada);
+
+      // ✅ 2) próxima faixa aberta (para mostrar “Abre das X às Y” quando estiver fechado)
+      const proxima = calcularProximaFaixaAberta(payload, horaSelecionada);
+
+      // Se o clube não abre em nenhum horário do dia
+      if ("nenhumAberto" in proxima) {
+        setFuncionamentoDia({
+          data: payload.data,
+          quadras: { aberto: false, inicio: "—", fim: "—", motivo: "O clube não abre hoje" },
+          churrasqueiras: { aberto: false, inicio: "—", fim: "—", motivo: "O clube não abre hoje" },
+        });
+        return;
+      }
+
+      // ✅ Se hora selecionada está ABERTA -> card verde com a faixa “aberta” daquela hora
+      if (faixaSelecionada.aberto) {
+        setFuncionamentoDia({
+          data: payload.data,
+          quadras: {
+            aberto: true,
+            inicio: faixaSelecionada.inicio,
+            fim: faixaSelecionada.fim,
+            motivo: null,
+          },
+          churrasqueiras: {
+            aberto: true,
+            inicio: faixaSelecionada.inicio,
+            fim: faixaSelecionada.fim,
+            motivo: null,
+          },
+        });
+        return;
+      }
+
+      // ✅ Se hora selecionada está FECHADA -> card vermelho + mostra próxima faixa aberta
+      setFuncionamentoDia({
+        data: payload.data,
+        quadras: {
+          aberto: false,
+          inicio: proxima.inicio,
+          fim: proxima.fim,
+          motivo: faixaSelecionada.motivo ?? null, // motivo do fechamento daquela hora
+        },
+        churrasqueiras: {
+          aberto: false,
+          inicio: proxima.inicio,
+          fim: proxima.fim,
+          motivo: faixaSelecionada.motivo ?? null,
+        },
+      });
+    } catch (e) {
+      console.error("Erro ao buscar funcionamento do dia:", e);
+      setFuncionamentoDia({
+        data,
+        quadras: { aberto: false, inicio: "07:00", fim: "23:00", motivo: "Falha ao consultar" },
+        churrasqueiras: { aberto: false, inicio: "07:00", fim: "23:00", motivo: "Falha ao consultar" },
+      });
+    } finally {
+      setLoadingFuncionamento(false);
+    }
+  }, [API_URL, data, horario, isAllowed]);
+
+  function calcularFaixaPorHora(payload: ClubeStatusResp, horaSelecionadaRaw: string) {
+    const horaSelecionada = normHora(horaSelecionadaRaw);
+
+    // ✅ horas do dia (use payload.horas, mas normalizadas e únicas)
+    const horas = Array.from(new Set((payload.horas || []).map(normHora))).sort();
+
+    if (horas.length === 0) {
+      return { inicio: "07:00", fim: "23:00", aberto: true, motivo: null as string | null };
+    }
+
+    // ✅ porHora normalizado (resolve o bug do "23:00:00" vs "23:00")
+    const porHora = normalizarPorHora(payload.funcionamentoPorHora);
+
+    // garante que a hora existe na lista; se não existir, tenta aproximar
+    let idx = horas.indexOf(horaSelecionada);
+    if (idx === -1) {
+      const hh = horaSelecionada.slice(0, 2);
+      idx = horas.findIndex((h) => h.startsWith(hh));
+      if (idx === -1) idx = 0;
+    }
+
+    const base = porHora[horas[idx]];
+
+    // ❗️IMPORTANTE: NÃO usar payload.abertoAgora como fallback (isso que quebra 23:00)
+    const abertoBase = base?.aberto ?? true;
+    const motivoBase = base?.fechadoPorMotivo ?? null;
+
+    // expande para trás enquanto o status for o mesmo
+    let start = idx;
+    while (start > 0) {
+      const prev = porHora[horas[start - 1]];
+      const abertoPrev = prev?.aberto ?? true;
+      const motivoPrev = prev?.fechadoPorMotivo ?? null;
+
+      if (abertoPrev !== abertoBase) break;
+      if ((motivoPrev ?? null) !== (motivoBase ?? null)) break;
+
+      start--;
+    }
+
+    // expande para frente enquanto o status for o mesmo
+    let end = idx;
+    while (end < horas.length - 1) {
+      const next = porHora[horas[end + 1]];
+      const abertoNext = next?.aberto ?? true;
+      const motivoNext = next?.fechadoPorMotivo ?? null;
+
+      if (abertoNext !== abertoBase) break;
+      if ((motivoNext ?? null) !== (motivoBase ?? null)) break;
+
+      end++;
+    }
+
+    const inicio = horas[start];
+
+    // ✅ fim: se existe próxima hora, usa ela; senão usa o próprio último slot + 1h
+    let fim = horas[end + 1];
+    if (!fim) {
+      const last = horas[end]; // ex: "23:00"
+      const hh = parseInt(last.slice(0, 2), 10);
+      fim = `${String(Math.min(23, hh)).padStart(2, "0")}:00`;
+      // Se você quiser mostrar "23:00" como fim, mantém assim.
+      // Se quiser mostrar "00:00" (fechou ao final da hora), avisa que eu adapto.
+    }
+
+    return { inicio, fim, aberto: abertoBase, motivo: motivoBase };
+  }
+
+  const normHora = (h?: string) => (h || "").trim().slice(0, 5);
+
+  function normalizarPorHora(
+    porHora: Record<string, { aberto: boolean; fechadoPorMotivo: string | null }> | undefined
+  ) {
+    const entries = Object.entries(porHora || {}).map(([k, v]) => [normHora(k), v] as const);
+    return Object.fromEntries(entries) as Record<
+      string,
+      { aberto: boolean; fechadoPorMotivo: string | null }
+    >;
+  }
+
+
+  type Faixa = { inicio: string; fim: string; aberto: boolean; motivo: string | null };
+
+  function calcularProximaFaixaAberta(
+    payload: ClubeStatusResp,
+    horaSelecionadaRaw: string
+  ): Faixa | { nenhumAberto: true } {
+    const normHora = (h?: string) => (h || "").trim().slice(0, 5);
+
+    const horas = Array.from(new Set((payload.horas || []).map(normHora))).sort();
+    const porHora = Object.fromEntries(
+      Object.entries(payload.funcionamentoPorHora || {}).map(([k, v]) => [normHora(k), v])
+    ) as Record<string, { aberto: boolean; fechadoPorMotivo: string | null }>;
+
+    if (horas.length === 0) return { inicio: "07:00", fim: "23:00", aberto: true, motivo: null };
+
+    const horaSelecionada = normHora(horaSelecionadaRaw);
+
+    // acha índice da hora selecionada (ou aproxima)
+    let idx = horas.indexOf(horaSelecionada);
+    if (idx === -1) {
+      const hh = horaSelecionada.slice(0, 2);
+      idx = horas.findIndex((h) => h.startsWith(hh));
+      if (idx === -1) idx = 0;
+    }
+
+    // se a hora selecionada já está aberta -> devolve a faixa aberta dela (como você já fazia)
+    const getStatus = (h: string) => porHora[h] ?? { aberto: true, fechadoPorMotivo: null };
+    const base = getStatus(horas[idx]);
+
+    // helper: expande uma faixa contínua de mesmo "aberto" e mesmo "motivo"
+    const expandirFaixa = (i: number) => {
+      const b = getStatus(horas[i]);
+      const abertoBase = b.aberto;
+      const motivoBase = b.fechadoPorMotivo ?? null;
+
+      let start = i;
+      while (start > 0) {
+        const prev = getStatus(horas[start - 1]);
+        if (prev.aberto !== abertoBase) break;
+        if ((prev.fechadoPorMotivo ?? null) !== motivoBase) break;
+        start--;
+      }
+
+      let end = i;
+      while (end < horas.length - 1) {
+        const next = getStatus(horas[end + 1]);
+        if (next.aberto !== abertoBase) break;
+        if ((next.fechadoPorMotivo ?? null) !== motivoBase) break;
+        end++;
+      }
+
+      return { start, end, aberto: abertoBase, motivo: motivoBase };
+    };
+
+    // 1) se selecionada está aberta, retorna a faixa dela
+    if (base.aberto) {
+      const faixa = expandirFaixa(idx);
+      return {
+        inicio: horas[faixa.start],
+        fim: horas[faixa.end], // fim como "último horário permitido"
+        aberto: true,
+        motivo: null,
+      };
+    }
+
+    // 2) se selecionada está fechada, procure a PRÓXIMA faixa ABERTA depois dela
+    for (let i = idx + 1; i < horas.length; i++) {
+      if (getStatus(horas[i]).aberto) {
+        const faixa = expandirFaixa(i);
+        return {
+          inicio: horas[faixa.start],
+          fim: horas[faixa.end],
+          aberto: true,
+          motivo: null,
+        };
+      }
+    }
+
+    // 3) se não achou depois, ainda pode existir aberto antes (mas você quer "próxima" — então não conta)
+    // Se quiser considerar "tem aberto no dia mas já passou", aí dá pra mudar.
+    return { nenhumAberto: true };
+  }
+
+
   // Inicializa data/horário (SP) para ambos
   useEffect(() => {
     const hoje = todayStrSP();
@@ -501,6 +776,10 @@ export default function AdminHome() {
   useEffect(() => {
     buscarDisponChurrasqueiras();
   }, [buscarDisponChurrasqueiras]);
+
+  useEffect(() => {
+    buscarFuncionamentoDia();
+  }, [buscarFuncionamentoDia]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -808,7 +1087,7 @@ export default function AdminHome() {
   };
 
   const confirmarTransferencia = async () => {
-    
+
     if (!agendamentoSelecionado) {
       showAlert("Nenhum agendamento selecionado.", "error");
       return;
@@ -817,7 +1096,7 @@ export default function AdminHome() {
       showAlert("Selecione um usuário para transferir.", "info");
       return;
     }
-    
+
 
     if (agendamentoSelecionado.tipoLocal !== "quadra") {
       showAlert(
@@ -826,11 +1105,11 @@ export default function AdminHome() {
       );
       return;
     }
-    
+
 
     setLoadingTransferencia(true);
     try {
-      
+
       const isPerm = agendamentoSelecionado.tipoReserva === "permanente";
       const rota = isPerm
         ? `agendamentosPermanentes/${agendamentoSelecionado.agendamentoId}/transferir`
@@ -1026,6 +1305,95 @@ export default function AdminHome() {
           {tipoLabel}
         </p>
       </div>
+
+      {/* ==========================
+    CARD: FUNCIONAMENTO DO DIA
+========================== */}
+      <div className="rounded-3xl border border-gray-200 bg-white px-5 sm:px-6 py-4 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-2xl bg-orange-50 border border-orange-100 flex items-center justify-center">
+              <Clock className="w-5 h-5 text-orange-600" />
+            </div>
+
+            <div>
+              <p className="text-sm font-semibold text-gray-800">
+                Funcionamento do dia
+              </p>
+              <p className="text-xs text-gray-500">
+                {data ? `Data selecionada: ${formatarDataBR(data)}` : "Selecione uma data"}
+              </p>
+            </div>
+          </div>
+
+          {loadingFuncionamento ? (
+            <div className="flex items-center gap-2 text-gray-600">
+              <Spinner size="w-4 h-4" />
+              <span className="text-sm">Carregando funcionamento…</span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full sm:w-auto">
+              {/* QUADRAS */}
+              <div
+                className={[
+                  "rounded-2xl border px-4 py-3",
+                  funcionamentoDia?.quadras?.aberto
+                    ? "border-emerald-200 bg-emerald-50"
+                    : "border-red-200 bg-red-50",
+                ].join(" ")}
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-gray-700">Aluguel de quadras</p>
+                  <span
+                    className={[
+                      "inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full",
+                      funcionamentoDia?.quadras?.aberto
+                        ? "text-emerald-700 bg-white/70 border border-emerald-200"
+                        : "text-red-700 bg-white/70 border border-red-200",
+                    ].join(" ")}
+                  >
+                    {funcionamentoDia?.quadras?.aberto ? (
+                      <>
+                        <Check className="w-3 h-3" strokeWidth={3} /> Aberto
+                      </>
+                    ) : (
+                      <>
+                        <X className="w-3 h-3" strokeWidth={3} /> Fechado
+                      </>
+                    )}
+                  </span>
+                </div>
+
+                <div className="mt-1">
+                  {funcionamentoDia?.quadras?.aberto ? (
+                    <p className="text-sm font-extrabold text-gray-900">
+                      Abre das {funcionamentoDia?.quadras?.inicio} às {funcionamentoDia?.quadras?.fim}
+                    </p>
+                  ) : (
+                    <>
+                      <p className="text-sm font-extrabold text-gray-900">
+                        {funcionamentoDia?.quadras?.motivo
+                          ? `${funcionamentoDia.quadras.motivo}`
+                          : "Fechado"}
+                      </p>
+
+                      {funcionamentoDia?.quadras?.inicio &&
+                        funcionamentoDia?.quadras?.fim &&
+                        funcionamentoDia?.quadras?.inicio !== "—" &&
+                        funcionamentoDia?.quadras?.fim !== "—" && (
+                          <p className="mt-0.5 text-xs font-semibold text-red-700">
+                            Abre das {funcionamentoDia.quadras.inicio} às {funcionamentoDia.quadras.fim}
+                          </p>
+                        )}
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
 
       {/* ==========================
           FILTROS – QUADRAS
