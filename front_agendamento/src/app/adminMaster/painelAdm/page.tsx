@@ -74,7 +74,7 @@ const resumoLinha2: SummaryCard[] = [
 const configuracoesGerais: ActionCard[] = [
     { label: "Bloqueio de\nquadras", href: "/adminMaster/bloqueioQuadras", iconSrc: "/icons/iconbloq.png" },
     { label: "Notificações", href: "/adminMaster/notificacoes", iconSrc: "/icons/branco.png" },
-    { label: "Contador de\nhoras", href: "/adminMaster/contador-horas", iconSrc: "/icons/branco.png" },
+    { label: "Contador de\nhoras", href: "/adminMaster/contadorHoras", iconSrc: "/icons/branco.png" },
 ];
 
 const editarUsuarios: ActionCard[] = [
