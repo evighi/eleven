@@ -53,10 +53,23 @@ function getUtcDayRange(dateStr: string) {
   fim.setUTCDate(fim.getUTCDate() + 1);
   return { inicio, fim };
 }
-
 function hhmmToMinutes(hhmm: string) {
   const [hh, mm] = hhmm.split(":").map(Number);
   return hh * 60 + mm;
+}
+
+function floorToHour(min: number) {
+  return Math.floor(min / 60) * 60;
+}
+
+function ceilToHour(min: number) {
+  return Math.ceil(min / 60) * 60;
+}
+
+// ✅ regra: se fim = 23:59, tratar como 24:00
+function normalizeFimMinutes(fimHHMM: string) {
+  if (fimHHMM === "23:59") return 24 * 60; // 1440
+  return hhmmToMinutes(fimHHMM);
 }
 
 // ✅ range UTC para um período (dias) inclusivo: [inicioDia, (fimDia+1) )
@@ -578,10 +591,14 @@ router.get("/relatorio-horas", async (req, res) => {
     let totalHoras = 0;
 
     for (const b of bloqueios) {
-      const iniMin = hhmmToMinutes(b.inicioBloqueio);
-      const fimMin = hhmmToMinutes(b.fimBloqueio);
+      let iniMin = hhmmToMinutes(b.inicioBloqueio);
+      let fimMin = normalizeFimMinutes(b.fimBloqueio);
 
-      // por segurança (mesmo já validando no POST/PATCH)
+      // arredonda para horas cheias
+      iniMin = floorToHour(iniMin);
+      fimMin = ceilToHour(fimMin);
+
+      // segurança
       if (iniMin >= fimMin) continue;
 
       const duracaoHoras = (fimMin - iniMin) / 60;
