@@ -53,6 +53,7 @@ async function enrichNamesForLogs(items: any[]) {
         if (it.targetId) agPermChurrasIds.push(String(it.targetId));
         break;
       case "QUADRA":
+        // (seu padrão atual usa QUADRA para apontar para id do bloqueio)
         if (it.targetId) bloqueioIds.push(String(it.targetId));
         break;
       default:
@@ -539,6 +540,7 @@ router.get("/login-abuse", verificarToken, requireAdmin, denyAtendente(), async 
  *
  * Filtros:
  *  - event, targetType, targetId, actorId
+ *  - quadraId=UUID (envolve quadra via metadata ou via agendamentos/permanentes)
  *  - day=YYYY-MM-DD (dia local SP)
  *  - hour=0..23 (janela de 1h, exige day)
  *  - from, to (alternativo — NÃO misturar com day/hour)
@@ -560,6 +562,9 @@ router.get("/logs", verificarToken, requireAdmin, denyAtendente(), async (req, r
         // ✅ novos
         day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
         hour: z.coerce.number().int().min(0).max(23).optional(),
+
+        // ✅ NOVO: filtro por quadra
+        quadraId: z.string().uuid().optional(),
 
         // antigos
         from: z.string().optional(),
@@ -588,6 +593,7 @@ router.get("/logs", verificarToken, requireAdmin, denyAtendente(), async (req, r
       to,
       day,
       hour,
+      quadraId, // ✅
       page = "1",
       size = "50",
       qUser,
@@ -609,7 +615,7 @@ router.get("/logs", verificarToken, requireAdmin, denyAtendente(), async (req, r
       where.targetType = targetType as AuditTargetType;
     }
 
-    // ✅ NOVO: filtros por dia/hora (local SP) com range [gte, lt)
+    // ✅ filtros por dia/hora (local SP) com range [gte, lt)
     if (day) {
       if (hour != null) {
         const inicioUTC = localDayHourToUTCDate(day, Number(hour));
@@ -636,6 +642,62 @@ router.get("/logs", verificarToken, requireAdmin, denyAtendente(), async (req, r
           where.createdAt.lt = new Date(to);
         }
       }
+    }
+
+    // ✅ NOVO: filtro por quadra (envolve)
+    // - metadata.quadraId = quadraId
+    // - targetType=AGENDAMENTO e targetId ∈ agendamentos da quadra
+    // - targetType=AGENDAMENTO_PERMANENTE e targetId ∈ permanentes da quadra
+    // - (opcional) targetType=QUADRA + targetId=quadraId (só funciona se você logar assim)
+    if (quadraId) {
+      const qid = String(quadraId);
+
+      const orParts: any[] = [];
+
+      // 0) alvo direto QUADRA (se existir esse padrão em algum log)
+      orParts.push({
+        AND: [{ targetType: "QUADRA" as AuditTargetType }, { targetId: qid }],
+      });
+
+      // 1) metadata.quadraId
+      orParts.push({
+        metadata: { path: ["quadraId"], equals: qid },
+      });
+
+      // 2) agendamentos comuns da quadra (subquery)
+      const agIds = await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+        SELECT "id"
+        FROM "Agendamento"
+        WHERE "quadraId" = ${qid}
+      `);
+
+      if (agIds.length > 0) {
+        orParts.push({
+          AND: [
+            { targetType: "AGENDAMENTO" as AuditTargetType },
+            { targetId: { in: agIds.map((x) => x.id) } },
+          ],
+        });
+      }
+
+      // 3) permanentes da quadra (subquery)
+      const agPermIds = await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+        SELECT "id"
+        FROM "AgendamentoPermanente"
+        WHERE "quadraId" = ${qid}
+      `);
+
+      if (agPermIds.length > 0) {
+        orParts.push({
+          AND: [
+            { targetType: "AGENDAMENTO_PERMANENTE" as AuditTargetType },
+            { targetId: { in: agPermIds.map((x) => x.id) } },
+          ],
+        });
+      }
+
+      // combina com outros filtros sem sobrescrever
+      where.AND = [...(where.AND ?? []), { OR: orParts }];
     }
 
     // ====== qUser: busca total (ator, alvo e metadata por JSON path) ======
@@ -697,7 +759,8 @@ router.get("/logs", verificarToken, requireAdmin, denyAtendente(), async (req, r
       // 4) Fallback por nome salvo no log (compatibilidade)
       orParts.push({ actorName: { contains: q, mode: "insensitive" } });
 
-      where.OR = orParts;
+      // combina com outros filtros (ex.: quadraId)
+      where.AND = [...(where.AND ?? []), { OR: orParts }];
     }
 
     const [rawItems, total] = await Promise.all([
